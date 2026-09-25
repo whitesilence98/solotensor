@@ -1,0 +1,27 @@
+# Comfy Studio dev stack: FastAPI backend with local-disk image storage.
+# MinIO has been removed — generated images live in a Docker volume (or a
+# local folder) and are served by the backend at /files.
+# ComfyUI and the Next.js frontend run directly on the host (GPU access / HMR).
+
+services:
+  backend:
+    build: ./backend
+    container_name: comfy-studio-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # ComfyUI runs on the host, so reach it via host.docker.internal.
+      COMFY_HOST: host.docker.internal:8188
+      STORAGE_DIR: /data/generated
+      # Browser fetches assets directly from the host-mapped backend port.
+      FILES_PUBLIC_BASE: http://localhost:8000
+      # Must match the browser URL exactly.
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      ALLOWED_ORIGIN_REGEX: ^https?://(localhost|127\.0\.0\.1):3[0-9]{3}$
+    volumes:
+      - generated_images:/data/generated
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  generated_images:

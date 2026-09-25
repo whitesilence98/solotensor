@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --ink: #f2f0e9;
+  --ink-soft: #aaa8a1;
+  --ink-faint: #6f716d;
+  --ground: #0b0c0b;
+  --surface: #111311;
+  --surface-raised: #181b18;
+  --surface-soft: #20231f;
+  --line: #292d28;
+  --line-strong: #3a4038;
+  --accent: #d5f06f;
+  --accent-ink: #171b08;
+  --danger: #ef8c79;
+  --nav-width: 5rem;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  height: 100%;
+  scroll-behavior: smooth;
+  background: var(--ground);
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 72% -10%, rgba(174, 202, 91, 0.08), transparent 32rem),
+    var(--ground);
+  color: var(--ink);
+  font-family: "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-feature-settings: "kern", "ss01";
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+::selection { background: var(--accent); color: var(--accent-ink); }
+
+.app-shell { display: flex; height: 100dvh; overflow: hidden; }
+.app-content { min-width: 0; flex: 1; overflow: hidden; }
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  transform: translateY(-200%);
+  border-radius: .35rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: .65rem 1rem;
+  font-weight: 700;
+  transition: transform 160ms ease;
+}
+.skip-link:focus { transform: translateY(0); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #555c50; }
+
+input[type="range"] { accent-color: var(--accent); }
+
+::placeholder { color: #686b65 !important; }
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.shimmer {
+  animation: shimmer 1.4s linear infinite;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-soft) 50%, var(--surface) 75%);
+  background-size: 800px 100%;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: .45; transform: scale(.94); }
+  50% { opacity: .85; transform: scale(1); }
+}
+
+.assets-root { background: transparent; color: var(--ink); }
+
+.masonry { column-gap: 1rem; columns: 2; }
+@media (min-width: 720px) { .masonry { columns: 3; } }
+@media (min-width: 1120px) { .masonry { columns: 4; } }
+@media (min-width: 1600px) { .masonry { columns: 5; } }
+.masonry > * { break-inside: avoid; margin-bottom: 1rem; }
+
+.asset-card .asset-veil { opacity: 0; transition: opacity 220ms ease; }
+.asset-card .asset-creator {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+.asset-card .asset-quick {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+.asset-card:hover .asset-veil,
+.asset-card:focus-within .asset-veil { opacity: 1; }
+.asset-card:hover .asset-creator,
+.asset-card:focus-within .asset-creator,
+.asset-card:hover .asset-quick,
+.asset-card:focus-within .asset-quick { opacity: 1; transform: translateY(0); }
+
+@keyframes turntable {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(180deg); }
+  100% { transform: rotateY(360deg); }
+}
+.asset-3d:hover .asset-3d-cube { animation: turntable 3s linear infinite; transform-style: preserve-3d; }
+.shimmer-dark { animation: shimmer 1.4s linear infinite; }
+
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app-shell { display: block; height: auto; min-height: 100dvh; overflow: visible; padding-bottom: 4.75rem; }
+  .app-content { overflow: visible; }
+  .masonry { column-gap: .75rem; }
+  .masonry > * { margin-bottom: .75rem; }
+}
+
+@media (hover: none) {
+  .asset-card .asset-veil, .asset-card .asset-creator, .asset-card .asset-quick { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
