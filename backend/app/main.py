@@ -8,8 +8,10 @@ import base64
 import binascii
 import json
 import logging
+import random
 import time
 import uuid
+from datetime import datetime, timezone
 
 from typing import Literal
 
@@ -21,6 +23,7 @@ from .config import get_settings
 from .schemas import (
     GenerateRequest,
     GenerationResult,
+    GalleryItem,
     GalleryResponse,
     HealthResponse,
     UploadedAsset,
@@ -125,6 +128,7 @@ async def generate(req: GenerateRequest) -> GenerationResult:
 
     comfy = get_comfy_client()
     client_id = req.client_id or str(uuid.uuid4())
+    resolved_seed = req.seed if req.seed is not None else random.randint(0, 2**32 - 1)
     started = time.monotonic()
 
     try:
@@ -132,7 +136,7 @@ async def generate(req: GenerateRequest) -> GenerationResult:
             prompt=req.prompt,
             negative_prompt=req.negative_prompt,
             model=req.model,
-            seed=req.seed,
+            seed=resolved_seed,
             steps=req.steps,
             cfg=req.cfg,
             aspect_ratio=req.aspect_ratio,
@@ -156,10 +160,30 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         )
 
     assets: list[UploadedAsset] = []
+    metadata = {
+        "prompt_id": prompt_id,
+        "prompt": req.prompt,
+        "negative_prompt": req.negative_prompt,
+        "seed": resolved_seed,
+        "steps": req.steps,
+        "width": req.width,
+        "height": req.height,
+        "format_name": req.format_name,
+        "unet_name": req.unet_name,
+        "clip_name": req.clip_name,
+        "vae_name": req.vae_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "elapsed_ms": elapsed_ms,
+    }
     try:
         for image in await comfy.list_images(prompt_id):
             blob = await comfy.fetch_image_bytes(image)
-            url = await storage.upload_image(blob, prompt_id, image["filename"])
+            url = await storage.upload_image(
+                blob,
+                prompt_id,
+                image["filename"],
+                metadata={**metadata, "source_filename": image["filename"]},
+            )
             assets.append(UploadedAsset(filename=image["filename"], url=url))
     except (ComfyClientError, StorageError) as exc:
         logger.error("Post-processing error: %s", exc)
@@ -224,3 +248,13 @@ async def gallery(limit: int = 60) -> GalleryResponse:
     except StorageError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return GalleryResponse(items=items)
+
+
+@app.get("/api/v1/images/{key:path}", response_model=GalleryItem)
+async def image_detail(key: str) -> GalleryItem:
+    try:
+        return storage.get_image(key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Image not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

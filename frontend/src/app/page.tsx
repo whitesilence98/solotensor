@@ -80,7 +80,6 @@ export default function StudioPage() {
   const [progressLabel, setProgressLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const clientIdRef = useRef<string>("");
@@ -163,6 +162,14 @@ export default function StudioPage() {
   useEffect(() => { void refreshGallery(); }, [refreshGallery]);
   useEffect(() => () => wsRef.current?.close(), []);
 
+  const outputDimensions = useMemo(() => {
+    const values = format === "custom" ? [Number(customWidth), Number(customHeight)] : FORMATS[format];
+    return {
+      width: Number.isFinite(values[0]) && values[0] > 0 ? values[0] : 1,
+      height: Number.isFinite(values[1]) && values[1] > 0 ? values[1] : 1,
+    };
+  }, [format, customWidth, customHeight]);
+
   const handleGenerate = useCallback(async () => {
     if (mode !== "text-to-image" || !prompt.trim() || busy) return;
     const [resolvedWidth, resolvedHeight] = format === "custom"
@@ -211,6 +218,7 @@ export default function StudioPage() {
         steps: parsedSteps,
         width: parsedWidth,
         height: parsedHeight,
+        format_name: format,
         client_id: clientId,
       });
       if (result.status === "completed") {
@@ -231,7 +239,7 @@ export default function StudioPage() {
   const canGenerate = useMemo(() => mode === "text-to-image" && prompt.trim().length > 0 && !busy, [mode, prompt, busy]);
 
   return (
-    <div className="flex min-h-full flex-col overflow-y-auto bg-transparent lg:h-full lg:flex-row lg:overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-transparent lg:flex-row lg:overflow-hidden">
       <ControlPanel
         mode={mode}
         onModeChange={setMode}
@@ -272,9 +280,8 @@ export default function StudioPage() {
         progressLabel={progressLabel}
         gallery={gallery}
         error={error ?? modelsError}
-        viewerUrl={viewerUrl}
-        onOpenViewer={setViewerUrl}
-        onCloseViewer={() => setViewerUrl(null)}
+        outputWidth={outputDimensions.width}
+        outputHeight={outputDimensions.height}
       />
     </div>
   );

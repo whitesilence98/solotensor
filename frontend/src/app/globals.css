@@ -45,7 +45,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 ::selection { background: var(--accent); color: var(--accent-ink); }
 
 .app-shell { display: flex; height: 100dvh; overflow: hidden; }
-.app-content { min-width: 0; flex: 1; overflow: hidden; }
+.app-content { min-width: 0; min-height: 0; height: 100%; flex: 1; overflow: hidden; }
 
 .skip-link {
   position: fixed;
@@ -128,7 +128,7 @@ input[type="range"] { accent-color: var(--accent); }
 @media (max-width: 760px) {
   body { overflow: auto; }
   .app-shell { display: block; height: auto; min-height: 100dvh; overflow: visible; padding-bottom: 4.75rem; }
-  .app-content { overflow: visible; }
+  .app-content { height: auto; min-height: 0; overflow: visible; }
   .masonry { column-gap: .75rem; }
   .masonry > * { margin-bottom: .75rem; }
 }

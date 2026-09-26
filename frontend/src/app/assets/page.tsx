@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowDown,
   Box,
@@ -31,6 +32,7 @@ function formatCount(n: number): string {
 /* ------------------------------------------------------------------ */
 
 export default function AssetsPage() {
+  const router = useRouter();
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +122,7 @@ export default function AssetsPage() {
   };
 
   return (
-    <div id="main-content" className="assets-root min-h-full flex-1 overflow-y-auto antialiased">
+    <div id="main-content" className="assets-root h-full min-h-0 flex-1 overflow-y-auto antialiased">
       {/* ---------------- Header ---------------- */}
       <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-6 py-3.5">
@@ -258,7 +260,7 @@ export default function AssetsPage() {
                   asset={asset}
                   saved={savedKeys.has(asset.key)}
                   onBookmark={() => toggleSaved(asset.key)}
-                  onOpen={() => setViewer(asset)}
+                  onOpen={() => router.push(`/assets/${asset.key.split("/").map(encodeURIComponent).join("/")}`)}
                 />
               ))}
             </div>

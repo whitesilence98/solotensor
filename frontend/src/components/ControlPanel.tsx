@@ -15,7 +15,11 @@ const FORMATS: { value: FormatKey; label: string }[] = [
   { value: "3:2", label: "3:2" },
   { value: "custom", label: "Custom" },
 ];
-const MAX_PROMPT = 800;
+const MAX_PROMPT_WORDS = 1000;
+
+function wordCount(value: string): number {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
+}
 
 interface Props {
   mode: GenerationMode; onModeChange: (v: GenerationMode) => void;
@@ -45,6 +49,7 @@ export default function ControlPanel(props: Props) {
     onFormatChange, references, onReferencesChange, busy, progress, progressLabel,
     canGenerate, onGenerate } = props;
   const imageToImage = mode === "image-to-image";
+  const promptWords = wordCount(prompt);
   const [advanced, setAdvanced] = useState(false);
 
   const select = (id: string, value: string, options: string[], onChange: (v: string) => void) => (
@@ -57,7 +62,7 @@ export default function ControlPanel(props: Props) {
   );
 
   return (
-    <aside className="w-full shrink-0 overflow-y-auto border-b border-[#292d28] bg-[#0e100e]/95 lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
+    <aside className="w-full shrink-0 overflow-visible border-b border-[#292d28] bg-[#0e100e]/95 lg:h-full lg:w-[22rem] lg:overflow-y-auto lg:border-b-0 lg:border-r">
       <div className="border-b border-[#292d28] px-5 pb-4 pt-5">
         <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-[#6f716d]">Workspace / 01</p>
         <div className="mt-2 flex items-end justify-between">
@@ -86,8 +91,11 @@ export default function ControlPanel(props: Props) {
         ) : (
           <>
             <div>
-              <div className="mb-2 flex items-baseline justify-between"><label htmlFor="prompt-input" className={labelClass}>Describe the frame</label><span className={`font-mono text-[10px] ${prompt.length >= MAX_PROMPT ? "text-[#ef8c79]" : "text-[#6f716d]"}`}>{prompt.length}/{MAX_PROMPT}</span></div>
-              <textarea id="prompt-input" value={prompt} maxLength={MAX_PROMPT} onChange={(e) => onPromptChange(e.target.value)} placeholder="Soft morning light across a brutalist interior, linen textures, 35mm grain…" rows={6} disabled={busy} className={`${fieldClass} resize-none leading-relaxed`} />
+              <div className="mb-2 flex items-baseline justify-between"><label htmlFor="prompt-input" className={labelClass}>Describe the frame</label><span className={`font-mono text-[10px] ${promptWords >= MAX_PROMPT_WORDS ? "text-[#ef8c79]" : "text-[#6f716d]"}`}>{promptWords}/{MAX_PROMPT_WORDS} words</span></div>
+              <textarea id="prompt-input" value={prompt} onChange={(e) => {
+                const next = e.target.value;
+                if (wordCount(next) <= MAX_PROMPT_WORDS) onPromptChange(next);
+              }} placeholder="Soft morning light across a brutalist interior, linen textures, 35mm grain…" rows={6} disabled={busy} className={`${fieldClass} resize-none leading-relaxed`} />
             </div>
 
             <div>

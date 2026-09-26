@@ -4,6 +4,7 @@ Replaces the previous MinIO/S3 service with plain disk writes plus a
 StaticFiles mount — no external object store required.
 """
 
+import json
 import logging
 import shutil
 import uuid
@@ -48,12 +49,34 @@ class StorageService:
     def _file_url(self, key: str) -> str:
         return f"{self.settings.FILES_PUBLIC_BASE}/files/{key}"
 
+    def _metadata_path(self, image_path: Path) -> Path:
+        return image_path.with_suffix(f"{image_path.suffix}.json")
+
+    def _gallery_item(self, path: Path) -> GalleryItem:
+        stat = path.stat()
+        rel = path.relative_to(self.root).as_posix()
+        metadata = None
+        try:
+            metadata_path = self._metadata_path(path)
+            if metadata_path.is_file():
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Could not read metadata for %s", path)
+        return GalleryItem(
+            key=rel,
+            url=self._file_url(rel),
+            size=stat.st_size,
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            metadata=metadata,
+        )
+
     async def upload_image(
         self,
         data: bytes,
         prompt_id: str,
         filename: str = "image.png",
         content_type: str = "image/png",
+        metadata: Optional[dict] = None,
     ) -> str:
         """Write one generated image to disk and return its public /files URL."""
         ext = Path(filename).suffix.lower() or ".png"
@@ -63,6 +86,10 @@ class StorageService:
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
+            if metadata is not None:
+                self._metadata_path(dest).write_text(
+                    json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
         except OSError as exc:
             raise StorageError(f"Write failed for {dest}: {exc}") from exc
 
@@ -77,19 +104,19 @@ class StorageService:
 
         items: list[GalleryItem] = []
         for path in files[:limit]:
-            stat = path.stat()
-            rel = path.relative_to(self.root).as_posix()
-            items.append(
-                GalleryItem(
-                    key=rel,
-                    url=self._file_url(rel),
-                    size=stat.st_size,
-                    last_modified=datetime.fromtimestamp(
-                        stat.st_mtime, tz=timezone.utc
-                    ).isoformat(),
-                )
-            )
+            items.append(self._gallery_item(path))
         return items
+
+    def get_image(self, key: str) -> GalleryItem:
+        """Return one image and its optional generation metadata."""
+        path = (self.root / key).resolve()
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise StorageError("Invalid image key") from exc
+        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            raise FileNotFoundError(key)
+        return self._gallery_item(path)
 
     # Kept for API-shape parity with the previous S3 service — unused.
     def purge_prompt(self, prompt_id: str) -> int:

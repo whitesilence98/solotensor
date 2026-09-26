@@ -9,7 +9,7 @@ class GenerateRequest(BaseModel):
     """Body for POST /api/v1/generate."""
 
     mode: Literal["text-to-image", "image-to-image"] = "text-to-image"
-    prompt: str = Field(..., min_length=1, max_length=800)
+    prompt: str = Field(..., min_length=1, max_length=50_000)
     negative_prompt: str = ""
     model: Literal["sdxl", "flux", "nano"] = "sdxl"
     unet_name: str = Field(
@@ -25,6 +25,7 @@ class GenerateRequest(BaseModel):
     steps: int = Field(10, ge=1, le=100)
     width: int = Field(768, ge=64, le=4096)
     height: int = Field(1344, ge=64, le=4096)
+    format_name: Literal["1:1", "16:9", "9:16", "4:3", "3:2", "custom"] = "9:16"
     # Legacy controls retained for the deferred Image-to-Image workflow.
     cfg: float = Field(7.0, ge=0.0, le=30.0)
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
@@ -36,6 +37,13 @@ class GenerateRequest(BaseModel):
         default_factory=list,
         description="Base64-encoded (data URLs allowed) reference images, max 5",
     )
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_at_most_one_thousand_words(cls, value: str) -> str:
+        if len(value.split()) > 1_000:
+            raise ValueError("Prompt must contain at most 1000 words")
+        return value
 
     @field_validator("unet_name", "clip_name", "vae_name")
     @classmethod
@@ -73,11 +81,29 @@ class GenerationResult(BaseModel):
     elapsed_ms: int
 
 
+class GenerationMetadata(BaseModel):
+    prompt_id: str
+    prompt: str
+    negative_prompt: str = ""
+    seed: int
+    steps: int
+    width: int
+    height: int
+    format_name: str
+    unet_name: str
+    clip_name: str
+    vae_name: str
+    created_at: str
+    elapsed_ms: int
+    source_filename: str
+
+
 class GalleryItem(BaseModel):
     key: str
     url: str
     size: int
     last_modified: str
+    metadata: Optional[GenerationMetadata] = None
 
 
 class GalleryResponse(BaseModel):

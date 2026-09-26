@@ -20,6 +20,7 @@ export interface GeneratePayload {
   steps: number;
   width: number;
   height: number;
+  format_name: "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
   cfg?: number;
   client_id?: string;
   reference_images?: string[];
@@ -38,11 +39,29 @@ export interface GenerationResult {
   elapsed_ms: number;
 }
 
+export interface GenerationMetadata {
+  prompt_id: string;
+  prompt: string;
+  negative_prompt: string;
+  seed: number;
+  steps: number;
+  width: number;
+  height: number;
+  format_name: string;
+  unet_name: string;
+  clip_name: string;
+  vae_name: string;
+  created_at: string;
+  elapsed_ms: number;
+  source_filename: string;
+}
+
 export interface GalleryItem {
   key: string;
   url: string;
   size: number;
   last_modified: string;
+  metadata: GenerationMetadata | null;
 }
 
 export type AssetType = "image" | "video" | "3d";
@@ -114,6 +133,10 @@ export const api = {
       `/api/v1/gallery?limit=${limit}`
     );
     return resp.items;
+  },
+
+  async getImage(key: string): Promise<GalleryItem> {
+    return request<GalleryItem>(`/api/v1/images/${key.split("/").map(encodeURIComponent).join("/")}`);
   },
 
   async getModels(category: ModelCategory): Promise<string[]> {
