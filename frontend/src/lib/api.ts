@@ -7,7 +7,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type GenerationMode = "text-to-image" | "image-to-image";
 
-export type ModelCategory = "diffusion_models" | "text_encoders" | "vae";
+export type ModelCategory = "diffusion_models" | "text_encoders" | "vae" | "loras";
+
+export interface LoraSelection {
+  lora: string;
+  on: boolean;
+  strength: number;
+}
 
 export interface GeneratePayload {
   mode: GenerationMode;
@@ -16,12 +22,15 @@ export interface GeneratePayload {
   unet_name: string;
   clip_name: string;
   vae_name: string;
+  loras: LoraSelection[];
   seed?: number;
   steps: number;
+  image_count: number;
   width: number;
   height: number;
   format_name: "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
-  cfg?: number;
+  cfg: number;
+  denoise: number;
   client_id?: string;
   reference_images?: string[];
 }
@@ -45,12 +54,16 @@ export interface GenerationMetadata {
   negative_prompt: string;
   seed: number;
   steps: number;
+  image_count?: number;
+  cfg?: number;
+  denoise?: number;
   width: number;
   height: number;
   format_name: string;
   unet_name: string;
   clip_name: string;
   vae_name: string;
+  loras?: LoraSelection[];
   created_at: string;
   elapsed_ms: number;
   source_filename: string;
@@ -108,14 +121,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!resp.ok) {
-    let detail = resp.statusText;
+    let message = resp.statusText;
     try {
       const body = await resp.json();
-      detail = body.detail ?? detail;
+      const detail = body?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail
+          .map((item) => {
+            const location = Array.isArray(item?.loc) ? item.loc.join(".") : "request";
+            return `${location}: ${item?.msg ?? "Invalid value"}`;
+          })
+          .join("; ");
+      } else if (detail != null) {
+        message = JSON.stringify(detail);
+      }
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(resp.status, detail);
+    throw new ApiError(resp.status, message);
   }
   return (await resp.json()) as T;
 }

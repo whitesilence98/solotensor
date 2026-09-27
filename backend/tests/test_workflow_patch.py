@@ -17,32 +17,66 @@ class WorkflowPatchTests(unittest.TestCase):
         graph = self.client.patch_workflow_template(
             self.template,
             prompt="a red fox",
+            negative_prompt="blurry",
             unet_name="custom\\model.safetensors",
             clip_name="custom_clip.safetensors",
             vae_name="custom_vae.safetensors",
             seed=123,
             steps=17,
+            image_count=3,
+            cfg=1.5,
+            denoise=0.8,
+            loras=[
+                {"lora": "style\\first.safetensors", "on": True, "strength": 0.8},
+                {"lora": "second.safetensors", "on": False, "strength": -0.25},
+            ],
             width=1024,
             height=768,
         )
         self.assertEqual(graph["621"]["inputs"]["prompt"], "a red fox")
+        self.assertEqual(graph["700"]["inputs"]["text"], "blurry")
         self.assertEqual(graph["618:615"]["inputs"]["unet_name"], "custom\\model.safetensors")
         self.assertEqual(graph["618:616"]["inputs"]["clip_name"], "custom_clip.safetensors")
         self.assertEqual(graph["618:617"]["inputs"]["vae_name"], "custom_vae.safetensors")
         self.assertEqual(graph["867"]["inputs"]["seed"], 123)
-        self.assertEqual(graph["897"]["inputs"]["value"], 17)
+        self.assertEqual(graph["1028"]["inputs"]["noise_seed"], 123)
+        self.assertEqual(graph["1028"]["inputs"]["cfg"], 1.5)
+        self.assertEqual(graph["1029"]["inputs"]["cfg"], 1.5)
+        self.assertEqual(graph["1029"]["inputs"]["denoise"], 0.8)
+        self.assertEqual(graph["1025:2"]["inputs"]["modelname"], "custom\\model.safetensors")
+        self.assertEqual(graph["1025:2"]["inputs"]["positive"], "a red fox")
+        self.assertEqual(graph["1025:2"]["inputs"]["negative"], "blurry")
+        self.assertEqual(graph["1025:2"]["inputs"]["seed_value"], 123)
+        self.assertEqual(graph["1025:2"]["inputs"]["steps"], 17)
+        self.assertEqual(graph["1025:2"]["inputs"]["cfg"], 1.5)
+        self.assertEqual(graph["1025:2"]["inputs"]["denoise"], 0.8)
+        self.assertEqual(graph["1025:2"]["inputs"]["sampler_name"], "exponential/ddim")
+        self.assertEqual(graph["1025:2"]["inputs"]["scheduler_name"], "beta57")
+        self.assertEqual(graph["1025:2"]["inputs"]["positive"], "a red fox")
+        self.assertEqual(graph["1025:1"]["inputs"]["metadata"], ["1025:2", 0])
         self.assertEqual(graph["903"]["inputs"]["width"], 1024)
         self.assertEqual(graph["903"]["inputs"]["height"], 768)
+        self.assertEqual(graph["903"]["inputs"]["batch_size"], 3)
+        self.assertEqual(graph["1043"]["inputs"]["lora_1"], {"on": True, "lora": "style\\first.safetensors", "strength": 0.8})
+        self.assertEqual(graph["1043"]["inputs"]["lora_2"], {"on": False, "lora": "second.safetensors", "strength": -0.25})
         self.assertEqual(self.template, original)
 
-    def test_builtin_workflow_uses_explicit_dimensions(self) -> None:
+    def test_empty_loras_clear_baked_template_rows(self) -> None:
+        graph = self.client.patch_workflow_template(self.template, prompt="test", loras=[])
+        self.assertFalse(any(key.lower().startswith("lora_") for key in graph["1043"]["inputs"]))
+        self.assertEqual(graph["1043"]["inputs"]["➕ Add Lora"], "")
+
         graph = self.client._build_builtin_workflow(
             prompt="test",
+            image_count=4,
+            denoise=0.65,
             width=1536,
             height=640,
         )
         self.assertEqual(graph["4"]["inputs"]["width"], 1536)
         self.assertEqual(graph["4"]["inputs"]["height"], 640)
+        self.assertEqual(graph["4"]["inputs"]["batch_size"], 4)
+        self.assertEqual(graph["5"]["inputs"]["denoise"], 0.65)
 
     def test_missing_required_node_fails(self) -> None:
         template = json.loads(json.dumps(self.template))
@@ -53,9 +87,16 @@ class WorkflowPatchTests(unittest.TestCase):
     def test_omitted_seed_is_generated(self) -> None:
         graph = self.client.patch_workflow_template(self.template, prompt="test")
         seed = graph["867"]["inputs"]["seed"]
+        self.assertEqual(graph["1028"]["inputs"]["noise_seed"], seed)
         self.assertIsInstance(seed, int)
         self.assertGreaterEqual(seed, 0)
         self.assertLessEqual(seed, 2**32 - 1)
+
+    def test_missing_lora_node_fails(self) -> None:
+        template = json.loads(json.dumps(self.template))
+        del template["1043"]
+        with self.assertRaises(ComfyClientError):
+            self.client.patch_workflow_template(template, prompt="test")
 
 
 if __name__ == "__main__":

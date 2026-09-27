@@ -90,6 +90,9 @@ export default function ImageDetailPage() {
                   <Detail label="Format" value={`${asset.metadata.format_name} · ${asset.metadata.width} × ${asset.metadata.height}`} />
                   <Detail label="Seed" value={asset.metadata.seed} />
                   <Detail label="Steps" value={asset.metadata.steps} />
+                  <Detail label="Images" value={asset.metadata.image_count ?? 1} />
+                  <Detail label="CFG" value={asset.metadata.cfg ?? 1} />
+                  <Detail label="Denoise" value={asset.metadata.denoise ?? 1} />
                   <Detail label="UNET" value={basename(asset.metadata.unet_name)} />
                   <Detail label="Encoder" value={basename(asset.metadata.clip_name)} />
                   <Detail label="VAE" value={basename(asset.metadata.vae_name)} />

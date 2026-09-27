@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Loader2, SlidersHorizontal, Zap } from "lucide-react";
+import { ChevronDown, ImageIcon, Loader2, Plus, SlidersHorizontal, Trash2, Zap } from "lucide-react";
 import ImageUpload from "./ImageUpload";
 import type { GenerationMode } from "@/lib/api";
+
+interface LoraDraft {
+  lora: string;
+  on: boolean;
+  strength: string;
+}
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 
@@ -28,8 +34,13 @@ interface Props {
   unetName: string; unetOptions: string[]; onUnetNameChange: (v: string) => void;
   clipName: string; clipOptions: string[]; onClipNameChange: (v: string) => void;
   vaeName: string; vaeOptions: string[]; onVaeNameChange: (v: string) => void;
+  loras: LoraDraft[]; loraOptions: string[];
+  onLorasChange: (v: LoraDraft[]) => void;
   seed: string; onSeedChange: (v: string) => void;
   steps: string; onStepsChange: (v: string) => void;
+  imageCount: string; onImageCountChange: (v: string) => void;
+  cfg: string; onCfgChange: (v: string) => void;
+  denoise: string; onDenoiseChange: (v: string) => void;
   customWidth: string; onCustomWidthChange: (v: string) => void;
   customHeight: string; onCustomHeightChange: (v: string) => void;
   format: FormatKey; onFormatChange: (v: FormatKey) => void;
@@ -44,13 +55,16 @@ const fieldClass = "w-full rounded-[.55rem] border border-[#292d28] bg-[#111311]
 export default function ControlPanel(props: Props) {
   const { mode, onModeChange, prompt, onPromptChange, negativePrompt, onNegativePromptChange,
     unetName, unetOptions, onUnetNameChange, clipName, clipOptions, onClipNameChange,
-    vaeName, vaeOptions, onVaeNameChange, seed, onSeedChange, steps, onStepsChange,
+    vaeName, vaeOptions, onVaeNameChange, loras, loraOptions, onLorasChange,
+    seed, onSeedChange, steps, onStepsChange,
+    imageCount, onImageCountChange, cfg, onCfgChange, denoise, onDenoiseChange,
     customWidth, onCustomWidthChange, customHeight, onCustomHeightChange, format,
     onFormatChange, references, onReferencesChange, busy, progress, progressLabel,
     canGenerate, onGenerate } = props;
   const imageToImage = mode === "image-to-image";
   const promptWords = wordCount(prompt);
   const [advanced, setAdvanced] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
 
   const select = (id: string, value: string, options: string[], onChange: (v: string) => void) => (
     <div className="relative">
@@ -70,6 +84,78 @@ export default function ControlPanel(props: Props) {
           <span className="font-mono text-[10px] text-[#6f716d]">LOCAL</span>
         </div>
       </div>
+
+      <section className="border-b border-[#292d28] px-5 py-4">
+        <button
+          type="button"
+          aria-expanded={modelOpen}
+          onClick={() => setModelOpen((value) => !value)}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[.55rem] border border-[#292d28] bg-[#171a17] text-[#6f716d]">
+            <ImageIcon className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-semibold uppercase tracking-[.18em] text-[#6f716d]">Model</span>
+            <span className="mt-1 block truncate text-xs font-medium text-[#deddd6]">{unetName}</span>
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-[#8a8d85] transition-transform ${modelOpen ? "rotate-180" : ""}`} />
+        </button>
+        {modelOpen && (
+          <div className="mt-4 space-y-3 border-t border-[#292d28] pt-4">
+            <div><label htmlFor="unet-name" className={labelClass}>UNET</label>{select("unet-name", unetName, unetOptions, onUnetNameChange)}</div>
+            <div><label htmlFor="clip-name" className={labelClass}>Encoder</label>{select("clip-name", clipName, clipOptions, onClipNameChange)}</div>
+            <div><label htmlFor="vae-name" className={labelClass}>VAE</label>{select("vae-name", vaeName, vaeOptions, onVaeNameChange)}</div>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className={labelClass}>LoRAs</span>
+                <button
+                  type="button"
+                  disabled={busy || loras.length >= 16 || loraOptions.length === 0}
+                  onClick={() => onLorasChange([...loras, { lora: loraOptions[0], on: true, strength: "1" }])}
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#d5f06f] transition-colors hover:text-[#e2f88a] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus className="h-3 w-3" /> Add LoRA
+                </button>
+              </div>
+              {loras.length === 0 ? (
+                <p className="border border-dashed border-[#292d28] px-3 py-2.5 text-xs text-[#6f716d]">No LoRAs</p>
+              ) : (
+                <div className="space-y-2">
+                  {loras.map((row, index) => (
+                    <div key={`${row.lora}-${index}`} className="space-y-2 border border-[#292d28] bg-[#111311] p-2.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={row.on}
+                          onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, on: event.target.checked } : item))}
+                          disabled={busy}
+                          aria-label={`Enable LoRA ${index + 1}`}
+                          className="accent-[#d5f06f]"
+                        />
+                        <select
+                          value={row.lora}
+                          onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, lora: event.target.value } : item))}
+                          disabled={busy}
+                          className={`${fieldClass} min-w-0 flex-1 appearance-none py-2 text-xs`}
+                        >
+                          {!loraOptions.includes(row.lora) && <option value={row.lora}>Missing: {row.lora}</option>}
+                          {loraOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                        <button type="button" onClick={() => onLorasChange(loras.filter((_, itemIndex) => itemIndex !== index))} disabled={busy} aria-label={`Remove LoRA ${index + 1}`} className="shrink-0 p-2 text-[#8a8d85] transition-colors hover:text-[#ef8c79] disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                      <label className="flex items-center gap-2 text-[10px] text-[#8a8d85]">
+                        Strength
+                        <input type="number" min="-10" max="10" step="0.05" value={row.strength} onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, strength: event.target.value } : item))} disabled={busy} className={`${fieldClass} py-2 font-mono`} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
 
       <div className="space-y-5 p-5">
         <div role="tablist" aria-label="Generation mode" className="grid grid-cols-2 gap-1 border-b border-[#292d28]">
@@ -121,19 +207,23 @@ export default function ControlPanel(props: Props) {
 
             {advanced && <div className="space-y-4">
               <div><label htmlFor="neg-prompt-input" className={labelClass}>Exclude</label><input id="neg-prompt-input" type="text" value={negativePrompt} onChange={(e) => onNegativePromptChange(e.target.value)} placeholder="Artifacts, text, blur…" disabled={busy} className={fieldClass} /></div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div><label htmlFor="seed" className={labelClass}>Seed</label><input id="seed" type="number" min="0" value={seed} onChange={(e) => onSeedChange(e.target.value)} placeholder="Random" disabled={busy} className={`${fieldClass} font-mono`} /></div>
                 <div><label htmlFor="steps" className={labelClass}>Steps</label><input id="steps" type="number" min="1" max="100" value={steps} onChange={(e) => onStepsChange(e.target.value)} disabled={busy} className={`${fieldClass} font-mono`} /></div>
+                <div><label htmlFor="cfg" className={labelClass}>CFG</label><input id="cfg" type="number" min="0" max="30" step="0.1" value={cfg} onChange={(e) => onCfgChange(e.target.value)} disabled={busy} className={`${fieldClass} font-mono`} /></div>
               </div>
-              <div className="space-y-3"><div><label htmlFor="unet-name" className={labelClass}>UNET</label>{select("unet-name", unetName, unetOptions, onUnetNameChange)}</div><div><label htmlFor="clip-name" className={labelClass}>Encoder</label>{select("clip-name", clipName, clipOptions, onClipNameChange)}</div><div><label htmlFor="vae-name" className={labelClass}>VAE</label>{select("vae-name", vaeName, vaeOptions, onVaeNameChange)}</div></div>
+              <div><label htmlFor="denoise" className={labelClass}>Denoise · {denoise}</label><input id="denoise" type="range" min="0" max="1" step="0.05" value={denoise} onChange={(e) => onDenoiseChange(e.target.value)} disabled={busy} className="w-full" /></div>
             </div>}
           </>
         )}
 
-        <button type="button" onClick={onGenerate} disabled={!canGenerate} className="group flex w-full items-center justify-between rounded-[.6rem] bg-[#d5f06f] px-4 py-3.5 text-sm font-bold text-[#171b08] transition-all duration-200 hover:bg-[#e2f88a] active:scale-[.985] disabled:cursor-not-allowed disabled:bg-[#252824] disabled:text-[#62665e]">
-          <span>{busy ? "Building image" : imageToImage ? "Workflow unavailable" : "Generate image"}</span>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-1.5 font-mono text-[10px]"><Zap className="h-3.5 w-3.5" fill="currentColor" />~20 SEC</span>}
-        </button>
+        <div className="flex items-end gap-2">
+          <button type="button" onClick={onGenerate} disabled={!canGenerate} className="group flex min-w-0 flex-1 items-center justify-between rounded-[.6rem] bg-[#d5f06f] px-4 py-3.5 text-sm font-bold text-[#171b08] transition-all duration-200 hover:bg-[#e2f88a] active:scale-[.985] disabled:cursor-not-allowed disabled:bg-[#252824] disabled:text-[#62665e]">
+            <span>{busy ? "Building image" : imageToImage ? "Workflow unavailable" : "Generate image"}</span>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-1.5 font-mono text-[10px]"><Zap className="h-3.5 w-3.5" fill="currentColor" />~20 SEC</span>}
+          </button>
+          <div className="w-[4.75rem] shrink-0"><label htmlFor="image-count" className={labelClass}>Images</label><input id="image-count" type="number" min="1" max="4" value={imageCount} onChange={(e) => onImageCountChange(e.target.value)} disabled={busy} className={`${fieldClass} font-mono`} /></div>
+        </div>
 
         {busy && <div aria-live="polite"><div className="h-1 overflow-hidden bg-[#20231f]"><div className="h-full bg-[#d5f06f] transition-[width] duration-300" style={{ width: `${progress}%` }} /></div><p className="mt-2 flex justify-between text-[10px] text-[#6f716d]"><span>{progressLabel || "Working"}</span><span className="font-mono text-[#d5f06f]">{progress}%</span></p></div>}
       </div>

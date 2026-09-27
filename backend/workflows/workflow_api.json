@@ -1,18 +1,4 @@
 {
-  "620": {
-    "inputs": {
-      "string_a": "",
-      "string_b": [
-        "621",
-        0
-      ],
-      "delimiter": ""
-    },
-    "class_type": "StringConcatenate",
-    "_meta": {
-      "title": "Concatenate Text"
-    }
-  },
   "621": {
     "inputs": {
       "prompt": "masterpiece, best quality, newest, absurdres, highres, night, realistic, dim light, dark, 1girl, spotlight"
@@ -25,12 +11,12 @@
   "623": {
     "inputs": {
       "text": [
-        "620",
+        "621",
         0
       ],
       "clip": [
-        "618:616",
-        0
+        "1043",
+        1
       ]
     },
     "class_type": "CLIPTextEncode",
@@ -42,8 +28,8 @@
     "inputs": {
       "text": "",
       "clip": [
-        "618:616",
-        0
+        "1043",
+        1
       ]
     },
     "class_type": "CLIPTextEncode",
@@ -151,7 +137,7 @@
       "sampler_mode": "standard",
       "bongmath": true,
       "model": [
-        "618:615",
+        "1032",
         0
       ],
       "positive": [
@@ -176,7 +162,7 @@
     "inputs": {
       "shift": 3,
       "model": [
-        "618:615",
+        "1043",
         0
       ]
     },
@@ -213,6 +199,38 @@
     "class_type": "CFGNorm",
     "_meta": {
       "title": "CFGNorm"
+    }
+  },
+  "1041": {
+    "inputs": {
+      "anything": [
+        "1027",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "Clean VRAM Used"
+    }
+  },
+  "1043": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "618:615",
+        0
+      ],
+      "clip": [
+        "618:616",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
     }
   },
   "618:615": {
@@ -276,7 +294,7 @@
     "inputs": {
       "modelname": "krea2",
       "positive": [
-        "620",
+        "621",
         0
       ],
       "negative": "",

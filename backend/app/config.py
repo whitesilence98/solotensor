@@ -27,7 +27,9 @@ class Settings(BaseSettings):
         "http://localhost:3001,http://127.0.0.1:3001"
     )
     # Development-only fallback for Next.js dev ports. Set empty in production.
-    ALLOWED_ORIGIN_REGEX: str = r"^https?://(localhost|127\.0\.0\.1):3[0-9]{3}$"
+    ALLOWED_ORIGIN_REGEX: str = (
+        r"^https?://(localhost|127\.0\.0\.1|\[::1\]):[0-9]{2,5}$"
+    )
     UPLOAD_MAX_BYTES: int = 10 * 1024 * 1024
 
     @property

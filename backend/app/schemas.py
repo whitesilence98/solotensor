@@ -5,6 +5,22 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class LoraSelection(BaseModel):
+    """One ordered entry for rgthree's Power Lora Loader."""
+
+    lora: str = Field(..., min_length=1, max_length=255)
+    on: bool = True
+    strength: float = Field(1.0, ge=-10.0, le=10.0)
+
+    @field_validator("lora")
+    @classmethod
+    def lora_name_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("LoRA filename cannot be blank")
+        return value
+
+
 class GenerateRequest(BaseModel):
     """Body for POST /api/v1/generate."""
 
@@ -21,13 +37,16 @@ class GenerateRequest(BaseModel):
         max_length=255,
     )
     vae_name: str = Field("wan_2.1_vae.safetensors", min_length=1, max_length=255)
+    loras: list[LoraSelection] = Field(default_factory=list, max_length=16)
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
     steps: int = Field(10, ge=1, le=100)
+    image_count: int = Field(1, ge=1, le=4)
     width: int = Field(768, ge=64, le=4096)
     height: int = Field(1344, ge=64, le=4096)
     format_name: Literal["1:1", "16:9", "9:16", "4:3", "3:2", "custom"] = "9:16"
     # Legacy controls retained for the deferred Image-to-Image workflow.
-    cfg: float = Field(7.0, ge=0.0, le=30.0)
+    cfg: float = Field(1.0, ge=0.0, le=30.0)
+    denoise: float = Field(1.0, ge=0.0, le=1.0)
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
     client_id: Optional[str] = Field(
@@ -87,6 +106,10 @@ class GenerationMetadata(BaseModel):
     negative_prompt: str = ""
     seed: int
     steps: int
+    image_count: int = 1
+    cfg: float = 1.0
+    denoise: float = 1.0
+    loras: list[LoraSelection] = Field(default_factory=list)
     width: int
     height: int
     format_name: str

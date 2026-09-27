@@ -99,7 +99,7 @@ async def health() -> HealthResponse:
     )
 
 
-MODEL_CATEGORIES = {"diffusion_models", "text_encoders", "vae"}
+MODEL_CATEGORIES = {"diffusion_models", "text_encoders", "vae", "loras"}
 
 
 @app.get("/api/v1/models/{category}", response_model=list[str])
@@ -138,12 +138,15 @@ async def generate(req: GenerateRequest) -> GenerationResult:
             model=req.model,
             seed=resolved_seed,
             steps=req.steps,
+            image_count=req.image_count,
             cfg=req.cfg,
+            denoise=req.denoise,
             aspect_ratio=req.aspect_ratio,
             style=req.style,
             unet_name=req.unet_name,
             clip_name=req.clip_name,
             vae_name=req.vae_name,
+            loras=[item.model_dump() for item in req.loras],
             width=req.width,
             height=req.height,
         )
@@ -166,6 +169,10 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         "negative_prompt": req.negative_prompt,
         "seed": resolved_seed,
         "steps": req.steps,
+        "image_count": req.image_count,
+        "cfg": req.cfg,
+        "denoise": req.denoise,
+        "loras": [item.model_dump() for item in req.loras],
         "width": req.width,
         "height": req.height,
         "format_name": req.format_name,

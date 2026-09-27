@@ -124,12 +124,15 @@ class ComfyClient:
         negative_prompt: str = "",
         seed: Optional[int] = None,
         steps: int = 10,
+        image_count: int = 1,
         cfg: float = 1.0,
+        denoise: float = 1.0,
         aspect_ratio: str = "1:1",
         style: str = "none",
         unet_name: str = "krea2\\krea2_turbo_fp8_scaled.safetensors",
         clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
         vae_name: str = "wan_2.1_vae.safetensors",
+        loras: Optional[list[dict[str, Any]]] = None,
         width: int = 768,
         height: int = 1344,
     ) -> dict[str, Any]:
@@ -137,28 +140,71 @@ class ComfyClient:
         graph = json.loads(json.dumps(template))
         required = {
             "621": "prompt",
+            "700": "negative_prompt",
             "618:615": "unet_name",
             "618:616": "clip_name",
             "618:617": "vae_name",
             "867": "seed",
             "897": "value",
-            "903": "width/height",
+            "903": "width/height/batch_size",
+            "1028": "stage-1 sampler",
+            "1029": "stage-2 sampler",
+            "1043": "Power Lora Loader (rgthree)",
+            "1025:1": "Image Saver Simple",
+            "1025:2": "Image Saver Metadata",
+            "1025:1022": "GetImageSize",
         }
         for node_id, field in required.items():
             if node_id not in graph or not isinstance(graph[node_id], dict):
                 raise ComfyClientError(f"Workflow is missing required node {node_id} ({field})")
             if not isinstance(graph[node_id].get("inputs"), dict):
                 raise ComfyClientError(f"Workflow node {node_id} has no inputs")
+        if graph["1043"].get("class_type") != "Power Lora Loader (rgthree)":
+            raise ComfyClientError("Workflow node 1043 is not Power Lora Loader (rgthree)")
+        if graph["1025:1"].get("class_type") != "Image Saver Simple":
+            raise ComfyClientError("Workflow node 1025:1 is not Image Saver Simple")
+        if graph["1025:2"].get("class_type") != "Image Saver Metadata":
+            raise ComfyClientError("Workflow node 1025:2 is not Image Saver Metadata")
+        if graph["1025:1022"].get("class_type") != "GetImageSize":
+            raise ComfyClientError("Workflow node 1025:1022 is not GetImageSize")
 
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
         graph["621"]["inputs"]["prompt"] = prompt
+        graph["700"]["inputs"]["text"] = negative_prompt
         graph["618:615"]["inputs"]["unet_name"] = unet_name
         graph["618:616"]["inputs"]["clip_name"] = clip_name
         graph["618:617"]["inputs"]["vae_name"] = vae_name
         graph["867"]["inputs"]["seed"] = final_seed
+        graph["1028"]["inputs"]["noise_seed"] = final_seed
+        graph["1028"]["inputs"]["cfg"] = cfg
+        graph["1029"]["inputs"]["cfg"] = cfg
+        graph["1029"]["inputs"]["denoise"] = denoise
         graph["897"]["inputs"]["value"] = steps
         graph["903"]["inputs"]["width"] = width
         graph["903"]["inputs"]["height"] = height
+        graph["903"]["inputs"]["batch_size"] = image_count
+
+        metadata_inputs = graph["1025:2"]["inputs"]
+        metadata_inputs["modelname"] = unet_name
+        metadata_inputs["positive"] = prompt
+        metadata_inputs["negative"] = negative_prompt
+        metadata_inputs["seed_value"] = final_seed
+        metadata_inputs["steps"] = steps
+        metadata_inputs["cfg"] = cfg
+        metadata_inputs["denoise"] = denoise
+        metadata_inputs["sampler_name"] = graph["1029"]["inputs"].get("sampler_name", "")
+        metadata_inputs["scheduler_name"] = graph["1029"]["inputs"].get("scheduler", "")
+
+        lora_inputs = graph["1043"]["inputs"]
+        for key in list(lora_inputs):
+            if key.lower().startswith("lora_"):
+                del lora_inputs[key]
+        for index, selection in enumerate(loras or [], start=1):
+            lora_inputs[f"lora_{index}"] = {
+                "on": bool(selection.get("on", True)),
+                "lora": str(selection["lora"]),
+                "strength": float(selection.get("strength", 1.0)),
+            }
         return graph
 
     def build_workflow(
@@ -169,12 +215,15 @@ class ComfyClient:
         model: str = "sdxl",
         seed: Optional[int] = None,
         steps: int = 10,
+        image_count: int = 1,
         cfg: float = 1.0,
+        denoise: float = 1.0,
         aspect_ratio: str = "1:1",
         style: str = "none",
         unet_name: str = "krea2\\krea2_turbo_fp8_scaled.safetensors",
         clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
         vae_name: str = "wan_2.1_vae.safetensors",
+        loras: Optional[list[dict[str, Any]]] = None,
         width: int = 768,
         height: int = 1344,
     ) -> dict[str, Any]:
@@ -187,22 +236,29 @@ class ComfyClient:
                 negative_prompt=negative_prompt,
                 seed=seed,
                 steps=steps,
+                image_count=image_count,
                 cfg=cfg,
+                denoise=denoise,
                 aspect_ratio=aspect_ratio,
                 style=style,
                 unet_name=unet_name,
                 clip_name=clip_name,
                 vae_name=vae_name,
+                loras=loras,
                 width=width,
                 height=height,
             )
+        if loras:
+            raise ComfyClientError("LoRAs require the exported Power Lora Loader workflow")
         return self._build_builtin_workflow(
             prompt=prompt,
             negative_prompt=negative_prompt,
             model=model,
             seed=seed,
             steps=steps,
+            image_count=image_count,
             cfg=cfg,
+            denoise=denoise,
             aspect_ratio=aspect_ratio,
             style=style,
             width=width,
@@ -217,7 +273,9 @@ class ComfyClient:
         model: str = "sdxl",
         seed: Optional[int] = None,
         steps: int = 25,
+        image_count: int = 1,
         cfg: float = 7.0,
+        denoise: float = 1.0,
         aspect_ratio: str = "1:1",
         style: str = "none",
         width: int = 768,
@@ -241,7 +299,7 @@ class ComfyClient:
                 "class_type": "CLIPTextEncode",
                 "inputs": {"text": negative_prompt or "worst quality, low quality, blurry", "clip": ["1", 0]},
             },
-            "4": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+            "4": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}},
             "5": {
                 "class_type": "KSampler",
                 "inputs": {
@@ -250,7 +308,7 @@ class ComfyClient:
                     "cfg": cfg if cfg is not None else preset["cfg"],
                     "sampler_name": preset["sampler"],
                     "scheduler": preset["scheduler"],
-                    "denoise": 1.0,
+                    "denoise": denoise,
                     "model": ["1", 0],
                     "positive": ["2", 0],
                     "negative": ["3", 0],

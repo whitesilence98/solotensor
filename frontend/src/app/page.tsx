@@ -9,6 +9,7 @@ import {
   type GalleryItem,
   type GenerationMode,
   type GenerationResult,
+  type LoraSelection,
   type ProgressEvent,
 } from "@/lib/api";
 
@@ -25,6 +26,12 @@ const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> =
 };
 const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"];
 
+interface LoraDraft {
+  lora: string;
+  on: boolean;
+  strength: string;
+}
+
 interface SavedInputs {
   mode: GenerationMode;
   prompt: string;
@@ -34,9 +41,13 @@ interface SavedInputs {
   vaeName: string;
   seed: string;
   steps: string;
+  imageCount: string;
+  cfg: string;
+  denoise: string;
   format: FormatKey;
   customWidth: string;
   customHeight: string;
+  loras: LoraDraft[];
 }
 
 function loadSavedInputs(): Partial<SavedInputs> | null {
@@ -46,11 +57,18 @@ function loadSavedInputs(): Partial<SavedInputs> | null {
     const values = saved as Record<string, unknown>;
     const inputs: Partial<SavedInputs> = {};
     if (values.mode === "text-to-image" || values.mode === "image-to-image") inputs.mode = values.mode;
-    for (const key of ["prompt", "negativePrompt", "unetName", "clipName", "vaeName", "seed", "steps", "customWidth", "customHeight"] as const) {
+    for (const key of ["prompt", "negativePrompt", "unetName", "clipName", "vaeName", "seed", "steps", "imageCount", "cfg", "denoise", "customWidth", "customHeight"] as const) {
       if (typeof values[key] === "string") inputs[key] = values[key];
     }
     if (typeof values.format === "string" && FORMAT_KEYS.includes(values.format as FormatKey)) {
       inputs.format = values.format as FormatKey;
+    }
+    if (Array.isArray(values.loras)) {
+      inputs.loras = values.loras.filter((item): item is LoraDraft => {
+        if (!item || typeof item !== "object") return false;
+        const row = item as Record<string, unknown>;
+        return typeof row.lora === "string" && typeof row.on === "boolean" && typeof row.strength === "string";
+      }).slice(0, 16);
     }
     return inputs;
   } catch {
@@ -68,9 +86,14 @@ export default function StudioPage() {
   const [unetOptions, setUnetOptions] = useState<string[]>([DEFAULT_UNET]);
   const [clipOptions, setClipOptions] = useState<string[]>([DEFAULT_CLIP]);
   const [vaeOptions, setVaeOptions] = useState<string[]>([DEFAULT_VAE]);
+  const [loraOptions, setLoraOptions] = useState<string[]>([]);
+  const [loras, setLoras] = useState<LoraDraft[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [seed, setSeed] = useState("");
   const [steps, setSteps] = useState("10");
+  const [imageCount, setImageCount] = useState("1");
+  const [cfg, setCfg] = useState("1");
+  const [denoise, setDenoise] = useState("1");
   const [format, setFormat] = useState<FormatKey>("9:16");
   const [customWidth, setCustomWidth] = useState("768");
   const [customHeight, setCustomHeight] = useState("1344");
@@ -106,9 +129,13 @@ export default function StudioPage() {
     if (saved.vaeName !== undefined) setVaeName(saved.vaeName);
     if (saved.seed !== undefined) setSeed(saved.seed);
     if (saved.steps !== undefined) setSteps(saved.steps);
+    if (saved.imageCount !== undefined) setImageCount(saved.imageCount);
+    if (saved.cfg !== undefined) setCfg(saved.cfg);
+    if (saved.denoise !== undefined) setDenoise(saved.denoise);
     if (saved.format !== undefined) setFormat(saved.format);
     if (saved.customWidth !== undefined) setCustomWidth(saved.customWidth);
     if (saved.customHeight !== undefined) setCustomHeight(saved.customHeight);
+    if (saved.loras !== undefined) setLoras(saved.loras);
     setHydrated(true);
   }, []);
 
@@ -124,14 +151,18 @@ export default function StudioPage() {
         vaeName,
         seed,
         steps,
+        imageCount,
+        cfg,
+        denoise,
         format,
         customWidth,
         customHeight,
+        loras,
       } satisfies SavedInputs));
     } catch {
       /* storage can be unavailable without blocking edits */
     }
-  }, [hydrated, mode, prompt, negativePrompt, unetName, clipName, vaeName, seed, steps, format, customWidth, customHeight]);
+  }, [hydrated, mode, prompt, negativePrompt, unetName, clipName, vaeName, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight, loras]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +170,8 @@ export default function StudioPage() {
       api.getModels("diffusion_models"),
       api.getModels("text_encoders"),
       api.getModels("vae"),
-    ]).then(([unets, clips, vaes]) => {
+      api.getModels("loras"),
+    ]).then(([unets, clips, vaes, availableLoras]) => {
       if (cancelled) return;
       if (unets.length) {
         setUnetOptions(unets);
@@ -153,6 +185,7 @@ export default function StudioPage() {
         setVaeOptions(vaes);
         setVaeName((current) => vaes.includes(current) ? current : vaes[0]);
       }
+      setLoraOptions(availableLoras);
     }).catch((err: unknown) => {
       if (!cancelled) setModelsError(err instanceof Error ? err.message : "Could not load model lists.");
     });
@@ -176,14 +209,29 @@ export default function StudioPage() {
       ? [customWidth, customHeight]
       : FORMATS[format].map(String);
     const parsedSteps = Number(steps);
+    const parsedImageCount = Number(imageCount);
+    const parsedCfg = Number(cfg);
+    const parsedDenoise = Number(denoise);
     const parsedWidth = Number(resolvedWidth);
     const parsedHeight = Number(resolvedHeight);
     const parsedSeed = seed.trim() ? Number(seed) : undefined;
+    const parsedLoras: LoraSelection[] = loras.map((row) => ({
+      lora: row.lora.trim(),
+      on: row.on,
+      strength: Number(row.strength),
+    }));
+    if (parsedLoras.some((row) => !row.lora || !Number.isFinite(row.strength) || row.strength < -10 || row.strength > 10)) {
+      setError("LoRA names and strengths must be valid ComfyUI values.");
+      return;
+    }
     if (!Number.isInteger(parsedSteps) || parsedSteps < 1 || parsedSteps > 100 ||
+        !Number.isInteger(parsedImageCount) || parsedImageCount < 1 || parsedImageCount > 4 ||
+        !Number.isFinite(parsedCfg) || parsedCfg < 0 || parsedCfg > 30 ||
+        !Number.isFinite(parsedDenoise) || parsedDenoise < 0 || parsedDenoise > 1 ||
         !Number.isInteger(parsedWidth) || parsedWidth < 64 || parsedWidth > 4096 || parsedWidth % 8 !== 0 ||
         !Number.isInteger(parsedHeight) || parsedHeight < 64 || parsedHeight > 4096 || parsedHeight % 8 !== 0 ||
         (parsedSeed !== undefined && (!Number.isInteger(parsedSeed) || parsedSeed < 0 || parsedSeed > 2 ** 32 - 1))) {
-      setError("Steps, seed, and dimensions must be valid ComfyUI values.");
+      setError("Steps, image count, CFG, denoise, seed, and dimensions must be valid ComfyUI values.");
       return;
     }
 
@@ -214,8 +262,12 @@ export default function StudioPage() {
         unet_name: unetName,
         clip_name: clipName,
         vae_name: vaeName,
+        loras: parsedLoras,
         seed: parsedSeed,
         steps: parsedSteps,
+        image_count: parsedImageCount,
+        cfg: parsedCfg,
+        denoise: parsedDenoise,
         width: parsedWidth,
         height: parsedHeight,
         format_name: format,
@@ -234,7 +286,7 @@ export default function StudioPage() {
       setBusy(false);
       setTimeout(() => ws.close(), 1500);
     }
-  }, [mode, prompt, negativePrompt, unetName, clipName, vaeName, seed, steps, format, customWidth, customHeight, busy, refreshGallery]);
+  }, [mode, prompt, negativePrompt, unetName, clipName, vaeName, loras, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight, busy, refreshGallery]);
 
   const canGenerate = useMemo(() => mode === "text-to-image" && prompt.trim().length > 0 && !busy, [mode, prompt, busy]);
 
@@ -256,10 +308,19 @@ export default function StudioPage() {
         vaeName={vaeName}
         vaeOptions={vaeOptions}
         onVaeNameChange={setVaeName}
+        loras={loras}
+        loraOptions={loraOptions}
+        onLorasChange={setLoras}
         seed={seed}
         onSeedChange={setSeed}
         steps={steps}
         onStepsChange={setSteps}
+        imageCount={imageCount}
+        onImageCountChange={setImageCount}
+        cfg={cfg}
+        onCfgChange={setCfg}
+        denoise={denoise}
+        onDenoiseChange={setDenoise}
         customWidth={customWidth}
         onCustomWidthChange={setCustomWidth}
         customHeight={customHeight}

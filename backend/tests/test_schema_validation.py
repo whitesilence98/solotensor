@@ -14,6 +14,22 @@ class PromptValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             GenerateRequest(prompt="word " * 1_001)
 
+    def test_accepts_ordered_loras(self) -> None:
+        request = GenerateRequest(prompt="test", loras=[
+            {"lora": "folder\\first.safetensors", "on": True, "strength": 0.75},
+            {"lora": "second.safetensors", "on": False, "strength": -0.2},
+        ])
+        self.assertEqual(request.loras[0].lora, "folder\\first.safetensors")
+        self.assertFalse(request.loras[1].on)
+
+    def test_rejects_invalid_loras(self) -> None:
+        with self.assertRaises(ValidationError):
+            GenerateRequest(prompt="test", loras=[{"lora": "", "strength": 1}])
+        with self.assertRaises(ValidationError):
+            GenerateRequest(prompt="test", loras=[{"lora": "a.safetensors", "strength": 11}])
+        with self.assertRaises(ValidationError):
+            GenerateRequest(prompt="test", loras=[{"lora": f"{index}.safetensors"} for index in range(17)])
+
 
 if __name__ == "__main__":
     unittest.main()
