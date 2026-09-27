@@ -88,14 +88,14 @@ export default function ImageDetailPage() {
                 {asset.metadata.negative_prompt && <section className="mt-5 border-l border-[#3a4038] pl-4"><h2 className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#6f716d]">Excluded</h2><p className="mt-2 text-sm leading-6 text-[#aaa8a1]">{asset.metadata.negative_prompt}</p></section>}
                 <dl className="mt-7">
                   <Detail label="Format" value={`${asset.metadata.format_name} · ${asset.metadata.width} × ${asset.metadata.height}`} />
-                  <Detail label="Seed" value={asset.metadata.seed} />
-                  <Detail label="Steps" value={asset.metadata.steps} />
+                  <Detail label="Seed" value={asset.metadata.seed ?? "—"} />
+                  <Detail label="Steps" value={asset.metadata.steps ?? "—"} />
                   <Detail label="Images" value={asset.metadata.image_count ?? 1} />
                   <Detail label="CFG" value={asset.metadata.cfg ?? 1} />
                   <Detail label="Denoise" value={asset.metadata.denoise ?? 1} />
-                  <Detail label="UNET" value={basename(asset.metadata.unet_name)} />
-                  <Detail label="Encoder" value={basename(asset.metadata.clip_name)} />
-                  <Detail label="VAE" value={basename(asset.metadata.vae_name)} />
+                  <Detail label="UNET" value={basename(asset.metadata.unet_name ?? "")} />
+                  <Detail label="Encoder" value={basename(asset.metadata.clip_name ?? "")} />
+                  <Detail label="VAE" value={basename(asset.metadata.vae_name ?? "")} />
                   <Detail label="Render time" value={`${(asset.metadata.elapsed_ms / 1000).toFixed(1)} s`} />
                   <Detail label="Generated" value={formatDate(asset.metadata.created_at)} />
                   <Detail label="Prompt ID" value={asset.metadata.prompt_id} />

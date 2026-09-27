@@ -15,8 +15,9 @@ from datetime import datetime, timezone
 
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
@@ -26,8 +27,16 @@ from .schemas import (
     GalleryItem,
     GalleryResponse,
     HealthResponse,
+    ToolAspectRatio,
+    ToolCatalogResponse,
+    ToolDetail,
+    ToolExecutionResult,
+    ToolMode,
+    ToolExecuteRequest,
+    ToolParseResponse,
     UploadedAsset,
 )
+from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.comfy_client import ComfyClientError, get_comfy_client
 from .services.storage import StorageError, StorageService, get_storage
 
@@ -202,8 +211,172 @@ async def generate(req: GenerateRequest) -> GenerationResult:
 
 
 # ---------------------------------------------------------------------- #
-# WebSocket progress relay
+# AI Tool Studio: isolated workflow parsing and execution
 # ---------------------------------------------------------------------- #
+
+
+@app.post("/api/tools/parse", response_model=ToolParseResponse)
+async def parse_tool(
+    workflow_api: UploadFile = File(...),
+    name: str = Form("Untitled tool"),
+) -> ToolParseResponse:
+    """Store a server-owned workflow and return only safe editable controls."""
+    if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
+    payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
+    if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large")
+    try:
+        return get_ai_tool_service().parse(payload, name)
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.post("/api/tools/create", response_model=ToolDetail)
+async def create_tool(
+    workflow_api: UploadFile = File(...),
+    name: str = Form("Untitled tool"),
+    mode: ToolMode = Form(...),
+    aspect_ratio: ToolAspectRatio = Form(...),
+    thumbnail: UploadFile | None = File(None),
+) -> ToolDetail:
+    if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
+    payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
+    if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large")
+    thumbnail_data: bytes | None = None
+    thumbnail_ext: str | None = None
+    if thumbnail is not None:
+        thumbnail_ext = f".{ALLOWED_IMAGE_MIME.get(thumbnail.content_type or '') or ''}".rstrip(".")
+        if thumbnail_ext not in {".png", ".jpg", ".webp"}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported thumbnail image type")
+        thumbnail_data = await thumbnail.read(settings.UPLOAD_MAX_BYTES + 1)
+        if len(thumbnail_data) > settings.UPLOAD_MAX_BYTES:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Thumbnail image is too large")
+    try:
+        summary = get_ai_tool_service().create(
+            payload, name, mode, aspect_ratio, thumbnail_data, thumbnail_ext
+        )
+        return get_ai_tool_service().detail(summary.tool_id)
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/tools", response_model=ToolCatalogResponse)
+async def list_tools() -> ToolCatalogResponse:
+    return ToolCatalogResponse(items=get_ai_tool_service().list_public())
+
+
+@app.get("/api/tools/{tool_id}", response_model=ToolDetail)
+async def get_tool(tool_id: str) -> ToolDetail:
+    try:
+        return get_ai_tool_service().detail(tool_id)
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+async def _run_tool(
+    tool_id: str,
+    prompt: str,
+    aspect_ratio: ToolAspectRatio | None,
+    input_image: UploadFile | None,
+) -> ToolExecutionResult:
+    tools = get_ai_tool_service()
+    try:
+        record = tools.get(tool_id)
+        detail = tools.detail(tool_id)
+        chosen_ratio = aspect_ratio or ToolAspectRatio(record["default_aspect_ratio"])
+    except (AIToolNotFound, ValueError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
+    if detail.has_prompt and not prompt.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Prompt is required for this tool")
+    if not detail.has_prompt:
+        prompt = ""
+    comfy = get_comfy_client()
+    uploaded_name: str | None = None
+    if detail.requires_image:
+        if input_image is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Input image is required")
+        if input_image.content_type not in ALLOWED_IMAGE_MIME:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unsupported input image type")
+        image_data = await input_image.read(settings.UPLOAD_MAX_BYTES + 1)
+        if len(image_data) > settings.UPLOAD_MAX_BYTES:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Input image is too large")
+        try:
+            uploaded_name = await comfy.upload_image(image_data, input_image.filename or "input.png", input_image.content_type or "image/png")
+        except ComfyClientError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    elif input_image is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="This tool does not accept an input image")
+    try:
+        graph, resolved = tools.build_graph(tool_id, prompt, chosen_ratio, uploaded_name)
+        client_id = f"tool-{uuid.uuid4().hex}"
+        started = time.monotonic()
+        prompt_id = await comfy.queue_prompt(graph, client_id)
+        final_status = await comfy.wait_until_done(prompt_id, client_id)
+    except (AIToolError, ComfyClientError) as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    if final_status != "completed":
+        return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
+    assets: list[UploadedAsset] = []
+    metadata_base = {
+        "origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id,
+        "tool_name": detail.name, "tool_type": detail.mode.value,
+        "tool_mode": detail.mode.value, "prompt": prompt,
+        "aspect_ratio": chosen_ratio.value, "width": resolved["width"],
+        "height": resolved["height"], "prompt_id": prompt_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "elapsed_ms": elapsed_ms, "tags": ["ai_tool_studio", detail.mode.value],
+    }
+    try:
+        for image in await comfy.list_images(prompt_id):
+            blob = await comfy.fetch_image_bytes(image)
+            url = await storage.upload_image(
+                blob, prompt_id, image["filename"],
+                metadata={**metadata_base, "source_filename": image["filename"]},
+                namespace=f"tools/{tool_id}",
+            )
+            assets.append(UploadedAsset(filename=image["filename"], url=url))
+    except (ComfyClientError, StorageError) as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="AI Tool output retrieval failed") from exc
+    return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status="completed", images=assets, error=None, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
+
+
+@app.post("/api/tools/execute", response_model=ToolExecutionResult)
+async def execute_tool(req: ToolExecuteRequest) -> ToolExecutionResult:
+    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None)
+
+
+@app.post("/api/tools/{tool_id}/run", response_model=ToolExecutionResult)
+async def run_tool(
+    tool_id: str,
+    prompt: str = Form(""),
+    aspect_ratio: ToolAspectRatio | None = Form(None),
+    input_image: UploadFile | None = File(None),
+) -> ToolExecutionResult:
+    return await _run_tool(tool_id, prompt, aspect_ratio, input_image)
+
+
+@app.get("/api/tools/{tool_id}/thumbnail")
+async def tool_thumbnail(tool_id: str) -> FileResponse:
+    try:
+        return FileResponse(get_ai_tool_service().thumbnail_path(tool_id))
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool thumbnail not found") from exc
+
+
+@app.get("/api/tools/{tool_id}/files/{relative_path:path}")
+async def tool_file(tool_id: str, relative_path: str) -> FileResponse:
+    """Serve tool outputs through a tool-specific namespace."""
+    try:
+        path = get_ai_tool_service().output_path(tool_id, relative_path)
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool output not found") from exc
+    return FileResponse(path)
 
 
 @app.websocket("/api/v1/ws/progress/{client_id}")

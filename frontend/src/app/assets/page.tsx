@@ -37,6 +37,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<AssetType>("image");
+  const [origin, setOrigin] = useState<"all" | "workspace" | "ai_tool_studio">("all");
   const [query, setQuery] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -48,7 +49,7 @@ export default function AssetsPage() {
   useEffect(() => {
     let cancelled = false;
     api
-      .getGallery(200)
+      .getGallery(200, origin === "all" ? {} : { origin })
       .then((items) => {
         if (!cancelled) setAssets(withTypes(items));
       })
@@ -64,7 +65,7 @@ export default function AssetsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [origin]);
 
   // "/" focuses search, like every gallery tool.
   useEffect(() => {
@@ -223,6 +224,18 @@ export default function AssetsPage() {
               );
             })}
           </nav>
+          <div className="flex gap-2 overflow-x-auto pb-3 pt-3" aria-label="Asset source">
+            {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
+              <button
+                key={source}
+                type="button"
+                onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }}
+                className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${origin === source ? "border-[#d5f06f] bg-[#d5f06f] text-[#171b08]" : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-200"}`}
+              >
+                {source === "all" ? "All sources" : source === "workspace" ? "Workspace" : "AI Tools"}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 

@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     FILES_PUBLIC_BASE: str = "http://localhost:8000"  # base URL handed to the browser
     GALLERY_LIMIT: int = 60
 
+    # --- AI Tool Studio ---------------------------------------------------
+    # Kept separate from STORAGE_DIR because tool definitions are private
+    # server-side inputs, not public workspace assets.
+    TOOLS_DIR: str = "tool_data"
+    TOOL_MAX_WORKFLOW_BYTES: int = 5 * 1024 * 1024
+
     # --- App -------------------------------------------------------------
     APP_NAME: str = "Comfy Studio API"
     ALLOWED_ORIGINS: str = (

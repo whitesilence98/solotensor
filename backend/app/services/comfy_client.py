@@ -327,17 +327,39 @@ class ComfyClient:
     # Queue / history / fetch
     # ------------------------------------------------------------------ #
 
+    async def upload_image(self, data: bytes, filename: str, content_type: str = "image/png") -> str:
+        """Upload an input image through ComfyUI and return its safe server filename."""
+        safe_name = Path(filename).name or "input.png"
+        async with self._http() as client:
+            try:
+                resp = await client.post(
+                    "/upload/image",
+                    files={"image": (safe_name, data, content_type)},
+                    data={"overwrite": "false"},
+                )
+                await self._drain(resp)
+                result = resp.json()
+            except (httpx.HTTPError, ValueError, ComfyClientError) as exc:
+                raise ComfyClientError(f"Could not upload image to ComfyUI: {exc}") from exc
+        uploaded = result.get("name")
+        if not isinstance(uploaded, str) or not uploaded or Path(uploaded).name != uploaded:
+            raise ComfyClientError("ComfyUI returned an invalid uploaded image name")
+        return uploaded
+
     async def queue_prompt(self, graph: dict[str, Any], client_id: str) -> str:
-        """POST the workflow to /prompt and return the assigned prompt_id."""
+        """POST an API-format workflow to ComfyUI and return its prompt ID."""
         payload = {"prompt": graph, "client_id": client_id}
         async with self._http() as client:
-            resp = await client.post("/prompt", json=payload)
-            await self._drain(resp)
-            data: dict[str, Any] = resp.json()
+            try:
+                resp = await client.post("/prompt", json=payload)
+                await self._drain(resp)
+                data: dict[str, Any] = resp.json()
+            except (httpx.HTTPError, ValueError, ComfyClientError) as exc:
+                raise ComfyClientError(f"Could not queue workflow in ComfyUI: {exc}") from exc
         prompt_id = data.get("prompt_id")
-        if not prompt_id:
+        if not isinstance(prompt_id, str) or not prompt_id:
             raise ComfyClientError(f"ComfyUI did not return a prompt_id: {data}")
-        return str(prompt_id)
+        return prompt_id
 
     async def get_history(self, prompt_id: str) -> dict[str, Any]:
         async with self._http() as client:

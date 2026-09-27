@@ -1,8 +1,4 @@
-"""Local filesystem storage: images saved under STORAGE_DIR, served by FastAPI.
-
-Replaces the previous MinIO/S3 service with plain disk writes plus a
-StaticFiles mount — no external object store required.
-"""
+"""Local filesystem storage: generated assets plus safe gallery metadata."""
 
 import json
 import logging
@@ -16,8 +12,7 @@ from ..config import Settings, get_settings
 from ..schemas import GalleryItem
 
 logger = logging.getLogger(__name__)
-
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 class StorageError(RuntimeError):
@@ -25,15 +20,9 @@ class StorageError(RuntimeError):
 
 
 class StorageService:
-    """Writes generated images to disk and lists them for the gallery."""
-
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
         self.root = Path(self.settings.STORAGE_DIR).resolve()
-
-    # ------------------------------------------------------------------ #
-    # Directory management
-    # ------------------------------------------------------------------ #
 
     def ensure_root(self) -> Path:
         try:
@@ -42,14 +31,11 @@ class StorageService:
             raise StorageError(f"Cannot create storage dir {self.root}: {exc}") from exc
         return self.root
 
-    # ------------------------------------------------------------------ #
-    # Object operations
-    # ------------------------------------------------------------------ #
-
     def _file_url(self, key: str) -> str:
         return f"{self.settings.FILES_PUBLIC_BASE}/files/{key}"
 
-    def _metadata_path(self, image_path: Path) -> Path:
+    @staticmethod
+    def _metadata_path(image_path: Path) -> Path:
         return image_path.with_suffix(f"{image_path.suffix}.json")
 
     def _gallery_item(self, path: Path) -> GalleryItem:
@@ -57,9 +43,10 @@ class StorageService:
         rel = path.relative_to(self.root).as_posix()
         metadata = None
         try:
-            metadata_path = self._metadata_path(path)
-            if metadata_path.is_file():
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            sidecar = self._metadata_path(path)
+            if sidecar.is_file():
+                raw = json.loads(sidecar.read_text(encoding="utf-8"))
+                metadata = raw if isinstance(raw, dict) else None
         except (OSError, json.JSONDecodeError):
             logger.warning("Could not read metadata for %s", path)
         return GalleryItem(
@@ -77,38 +64,59 @@ class StorageService:
         filename: str = "image.png",
         content_type: str = "image/png",
         metadata: Optional[dict] = None,
+        namespace: str | None = None,
     ) -> str:
-        """Write one generated image to disk and return its public /files URL."""
-        ext = Path(filename).suffix.lower() or ".png"
-        key = f"{prompt_id}/{uuid.uuid4().hex[:12]}{ext}"
-        dest = self.root / key
-
+        ext = Path(filename).suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            raise StorageError("Unsupported image extension")
+        safe_prompt = "".join(ch for ch in prompt_id if ch.isalnum() or ch in "-_")[:80] or "result"
+        prefix = namespace.strip("/\\") if namespace else ""
+        key = "/".join(part for part in (prefix, safe_prompt, f"{uuid.uuid4().hex[:12]}{ext}") if part)
+        dest = (self.root / key).resolve()
         try:
+            dest.relative_to(self.root)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
             if metadata is not None:
                 self._metadata_path(dest).write_text(
                     json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             raise StorageError(f"Write failed for {dest}: {exc}") from exc
-
         logger.info("Saved %s (%d bytes, %s)", dest, len(data), content_type)
         return self._file_url(key)
 
-    def list_recent(self, limit: int = 60) -> list[GalleryItem]:
-        """List the most recently saved images (newest first)."""
+    def list_recent(
+        self,
+        limit: int = 60,
+        *,
+        origin: str | None = None,
+        tool_id: str | None = None,
+        tool_type: str | None = None,
+        tag: str | None = None,
+    ) -> list[GalleryItem]:
         self.ensure_root()
         files = [p for p in self.root.rglob("*") if p.suffix.lower() in IMAGE_EXTENSIONS and p.is_file()]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
         items: list[GalleryItem] = []
-        for path in files[:limit]:
-            items.append(self._gallery_item(path))
+        for path in files:
+            item = self._gallery_item(path)
+            metadata = item.metadata.model_dump() if item.metadata is not None else {}
+            item_origin = metadata.get("origin", metadata.get("source"))
+            if origin and item_origin != origin:
+                continue
+            if tool_id and metadata.get("tool_id") != tool_id:
+                continue
+            if tool_type and metadata.get("tool_type", metadata.get("tool_mode")) != tool_type:
+                continue
+            if tag and tag not in (metadata.get("tags") or []):
+                continue
+            items.append(item)
+            if len(items) >= limit:
+                break
         return items
 
     def get_image(self, key: str) -> GalleryItem:
-        """Return one image and its optional generation metadata."""
         path = (self.root / key).resolve()
         try:
             path.relative_to(self.root)
@@ -118,9 +126,7 @@ class StorageService:
             raise FileNotFoundError(key)
         return self._gallery_item(path)
 
-    # Kept for API-shape parity with the previous S3 service — unused.
     def purge_prompt(self, prompt_id: str) -> int:
-        """Delete all files for a prompt_id; returns the number removed."""
         target = self.root / prompt_id
         if not target.is_dir():
             return 0

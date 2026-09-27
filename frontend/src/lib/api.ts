@@ -40,6 +40,63 @@ export interface UploadedAsset {
   url: string;
 }
 
+export interface ToolControl {
+  id: string;
+  path: string;
+  label: string;
+  kind: "prompt" | "text" | "seed" | "number" | "sampler";
+  value: string | number;
+  numeric: boolean;
+  seed: boolean;
+  options: Array<string | number>;
+  minimum: number | null;
+  maximum: number | null;
+  step: number | null;
+  node_id: string;
+  input_name: string;
+}
+
+export interface ToolParseResponse {
+  tool_id: string;
+  name: string;
+  controls: ToolControl[];
+  locked_nodes: Array<{ id: string; class_type: string }>;
+}
+
+export interface ToolExecutionResult {
+  tool_id: string;
+  prompt_id: string;
+  status: "completed" | "failed" | "timeout";
+  images: UploadedAsset[];
+  error: string | null;
+  elapsed_ms: number;
+}
+
+
+export type ToolMode = "text-to-image" | "image-to-image" | "text-to-video" | "image-to-video";
+export type ToolAspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "21:9";
+
+export interface ToolSummary {
+  tool_id: string;
+  name: string;
+  mode: ToolMode;
+  default_aspect_ratio: ToolAspectRatio;
+  requires_image: boolean;
+  has_prompt: boolean;
+  created_at: string;
+  thumbnail_url: string | null;
+}
+
+export interface ToolDetail extends ToolSummary {
+  supported_aspect_ratios: ToolAspectRatio[];
+  output_kind: "image" | "video";
+}
+
+export interface ToolRunResult extends ToolExecutionResult {
+  tool_mode: ToolMode | null;
+  aspect_ratio: ToolAspectRatio | null;
+}
+
 export interface GenerationResult {
   prompt_id: string;
   status: "completed" | "failed" | "timeout";
@@ -51,22 +108,33 @@ export interface GenerationResult {
 export interface GenerationMetadata {
   prompt_id: string;
   prompt: string;
-  negative_prompt: string;
-  seed: number;
-  steps: number;
+  negative_prompt?: string;
+  seed?: number | null;
+  steps?: number | null;
   image_count?: number;
-  cfg?: number;
-  denoise?: number;
-  width: number;
-  height: number;
-  format_name: string;
-  unet_name: string;
-  clip_name: string;
-  vae_name: string;
+  cfg?: number | null;
+  denoise?: number | null;
+  width?: number | null;
+  height?: number | null;
+  format_name?: string;
+  unet_name?: string;
+  clip_name?: string;
+  vae_name?: string;
   loras?: LoraSelection[];
   created_at: string;
   elapsed_ms: number;
-  source_filename: string;
+  source_filename?: string;
+}
+
+export interface GalleryMetadata extends GenerationMetadata {
+  source?: "workspace" | "tool";
+  origin?: string;
+  tool_id?: string;
+  tool_name?: string;
+  tool_mode?: ToolMode;
+  tool_type?: ToolMode;
+  aspect_ratio?: ToolAspectRatio;
+  tags?: string[];
 }
 
 export interface GalleryItem {
@@ -74,7 +142,7 @@ export interface GalleryItem {
   url: string;
   size: number;
   last_modified: string;
-  metadata: GenerationMetadata | null;
+  metadata: GalleryMetadata | null;
 }
 
 export type AssetType = "image" | "video" | "3d";
@@ -153,11 +221,48 @@ export const api = {
     });
   },
 
-  async getGallery(limit = 60): Promise<GalleryItem[]> {
-    const resp = await request<{ items: GalleryItem[] }>(
-      `/api/v1/gallery?limit=${limit}`
-    );
+  async getGallery(limit = 60, filters: { origin?: string; tool_id?: string; tool_type?: string; tag?: string } = {}): Promise<GalleryItem[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+    const resp = await request<{ items: GalleryItem[] }>(`/api/v1/gallery?${params}`);
     return resp.items;
+  },
+
+  async getTools(): Promise<ToolSummary[]> {
+    const resp = await request<{ items: ToolSummary[] }>("/api/tools");
+    return resp.items;
+  },
+
+  async getTool(toolId: string): Promise<ToolDetail> {
+    return request<ToolDetail>(`/api/tools/${encodeURIComponent(toolId)}`);
+  },
+
+  async createTool(file: File, name: string, mode: ToolMode, aspectRatio: ToolAspectRatio, thumbnail?: File): Promise<ToolDetail> {
+    const form = new FormData();
+    form.append("workflow_api", file, "workflow_api.json");
+    form.append("name", name);
+    form.append("mode", mode);
+    form.append("aspect_ratio", aspectRatio);
+    if (thumbnail) form.append("thumbnail", thumbnail, thumbnail.name);
+    const resp = await fetch(`${API_BASE}/api/tools/create`, { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not create tool");
+    }
+    return (await resp.json()) as ToolDetail;
+  },
+
+  async runTool(toolId: string, prompt: string, aspectRatio: ToolAspectRatio, image?: File): Promise<ToolRunResult> {
+    const form = new FormData();
+    form.append("prompt", prompt);
+    form.append("aspect_ratio", aspectRatio);
+    if (image) form.append("input_image", image, image.name);
+    const resp = await fetch(`${API_BASE}/api/tools/${encodeURIComponent(toolId)}/run`, { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not run tool");
+    }
+    return (await resp.json()) as ToolRunResult;
   },
 
   async getImage(key: string): Promise<GalleryItem> {
@@ -166,6 +271,28 @@ export const api = {
 
   async getModels(category: ModelCategory): Promise<string[]> {
     return request<string[]>(`/api/v1/models/${category}`);
+  },
+
+  async parseTool(file: File, name = "Untitled tool"): Promise<ToolParseResponse> {
+    const form = new FormData();
+    form.append("workflow_api", file, "workflow_api.json");
+    form.append("name", name);
+    const resp = await fetch(`${API_BASE}/api/tools/parse`, {
+      method: "POST",
+      body: form,
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not parse workflow");
+    }
+    return (await resp.json()) as ToolParseResponse;
+  },
+
+  async executeTool(payload: { tool_id: string; inputs: Record<string, string | number> }): Promise<ToolExecutionResult> {
+    return request<ToolExecutionResult>("/api/tools/execute", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async health(): Promise<{ status: string; comfy: string; storage: string }> {

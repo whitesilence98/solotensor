@@ -1,0 +1,527 @@
+{
+  "tool_id": "5aca70e909d44e30832e5bde14070ec2",
+  "name": "Untitled tool",
+  "created_at": "2026-09-27T13:02:08.000017+00:00",
+  "workflow": {
+    "621": {
+      "inputs": {
+        "prompt": "masterpiece, best quality, newest, absurdres, highres, night, realistic, dim light, dark, 1girl, spotlight"
+      },
+      "class_type": "CR Prompt Text",
+      "_meta": {
+        "title": "⚙️ CR Prompt Text"
+      }
+    },
+    "623": {
+      "inputs": {
+        "text": [
+          "621",
+          0
+        ],
+        "clip": [
+          "1043",
+          1
+        ]
+      },
+      "class_type": "CLIPTextEncode",
+      "_meta": {
+        "title": "Z-image Text Encode (Positive Prompt)"
+      }
+    },
+    "700": {
+      "inputs": {
+        "text": "",
+        "clip": [
+          "1043",
+          1
+        ]
+      },
+      "class_type": "CLIPTextEncode",
+      "_meta": {
+        "title": "Z-image Text Encode (Positive Prompt)"
+      }
+    },
+    "867": {
+      "inputs": {
+        "seed": -1
+      },
+      "class_type": "Seed (rgthree)",
+      "_meta": {
+        "title": "Seed (rgthree)"
+      }
+    },
+    "897": {
+      "inputs": {
+        "value": 10
+      },
+      "class_type": "Int",
+      "_meta": {
+        "title": "DETAIL VS CINE (5 TO 30)"
+      }
+    },
+    "903": {
+      "inputs": {
+        "width": 768,
+        "height": 1344,
+        "batch_size": 1
+      },
+      "class_type": "EmptyLatentImage",
+      "_meta": {
+        "title": "Empty Latent Image"
+      }
+    },
+    "1027": {
+      "inputs": {
+        "samples": [
+          "1029",
+          0
+        ],
+        "vae": [
+          "618:617",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE Decode"
+      }
+    },
+    "1028": {
+      "inputs": {
+        "add_noise": "enable",
+        "noise_seed": 586,
+        "steps": [
+          "897",
+          0
+        ],
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "start_at_step": 0,
+        "end_at_step": 3,
+        "return_with_leftover_noise": "disable",
+        "model": [
+          "1032",
+          0
+        ],
+        "positive": [
+          "623",
+          0
+        ],
+        "negative": [
+          "700",
+          0
+        ],
+        "latent_image": [
+          "903",
+          0
+        ]
+      },
+      "class_type": "KSamplerAdvanced",
+      "_meta": {
+        "title": "KSampler (Advanced)"
+      }
+    },
+    "1029": {
+      "inputs": {
+        "eta": 0.5,
+        "sampler_name": "exponential/ddim",
+        "scheduler": "beta57",
+        "steps": [
+          "897",
+          0
+        ],
+        "steps_to_run": -1,
+        "denoise": 1,
+        "cfg": 1,
+        "seed": [
+          "867",
+          0
+        ],
+        "sampler_mode": "standard",
+        "bongmath": true,
+        "model": [
+          "1032",
+          0
+        ],
+        "positive": [
+          "623",
+          0
+        ],
+        "negative": [
+          "700",
+          0
+        ],
+        "latent_image": [
+          "1028",
+          0
+        ]
+      },
+      "class_type": "ClownsharKSampler_Beta",
+      "_meta": {
+        "title": "ClownsharKSampler"
+      }
+    },
+    "1030": {
+      "inputs": {
+        "shift": 3,
+        "model": [
+          "1043",
+          0
+        ]
+      },
+      "class_type": "ModelSamplingAuraFlow",
+      "_meta": {
+        "title": "ModelSamplingAuraFlow"
+      }
+    },
+    "1031": {
+      "inputs": {
+        "samples": [
+          "1028",
+          0
+        ],
+        "vae": [
+          "618:617",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE Decode"
+      }
+    },
+    "1032": {
+      "inputs": {
+        "strength": 1,
+        "pre_cfg": false,
+        "model": [
+          "1030",
+          0
+        ]
+      },
+      "class_type": "CFGNorm",
+      "_meta": {
+        "title": "CFGNorm"
+      }
+    },
+    "1041": {
+      "inputs": {
+        "anything": [
+          "1027",
+          0
+        ]
+      },
+      "class_type": "easy cleanGpuUsed",
+      "_meta": {
+        "title": "Clean VRAM Used"
+      }
+    },
+    "1043": {
+      "inputs": {
+        "PowerLoraLoaderHeaderWidget": {
+          "type": "PowerLoraLoaderHeaderWidget"
+        },
+        "➕ Add Lora": "",
+        "model": [
+          "618:615",
+          0
+        ],
+        "clip": [
+          "618:616",
+          0
+        ]
+      },
+      "class_type": "Power Lora Loader (rgthree)",
+      "_meta": {
+        "title": "Power Lora Loader (rgthree)"
+      }
+    },
+    "618:615": {
+      "inputs": {
+        "unet_name": "krea2\\krea2_turbo_fp8_scaled.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader",
+      "_meta": {
+        "title": "Load Diffusion Model"
+      }
+    },
+    "618:616": {
+      "inputs": {
+        "clip_name": "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+        "type": "krea2",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Load CLIP"
+      }
+    },
+    "618:617": {
+      "inputs": {
+        "vae_name": "wan_2.1_vae.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "Load VAE"
+      }
+    },
+    "1025:1": {
+      "inputs": {
+        "filename": "%time_%basemodelname_%seed",
+        "path": "images/%date",
+        "extension": "png",
+        "lossless_webp": false,
+        "quality_jpeg_or_webp": 100,
+        "optimize_png": false,
+        "embed_workflow": true,
+        "save_workflow_as_json": false,
+        "counter": 0,
+        "time_format": "%Y-%m-%d-%H%M%S",
+        "show_preview": true,
+        "images": [
+          "1027",
+          0
+        ],
+        "metadata": [
+          "1025:2",
+          0
+        ]
+      },
+      "class_type": "Image Saver Simple",
+      "_meta": {
+        "title": "Image Saver Simple"
+      }
+    },
+    "1025:2": {
+      "inputs": {
+        "modelname": "krea2",
+        "positive": [
+          "621",
+          0
+        ],
+        "negative": "",
+        "width": [
+          "1025:1022",
+          0
+        ],
+        "height": [
+          "1025:1022",
+          1
+        ],
+        "seed_value": [
+          "867",
+          0
+        ],
+        "steps": [
+          "897",
+          0
+        ],
+        "cfg": 1,
+        "sampler_name": "",
+        "scheduler_name": "normal",
+        "denoise": 1,
+        "clip_skip": 0,
+        "additional_hashes": "",
+        "download_civitai_data": false,
+        "easy_remix": false,
+        "custom": ""
+      },
+      "class_type": "Image Saver Metadata",
+      "_meta": {
+        "title": "Image Saver Metadata"
+      }
+    },
+    "1025:1022": {
+      "inputs": {
+        "image": [
+          "1027",
+          0
+        ]
+      },
+      "class_type": "GetImageSize",
+      "_meta": {
+        "title": "Get Image Size"
+      }
+    }
+  },
+  "controls": [
+    {
+      "id": "nodes.897.inputs.value",
+      "path": "nodes.897.inputs.value",
+      "label": "Steps",
+      "kind": "number",
+      "value": 10,
+      "numeric": true,
+      "seed": false,
+      "options": [],
+      "minimum": 1,
+      "maximum": 100,
+      "step": 1,
+      "node_id": "897",
+      "input_name": "value"
+    },
+    {
+      "id": "nodes.1028.inputs.sampler_name",
+      "path": "nodes.1028.inputs.sampler_name",
+      "label": "Sampler",
+      "kind": "sampler",
+      "value": "euler",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "1028",
+      "input_name": "sampler_name"
+    },
+    {
+      "id": "nodes.1028.inputs.scheduler",
+      "path": "nodes.1028.inputs.scheduler",
+      "label": "Scheduler",
+      "kind": "sampler",
+      "value": "simple",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "1028",
+      "input_name": "scheduler"
+    },
+    {
+      "id": "nodes.867.inputs.seed",
+      "path": "nodes.867.inputs.seed",
+      "label": "Seed",
+      "kind": "seed",
+      "value": -1,
+      "numeric": true,
+      "seed": true,
+      "options": [],
+      "minimum": 0,
+      "maximum": 4294967295,
+      "step": 1,
+      "node_id": "867",
+      "input_name": "seed"
+    },
+    {
+      "id": "nodes.1029.inputs.sampler_name",
+      "path": "nodes.1029.inputs.sampler_name",
+      "label": "Sampler",
+      "kind": "sampler",
+      "value": "exponential/ddim",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "1029",
+      "input_name": "sampler_name"
+    },
+    {
+      "id": "nodes.1029.inputs.scheduler",
+      "path": "nodes.1029.inputs.scheduler",
+      "label": "Scheduler",
+      "kind": "sampler",
+      "value": "beta57",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "1029",
+      "input_name": "scheduler"
+    },
+    {
+      "id": "nodes.621.inputs.prompt",
+      "path": "nodes.621.inputs.prompt",
+      "label": "Positive prompt",
+      "kind": "prompt",
+      "value": "masterpiece, best quality, newest, absurdres, highres, night, realistic, dim light, dark, 1girl, spotlight",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "621",
+      "input_name": "prompt"
+    },
+    {
+      "id": "nodes.700.inputs.text",
+      "path": "nodes.700.inputs.text",
+      "label": "Negative prompt",
+      "kind": "prompt",
+      "value": "",
+      "numeric": false,
+      "seed": false,
+      "options": [],
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "700",
+      "input_name": "text"
+    },
+    {
+      "id": "nodes.903.inputs.width",
+      "path": "nodes.903.inputs.width",
+      "label": "Width",
+      "kind": "number",
+      "value": 768,
+      "numeric": true,
+      "seed": false,
+      "options": [],
+      "minimum": 64,
+      "maximum": 4096,
+      "step": 8,
+      "node_id": "903",
+      "input_name": "width"
+    },
+    {
+      "id": "nodes.903.inputs.height",
+      "path": "nodes.903.inputs.height",
+      "label": "Height",
+      "kind": "number",
+      "value": 1344,
+      "numeric": true,
+      "seed": false,
+      "options": [],
+      "minimum": 64,
+      "maximum": 4096,
+      "step": 8,
+      "node_id": "903",
+      "input_name": "height"
+    }
+  ],
+  "locked_nodes": [
+    {
+      "id": "1027",
+      "class_type": "VAEDecode"
+    },
+    {
+      "id": "1031",
+      "class_type": "VAEDecode"
+    },
+    {
+      "id": "1043",
+      "class_type": "Power Lora Loader (rgthree)"
+    },
+    {
+      "id": "618:615",
+      "class_type": "UNETLoader"
+    },
+    {
+      "id": "618:616",
+      "class_type": "CLIPLoader"
+    },
+    {
+      "id": "618:617",
+      "class_type": "VAELoader"
+    }
+  ]
+}

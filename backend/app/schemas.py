@@ -1,5 +1,6 @@
 """Pydantic request/response schemas for the Comfy Studio API."""
 
+from enum import Enum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -28,14 +29,8 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=50_000)
     negative_prompt: str = ""
     model: Literal["sdxl", "flux", "nano"] = "sdxl"
-    unet_name: str = Field(
-        "krea2\\krea2_turbo_fp8_scaled.safetensors", min_length=1, max_length=255
-    )
-    clip_name: str = Field(
-        "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
-        min_length=1,
-        max_length=255,
-    )
+    unet_name: str = Field("krea2\\krea2_turbo_fp8_scaled.safetensors", min_length=1, max_length=255)
+    clip_name: str = Field("qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors", min_length=1, max_length=255)
     vae_name: str = Field("wan_2.1_vae.safetensors", min_length=1, max_length=255)
     loras: list[LoraSelection] = Field(default_factory=list, max_length=16)
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
@@ -44,18 +39,12 @@ class GenerateRequest(BaseModel):
     width: int = Field(768, ge=64, le=4096)
     height: int = Field(1344, ge=64, le=4096)
     format_name: Literal["1:1", "16:9", "9:16", "4:3", "3:2", "custom"] = "9:16"
-    # Legacy controls retained for the deferred Image-to-Image workflow.
     cfg: float = Field(1.0, ge=0.0, le=30.0)
     denoise: float = Field(1.0, ge=0.0, le=1.0)
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
-    client_id: Optional[str] = Field(
-        None, description="WS /api/v1/ws/progress/{client_id} session id"
-    )
-    reference_images: list[str] = Field(
-        default_factory=list,
-        description="Base64-encoded (data URLs allowed) reference images, max 5",
-    )
+    client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
+    reference_images: list[str] = Field(default_factory=list)
 
     @field_validator("prompt")
     @classmethod
@@ -81,10 +70,10 @@ class GenerateRequest(BaseModel):
 
     @field_validator("reference_images")
     @classmethod
-    def max_five(cls, v: list[str]) -> list[str]:
-        if len(v) > 5:
+    def max_five(cls, value: list[str]) -> list[str]:
+        if len(value) > 5:
             raise ValueError("At most 5 reference images are allowed")
-        return v
+        return value
 
 
 class UploadedAsset(BaseModel):
@@ -101,24 +90,30 @@ class GenerationResult(BaseModel):
 
 
 class GenerationMetadata(BaseModel):
-    prompt_id: str
-    prompt: str
+    prompt_id: str = ""
+    prompt: str = ""
     negative_prompt: str = ""
-    seed: int
-    steps: int
+    seed: int | None = None
+    steps: int | None = None
     image_count: int = 1
-    cfg: float = 1.0
-    denoise: float = 1.0
+    cfg: float | None = None
+    denoise: float | None = None
     loras: list[LoraSelection] = Field(default_factory=list)
-    width: int
-    height: int
-    format_name: str
-    unet_name: str
-    clip_name: str
-    vae_name: str
-    created_at: str
-    elapsed_ms: int
-    source_filename: str
+    width: int | None = None
+    height: int | None = None
+    format_name: str = ""
+    unet_name: str = ""
+    clip_name: str = ""
+    vae_name: str = ""
+    created_at: str = ""
+    elapsed_ms: int = 0
+    source_filename: str = ""
+    source: Literal["workspace", "tool"] = "workspace"
+    tags: list[str] = Field(default_factory=list)
+    tool_id: str | None = None
+    tool_name: str | None = None
+    tool_mode: str | None = None
+    aspect_ratio: str | None = None
 
 
 class GalleryItem(BaseModel):
@@ -139,13 +134,82 @@ class HealthResponse(BaseModel):
     storage: str
 
 
-class WSProgress(BaseModel):
-    """Envelope for every message relayed over the progress WebSocket."""
+class ToolMode(str, Enum):
+    TEXT_TO_IMAGE = "text-to-image"
+    IMAGE_TO_IMAGE = "image-to-image"
+    TEXT_TO_VIDEO = "text-to-video"
+    IMAGE_TO_VIDEO = "image-to-video"
 
-    type: Literal["queued", "progress", "executing", "executed", "completed", "error"]
-    prompt_id: Optional[str] = None
-    node: Optional[str] = None
-    value: Optional[float] = None
-    max: Optional[float] = None
-    message: Optional[str] = None
-    data: Optional[dict[str, Any]] = None
+
+class ToolAspectRatio(str, Enum):
+    SQUARE = "1:1"
+    LANDSCAPE = "16:9"
+    PORTRAIT = "9:16"
+    CLASSIC = "4:3"
+    ULTRAWIDE = "21:9"
+
+
+class ToolControl(BaseModel):
+    id: str
+    path: str
+    label: str
+    kind: Literal["prompt", "text", "seed", "number", "sampler"]
+    value: Any
+    numeric: bool = False
+    seed: bool = False
+    options: list[Any] = Field(default_factory=list)
+    minimum: float | None = None
+    maximum: float | None = None
+    step: float | None = None
+    node_id: str
+    input_name: str
+
+
+class ToolParseResponse(BaseModel):
+    tool_id: str
+    name: str
+    controls: list[ToolControl]
+    locked_nodes: list[dict[str, str]]
+
+
+class ToolSummary(BaseModel):
+    tool_id: str
+    name: str
+    mode: ToolMode
+    default_aspect_ratio: ToolAspectRatio
+    requires_image: bool
+    has_prompt: bool
+    created_at: str
+    thumbnail_url: str | None = None
+
+
+class ToolDetail(ToolSummary):
+    supported_aspect_ratios: list[ToolAspectRatio]
+    output_kind: Literal["image", "video"]
+
+
+class ToolCatalogResponse(BaseModel):
+    items: list[ToolSummary]
+
+
+class ToolExecuteRequest(BaseModel):
+    tool_id: str = Field(..., min_length=32, max_length=32)
+    prompt: str = Field("", max_length=50_000)
+    aspect_ratio: ToolAspectRatio | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class ToolExecutionResult(BaseModel):
+    tool_id: str
+    prompt_id: str
+    status: Literal["completed", "failed", "timeout"]
+    images: list[UploadedAsset]
+    error: Optional[str] = None
+    elapsed_ms: int
+    tool_mode: ToolMode | None = None
+    aspect_ratio: ToolAspectRatio | None = None
+
+
+class ToolCreateResponse(ToolExecutionResult):
+    tool: ToolSummary | None = None
