@@ -153,7 +153,8 @@ class ToolControl(BaseModel):
     id: str
     path: str
     label: str
-    kind: Literal["prompt", "text", "seed", "number", "sampler"]
+    meta_title: str | None = None
+    kind: Literal["prompt", "text", "seed", "number", "select", "boolean", "image"]
     value: Any
     numeric: bool = False
     seed: bool = False
@@ -186,6 +187,7 @@ class ToolSummary(BaseModel):
 class ToolDetail(ToolSummary):
     supported_aspect_ratios: list[ToolAspectRatio]
     output_kind: Literal["image", "video"]
+    controls: list[ToolControl] = Field(default_factory=list)
 
 
 class ToolCatalogResponse(BaseModel):
@@ -196,6 +198,7 @@ class ToolExecuteRequest(BaseModel):
     tool_id: str = Field(..., min_length=32, max_length=32)
     prompt: str = Field("", max_length=50_000)
     aspect_ratio: ToolAspectRatio | None = None
+    values: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 

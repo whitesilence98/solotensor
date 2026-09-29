@@ -9,9 +9,7 @@ import {
   Film,
   ImageIcon,
   Search,
-  Settings,
   Sparkles,
-  X,
 } from "lucide-react";
 import AssetCard from "@/components/AssetCard";
 import EmptyState from "@/components/EmptyState";
@@ -42,8 +40,6 @@ export default function AssetsPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
-  const [viewer, setViewer] = useState<AssetRecord | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,7 +70,6 @@ export default function AssetsPage() {
         e.preventDefault();
         searchRef.current?.focus();
       }
-      if (e.key === "Escape") setViewer(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -123,116 +118,55 @@ export default function AssetsPage() {
   };
 
   return (
-    <div id="main-content" className="assets-root h-full min-h-0 flex-1 overflow-y-auto antialiased">
+    <div id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 antialiased">
       {/* ---------------- Header ---------------- */}
-      <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-6 py-3.5">
-          {/* Search */}
+      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-5 py-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <p className="workspace-kicker">Library / local outputs</p>
+            <h1 className="mt-1 truncate text-xl font-semibold tracking-[-.04em] text-[var(--ink)] sm:text-2xl">Asset library</h1>
+          </div>
+          <Link href="/" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[.55rem] bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[#e2f88a] active:scale-[.97]">
+            <Sparkles className="h-4 w-4" />
+            <span className="hidden sm:inline">New render</span>
+          </Link>
+        </div>
+        <div className="mx-auto flex max-w-[1600px] gap-4 px-5 pb-3 sm:px-6">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)]" />
             <input
               ref={searchRef}
               type="search"
               value={searchDraft}
               onChange={(e) => setSearchDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitSearch();
-              }}
+              onKeyDown={(e) => { if (e.key === "Enter") commitSearch(); }}
               onBlur={commitSearch}
-              placeholder="Search assets by title, creator, or tag..."
-              aria-label="Search assets"
-              className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900 pl-10 pr-16 text-sm text-zinc-200 placeholder-zinc-500 outline-none transition-colors duration-200 ease-in-out hover:border-zinc-700 focus:border-violet-500 focus:bg-zinc-900 focus:ring-4 focus:ring-violet-500/10"
+              placeholder="Search local filenames…"
+              aria-label="Search local filenames"
+              className="workspace-field h-11 w-full pl-10 pr-16 text-sm placeholder:text-[var(--ink-faint)]"
             />
-            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 sm:block">
-              /
-            </kbd>
-          </div>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSettingsOpen((v) => !v)}
-              aria-expanded={settingsOpen}
-              aria-haspopup="menu"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3.5 text-sm font-medium text-zinc-400 transition-colors duration-200 ease-in-out hover:border-zinc-700 hover:text-zinc-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
-            >
-              <Settings className="h-4 w-4 text-zinc-500 transition-colors duration-200 ease-in-out group-hover:text-zinc-300" />
-              <span className="hidden sm:inline">Settings</span>
-            </button>
-            {settingsOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 top-12 w-56 rounded-xl border border-zinc-800 bg-zinc-900 p-1.5 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.6)]"
-              >
-                <Link
-                  href="/"
-                  role="menuitem"
-                  onClick={() => setSettingsOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-zinc-300 transition-colors duration-150 ease-in-out hover:bg-zinc-800"
-                >
-                  <Sparkles className="h-4 w-4 text-[#d5f06f]" />
-                  Open Generator
-                </Link>
-                <button
-                  role="menuitem"
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-zinc-400 transition-colors duration-150 ease-in-out hover:bg-zinc-800 hover:text-zinc-200"
-                >
-                  <Settings className="h-4 w-4 text-zinc-500" />
-                  Storage settings
-                </button>
-              </div>
-            )}
+            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink-faint)] sm:block">/</kbd>
           </div>
         </div>
 
-        {/* ---------------- Tabs ---------------- */}
-        <div className="mx-auto max-w-[1600px] px-6">
-          <nav role="tablist" aria-label="Asset type" className="flex gap-6">
+        <div className="mx-auto max-w-[1600px] px-5 sm:px-6">
+          <nav role="tablist" aria-label="Asset type" className="flex gap-5">
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = tab === id;
               return (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => {
-                    setTab(id);
-                    setVisible(PAGE_SIZE);
-                  }}
-                  className={`relative flex items-center gap-2 pb-3 pt-1.5 text-sm font-medium outline-none transition-colors duration-200 ease-in-out focus-visible:text-[#d5f06f] ${
-                    active ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  <Icon className={`h-4 w-4 ${active ? "text-[#d5f06f]" : ""}`} />
+                <button key={id} role="tab" aria-selected={active} onClick={() => { setTab(id); setVisible(PAGE_SIZE); }} className={`relative flex shrink-0 items-center gap-2 pb-3 pt-1.5 text-sm font-medium transition-colors focus-visible:text-[var(--accent)] ${active ? "text-[var(--ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}>
+                  <Icon className={`h-4 w-4 ${active ? "text-[var(--accent)]" : ""}`} />
                   {label}
-                  <span
-                    className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums transition-colors duration-200 ease-in-out ${
-                      active
-                        ? "bg-violet-600/15 text-[#d5f06f]"
-                        : "bg-zinc-800 text-zinc-500"
-                    }`}
-                  >
-                    {formatCount(counts[id])}
-                  </span>
-                  <span
-                    aria-hidden
-                    className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-violet-500 transition-all duration-200 ease-in-out ${
-                      active ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
+                  <span className={`rounded px-1.5 py-0.5 text-[11px] tabular-nums ${active ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]" : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"}`}>{formatCount(counts[id])}</span>
+                  <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--accent)] ${active ? "opacity-100" : "opacity-0"}`} />
                 </button>
               );
             })}
           </nav>
-          <div className="flex gap-2 overflow-x-auto pb-3 pt-3" aria-label="Asset source">
+          <div className="flex gap-2 overflow-x-auto py-3" aria-label="Asset source">
             {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
-              <button
-                key={source}
-                type="button"
-                onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }}
-                className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${origin === source ? "border-[#d5f06f] bg-[#d5f06f] text-[#171b08]" : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-200"}`}
-              >
-                {source === "all" ? "All sources" : source === "workspace" ? "Workspace" : "AI Tools"}
+              <button key={source} type="button" onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }} className={`whitespace-nowrap rounded-[.4rem] border px-3 py-1.5 text-[11px] font-medium transition-colors ${origin === source ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"}`}>
+                {source === "all" ? "All sources" : source === "workspace" ? "Workspace" : "AI tools"}
               </button>
             ))}
           </div>
@@ -240,7 +174,7 @@ export default function AssetsPage() {
       </header>
 
       {/* ---------------- Grid ---------------- */}
-      <main className="mx-auto max-w-[1600px] px-6 pb-28 pt-6">
+      <main className="mx-auto max-w-[1600px] px-5 pb-8 pt-6 sm:px-6">
         {loading ? (
           <div className="masonry" aria-label="Loading assets" aria-busy="true">
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
@@ -278,7 +212,7 @@ export default function AssetsPage() {
               ))}
             </div>
             {filtered.length > shown.length && (
-              <p className="mt-2 text-center text-xs text-zinc-600">
+              <p className="mt-2 text-center text-xs text-[var(--ink-faint)]">
                 Showing {shown.length} of {formatCount(filtered.length)}
               </p>
             )}
@@ -294,59 +228,17 @@ export default function AssetsPage() {
             onClick={() => setVisible((v) => v + PAGE_SIZE)}
             disabled={allLoaded}
             aria-label={allLoaded ? "All assets loaded" : "Load more assets"}
-            className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-600/30 transition-all duration-200 ease-in-out ${
-              allLoaded
-                ? "pointer-events-none scale-90 opacity-0"
-                : "hover:scale-105 hover:bg-violet-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
-            }`}
+              className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-[.55rem] bg-[var(--accent)] text-[var(--accent-ink)] shadow-[0_12px_28px_-12px_rgba(213,240,111,.55)] transition-all duration-200 ease-in-out ${
+                allLoaded
+                  ? "pointer-events-none scale-90 opacity-0"
+                  : "hover:scale-105 hover:bg-[#e2f88a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              }`}
           >
             <ArrowDown className="h-5 w-5" />
           </button>
         </div>
       )}
 
-      {/* ---------------- Lightbox ---------------- */}
-      {viewer && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={viewer.key}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/85 p-4 sm:p-8"
-          onClick={() => setViewer(null)}
-        >
-          <div
-            className="flex max-h-full max-w-6xl flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={viewer.url}
-              alt={viewer.key}
-              className="max-h-[82vh] max-w-full rounded-xl object-contain shadow-2xl"
-            />
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <span className="truncate text-xs text-zinc-400">{viewer.key}</span>
-              <div className="flex shrink-0 gap-2">
-                <a
-                  href={viewer.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-white/10 px-3.5 py-2 text-xs font-medium text-white transition-colors duration-200 ease-in-out hover:bg-white/20"
-                >
-                  Open original
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setViewer(null)}
-                  className="rounded-lg bg-white/10 px-3.5 py-2 text-xs font-medium text-white transition-colors duration-200 ease-in-out hover:bg-white/20"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

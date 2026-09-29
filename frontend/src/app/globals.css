@@ -17,17 +17,22 @@
   --accent-ink: #171b08;
   --danger: #ef8c79;
   --nav-width: 5rem;
+  --radius-panel: .7rem;
+  --ease-workspace: cubic-bezier(.2,.8,.2,1);
 }
 
 * { box-sizing: border-box; }
 
 html {
   height: 100%;
+  min-height: 100%;
+  overflow: hidden;
   scroll-behavior: smooth;
   background: var(--ground);
 }
 
 body {
+  height: 100%;
   min-height: 100%;
   margin: 0;
   overflow: hidden;
@@ -40,11 +45,24 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+@layer components {
+  .workspace-panel { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-panel); }
+  .workspace-field { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: .5rem; transition: border-color 180ms var(--ease-workspace), background-color 180ms var(--ease-workspace), box-shadow 180ms var(--ease-workspace); }
+  .workspace-field:hover { border-color: var(--line-strong); }
+  .workspace-field:focus { border-color: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
+  .workspace-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .workspace-kicker { color: var(--ink-faint); font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+}
+
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 ::selection { background: var(--accent); color: var(--accent-ink); }
 
-.app-shell { display: flex; height: 100dvh; overflow: hidden; }
+.app-shell { display: flex; height: 100vh; overflow: hidden; }
+
+@supports (height: 100dvh) {
+  .app-shell { height: 100dvh; }
+}
 .app-content { min-width: 0; min-height: 0; height: 100%; flex: 1; overflow: hidden; }
 
 .skip-link {
@@ -125,10 +143,8 @@ input[type="range"] { accent-color: var(--accent); }
 .asset-3d:hover .asset-3d-cube { animation: turntable 3s linear infinite; transform-style: preserve-3d; }
 .shimmer-dark { animation: shimmer 1.4s linear infinite; }
 
-@media (max-width: 760px) {
-  body { overflow: auto; }
-  .app-shell { display: block; height: auto; min-height: 100dvh; overflow: visible; padding-bottom: 4.75rem; }
-  .app-content { height: auto; min-height: 0; overflow: visible; }
+@media (max-width: 767px) {
+  .app-content { height: calc(100% - 4.75rem); }
   .masonry { column-gap: .75rem; }
   .masonry > * { margin-bottom: .75rem; }
 }

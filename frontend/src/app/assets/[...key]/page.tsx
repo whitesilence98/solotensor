@@ -44,7 +44,7 @@ export default function ImageDetailPage() {
   }, [key]);
 
   return (
-    <main id="main-content" className="h-full min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(circle_at_34%_20%,rgba(213,240,111,.045),transparent_30rem)]">
+    <main id="main-content" className="workspace-scroll h-full min-h-0 flex-1 bg-[radial-gradient(circle_at_34%_20%,rgba(213,240,111,.045),transparent_30rem)]">
       <header className="sticky top-0 z-20 border-b border-[#292d28] bg-[#0b0c0b]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[96rem] items-center justify-between gap-4 px-5 py-3 sm:px-8">
           <Link href="/assets" className="flex items-center gap-2 text-xs font-semibold text-[#aaa8a1] transition-colors hover:text-[#d5f06f]">

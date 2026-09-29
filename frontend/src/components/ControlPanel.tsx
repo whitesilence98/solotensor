@@ -50,7 +50,7 @@ interface Props {
 }
 
 const labelClass = "mb-2 block text-[11px] font-semibold tracking-[.08em] text-[#8a8d85]";
-const fieldClass = "w-full rounded-[.55rem] border border-[#292d28] bg-[#111311] px-3 py-2.5 text-[13px] text-[#deddd6] outline-none transition-all duration-200 hover:border-[#3a4038] focus:border-[#d5f06f]/70 focus:ring-2 focus:ring-[#d5f06f]/10 disabled:opacity-45";
+const fieldClass = "workspace-field w-full px-3 py-2.5 text-[13px] outline-none transition-all duration-200 disabled:opacity-45";
 
 export default function ControlPanel(props: Props) {
   const { mode, onModeChange, prompt, onPromptChange, negativePrompt, onNegativePromptChange,
@@ -76,7 +76,7 @@ export default function ControlPanel(props: Props) {
   );
 
   return (
-    <aside className="w-full shrink-0 overflow-visible border-b border-[#292d28] bg-[#0e100e]/95 lg:h-full lg:w-[22rem] lg:overflow-y-auto lg:border-b-0 lg:border-r">
+    <aside className="workspace-scroll h-[42%] min-h-0 w-full shrink-0 border-b border-[#292d28] bg-[#0e100e]/95 lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
       <div className="border-b border-[#292d28] px-5 pb-4 pt-5">
         <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-[#6f716d]">Workspace / 01</p>
         <div className="mt-2 flex items-end justify-between">

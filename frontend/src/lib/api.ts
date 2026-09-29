@@ -44,8 +44,9 @@ export interface ToolControl {
   id: string;
   path: string;
   label: string;
-  kind: "prompt" | "text" | "seed" | "number" | "sampler";
-  value: string | number;
+  meta_title: string | null;
+  kind: "prompt" | "text" | "seed" | "number" | "select" | "boolean" | "image";
+  value: string | number | boolean;
   numeric: boolean;
   seed: boolean;
   options: Array<string | number>;
@@ -90,6 +91,7 @@ export interface ToolSummary {
 export interface ToolDetail extends ToolSummary {
   supported_aspect_ratios: ToolAspectRatio[];
   output_kind: "image" | "video";
+  controls: ToolControl[];
 }
 
 export interface ToolRunResult extends ToolExecutionResult {
@@ -252,10 +254,14 @@ export const api = {
     return (await resp.json()) as ToolDetail;
   },
 
-  async runTool(toolId: string, prompt: string, aspectRatio: ToolAspectRatio, image?: File): Promise<ToolRunResult> {
+  async runTool(toolId: string, prompt: string, aspectRatio: ToolAspectRatio, image?: File, values: Record<string, string | number | boolean> = {}, images: Record<string, File> = {}): Promise<ToolRunResult> {
     const form = new FormData();
     form.append("prompt", prompt);
     form.append("aspect_ratio", aspectRatio);
+    form.append("values", JSON.stringify(values));
+    const imageIds = Object.keys(images);
+    form.append("image_control_ids", JSON.stringify(imageIds));
+    Object.values(images).forEach((file) => form.append("files", file, file.name));
     if (image) form.append("input_image", image, image.name);
     const resp = await fetch(`${API_BASE}/api/tools/${encodeURIComponent(toolId)}/run`, { method: "POST", body: form });
     if (!resp.ok) {

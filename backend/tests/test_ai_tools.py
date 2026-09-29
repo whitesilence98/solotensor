@@ -89,6 +89,26 @@ class AIToolServiceTests(unittest.TestCase):
         workflow = {"text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}}}
         with self.assertRaisesRegex(AIToolError, "LoadImage"):
             self.service.create(json.dumps(workflow).encode(), "Reference", ToolMode.IMAGE_TO_VIDEO, ToolAspectRatio.SQUARE)
+    def test_zero_literal_and_random_seed_are_supported(self) -> None:
+        workflow = {
+            "seed": {"class_type": "Seed", "inputs": {"seed": 123}},
+            "sampling": {"class_type": "ModelSamplingAuraFlow", "inputs": {"shift": 1, "model": ["model", 0]}},
+            "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "locked.safetensors"}},
+        }
+        response = self.service.create(json.dumps(workflow).encode(), "Shift", ToolMode.TEXT_TO_IMAGE, ToolAspectRatio.SQUARE)
+        controls = {control.id: control for control in self.service.detail(response.tool_id).controls}
+        shift_id = "nodes.sampling.inputs.shift"
+        seed_id = "nodes.seed.inputs.seed"
+        self.assertEqual(controls[shift_id].minimum, 0)
+        graph, _ = self.service.build_graph(
+            response.tool_id,
+            "",
+            ToolAspectRatio.SQUARE,
+            values={shift_id: 0, seed_id: -1},
+        )
+        self.assertEqual(graph["sampling"]["inputs"]["shift"], 0)
+        self.assertGreaterEqual(graph["seed"]["inputs"]["seed"], 0)
+        self.assertLessEqual(graph["seed"]["inputs"]["seed"], 2**32 - 1)
 
 
 if __name__ == "__main__":

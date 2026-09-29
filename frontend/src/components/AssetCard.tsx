@@ -77,7 +77,7 @@ function QuickActions({ saved, onBookmark, onDownload }: QuickActionsProps) {
 
 function CreatorRow({ name }: { name: string }) {
   return (
-    <div className="asset-creator absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 rounded-b-xl bg-gradient-to-t from-zinc-950/80 via-zinc-950/45 to-transparent px-3 pb-2.5 pt-8">
+    <div className="asset-creator absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 rounded-b-[.45rem] bg-gradient-to-t from-[#0b0c0b]/85 via-[#0b0c0b]/45 to-transparent px-3 pb-2.5 pt-8">
       <span className="flex min-w-0 items-center gap-2">
         <span
           aria-hidden
@@ -157,7 +157,7 @@ function ImageCard({
 function VideoCard({ asset }: { asset: AssetRecord }) {
   const { w, h } = aspectFromKey(asset.key);
   return (
-    <div className="asset-card asset-3d relative overflow-hidden rounded-xl bg-zinc-900 ring-1 ring-zinc-800 transition-shadow duration-200 ease-in-out hover:shadow-[0_8px_24px_-6px_rgba(0,0,0,0.6)]">
+    <div className="asset-card asset-3d relative overflow-hidden rounded-[.45rem] bg-[#111311] ring-1 ring-[#292d28] transition-shadow duration-200 ease-in-out hover:shadow-[0_18px_50px_-28px_rgba(126,152,52,.4)]">
       <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -168,13 +168,13 @@ function VideoCard({ asset }: { asset: AssetRecord }) {
         />
       </div>
       {/* Play indicator on hover */}
-      <div className="asset-veil pointer-events-none absolute inset-0 flex items-center justify-center bg-zinc-950/25">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-950/90 shadow-md ring-1 ring-white/10">
-          <Play className="h-5 w-5 translate-x-[1px] text-zinc-100" fill="currentColor" />
+      <div className="asset-veil pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0b0c0b]/25">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0b0c0b]/90 shadow-md ring-1 ring-[#d5f06f]/20">
+          <Play className="h-5 w-5 translate-x-[1px] text-[#d5f06f]" fill="currentColor" />
         </span>
       </div>
-      <span className="absolute bottom-3 right-3 rounded-md bg-zinc-950/85 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white ring-1 ring-white/10">
-        0:15
+      <span className="absolute bottom-3 right-3 rounded-md bg-[#0b0c0b]/85 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-[#f2f0e9] ring-1 ring-[#d5f06f]/15">
+        Video
       </span>
       <CreatorRow name="You" />
     </div>
@@ -188,12 +188,7 @@ function VideoCard({ asset }: { asset: AssetRecord }) {
 function ModelCard({ asset }: { asset: AssetRecord }) {
   const { w, h } = aspectFromKey(asset.key);
   return (
-    <div className="asset-card asset-3d relative overflow-hidden rounded-xl ring-1 ring-zinc-800 transition-shadow duration-200 ease-in-out hover:shadow-[0_8px_24px_-6px_rgba(0,0,0,0.6)]"
-      style={{
-        background:
-          "linear-gradient(145deg, #27272a 0%, #1f1f23 55%, #18181b 100%)",
-      }}
-    >
+    <div className="asset-card asset-3d relative overflow-hidden rounded-[.45rem] ring-1 ring-[#292d28] transition-shadow duration-200 ease-in-out hover:shadow-[0_18px_50px_-28px_rgba(126,152,52,.4)]" style={{ background: "linear-gradient(145deg, #20251e 0%, #171a17 55%, #111311 100%)" }}>
       <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -203,12 +198,12 @@ function ModelCard({ asset }: { asset: AssetRecord }) {
           className="asset-3d-cube h-full w-full object-cover"
         />
       </div>
-      <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-violet-600/95 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+      <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-md bg-[#d5f06f] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#171b08] shadow-sm">
         <Box className="h-3 w-3" />
         3D
       </span>
-      <div className="asset-veil pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-zinc-950/60 to-transparent pb-3 pt-8">
-        <span className="rounded-full bg-zinc-950/90 px-3 py-1 text-xs font-medium text-zinc-100 shadow-sm ring-1 ring-white/10">
+      <div className="asset-veil pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-[#0b0c0b]/75 to-transparent pb-3 pt-8">
+        <span className="rounded-full bg-[#0b0c0b]/90 px-3 py-1 text-xs font-medium text-[#f2f0e9] shadow-sm ring-1 ring-[#d5f06f]/20">
           3D View
         </span>
       </div>

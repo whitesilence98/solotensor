@@ -1,7 +1,7 @@
 {
-  "tool_id": "78b0e0d934da46248b84e74f77b00b1f",
-  "name": "Untitled tool",
-  "created_at": "2026-09-27T13:20:34.324862+00:00",
+  "tool_id": "6abe3b65b38341aabf994f9b7b83820a",
+  "name": "AAAAA",
+  "created_at": "2026-09-28T19:14:19.281630+00:00",
   "workflow": {
     "559": {
       "inputs": {
@@ -22,16 +22,19 @@
     "563": {
       "inputs": {
         "seed": [
-          "1027",
+          "1053",
           0
         ],
-        "steps": 8,
+        "steps": [
+          "1050",
+          0
+        ],
         "cfg": 1,
         "sampler_name": "res_2m",
         "scheduler": "sgm_uniform",
         "denoise": 1,
         "model": [
-          "565",
+          "1057",
           0
         ],
         "positive": [
@@ -43,40 +46,13 @@
           0
         ],
         "latent_image": [
-          "576",
+          "1064",
           0
         ]
       },
       "class_type": "KSampler",
       "_meta": {
         "title": "KSampler"
-      }
-    },
-    "564": {
-      "inputs": {
-        "shift": 1,
-        "model": [
-          "1042",
-          0
-        ]
-      },
-      "class_type": "ModelSamplingAuraFlow",
-      "_meta": {
-        "title": "ModelSamplingAuraFlow"
-      }
-    },
-    "565": {
-      "inputs": {
-        "strength": 1,
-        "pre_cfg": false,
-        "model": [
-          "564",
-          0
-        ]
-      },
-      "class_type": "CFGNorm",
-      "_meta": {
-        "title": "CFGNorm"
       }
     },
     "569": {
@@ -117,23 +93,37 @@
         "title": "TextEncodeQwenImageEdit"
       }
     },
-    "576": {
+    "1043": {
       "inputs": {
-        "pixels": [
-          "1043",
-          0
-        ],
-        "vae": [
-          "572:257",
+        "image": "Olivia_Rodrigo.webp"
+      },
+      "class_type": "LoadImage",
+      "_meta": {
+        "title": "Load Image"
+      }
+    },
+    "1049": {
+      "inputs": {
+        "images": [
+          "559",
           0
         ]
       },
-      "class_type": "VAEEncode",
+      "class_type": "PreviewImage",
       "_meta": {
-        "title": "VAE Encode"
+        "title": "Preview Image"
       }
     },
-    "1027": {
+    "1050": {
+      "inputs": {
+        "value": 8
+      },
+      "class_type": "Int",
+      "_meta": {
+        "title": "Step"
+      }
+    },
+    "1053": {
       "inputs": {
         "seed": -1
       },
@@ -142,7 +132,20 @@
         "title": "Seed (rgthree)"
       }
     },
-    "1041": {
+    "1054": {
+      "inputs": {
+        "filename_prefix": "ComfyUI",
+        "images": [
+          "1049",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "Save Image"
+      }
+    },
+    "1056": {
       "inputs": {
         "lora_name": "qwen\\Qwen-Image-Edit-2509-Lightning-8steps-V1.0-bf16.safetensors",
         "strength_model": 1,
@@ -156,12 +159,12 @@
         "title": "Load LoRA"
       }
     },
-    "1042": {
+    "1057": {
       "inputs": {
-        "lora_name": "qwen\\Shorty_hair-Q2512.safetensors",
+        "lora_name": "qwen\\qe2511_consis_alpha_patched.safetensors",
         "strength_model": 1,
         "model": [
-          "1041",
+          "1058",
           0
         ]
       },
@@ -170,13 +173,29 @@
         "title": "Load LoRA"
       }
     },
-    "1043": {
+    "1058": {
       "inputs": {
-        "image": "pasted/image (185).png"
+        "lora_name": "qwen\\Shorty_hair-Q2512.safetensors",
+        "strength_model": 1,
+        "model": [
+          "1056",
+          0
+        ]
       },
-      "class_type": "LoadImage",
+      "class_type": "LoraLoaderModelOnly",
       "_meta": {
-        "title": "Load Image"
+        "title": "Load LoRA"
+      }
+    },
+    "1064": {
+      "inputs": {
+        "width": 768,
+        "height": 1344,
+        "batch_size": 1
+      },
+      "class_type": "EmptyLatentImage",
+      "_meta": {
+        "title": "Empty Latent Image"
       }
     },
     "572:257": {
@@ -186,17 +205,6 @@
       "class_type": "VAELoader",
       "_meta": {
         "title": "Load VAE"
-      }
-    },
-    "572:256": {
-      "inputs": {
-        "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-        "type": "qwen_image",
-        "device": "default"
-      },
-      "class_type": "CLIPLoader",
-      "_meta": {
-        "title": "Load CLIP"
       }
     },
     "572:255": {
@@ -209,99 +217,40 @@
         "title": "Load Diffusion Model"
       }
     },
-    "1025:2": {
+    "572:256": {
       "inputs": {
-        "modelname": "qwen",
-        "positive": "",
-        "negative": "worst quality, low quality, blurry, mutated hands, extra fingers, extra hand, distorted face, monochrome, black and white, bad anatomy, deformed, texts, watermarks, text",
-        "width": [
-          "1025:1022",
-          0
-        ],
-        "height": [
-          "1025:1022",
-          1
-        ],
-        "seed_value": [
-          "1027",
-          0
-        ],
-        "steps": 4,
-        "cfg": 1,
-        "sampler_name": "",
-        "scheduler_name": "normal",
-        "denoise": 1,
-        "clip_skip": 0,
-        "additional_hashes": "",
-        "download_civitai_data": false,
-        "easy_remix": false,
-        "custom": ""
+        "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "type": "qwen_image",
+        "device": "default"
       },
-      "class_type": "Image Saver Metadata",
+      "class_type": "CLIPLoader",
       "_meta": {
-        "title": "Image Saver Metadata"
-      }
-    },
-    "1025:1022": {
-      "inputs": {
-        "image": [
-          "559",
-          0
-        ]
-      },
-      "class_type": "GetImageSize",
-      "_meta": {
-        "title": "Get Image Size"
-      }
-    },
-    "1025:1": {
-      "inputs": {
-        "filename": "%time_%basemodelname_%seed",
-        "path": "i2i/%date",
-        "extension": "png",
-        "lossless_webp": false,
-        "quality_jpeg_or_webp": 100,
-        "optimize_png": false,
-        "embed_workflow": true,
-        "save_workflow_as_json": false,
-        "counter": 0,
-        "time_format": "%Y-%m-%d-%H%M%S",
-        "show_preview": true,
-        "images": [
-          "559",
-          0
-        ],
-        "metadata": [
-          "1025:2",
-          0
-        ]
-      },
-      "class_type": "Image Saver Simple",
-      "_meta": {
-        "title": "Image Saver Simple"
+        "title": "Load CLIP"
       }
     }
   },
   "controls": [
     {
-      "id": "nodes.1027.inputs.seed",
-      "path": "nodes.1027.inputs.seed",
-      "label": "Seed",
-      "kind": "seed",
-      "value": -1,
-      "numeric": true,
-      "seed": true,
+      "id": "nodes.1043.inputs.image",
+      "path": "nodes.1043.inputs.image",
+      "label": "Image",
+      "meta_title": "Load Image",
+      "kind": "image",
+      "value": "Olivia_Rodrigo.webp",
+      "numeric": false,
+      "seed": false,
       "options": [],
-      "minimum": 0,
-      "maximum": 4294967295,
-      "step": 1,
-      "node_id": "1027",
-      "input_name": "seed"
+      "minimum": null,
+      "maximum": null,
+      "step": null,
+      "node_id": "1043",
+      "input_name": "image"
     },
     {
-      "id": "nodes.563.inputs.steps",
-      "path": "nodes.563.inputs.steps",
-      "label": "Steps",
+      "id": "nodes.1050.inputs.value",
+      "path": "nodes.1050.inputs.value",
+      "label": "Value",
+      "meta_title": "Step",
       "kind": "number",
       "value": 8,
       "numeric": true,
@@ -310,43 +259,78 @@
       "minimum": 1,
       "maximum": 100,
       "step": 1,
-      "node_id": "563",
-      "input_name": "steps"
+      "node_id": "1050",
+      "input_name": "value"
     },
     {
-      "id": "nodes.563.inputs.sampler_name",
-      "path": "nodes.563.inputs.sampler_name",
-      "label": "Sampler",
-      "kind": "sampler",
-      "value": "res_2m",
-      "numeric": false,
-      "seed": false,
+      "id": "nodes.1053.inputs.seed",
+      "path": "nodes.1053.inputs.seed",
+      "label": "Seed",
+      "meta_title": "Seed (rgthree)",
+      "kind": "seed",
+      "value": -1,
+      "numeric": true,
+      "seed": true,
       "options": [],
-      "minimum": null,
-      "maximum": null,
-      "step": null,
-      "node_id": "563",
-      "input_name": "sampler_name"
+      "minimum": -1,
+      "maximum": 4294967295,
+      "step": 1,
+      "node_id": "1053",
+      "input_name": "seed"
     },
     {
-      "id": "nodes.563.inputs.scheduler",
-      "path": "nodes.563.inputs.scheduler",
-      "label": "Scheduler",
-      "kind": "sampler",
-      "value": "sgm_uniform",
-      "numeric": false,
+      "id": "nodes.1064.inputs.width",
+      "path": "nodes.1064.inputs.width",
+      "label": "Width",
+      "meta_title": "Empty Latent Image",
+      "kind": "number",
+      "value": 768,
+      "numeric": true,
       "seed": false,
       "options": [],
-      "minimum": null,
-      "maximum": null,
-      "step": null,
-      "node_id": "563",
-      "input_name": "scheduler"
+      "minimum": 64,
+      "maximum": 4096,
+      "step": 8,
+      "node_id": "1064",
+      "input_name": "width"
+    },
+    {
+      "id": "nodes.1064.inputs.height",
+      "path": "nodes.1064.inputs.height",
+      "label": "Height",
+      "meta_title": "Empty Latent Image",
+      "kind": "number",
+      "value": 1344,
+      "numeric": true,
+      "seed": false,
+      "options": [],
+      "minimum": 64,
+      "maximum": 4096,
+      "step": 8,
+      "node_id": "1064",
+      "input_name": "height"
+    },
+    {
+      "id": "nodes.1064.inputs.batch_size",
+      "path": "nodes.1064.inputs.batch_size",
+      "label": "Batch Size",
+      "meta_title": "Empty Latent Image",
+      "kind": "number",
+      "value": 1,
+      "numeric": true,
+      "seed": false,
+      "options": [],
+      "minimum": 0,
+      "maximum": 100,
+      "step": 1,
+      "node_id": "1064",
+      "input_name": "batch_size"
     },
     {
       "id": "nodes.569.inputs.prompt",
       "path": "nodes.569.inputs.prompt",
       "label": "Positive prompt",
+      "meta_title": "TextEncodeQwenImageEditPlus",
       "kind": "prompt",
       "value": "",
       "numeric": false,
@@ -362,6 +346,7 @@
       "id": "nodes.571.inputs.prompt",
       "path": "nodes.571.inputs.prompt",
       "label": "Negative prompt",
+      "meta_title": "TextEncodeQwenImageEdit",
       "kind": "prompt",
       "value": "worst quality, low quality, blurry, mutated hands, extra fingers, extra hand, distorted face, monochrome, black and white, bad anatomy, deformed, texts, watermarks,",
       "numeric": false,
@@ -376,11 +361,15 @@
   ],
   "locked_nodes": [
     {
-      "id": "1041",
+      "id": "1056",
       "class_type": "LoraLoaderModelOnly"
     },
     {
-      "id": "1042",
+      "id": "1057",
+      "class_type": "LoraLoaderModelOnly"
+    },
+    {
+      "id": "1058",
       "class_type": "LoraLoaderModelOnly"
     },
     {
@@ -398,10 +387,37 @@
     {
       "id": "572:257",
       "class_type": "VAELoader"
-    },
-    {
-      "id": "576",
-      "class_type": "VAEEncode"
     }
-  ]
+  ],
+  "mode": "image-to-image",
+  "default_aspect_ratio": "1:1",
+  "supported_aspect_ratios": [
+    "1:1",
+    "16:9",
+    "9:16",
+    "4:3",
+    "21:9"
+  ],
+  "prompt_binding": null,
+  "image_bindings": [
+    {
+      "node_id": "1043",
+      "input_name": "image",
+      "id": "nodes.1043.inputs.image"
+    }
+  ],
+  "image_binding": {
+    "node_id": "1043",
+    "input_name": "image",
+    "id": "nodes.1043.inputs.image"
+  },
+  "step_binding": null,
+  "dimension_bindings": {
+    "node_id": "1064",
+    "width": "width",
+    "height": "height"
+  },
+  "requires_image": true,
+  "output_kind": "image",
+  "thumbnail": null
 }

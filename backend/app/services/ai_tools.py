@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+import random
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..config import Settings, get_settings
-from ..schemas import ToolAspectRatio, ToolDetail, ToolMode, ToolParseResponse, ToolSummary
+from ..schemas import (
+    ToolAspectRatio,
+    ToolDetail,
+    ToolMode,
+    ToolParseResponse,
+    ToolSummary,
+)
 
 Workflow = dict[str, dict[str, Any]]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -28,8 +36,17 @@ ASPECT_DIMENSIONS: dict[str, tuple[int, int]] = {
     "21:9": (1536, 656),
 }
 INFRASTRUCTURE_MARKERS = (
-    "loader", "checkpoint", "lora", "controlnet", "ipadapter", "upscalemodel",
-    "unet", "vae", "clipvision", "encoder", "randomnoise",
+    "loader",
+    "checkpoint",
+    "lora",
+    "controlnet",
+    "ipadapter",
+    "upscalemodel",
+    "unet",
+    "vae",
+    "clipvision",
+    "encoder",
+    "randomnoise",
 )
 LOCKED_EXECUTION_MARKERS = ("sampler", "ksampler", "scheduler", "noise")
 TEXT_CLASSES = {"cliptextencode", "cliptextencodeflux", "cliptextencodecontrolnet"}
@@ -78,6 +95,17 @@ def _validate_json_value(value: Any, depth: int = 0) -> None:
         raise AIToolError("Workflow contains an unsupported value")
 
 
+def _meta_title(node: dict[str, Any]) -> str | None:
+    """Human node title from the workflow editor, e.g. ``_meta: {title: "Face Detailer"}``."""
+    meta = node.get("_meta")
+    if isinstance(meta, dict):
+        title = meta.get("title")
+        print("title", title)
+        if isinstance(title, str) and title.strip():
+            return re.sub(r"\s+", " ", title.strip())
+    return None
+
+
 def _prompt_roles(workflow: Workflow) -> dict[str, str]:
     roles: dict[str, str] = {}
     for node in workflow.values():
@@ -90,25 +118,51 @@ def _prompt_roles(workflow: Workflow) -> dict[str, str]:
     return roles
 
 
-def extract_controls(workflow: Workflow) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def extract_controls(
+    workflow: Workflow,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     controls: list[dict[str, Any]] = []
     locked: list[dict[str, str]] = []
     seen: set[str] = set()
     roles = _prompt_roles(workflow)
 
-    def add(node_id: str, node: dict[str, Any], input_name: str, *, kind: str, label: str, numeric: bool = False, seed: bool = False, minimum: float | None = None, maximum: float | None = None, step: float | None = None) -> None:
+    def add(
+        node_id: str,
+        node: dict[str, Any],
+        input_name: str,
+        *,
+        kind: str,
+        label: str,
+        value: Any = None,
+        options: list[Any] | None = None,
+        numeric: bool = False,
+        seed: bool = False,
+        minimum: float | None = None,
+        maximum: float | None = None,
+        step: float | None = None,
+    ) -> None:
         path = f"nodes.{node_id}.inputs.{input_name}"
         raw = node.get("inputs", {}).get(input_name)
         if path in seen or isinstance(raw, list):
             return
-        options: list[Any] = []
-        current = raw
-        if isinstance(raw, dict):
-            current = raw.get("default", raw.get("value"))
-            options = raw.get("options", raw.get("values", []))
-            if not isinstance(options, list):
-                options = []
-        controls.append({"id": path, "path": path, "label": label, "kind": kind, "value": current, "numeric": numeric, "seed": seed, "options": options, "minimum": minimum, "maximum": maximum, "step": step, "node_id": node_id, "input_name": input_name})
+        controls.append(
+            {
+                "id": path,
+                "path": path,
+                "label": label,
+                "meta_title": _meta_title(node),
+                "kind": kind,
+                "value": raw if value is None else value,
+                "numeric": numeric,
+                "seed": seed,
+                "options": options or [],
+                "minimum": minimum,
+                "maximum": maximum,
+                "step": step,
+                "node_id": node_id,
+                "input_name": input_name,
+            }
+        )
         seen.add(path)
 
     for node_id in sorted(workflow):
@@ -116,28 +170,104 @@ def extract_controls(workflow: Workflow) -> tuple[list[dict[str, Any]], list[dic
         class_type = str(node.get("class_type", ""))
         inputs = node["inputs"]
         normalized = _norm(class_type)
-        if _is_infrastructure(class_type):
+        if _is_infrastructure(class_type) and not (
+            "loadimage" in normalized and "image" in inputs
+        ):
             locked.append({"id": node_id, "class_type": class_type})
             continue
         if any(marker in normalized for marker in LOCKED_EXECUTION_MARKERS):
             continue
-        if normalized in TEXT_CLASSES or "cliptextencode" in normalized or "prompttext" in normalized:
-            for input_name in ("text", "prompt"):
-                if isinstance(inputs.get(input_name), str):
+        for input_name, raw in inputs.items():
+            if isinstance(raw, list):
+                continue
+            label = _label(input_name)
+            if (
+                "loadimage" in normalized
+                and input_name == "image"
+                and isinstance(raw, str)
+            ):
+                add(node_id, node, input_name, kind="image", label=label)
+            elif isinstance(raw, bool):
+                add(node_id, node, input_name, kind="boolean", label=label)
+            elif isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                is_seed = input_name.lower() == "seed" or "seed" in normalized
+                minimum, maximum, step = (
+                    (-1, 2**32 - 1, 1) if is_seed else (None, None, None)
+                )
+                if "emptylatent" in normalized and input_name in {"width", "height"}:
+                    minimum, maximum, step = 64, 4096, 8
+                elif not is_seed and "int" in normalized:
+                    minimum, maximum, step = 1, 100, 1
+                elif not is_seed and isinstance(raw, int):
+                    minimum, maximum, step = 0, 100, 1
+                add(
+                    node_id,
+                    node,
+                    input_name,
+                    kind="seed" if is_seed else "number",
+                    label=label,
+                    numeric=True,
+                    seed=is_seed,
+                    minimum=minimum,
+                    maximum=maximum,
+                    step=step,
+                )
+            elif isinstance(raw, str):
+                if (
+                    input_name in {"text", "prompt"}
+                    or "text" in normalized
+                    or "prompt" in normalized
+                ):
+                    kind = "prompt" if input_name in {"text", "prompt"} else "text"
                     role = roles.get(node_id)
-                    add(node_id, node, input_name, kind="prompt", label=f"{role} prompt" if role else "Prompt")
-                    break
-        if "seed" in normalized and isinstance(inputs.get("seed"), int):
-            add(node_id, node, "seed", kind="seed", label="Seed", numeric=True, seed=True, minimum=-1, maximum=2**32 - 1, step=1)
-        elif "int" in normalized and isinstance(inputs.get("value"), (int, float)):
-            add(node_id, node, "value", kind="number", label="Value", numeric=True, minimum=1, maximum=100, step=1)
-        if any(token in normalized for token in ("string", "text", "prompt")):
-            for input_name, value in inputs.items():
-                if input_name.lower() in {"text", "prompt", "value", "string"} and isinstance(value, str):
-                    add(node_id, node, input_name, kind="prompt", label=f"{roles[node_id]} prompt" if node_id in roles else _label(input_name))
-        if "emptylatent" in normalized and isinstance(inputs.get("width"), (int, float)) and isinstance(inputs.get("height"), (int, float)):
-            add(node_id, node, "width", kind="number", label="Width", numeric=True, minimum=64, maximum=4096, step=8)
-            add(node_id, node, "height", kind="number", label="Height", numeric=True, minimum=64, maximum=4096, step=8)
+                    add(
+                        node_id,
+                        node,
+                        input_name,
+                        kind=kind,
+                        label=f"{role} prompt" if role else label,
+                    )
+                elif isinstance(raw, dict):
+                    options = raw.get("options", raw.get("values", []))
+                    if isinstance(options, list) and options:
+                        add(
+                            node_id,
+                            node,
+                            input_name,
+                            kind="select",
+                            label=label,
+                            value=raw.get("default", raw.get("value")),
+                            options=options,
+                        )
+            elif isinstance(raw, dict):
+                options = raw.get("options", raw.get("values", []))
+                if isinstance(options, list) and options:
+                    add(
+                        node_id,
+                        node,
+                        input_name,
+                        kind="select",
+                        label=label,
+                        value=raw.get("default", raw.get("value")),
+                        options=options,
+                    )
+        if "emptylatent" in normalized:
+            for input_name in ("width", "height"):
+                if (
+                    input_name in inputs
+                    and f"nodes.{node_id}.inputs.{input_name}" not in seen
+                ):
+                    add(
+                        node_id,
+                        node,
+                        input_name,
+                        kind="number",
+                        label=_label(input_name),
+                        numeric=True,
+                        minimum=64,
+                        maximum=4096,
+                        step=8,
+                    )
     if not controls:
         raise AIToolError("Workflow contains no supported editable controls")
     return controls, locked
@@ -146,7 +276,7 @@ def extract_controls(workflow: Workflow) -> tuple[list[dict[str, Any]], list[dic
 class AIToolService:
     """Owns immutable tool definitions and private output files."""
 
-    def __init__(self, settings: Optional[Settings] = None) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self.root = Path(self.settings.TOOLS_DIR).resolve()
         self.definitions = self.root / "definitions"
@@ -175,7 +305,9 @@ class AIToolService:
             raise AIToolNotFound("Tool thumbnail not found")
         return path
 
-    def thumbnail_url(self, tool_id: str, record: dict[str, Any] | None = None) -> str | None:
+    def thumbnail_url(
+        self, tool_id: str, record: dict[str, Any] | None = None
+    ) -> str | None:
         record = record or self.get(tool_id)
         filename = record.get("thumbnail")
         if not isinstance(filename, str):
@@ -190,11 +322,15 @@ class AIToolService:
     def _write_record(self, record: dict[str, Any]) -> None:
         path = self._path(record["tool_id"])
         temp = path.with_suffix(".tmp")
-        temp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.write_text(
+            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         temp.replace(path)
 
     @staticmethod
-    def _safe_controls(workflow: Workflow) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    def _safe_controls(
+        workflow: Workflow,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
         locked = [
             {"id": node_id, "class_type": str(node.get("class_type", ""))}
             for node_id, node in sorted(workflow.items())
@@ -202,7 +338,13 @@ class AIToolService:
         ]
         return [], locked
 
-    def parse(self, payload: bytes, name: str = "Untitled tool", *, require_controls: bool = True) -> ToolParseResponse:
+    def parse(
+        self,
+        payload: bytes,
+        name: str = "Untitled tool",
+        *,
+        require_controls: bool = True,
+    ) -> ToolParseResponse:
         try:
             workflow = json.loads(payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -214,24 +356,45 @@ class AIToolService:
         for node_id, node in workflow.items():
             if not isinstance(node_id, str) or not node or len(node_id) > 128:
                 raise AIToolError("Workflow node id is invalid")
-            if not isinstance(node, dict) or not isinstance(node.get("class_type"), str) or not isinstance(node.get("inputs"), dict):
-                raise AIToolError("Workflow nodes must contain class_type and inputs objects")
+            if (
+                not isinstance(node, dict)
+                or not isinstance(node.get("class_type"), str)
+                or not isinstance(node.get("inputs"), dict)
+            ):
+                raise AIToolError(
+                    "Workflow nodes must contain class_type and inputs objects"
+                )
             if len(node["inputs"]) > MAX_INPUTS_PER_NODE:
                 raise AIToolError("Workflow node has too many inputs")
             _validate_json_value(node)
-        controls, locked = extract_controls(workflow) if require_controls else self._safe_controls(workflow)
+        controls, locked = (
+            extract_controls(workflow)
+            if require_controls
+            else self._safe_controls(workflow)
+        )
         tool_id = uuid.uuid4().hex
         clean_name = re.sub(r"\s+", " ", name.strip())[:120] or "Untitled tool"
-        record = {"tool_id": tool_id, "name": clean_name, "created_at": datetime.now(timezone.utc).isoformat(), "workflow": _copy(workflow), "controls": controls, "locked_nodes": locked}
+        record = {
+            "tool_id": tool_id,
+            "name": clean_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "workflow": _copy(workflow),
+            "controls": controls,
+            "locked_nodes": locked,
+        }
         self._write_record(record)
-        return ToolParseResponse(tool_id=tool_id, name=clean_name, controls=controls, locked_nodes=locked)
+        return ToolParseResponse(
+            tool_id=tool_id, name=clean_name, controls=controls, locked_nodes=locked
+        )
 
     @staticmethod
     def _find_prompt_binding(workflow: Workflow) -> dict[str, str] | None:
         for node_id in sorted(workflow):
             node = workflow[node_id]
             normalized = _norm(str(node.get("class_type", "")))
-            if ("cliptextencode" in normalized or "prompt" in normalized) and isinstance(node["inputs"].get("text"), str):
+            if (
+                "cliptextencode" in normalized or "prompt" in normalized
+            ) and isinstance(node["inputs"].get("text"), str):
                 return {"node_id": node_id, "input_name": "text"}
         return None
 
@@ -239,7 +402,9 @@ class AIToolService:
     def _find_image_binding(workflow: Workflow) -> dict[str, str] | None:
         for node_id in sorted(workflow):
             node = workflow[node_id]
-            if "loadimage" in _norm(str(node.get("class_type", ""))) and isinstance(node["inputs"].get("image"), str):
+            if "loadimage" in _norm(str(node.get("class_type", ""))) and isinstance(
+                node["inputs"].get("image"), str
+            ):
                 return {"node_id": node_id, "input_name": "image"}
         return None
 
@@ -260,6 +425,19 @@ class AIToolService:
                 return {"node_id": node_id, "width": "width", "height": "height"}
         return {}
 
+    @staticmethod
+    def _find_step_binding(workflow: Workflow) -> dict[str, str] | None:
+        for node_id in sorted(workflow):
+            inputs = workflow[node_id]["inputs"]
+            for input_name, value in inputs.items():
+                if (
+                    input_name.lower() == "steps"
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                ):
+                    return {"node_id": node_id, "input_name": input_name}
+        return None
+
     def create(
         self,
         payload: bytes,
@@ -269,17 +447,27 @@ class AIToolService:
         thumbnail_data: bytes | None = None,
         thumbnail_ext: str | None = None,
     ) -> ToolSummary:
-        parsed = self.parse(payload, name, require_controls=False)
+        parsed = self.parse(payload, name, require_controls=True)
         record = self.get(parsed.tool_id)
         workflow = record["workflow"]
+        controls, locked = extract_controls(workflow)
+        record["controls"] = controls
+        record["locked_nodes"] = locked
         prompt_binding = self._find_prompt_binding(workflow)
-        image_binding = self._find_image_binding(workflow)
+        image_bindings = [
+            {
+                "node_id": control["node_id"],
+                "input_name": control["input_name"],
+                "id": control["id"],
+            }
+            for control in controls
+            if control["kind"] == "image"
+        ]
         dimension_bindings = self._find_dimension_bindings(workflow)
+        step_binding = self._find_step_binding(workflow)
         requires_image = mode in {ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO}
-        if requires_image and image_binding is None:
+        if requires_image and not image_bindings:
             raise AIToolError("Image-based tools require a LoadImage input node")
-        # Image-conditioned graphs may derive dimensions from the reference image.
-        # A latent size node is patched only when the uploaded graph provides one.
         thumbnail_name = None
         if thumbnail_data is not None:
             if thumbnail_ext not in IMAGE_EXTENSIONS:
@@ -292,7 +480,23 @@ class AIToolService:
                 temp.replace(thumbnail_path)
             except OSError as exc:
                 raise AIToolError("Could not save tool thumbnail") from exc
-        record.update({"mode": mode.value, "default_aspect_ratio": aspect_ratio.value, "supported_aspect_ratios": list(ASPECT_DIMENSIONS), "prompt_binding": prompt_binding, "image_binding": image_binding if requires_image else None, "dimension_bindings": dimension_bindings, "requires_image": requires_image, "output_kind": "video" if mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO} else "image", "thumbnail": thumbnail_name})
+        record.update(
+            {
+                "mode": mode.value,
+                "default_aspect_ratio": aspect_ratio.value,
+                "supported_aspect_ratios": list(ASPECT_DIMENSIONS),
+                "prompt_binding": prompt_binding,
+                "image_bindings": image_bindings,
+                "image_binding": image_bindings[0] if image_bindings else None,
+                "step_binding": step_binding,
+                "dimension_bindings": dimension_bindings,
+                "requires_image": requires_image,
+                "output_kind": "video"
+                if mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
+                else "image",
+                "thumbnail": thumbnail_name,
+            }
+        )
         self._write_record(record)
         return self._summary(record)
 
@@ -310,23 +514,27 @@ class AIToolService:
                 raise AIToolError(f"Unknown or locked control: {path}")
             if isinstance(value, bool) or not isinstance(value, (str, int, float)):
                 raise AIToolError(f"Invalid value for {path}")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise AIToolError(f"Invalid value for {path}")
             minimum = control.get("minimum")
             maximum = control.get("maximum")
             if minimum is not None and value < minimum:
                 raise AIToolError(f"Value below minimum for {path}")
             if maximum is not None and value > maximum:
                 raise AIToolError(f"Value above maximum for {path}")
-        if control.get("numeric"):
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
-                raise AIToolError(f"Value must be numeric for {path}")
-            if isinstance(value, float) and not value.is_integer():
-                raise AIToolError(f"Value must be an integer for {path}")
-            step = control.get("step")
-            if step == 8 and int(value) % 8:
-                raise AIToolError(f"Value must be divisible by 8 for {path}")
-        node_id = control["node_id"]
-        input_name = control["input_name"]
-        graph[node_id]["inputs"][input_name] = value
+            if control.get("numeric"):
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise AIToolError(f"Value must be numeric for {path}")
+                if isinstance(value, float) and not value.is_integer():
+                    raise AIToolError(f"Value must be an integer for {path}")
+                step = control.get("step")
+                if step == 8 and int(value) % 8:
+                    raise AIToolError(f"Value must be divisible by 8 for {path}")
+            node_id = control["node_id"]
+            input_name = control["input_name"]
+            if control.get("seed") and value == -1:
+                value = random.randint(0, 2**32 - 1)
+            graph[node_id]["inputs"][input_name] = value
         return graph
 
     def get(self, tool_id: str) -> dict[str, Any]:
@@ -337,12 +545,23 @@ class AIToolService:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise AIToolError("Stored tool is unreadable") from exc
-        if record.get("tool_id") != tool_id or not isinstance(record.get("workflow"), dict):
+        if record.get("tool_id") != tool_id or not isinstance(
+            record.get("workflow"), dict
+        ):
             raise AIToolError("Stored tool is invalid")
         return record
 
     def _summary(self, record: dict[str, Any]) -> ToolSummary:
-        return ToolSummary(tool_id=record["tool_id"], name=record["name"], mode=record["mode"], default_aspect_ratio=record["default_aspect_ratio"], requires_image=bool(record.get("requires_image")), has_prompt=record.get("prompt_binding") is not None, created_at=record["created_at"], thumbnail_url=self.thumbnail_url(record["tool_id"], record))
+        return ToolSummary(
+            tool_id=record["tool_id"],
+            name=record["name"],
+            mode=record["mode"],
+            default_aspect_ratio=record["default_aspect_ratio"],
+            requires_image=bool(record.get("requires_image")),
+            has_prompt=record.get("prompt_binding") is not None,
+            created_at=record["created_at"],
+            thumbnail_url=self.thumbnail_url(record["tool_id"], record),
+        )
 
     def list_public(self) -> list[ToolSummary]:
         items: list[ToolSummary] = []
@@ -357,29 +576,128 @@ class AIToolService:
 
     def detail(self, tool_id: str) -> ToolDetail:
         record = self.get(tool_id)
-        return ToolDetail(**self._summary(record).model_dump(), supported_aspect_ratios=record.get("supported_aspect_ratios", list(ASPECT_DIMENSIONS)), output_kind=record.get("output_kind", "image"))
+        return ToolDetail(
+            **self._summary(record).model_dump(),
+            supported_aspect_ratios=record.get(
+                "supported_aspect_ratios", list(ASPECT_DIMENSIONS)
+            ),
+            output_kind=record.get("output_kind", "image"),
+            controls=record.get("controls", []),
+        )
 
-    def build_graph(self, tool_id: str, prompt: str, aspect_ratio: ToolAspectRatio, image_filename: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+    def build_graph(
+        self,
+        tool_id: str,
+        prompt: str,
+        aspect_ratio: ToolAspectRatio,
+        image_filename: str | None = None,
+        values: dict[str, Any] | None = None,
+        images: dict[str, str] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         record = self.get(tool_id)
-        if bool(record.get("requires_image")) != bool(image_filename):
-            raise AIToolError("Input image does not match this tool mode")
         graph = _copy(record["workflow"])
-        binding = record.get("prompt_binding")
-        if binding:
-            graph[binding["node_id"]]["inputs"][binding["input_name"]] = prompt
-        image_binding = record.get("image_binding")
-        if image_binding and image_filename:
-            graph[image_binding["node_id"]]["inputs"][image_binding["input_name"]] = image_filename
+        submitted = dict(values or {})
+        controls = {control["id"]: control for control in record.get("controls", [])}
+        unknown = set(submitted) - set(controls)
+        if unknown:
+            raise AIToolError(f"Unknown or locked control: {sorted(unknown)[0]}")
+        submitted_images = dict(images or {})
+        unknown_images = set(submitted_images) - set(controls)
+        if unknown_images:
+            raise AIToolError(
+                f"Unknown or locked image control: {sorted(unknown_images)[0]}"
+            )
+        non_image_values = set(submitted_images) - {
+            control_id
+            for control_id, control in controls.items()
+            if control["kind"] == "image"
+        }
+        if non_image_values:
+            raise AIToolError(f"Invalid image control: {sorted(non_image_values)[0]}")
+        if prompt and record.get("prompt_binding"):
+            binding = record["prompt_binding"]
+            submitted[
+                binding["id"]
+                if "id" in binding
+                else f"nodes.{binding['node_id']}.inputs.{binding['input_name']}"
+            ] = prompt
+        for control in record.get("controls", []):
+            control_id = control["id"]
+            if control["kind"] == "image":
+                filename = submitted_images.get(control_id)
+                if filename:
+                    graph[control["node_id"]]["inputs"][control["input_name"]] = (
+                        filename
+                    )
+                continue
+            if control_id not in submitted:
+                continue
+            value = submitted[control_id]
+            if control["kind"] in {"number", "seed"}:
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise AIToolError(f"Invalid numeric value for {control_id}")
+                if isinstance(value, float) and not math.isfinite(value):
+                    raise AIToolError(f"Invalid numeric value for {control_id}")
+                if control.get("minimum") is not None and value < control["minimum"]:
+                    raise AIToolError(f"Value below minimum for {control_id}")
+                if control.get("maximum") is not None and value > control["maximum"]:
+                    raise AIToolError(f"Value above maximum for {control_id}")
+                if control.get("step") == 8 and int(value) % 8:
+                    raise AIToolError(f"Value must be divisible by 8 for {control_id}")
+            if control["kind"] == "select" and value not in control.get("options", []):
+                raise AIToolError(f"Invalid option for {control_id}")
+            if control["kind"] == "boolean" and not isinstance(value, bool):
+                raise AIToolError(f"Invalid boolean value for {control_id}")
+            if control["kind"] in {"text", "prompt"} and (
+                not isinstance(value, str) or len(value) > MAX_STRING_LENGTH
+            ):
+                raise AIToolError(f"Invalid text value for {control_id}")
+            if control.get("seed") and value == -1:
+                value = random.randint(0, 2**32 - 1)
+            graph[control["node_id"]]["inputs"][control["input_name"]] = value
+        if image_filename:
+            binding = record.get("image_binding")
+            if binding:
+                graph[binding["node_id"]]["inputs"][binding["input_name"]] = (
+                    image_filename
+                )
         dimensions = ASPECT_DIMENSIONS.get(aspect_ratio.value)
         if not dimensions:
             raise AIToolError("Unsupported aspect ratio")
         dimension = record.get("dimension_bindings") or {}
+        dimension_overridden = False
         if dimension:
-            node_inputs = graph[dimension["node_id"]]["inputs"]
-            node_inputs[dimension["width"]], node_inputs[dimension["height"]] = dimensions
-        return graph, {"width": dimensions[0], "height": dimensions[1], "seed": None}
+            dimension_overridden = any(
+                control["node_id"] == dimension["node_id"]
+                and control["input_name"] in {dimension["width"], dimension["height"]}
+                and control["id"] in submitted
+                for control in record.get("controls", [])
+            )
+            if not dimension_overridden:
+                (
+                    graph[dimension["node_id"]]["inputs"][dimension["width"]],
+                    graph[dimension["node_id"]]["inputs"][dimension["height"]],
+                ) = dimensions
+            resolved_dimensions = (
+                graph[dimension["node_id"]]["inputs"][dimension["width"]],
+                graph[dimension["node_id"]]["inputs"][dimension["height"]],
+            )
+        else:
+            resolved_dimensions = dimensions
+        return graph, {
+            "width": resolved_dimensions[0],
+            "height": resolved_dimensions[1],
+            "seed": None,
+        }
 
-    async def save_output(self, data: bytes, tool_id: str, prompt_id: str, filename: str, metadata: dict[str, Any]) -> str:
+    async def save_output(
+        self,
+        data: bytes,
+        tool_id: str,
+        prompt_id: str,
+        filename: str,
+        metadata: dict[str, Any],
+    ) -> str:
         suffix = Path(filename).suffix.lower()
         if suffix not in IMAGE_EXTENSIONS:
             raise AIToolError("Tool output is not an approved image type")
@@ -388,7 +706,9 @@ class AIToolService:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{uuid.uuid4().hex[:12]}{suffix}"
         dest.write_bytes(data)
-        dest.with_suffix(dest.suffix + ".json").write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+        dest.with_suffix(dest.suffix + ".json").write_text(
+            json.dumps(metadata, ensure_ascii=False), encoding="utf-8"
+        )
         relative = dest.relative_to(self.outputs).as_posix()
         return f"{self.settings.FILES_PUBLIC_BASE}/api/tools/{tool_id}/files/{relative}"
 
@@ -410,4 +730,11 @@ def get_ai_tool_service() -> AIToolService:
     return AIToolService()
 
 
-__all__ = ["AIToolError", "AIToolNotFound", "AIToolService", "ASPECT_DIMENSIONS", "extract_controls", "get_ai_tool_service"]
+__all__ = [
+    "ASPECT_DIMENSIONS",
+    "AIToolError",
+    "AIToolNotFound",
+    "AIToolService",
+    "extract_controls",
+    "get_ai_tool_service",
+]

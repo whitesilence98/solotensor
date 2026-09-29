@@ -12,6 +12,7 @@ import {
   type LoraSelection,
   type ProgressEvent,
 } from "@/lib/api";
+import { loadSettings } from "@/lib/settings";
 
 const DEFAULT_UNET = "krea2\\krea2_turbo_fp8_scaled.safetensors";
 const DEFAULT_CLIP = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors";
@@ -118,6 +119,10 @@ export default function StudioPage() {
   useEffect(() => {
     const saved = loadSavedInputs();
     if (!saved) {
+      const settings = loadSettings();
+      setFormat(settings.defaultFormat);
+      setSteps(String(settings.defaultSteps));
+      setImageCount(String(settings.defaultImageCount));
       setHydrated(true);
       return;
     }
@@ -291,7 +296,7 @@ export default function StudioPage() {
   const canGenerate = useMemo(() => mode === "text-to-image" && prompt.trim().length > 0 && !busy, [mode, prompt, busy]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-transparent lg:flex-row lg:overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-contain bg-transparent lg:flex-row">
       <ControlPanel
         mode={mode}
         onModeChange={setMode}
@@ -343,6 +348,7 @@ export default function StudioPage() {
         error={error ?? modelsError}
         outputWidth={outputDimensions.width}
         outputHeight={outputDimensions.height}
+        referenceImage={references[0] ?? null}
       />
     </div>
   );

@@ -13,7 +13,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from typing import Literal
+from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -283,6 +283,9 @@ async def _run_tool(
     prompt: str,
     aspect_ratio: ToolAspectRatio | None,
     input_image: UploadFile | None,
+    values: dict[str, object] | None = None,
+    files: list[UploadFile] | None = None,
+    image_control_ids: list[str] | None = None,
 ) -> ToolExecutionResult:
     tools = get_ai_tool_service()
     try:
@@ -291,55 +294,50 @@ async def _run_tool(
         chosen_ratio = aspect_ratio or ToolAspectRatio(record["default_aspect_ratio"])
     except (AIToolNotFound, ValueError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
-    if detail.has_prompt and not prompt.strip():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Prompt is required for this tool")
-    if not detail.has_prompt:
-        prompt = ""
     comfy = get_comfy_client()
-    uploaded_name: str | None = None
-    if detail.requires_image:
-        if input_image is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Input image is required")
-        if input_image.content_type not in ALLOWED_IMAGE_MIME:
+    uploaded_images: dict[str, str] = {}
+    image_ids = {control.id for control in detail.controls if control.kind == "image"}
+    uploads = ([input_image] if input_image else []) + [file for file in (files or []) if file.filename]
+    submitted_image_ids = image_control_ids or []
+    if len(submitted_image_ids) != len(uploads):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Each input image must name one image control")
+    if len(set(submitted_image_ids)) != len(submitted_image_ids):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Duplicate image control")
+    for upload, field_id in zip(uploads, submitted_image_ids):
+        if field_id not in image_ids:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unknown image control")
+        if field_id in uploaded_images:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Duplicate image control")
+        if upload.content_type not in ALLOWED_IMAGE_MIME:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unsupported input image type")
-        image_data = await input_image.read(settings.UPLOAD_MAX_BYTES + 1)
+        image_data = await upload.read(settings.UPLOAD_MAX_BYTES + 1)
         if len(image_data) > settings.UPLOAD_MAX_BYTES:
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Input image is too large")
         try:
-            uploaded_name = await comfy.upload_image(image_data, input_image.filename or "input.png", input_image.content_type or "image/png")
+            uploaded_images[field_id] = await comfy.upload_image(image_data, upload.filename or "input.png", upload.content_type or "image/png")
         except ComfyClientError as exc:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    elif input_image is not None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="This tool does not accept an input image")
+    if detail.requires_image and len(uploaded_images) != len(image_ids):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All input image controls are required")
     try:
-        graph, resolved = tools.build_graph(tool_id, prompt, chosen_ratio, uploaded_name)
+        graph, resolved = tools.build_graph(tool_id, prompt, chosen_ratio, values=values, images=uploaded_images)
         client_id = f"tool-{uuid.uuid4().hex}"
         started = time.monotonic()
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
-    except (AIToolError, ComfyClientError) as exc:
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ComfyClientError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     elapsed_ms = int((time.monotonic() - started) * 1000)
     if final_status != "completed":
         return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
     assets: list[UploadedAsset] = []
-    metadata_base = {
-        "origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id,
-        "tool_name": detail.name, "tool_type": detail.mode.value,
-        "tool_mode": detail.mode.value, "prompt": prompt,
-        "aspect_ratio": chosen_ratio.value, "width": resolved["width"],
-        "height": resolved["height"], "prompt_id": prompt_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "elapsed_ms": elapsed_ms, "tags": ["ai_tool_studio", detail.mode.value],
-    }
+    metadata_base = {"origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id, "tool_name": detail.name, "tool_type": detail.mode.value, "tool_mode": detail.mode.value, "prompt": prompt, "aspect_ratio": chosen_ratio.value, "width": resolved["width"], "height": resolved["height"], "prompt_id": prompt_id, "created_at": datetime.now(timezone.utc).isoformat(), "elapsed_ms": elapsed_ms, "tags": ["ai_tool_studio", detail.mode.value]}
     try:
         for image in await comfy.list_images(prompt_id):
             blob = await comfy.fetch_image_bytes(image)
-            url = await storage.upload_image(
-                blob, prompt_id, image["filename"],
-                metadata={**metadata_base, "source_filename": image["filename"]},
-                namespace=f"tools/{tool_id}",
-            )
+            url = await storage.upload_image(blob, prompt_id, image["filename"], metadata={**metadata_base, "source_filename": image["filename"]}, namespace=f"tools/{tool_id}")
             assets.append(UploadedAsset(filename=image["filename"], url=url))
     except (ComfyClientError, StorageError) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="AI Tool output retrieval failed") from exc
@@ -348,7 +346,7 @@ async def _run_tool(
 
 @app.post("/api/tools/execute", response_model=ToolExecutionResult)
 async def execute_tool(req: ToolExecuteRequest) -> ToolExecutionResult:
-    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None)
+    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None, req.values)
 
 
 @app.post("/api/tools/{tool_id}/run", response_model=ToolExecutionResult)
@@ -356,10 +354,18 @@ async def run_tool(
     tool_id: str,
     prompt: str = Form(""),
     aspect_ratio: ToolAspectRatio | None = Form(None),
-    input_image: UploadFile | None = File(None),
+    values: str = Form("{}"),
+    image_control_ids: str = Form("[]"),
+    files: Annotated[list[UploadFile] | None, File()] = None,
 ) -> ToolExecutionResult:
-    return await _run_tool(tool_id, prompt, aspect_ratio, input_image)
-
+    try:
+        parsed_values = json.loads(values)
+        parsed_image_ids = json.loads(image_control_ids)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values and image control IDs must be valid JSON") from exc
+    if not isinstance(parsed_values, dict) or not isinstance(parsed_image_ids, list) or not all(isinstance(item, str) for item in parsed_image_ids):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values must be an object and image control IDs an array")
+    return await _run_tool(tool_id, prompt, aspect_ratio, None, parsed_values, files, parsed_image_ids)
 
 @app.get("/api/tools/{tool_id}/thumbnail")
 async def tool_thumbnail(tool_id: str) -> FileResponse:
