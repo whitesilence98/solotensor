@@ -90,6 +90,7 @@ export default function StudioPage() {
   const [loraOptions, setLoraOptions] = useState<string[]>([]);
   const [loras, setLoras] = useState<LoraDraft[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [seed, setSeed] = useState("");
   const [steps, setSteps] = useState("10");
   const [imageCount, setImageCount] = useState("1");
@@ -171,28 +172,32 @@ export default function StudioPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      api.getModels("diffusion_models"),
-      api.getModels("text_encoders"),
-      api.getModels("vae"),
-      api.getModels("loras"),
-    ]).then(([unets, clips, vaes, availableLoras]) => {
+    const categories = [
+      ["diffusion_models", (values: string[]) => {
+        setUnetOptions(values.length ? values : [unetName]);
+        if (values.length) setUnetName((current) => values.includes(current) ? current : values[0]);
+      }],
+      ["text_encoders", (values: string[]) => {
+        setClipOptions(values.length ? values : [clipName]);
+        if (values.length) setClipName((current) => values.includes(current) ? current : values[0]);
+      }],
+      ["vae", (values: string[]) => {
+        setVaeOptions(values.length ? values : [vaeName]);
+        if (values.length) setVaeName((current) => values.includes(current) ? current : values[0]);
+      }],
+      ["loras", (values: string[]) => setLoraOptions(values)],
+    ] as const;
+
+    Promise.allSettled(categories.map(([category]) => api.getModels(category))).then((results) => {
       if (cancelled) return;
-      if (unets.length) {
-        setUnetOptions(unets);
-        setUnetName((current) => unets.includes(current) ? current : unets[0]);
-      }
-      if (clips.length) {
-        setClipOptions(clips);
-        setClipName((current) => clips.includes(current) ? current : clips[0]);
-      }
-      if (vaes.length) {
-        setVaeOptions(vaes);
-        setVaeName((current) => vaes.includes(current) ? current : vaes[0]);
-      }
-      setLoraOptions(availableLoras);
-    }).catch((err: unknown) => {
-      if (!cancelled) setModelsError(err instanceof Error ? err.message : "Could not load model lists.");
+      const errors: string[] = [];
+      results.forEach((result, index) => {
+        const [, apply] = categories[index];
+        if (result.status === "fulfilled") apply(result.value);
+        else errors.push(`${categories[index][0]} unavailable`);
+      });
+      setModelsError(errors.length ? `ComfyUI model discovery: ${errors.join(", ")}.` : null);
+      setModelsLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
@@ -337,6 +342,8 @@ export default function StudioPage() {
         busy={busy}
         progress={progress}
         progressLabel={progressLabel}
+        modelsLoading={modelsLoading}
+        modelsError={modelsError}
         canGenerate={canGenerate}
         onGenerate={handleGenerate}
       />
@@ -345,7 +352,7 @@ export default function StudioPage() {
         progress={progress}
         progressLabel={progressLabel}
         gallery={gallery}
-        error={error ?? modelsError}
+        error={error}
         outputWidth={outputDimensions.width}
         outputHeight={outputDimensions.height}
         referenceImage={references[0] ?? null}

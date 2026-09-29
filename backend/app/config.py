@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     TOOLS_DIR: str = "tool_data"
     TOOL_MAX_WORKFLOW_BYTES: int = 5 * 1024 * 1024
 
+    # --- Model publishing -------------------------------------------------
+    # Creator models are kept separate from generated assets and tool data.
+    MODELS_DIR: str = "models"
+    MODEL_MAX_BYTES: int = 20 * 1024 * 1024 * 1024
+    MODEL_SAMPLE_MAX_BYTES: int = 20 * 1024 * 1024
+    MODEL_FILE_EXTENSIONS: str = ".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
+
     # --- App -------------------------------------------------------------
     APP_NAME: str = "Comfy Studio API"
     ALLOWED_ORIGINS: str = (

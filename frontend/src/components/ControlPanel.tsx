@@ -46,6 +46,7 @@ interface Props {
   format: FormatKey; onFormatChange: (v: FormatKey) => void;
   references: string[]; onReferencesChange: (refs: string[]) => void;
   busy: boolean; progress: number; progressLabel: string;
+  modelsLoading?: boolean; modelsError?: string | null;
   canGenerate: boolean; onGenerate: () => void;
 }
 
@@ -60,7 +61,7 @@ export default function ControlPanel(props: Props) {
     imageCount, onImageCountChange, cfg, onCfgChange, denoise, onDenoiseChange,
     customWidth, onCustomWidthChange, customHeight, onCustomHeightChange, format,
     onFormatChange, references, onReferencesChange, busy, progress, progressLabel,
-    canGenerate, onGenerate } = props;
+    modelsLoading, modelsError, canGenerate, onGenerate } = props;
   const imageToImage = mode === "image-to-image";
   const promptWords = wordCount(prompt);
   const [advanced, setAdvanced] = useState(false);
@@ -103,6 +104,8 @@ export default function ControlPanel(props: Props) {
         </button>
         {modelOpen && (
           <div className="mt-4 space-y-3 border-t border-[#292d28] pt-4">
+            {modelsLoading && <p className="text-[11px] text-[#8a8d85]">Loading local ComfyUI models…</p>}
+            {modelsError && <p className="border-l-2 border-[#ef8c79] bg-[#ef8c79]/[.06] px-3 py-2 text-[11px] leading-4 text-[#ef8c79]">{modelsError}</p>}
             <div><label htmlFor="unet-name" className={labelClass}>UNET</label>{select("unet-name", unetName, unetOptions, onUnetNameChange)}</div>
             <div><label htmlFor="clip-name" className={labelClass}>Encoder</label>{select("clip-name", clipName, clipOptions, onClipNameChange)}</div>
             <div><label htmlFor="vae-name" className={labelClass}>VAE</label>{select("vae-name", vaeName, vaeOptions, onVaeNameChange)}</div>

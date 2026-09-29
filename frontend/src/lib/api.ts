@@ -212,10 +212,155 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(resp.status, message);
   }
+  if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
 }
 
+export type CreatorModelCategory = "Character" | "Style" | "Concept" | "Pose" | "Clothing" | "General";
+export type CreatorModelType = "Checkpoint" | "LoRA" | "LyCORIS" | "VAE" | "Embedding";
+export type ModelVisibility = "Public" | "Unlisted" | "Private";
+export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
+
+export interface CreatorModelCompatibility {
+  base_model: string;
+  vae: string;
+  text_encoders: string[];
+  parent_model: string | null;
+}
+
+export interface CreatorModelGeneration {
+  trigger_words: string[];
+  sampler: string;
+  steps_min: number;
+  steps_max: number;
+  cfg_min: number;
+  cfg_max: number;
+  clip_skip: number;
+  prompt: string;
+  negative_prompt: string;
+}
+
+export interface CreatorModelPermissions {
+  commercial: boolean;
+  remix: boolean;
+  generation_services: boolean;
+  credit_required: boolean;
+}
+
+export interface CreatorModelFile {
+  file_id: string;
+  filename: string;
+  size: number;
+  sha256: string;
+  precision: ModelPrecision;
+  visible: boolean;
+  download_url: string;
+}
+
+export interface CreatorModelSample {
+  sample_id: string;
+  filename: string;
+  url: string;
+  kind: "image" | "video";
+  metadata: Record<string, unknown>;
+}
+
+export interface CreatorModelVersion {
+  version_id: string;
+  name: string;
+  created_at: string;
+  files: CreatorModelFile[];
+  samples: CreatorModelSample[];
+}
+
+export interface CreatorModel {
+  model_id: string;
+  title: string;
+  category: CreatorModelCategory;
+  model_type: CreatorModelType;
+  tags: string[];
+  compatibility: CreatorModelCompatibility;
+  generation: CreatorModelGeneration;
+  permissions: CreatorModelPermissions;
+  visibility: ModelVisibility;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  versions: CreatorModelVersion[];
+}
+
+export interface CreatorModelPayload {
+  title: string;
+  category: CreatorModelCategory;
+  model_type: CreatorModelType;
+  tags: string[];
+  compatibility: CreatorModelCompatibility;
+  generation: CreatorModelGeneration;
+  permissions: CreatorModelPermissions;
+  visibility: ModelVisibility;
+}
+
+export interface ModelPublishPayload { visibility: ModelVisibility; }
+
 export const api = {
+  async listCreatorModels(filters: { visibility?: ModelVisibility; q?: string } = {}): Promise<CreatorModel[]> {
+    const params = new URLSearchParams();
+    if (filters.visibility) params.set("visibility", filters.visibility);
+    if (filters.q) params.set("q", filters.q);
+    const response = await request<{ items: CreatorModel[] }>(`/api/v1/models${params.size ? `?${params}` : ""}`);
+    return response.items;
+  },
+
+  async getCreatorModel(modelId: string): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}`);
+  },
+
+  async createCreatorModel(payload: CreatorModelPayload): Promise<CreatorModel> {
+    return request<CreatorModel>("/api/v1/models", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  async updateCreatorModel(modelId: string, payload: Partial<CreatorModelPayload>): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+
+  async createModelVersion(modelId: string, name: string): Promise<CreatorModelVersion> {
+    return request<CreatorModelVersion>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions`, { method: "POST", body: JSON.stringify({ name }) });
+  },
+
+  async uploadModelFile(modelId: string, versionId: string, file: File, precision: ModelPrecision = "FP16"): Promise<CreatorModel> {
+    const form = new FormData(); form.append("file", file, file.name); form.append("precision", precision);
+    const response = await fetch(`${API_BASE}/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files`, { method: "POST", body: form });
+    if (!response.ok) throw new ApiError(response.status, (await response.json().catch(() => null))?.detail ?? "Could not upload model file");
+    return (await response.json()) as CreatorModel;
+  },
+
+  async uploadModelSample(modelId: string, versionId: string, file: File, metadata: Record<string, unknown> = {}): Promise<CreatorModel> {
+    const form = new FormData(); form.append("file", file, file.name); form.append("metadata", JSON.stringify(metadata));
+    const response = await fetch(`${API_BASE}/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples`, { method: "POST", body: form });
+    if (!response.ok) throw new ApiError(response.status, (await response.json().catch(() => null))?.detail ?? "Could not upload sample");
+    return (await response.json()) as CreatorModel;
+  },
+
+  async patchModelFile(modelId: string, versionId: string, fileId: string, payload: { visible: boolean; precision?: ModelPrecision }): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/${encodeURIComponent(fileId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+
+  async deleteModelFile(modelId: string, versionId: string, fileId: string): Promise<void> {
+    await request<unknown>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
+  },
+
+  async deleteModelSample(modelId: string, versionId: string, sampleId: string): Promise<void> {
+    await request<unknown>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples/${encodeURIComponent(sampleId)}`, { method: "DELETE" });
+  },
+
+  async publishCreatorModel(modelId: string, visibility: ModelVisibility): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/publish`, { method: "POST", body: JSON.stringify({ visibility }) });
+  },
+
+  async deleteCreatorModel(modelId: string): Promise<void> {
+    await request<unknown>(`/api/v1/models/id/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+  },
+
   async generate(payload: GeneratePayload): Promise<GenerationResult> {
     return request<GenerationResult>("/api/v1/generate", {
       method: "POST",

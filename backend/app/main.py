@@ -27,6 +27,17 @@ from .schemas import (
     GalleryItem,
     GalleryResponse,
     HealthResponse,
+    ModelCreateRequest,
+    ModelFilePatchRequest,
+    ModelFileResponse,
+    ModelListResponse,
+    ModelPrecision,
+    ModelPublishRequest,
+    ModelResponse,
+    ModelSampleResponse,
+    ModelUpdateRequest,
+    ModelVersionCreateRequest,
+    ModelVersionResponse,
     ToolAspectRatio,
     ToolCatalogResponse,
     ToolDetail,
@@ -38,6 +49,7 @@ from .schemas import (
 )
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.comfy_client import ComfyClientError, get_comfy_client
+from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.storage import StorageError, StorageService, get_storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -46,6 +58,8 @@ logger = logging.getLogger("comfy_studio")
 settings = get_settings()
 storage = get_storage()
 storage.ensure_root()
+model_storage = get_model_service()
+model_storage.ensure_root()
 
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 
@@ -109,6 +123,128 @@ async def health() -> HealthResponse:
 
 
 MODEL_CATEGORIES = {"diffusion_models", "text_encoders", "vae", "loras"}
+
+
+def _model_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ModelNotFound):
+        return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, ModelConflict):
+        return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/api/v1/models", response_model=ModelListResponse)
+async def list_creator_models(visibility: str | None = None, q: str | None = None) -> ModelListResponse:
+    return ModelListResponse(items=model_storage.list(visibility=visibility, query=q))
+
+
+@app.post("/api/v1/models", response_model=ModelResponse, status_code=status.HTTP_201_CREATED)
+async def create_creator_model(req: ModelCreateRequest) -> ModelResponse:
+    try:
+        return model_storage.create(req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.get("/api/v1/models/id/{model_id}", response_model=ModelResponse)
+async def get_creator_model(model_id: str) -> ModelResponse:
+    try:
+        return model_storage.get(model_id)
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.patch("/api/v1/models/id/{model_id}", response_model=ModelResponse)
+async def update_creator_model(model_id: str, req: ModelUpdateRequest) -> ModelResponse:
+    try:
+        return model_storage.update(model_id, req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.delete("/api/v1/models/id/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_creator_model(model_id: str) -> None:
+    try:
+        model_storage.delete(model_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/id/{model_id}/versions", response_model=ModelVersionResponse, status_code=status.HTTP_201_CREATED)
+async def create_model_version(model_id: str, req: ModelVersionCreateRequest) -> ModelVersionResponse:
+    try:
+        return model_storage.create_version(model_id, req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/files", response_model=ModelResponse)
+async def upload_model_file(model_id: str, version_id: str, file: UploadFile = File(...), precision: ModelPrecision = Form(ModelPrecision.FP16)) -> ModelResponse:
+    data = await file.read(settings.MODEL_MAX_BYTES + 1)
+    try:
+        return model_storage.add_file(model_id, version_id, file.filename or "model.bin", data, precision)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.patch("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}", response_model=ModelResponse)
+async def patch_model_file(model_id: str, version_id: str, file_id: str, req: ModelFilePatchRequest) -> ModelResponse:
+    try:
+        return model_storage.patch_file(model_id, version_id, file_id, req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.delete("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_file(model_id: str, version_id: str, file_id: str) -> None:
+    try:
+        model_storage.remove_file(model_id, version_id, file_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/samples", response_model=ModelResponse)
+async def upload_model_sample(model_id: str, version_id: str, file: UploadFile = File(...), metadata: str = Form("{}")) -> ModelResponse:
+    try:
+        parsed = json.loads(metadata)
+        if not isinstance(parsed, dict):
+            raise ValueError("Sample metadata must be an object")
+        data = await file.read(settings.MODEL_SAMPLE_MAX_BYTES + 1)
+        return model_storage.add_sample(model_id, version_id, file.filename or "sample.png", data, parsed)
+    except (json.JSONDecodeError, ValueError, ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.delete("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_sample(model_id: str, version_id: str, sample_id: str) -> None:
+    try:
+        model_storage.remove_sample(model_id, version_id, sample_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/id/{model_id}/publish", response_model=ModelResponse)
+async def publish_creator_model(model_id: str, req: ModelPublishRequest) -> ModelResponse:
+    try:
+        return model_storage.publish(model_id, req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.get("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
+async def download_model_file(model_id: str, version_id: str, file_id: str) -> FileResponse:
+    try:
+        return FileResponse(model_storage.file_path(model_id, version_id, file_id))
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.get("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
+async def download_model_sample(model_id: str, version_id: str, sample_id: str) -> FileResponse:
+    try:
+        return FileResponse(model_storage.sample_path(model_id, version_id, sample_id))
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
 
 
 @app.get("/api/v1/models/{category}", response_model=list[str])

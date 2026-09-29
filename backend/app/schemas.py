@@ -214,5 +214,205 @@ class ToolExecutionResult(BaseModel):
     aspect_ratio: ToolAspectRatio | None = None
 
 
-class ToolCreateResponse(ToolExecutionResult):
-    tool: ToolSummary | None = None
+
+
+# ---------------------------------------------------------------------------
+# Creator model publishing
+# ---------------------------------------------------------------------------
+
+
+class ModelCategory(str, Enum):
+    CHARACTER = "Character"
+    STYLE = "Style"
+    CONCEPT = "Concept"
+    POSE = "Pose"
+    CLOTHING = "Clothing"
+    GENERAL = "General"
+
+
+class CreatorModelType(str, Enum):
+    CHECKPOINT = "Checkpoint"
+    LORA = "LoRA"
+    LYCORIS = "LyCORIS"
+    VAE = "VAE"
+    EMBEDDING = "Embedding"
+
+
+class ModelVisibility(str, Enum):
+    PUBLIC = "Public"
+    UNLISTED = "Unlisted"
+    PRIVATE = "Private"
+
+
+class ModelPrecision(str, Enum):
+    FP16 = "FP16"
+    FP32 = "FP32"
+    BF16 = "BF16"
+    QUANTIZED = "Quantized"
+
+
+class ModelCompatibility(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    base_model: str = Field("SDXL 1.0", min_length=1, max_length=80)
+    vae: str = Field("Baked-in", min_length=1, max_length=255)
+    text_encoders: list[str] = Field(default_factory=list, max_length=8)
+    parent_model: str | None = Field(None, max_length=255)
+
+
+class ModelGenerationSettings(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    trigger_words: list[str] = Field(default_factory=list, max_length=32)
+    sampler: str = Field("DPM++ 2M Karras", min_length=1, max_length=80)
+    steps_min: int = Field(20, ge=1, le=100)
+    steps_max: int = Field(30, ge=1, le=100)
+    cfg_min: float = Field(3.5, ge=0, le=30)
+    cfg_max: float = Field(7.0, ge=0, le=30)
+    clip_skip: int = Field(1, ge=1, le=2)
+    prompt: str = Field("", max_length=50_000)
+    negative_prompt: str = Field("", max_length=50_000)
+
+    @field_validator("steps_max")
+    @classmethod
+    def steps_ordered(cls, value: int, info: Any) -> int:
+        minimum = info.data.get("steps_min")
+        if minimum is not None and value < minimum:
+            raise ValueError("steps_max must be greater than or equal to steps_min")
+        return value
+
+    @field_validator("cfg_max")
+    @classmethod
+    def cfg_ordered(cls, value: float, info: Any) -> float:
+        minimum = info.data.get("cfg_min")
+        if minimum is not None and value < minimum:
+            raise ValueError("cfg_max must be greater than or equal to cfg_min")
+        return value
+
+
+class ModelPermissions(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    commercial: bool = True
+    remix: bool = False
+    generation_services: bool = True
+    credit_required: bool = True
+
+
+class ModelCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field("Untitled model", min_length=1, max_length=160)
+    category: ModelCategory = ModelCategory.GENERAL
+    model_type: CreatorModelType = CreatorModelType.CHECKPOINT
+    tags: list[str] = Field(default_factory=list, max_length=32)
+    compatibility: ModelCompatibility = Field(default_factory=ModelCompatibility)
+    generation: ModelGenerationSettings = Field(default_factory=ModelGenerationSettings)
+    permissions: ModelPermissions = Field(default_factory=ModelPermissions)
+    visibility: ModelVisibility = ModelVisibility.PRIVATE
+
+    @field_validator("title")
+    @classmethod
+    def title_not_blank(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Model title cannot be blank")
+        return value
+
+    @field_validator("tags", "generation")
+    @classmethod
+    def trim_tags(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            cleaned = [" ".join(item.split()) for item in value if isinstance(item, str) and item.strip()]
+            if len(cleaned) != len(set(cleaned)):
+                raise ValueError("Tags must be unique")
+            return cleaned
+        return value
+
+
+class ModelUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str | None = Field(None, min_length=1, max_length=160)
+    category: ModelCategory | None = None
+    model_type: CreatorModelType | None = None
+    tags: list[str] | None = Field(None, max_length=32)
+    compatibility: ModelCompatibility | None = None
+    generation: ModelGenerationSettings | None = None
+    permissions: ModelPermissions | None = None
+    visibility: ModelVisibility | None = None
+
+    @field_validator("title")
+    @classmethod
+    def update_title_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Model title cannot be blank")
+        return value
+
+
+class ModelFileResponse(BaseModel):
+    file_id: str
+    filename: str
+    size: int
+    sha256: str
+    precision: ModelPrecision
+    visible: bool
+    download_url: str
+
+
+class ModelSampleResponse(BaseModel):
+    sample_id: str
+    filename: str
+    url: str
+    kind: Literal["image", "video"]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelVersionResponse(BaseModel):
+    version_id: str
+    name: str
+    created_at: str
+    files: list[ModelFileResponse] = Field(default_factory=list)
+    samples: list[ModelSampleResponse] = Field(default_factory=list)
+
+
+class ModelResponse(ModelCreateRequest):
+    model_id: str
+    created_at: str
+    updated_at: str
+    published_at: str | None = None
+    versions: list[ModelVersionResponse] = Field(default_factory=list)
+
+
+class ModelListResponse(BaseModel):
+    items: list[ModelResponse]
+
+
+class ModelVersionCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def version_name_not_blank(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Version name cannot be blank")
+        return value
+
+
+class ModelPublishRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    visibility: ModelVisibility
+
+
+class ModelFilePatchRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    visible: bool
+    precision: ModelPrecision | None = None
