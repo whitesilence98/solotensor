@@ -4,4 +4,8 @@ __pycache__/
 node_modules/
 .next/
 dist/
-backend/generated
+
+# Generated assets and creator uploads
+backend/generated/
+backend/models/
+backend/tool_data/

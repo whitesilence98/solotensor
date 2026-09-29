@@ -38,6 +38,8 @@ from .schemas import (
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
+    ModelInstallResponse,
+    PublicModelListResponse,
     ToolAspectRatio,
     ToolCatalogResponse,
     ToolDetail,
@@ -131,6 +133,50 @@ def _model_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ModelConflict):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/api/v1/models/public", response_model=PublicModelListResponse)
+async def list_public_models(q: str | None = None) -> PublicModelListResponse:
+    items = []
+    for model in model_storage.public_list(query=q):
+        public_files = sum(1 for version in model.versions for item in version.files if item.visible)
+        public_samples = sum(len(version.samples) for version in model.versions)
+        cover = next((sample.url for version in model.versions for sample in version.samples), None)
+        items.append({
+            "model_id": model.model_id,
+            "title": model.title,
+            "category": model.category,
+            "model_type": model.model_type,
+            "tags": model.tags,
+            "base_model": model.compatibility.base_model,
+            "published_at": model.published_at,
+            "updated_at": model.updated_at,
+            "cover_url": cover,
+            "version_count": len(model.versions),
+            "file_count": public_files,
+            "sample_count": public_samples,
+        })
+    return PublicModelListResponse(items=items)
+
+
+@app.get("/api/v1/models/public/{model_id}", response_model=ModelResponse)
+async def get_public_model(model_id: str) -> ModelResponse:
+    try:
+        return model_storage.public_response(model_id)
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/install", response_model=ModelInstallResponse)
+async def install_public_model_file(model_id: str, version_id: str, file_id: str) -> ModelInstallResponse:
+    try:
+        return ModelInstallResponse(**model_storage.install_file(model_id, version_id, file_id))
+    except ModelConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ModelError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ModelNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/models", response_model=ModelListResponse)
@@ -234,7 +280,7 @@ async def publish_creator_model(model_id: str, req: ModelPublishRequest) -> Mode
 @app.get("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
 async def download_model_file(model_id: str, version_id: str, file_id: str) -> FileResponse:
     try:
-        return FileResponse(model_storage.file_path(model_id, version_id, file_id))
+        return FileResponse(model_storage.public_file_path(model_id, version_id, file_id))
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -242,7 +288,7 @@ async def download_model_file(model_id: str, version_id: str, file_id: str) -> F
 @app.get("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
 async def download_model_sample(model_id: str, version_id: str, sample_id: str) -> FileResponse:
     try:
-        return FileResponse(model_storage.sample_path(model_id, version_id, sample_id))
+        return FileResponse(model_storage.public_sample_path(model_id, version_id, sample_id))
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 

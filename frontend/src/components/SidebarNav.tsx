@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderOpen, ImageIcon, Box, Settings, Layers3, Wrench } from "lucide-react";
+import { FolderOpen, ImageIcon, Box, Settings, Layers3, Wrench, Sparkles } from "lucide-react";
 
 const NAV_ITEMS = [
   { id: "assets", icon: FolderOpen, label: "Library", href: "/assets" },
   { id: "generate", icon: ImageIcon, label: "Create", href: "/" },
   { id: "tools", icon: Wrench, label: "AI Tool Studio", href: "/tools" },
   { id: "models", icon: Box, label: "Models", href: "/models" },
+  { id: "model-gallery", icon: Sparkles, label: "Model gallery", href: "/models/gallery" },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings" },
 ] as const;
 

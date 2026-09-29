@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     MODEL_MAX_BYTES: int = 20 * 1024 * 1024 * 1024
     MODEL_SAMPLE_MAX_BYTES: int = 20 * 1024 * 1024
     MODEL_FILE_EXTENSIONS: str = ".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
+    # Optional same-host ComfyUI filesystem root. Installation is disabled when unset.
+    COMFY_MODEL_ROOT: str | None = None
 
     # --- App -------------------------------------------------------------
     APP_NAME: str = "Comfy Studio API"

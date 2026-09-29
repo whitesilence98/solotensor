@@ -416,3 +416,48 @@ class ModelFilePatchRequest(BaseModel):
 
     visible: bool
     precision: ModelPrecision | None = None
+
+
+class PublicModelSummary(BaseModel):
+    model_id: str
+    title: str
+    category: ModelCategory
+    model_type: CreatorModelType
+    tags: list[str]
+    base_model: str
+    published_at: str
+    updated_at: str
+    cover_url: str | None = None
+    version_count: int
+    file_count: int
+    sample_count: int
+
+
+class PublicModelResponse(BaseModel):
+    model_id: str
+    title: str
+    category: ModelCategory
+    model_type: CreatorModelType
+    tags: list[str]
+    compatibility: ModelCompatibility
+    generation: ModelGenerationSettings
+    permissions: ModelPermissions
+    published_at: str
+    updated_at: str
+    versions: list[ModelVersionResponse]
+
+
+class PublicModelListResponse(BaseModel):
+    items: list[PublicModelSummary]
+
+
+class ModelInstallResponse(BaseModel):
+    model_id: str
+    version_id: str
+    file_id: str
+    filename: str
+    category: str
+    destination: str
+    installed: bool
+    already_present: bool
+    sha256: str

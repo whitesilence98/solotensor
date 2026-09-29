@@ -302,7 +302,49 @@ export interface CreatorModelPayload {
 
 export interface ModelPublishPayload { visibility: ModelVisibility; }
 
+export interface PublicModelSummary {
+  model_id: string;
+  title: string;
+  category: CreatorModelCategory;
+  model_type: CreatorModelType;
+  tags: string[];
+  base_model: string;
+  published_at: string;
+  updated_at: string;
+  cover_url: string | null;
+  version_count: number;
+  file_count: number;
+  sample_count: number;
+}
+
+export interface ModelInstallResponse {
+  model_id: string;
+  version_id: string;
+  file_id: string;
+  filename: string;
+  category: string;
+  destination: string;
+  installed: boolean;
+  already_present: boolean;
+  sha256: string;
+}
+
+export interface PublicModelListResponse { items: PublicModelSummary[]; }
+
 export const api = {
+  async listPublicModels(query = ""): Promise<PublicModelListResponse> {
+    const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+    return request<PublicModelListResponse>(`/api/v1/models/public${params}`);
+  },
+
+  async getPublicModel(modelId: string): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/public/${encodeURIComponent(modelId)}`);
+  },
+
+  async installModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
+    return request<ModelInstallResponse>(`/api/v1/models/public/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/${encodeURIComponent(fileId)}/install`, { method: "POST" });
+  },
+
   async listCreatorModels(filters: { visibility?: ModelVisibility; q?: string } = {}): Promise<CreatorModel[]> {
     const params = new URLSearchParams();
     if (filters.visibility) params.set("visibility", filters.visibility);

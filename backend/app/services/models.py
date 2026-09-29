@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,20 +112,26 @@ class ModelService:
     def _sample_url(self, model_id: str, version_id: str, sample_id: str) -> str:
         return f"{self.settings.FILES_PUBLIC_BASE}/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download"
 
-    def _response(self, record: dict[str, Any]) -> ModelResponse:
+    def _public_file_url(self, model_id: str, version_id: str, file_id: str) -> str:
+        return f"{self.settings.FILES_PUBLIC_BASE}/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download"
+
+    def _public_sample_url(self, model_id: str, version_id: str, sample_id: str) -> str:
+        return f"{self.settings.FILES_PUBLIC_BASE}/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download"
+
+    def _response(self, record: dict[str, Any], *, public_urls: bool = False) -> ModelResponse:
         versions: list[ModelVersionResponse] = []
         for version in record.get("versions", []):
             files = [
                 ModelFileResponse(
                     **{key: item[key] for key in ("file_id", "filename", "size", "sha256", "precision", "visible")},
-                    download_url=self._file_url(record["model_id"], version["version_id"], item["file_id"]),
+                    download_url=(self._public_file_url(record["model_id"], version["version_id"], item["file_id"]) if public_urls else self._file_url(record["model_id"], version["version_id"], item["file_id"])),
                 )
                 for item in version.get("files", [])
             ]
             samples = [
                 ModelSampleResponse(
                     sample_id=item["sample_id"], filename=item["filename"],
-                    url=self._sample_url(record["model_id"], version["version_id"], item["sample_id"]),
+                    url=(self._public_sample_url(record["model_id"], version["version_id"], item["sample_id"]) if public_urls else self._sample_url(record["model_id"], version["version_id"], item["sample_id"])),
                     kind=item["kind"], metadata=item.get("metadata", {}),
                 )
                 for item in version.get("samples", [])
@@ -168,13 +176,13 @@ class ModelService:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(record, dict):
                     continue
-                if public and record.get("visibility") != "Public":
+                if public and (record.get("visibility") != "Public" or not record.get("published_at")):
                     continue
                 if visibility and record.get("visibility") != visibility:
                     continue
                 if query and query.lower() not in str(record.get("title", "")).lower():
                     continue
-                items.append(self._response(record))
+                items.append(self._response(record, public_urls=public))
             except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
         return sorted(items, key=lambda item: item.updated_at, reverse=True)
@@ -190,6 +198,78 @@ class ModelService:
         record["updated_at"] = self._now()
         self._write(record)
         return self._response(record)
+
+    def public_response(self, model_id: str) -> ModelResponse:
+        record = self._read(model_id)
+        if record.get("visibility") != "Public" or not record.get("published_at"):
+            raise ModelNotFound("Model not found")
+        response = self._response(record, public_urls=True)
+        response.versions = [
+            version.model_copy(update={"files": [item for item in version.files if item.visible]})
+            for version in response.versions
+        ]
+        return response
+
+    def public_list(self, query: str | None = None) -> list[ModelResponse]:
+        return self.list(query=query, public=True)
+
+    @staticmethod
+    def install_category(model_type: str) -> str:
+        categories = {
+            "Checkpoint": "checkpoints",
+            "LoRA": "loras",
+            "LyCORIS": "loras",
+            "VAE": "vae",
+            "Embedding": "embeddings",
+        }
+        try:
+            return categories[model_type]
+        except KeyError as exc:
+            raise ModelError("Unsupported creator model type") from exc
+
+    def install_file(self, model_id: str, version_id: str, file_id: str) -> dict[str, Any]:
+        record = self._read(model_id)
+        if record.get("visibility") != "Public" or not record.get("published_at"):
+            raise ModelNotFound("Model not found")
+        version = self._version(record, version_id)
+        item = next((entry for entry in version.get("files", []) if entry.get("file_id") == file_id), None)
+        if item is None:
+            raise ModelNotFound("Model file not found")
+        if not item.get("visible", False):
+            raise ModelConflict("Model file is not public")
+        root_value = self.settings.COMFY_MODEL_ROOT
+        if not root_value:
+            raise ModelConflict("ComfyUI installation is not configured; set COMFY_MODEL_ROOT")
+        root = Path(root_value).expanduser().resolve()
+        if not root.is_dir():
+            raise ModelError("Configured COMFY_MODEL_ROOT does not exist")
+        category = self.install_category(record["model_type"])
+        destination_root = (root / "models" / category).resolve()
+        destination_root.mkdir(parents=True, exist_ok=True)
+        source = self.file_path(model_id, version_id, file_id)
+        filename = self._clean_filename(item["filename"])
+        destination = (destination_root / filename).resolve()
+        if destination.parent != destination_root:
+            raise ModelError("Unsafe ComfyUI destination")
+        source_hash = item["sha256"]
+        if destination.is_file():
+            existing_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
+            if existing_hash == source_hash:
+                return {"model_id": model_id, "version_id": version_id, "file_id": file_id, "filename": filename, "category": category, "destination": str(destination.relative_to(root)), "installed": True, "already_present": True, "sha256": source_hash}
+            raise ModelConflict("A different ComfyUI file already uses that filename")
+        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with source.open("rb") as src, temporary.open("xb") as dst:
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
+                dst.flush()
+                os.fsync(dst.fileno())
+            temporary.replace(destination)
+        except FileExistsError as exc:
+            raise ModelConflict("ComfyUI installation is already in progress") from exc
+        except OSError as exc:
+            temporary.unlink(missing_ok=True)
+            raise ModelError("Could not install model into ComfyUI") from exc
+        return {"model_id": model_id, "version_id": version_id, "file_id": file_id, "filename": filename, "category": category, "destination": str(destination.relative_to(root)), "installed": True, "already_present": False, "sha256": source_hash}
 
     def delete(self, model_id: str) -> None:
         record = self._read(model_id)
@@ -301,6 +381,14 @@ class ModelService:
         record["updated_at"] = self._now()
         self._write(record)
         return self._response(record)
+
+    def public_file_path(self, model_id: str, version_id: str, file_id: str) -> Path:
+        self.public_response(model_id)
+        return self.file_path(model_id, version_id, file_id)
+
+    def public_sample_path(self, model_id: str, version_id: str, sample_id: str) -> Path:
+        self.public_response(model_id)
+        return self.sample_path(model_id, version_id, sample_id)
 
     def file_path(self, model_id: str, version_id: str, file_id: str) -> Path:
         record = self._read(model_id)
