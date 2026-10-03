@@ -1,15 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ImageIcon, Loader2, Plus, SlidersHorizontal, Trash2, Zap } from "lucide-react";
-import ImageUpload from "./ImageUpload";
-import type { GenerationMode } from "@/lib/api";
-
-interface LoraDraft {
-  lora: string;
-  on: boolean;
-  strength: string;
-}
+import Link from "next/link";
+import { ChevronDown, ImageIcon, Loader2, SlidersHorizontal, Zap } from "lucide-react";
+import type { InstalledGalleryModel } from "@/lib/api";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 
@@ -28,14 +22,11 @@ function wordCount(value: string): number {
 }
 
 interface Props {
-  mode: GenerationMode; onModeChange: (v: GenerationMode) => void;
   prompt: string; onPromptChange: (v: string) => void;
   negativePrompt: string; onNegativePromptChange: (v: string) => void;
-  unetName: string; unetOptions: string[]; onUnetNameChange: (v: string) => void;
-  clipName: string; clipOptions: string[]; onClipNameChange: (v: string) => void;
-  vaeName: string; vaeOptions: string[]; onVaeNameChange: (v: string) => void;
-  loras: LoraDraft[]; loraOptions: string[];
-  onLorasChange: (v: LoraDraft[]) => void;
+  selectedModel: InstalledGalleryModel | null;
+  modelOptions: InstalledGalleryModel[];
+  onModelChange: (key: string) => void;
   seed: string; onSeedChange: (v: string) => void;
   steps: string; onStepsChange: (v: string) => void;
   imageCount: string; onImageCountChange: (v: string) => void;
@@ -44,7 +35,6 @@ interface Props {
   customWidth: string; onCustomWidthChange: (v: string) => void;
   customHeight: string; onCustomHeightChange: (v: string) => void;
   format: FormatKey; onFormatChange: (v: FormatKey) => void;
-  references: string[]; onReferencesChange: (refs: string[]) => void;
   busy: boolean; progress: number; progressLabel: string;
   modelsLoading?: boolean; modelsError?: string | null;
   canGenerate: boolean; onGenerate: () => void;
@@ -54,27 +44,17 @@ const labelClass = "mb-2 block text-[11px] font-semibold tracking-[.08em] text-[
 const fieldClass = "workspace-field w-full px-3 py-2.5 text-[13px] outline-none transition-all duration-200 disabled:opacity-45";
 
 export default function ControlPanel(props: Props) {
-  const { mode, onModeChange, prompt, onPromptChange, negativePrompt, onNegativePromptChange,
-    unetName, unetOptions, onUnetNameChange, clipName, clipOptions, onClipNameChange,
-    vaeName, vaeOptions, onVaeNameChange, loras, loraOptions, onLorasChange,
+  const { prompt, onPromptChange, negativePrompt, onNegativePromptChange,
+    selectedModel, modelOptions, onModelChange,
     seed, onSeedChange, steps, onStepsChange,
     imageCount, onImageCountChange, cfg, onCfgChange, denoise, onDenoiseChange,
     customWidth, onCustomWidthChange, customHeight, onCustomHeightChange, format,
-    onFormatChange, references, onReferencesChange, busy, progress, progressLabel,
+    onFormatChange, busy, progress, progressLabel,
     modelsLoading, modelsError, canGenerate, onGenerate } = props;
-  const imageToImage = mode === "image-to-image";
   const promptWords = wordCount(prompt);
   const [advanced, setAdvanced] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
 
-  const select = (id: string, value: string, options: string[], onChange: (v: string) => void) => (
-    <div className="relative">
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} disabled={busy} className={`${fieldClass} appearance-none pr-9`}>
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f716d]" />
-    </div>
-  );
 
   return (
     <aside className="workspace-scroll h-[42%] min-h-0 w-full shrink-0 border-b border-[#292d28] bg-[#0e100e]/95 lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
@@ -98,87 +78,53 @@ export default function ControlPanel(props: Props) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[10px] font-semibold uppercase tracking-[.18em] text-[#6f716d]">Model</span>
-            <span className="mt-1 block truncate text-xs font-medium text-[#deddd6]">{unetName}</span>
+            <span className="mt-1 block truncate text-xs font-medium text-[#deddd6]">{selectedModel ? `${selectedModel.title} · ${selectedModel.model_type} · ${selectedModel.version_name}` : "Select a gallery model"}</span>
           </span>
           <ChevronDown className={`h-4 w-4 shrink-0 text-[#8a8d85] transition-transform ${modelOpen ? "rotate-180" : ""}`} />
         </button>
         {modelOpen && (
           <div className="mt-4 space-y-3 border-t border-[#292d28] pt-4">
-            {modelsLoading && <p className="text-[11px] text-[#8a8d85]">Loading local ComfyUI models…</p>}
+            {modelsLoading && <p className="text-[11px] text-[#8a8d85]">Loading installed gallery models…</p>}
             {modelsError && <p className="border-l-2 border-[#ef8c79] bg-[#ef8c79]/[.06] px-3 py-2 text-[11px] leading-4 text-[#ef8c79]">{modelsError}</p>}
-            <div><label htmlFor="unet-name" className={labelClass}>UNET</label>{select("unet-name", unetName, unetOptions, onUnetNameChange)}</div>
-            <div><label htmlFor="clip-name" className={labelClass}>Encoder</label>{select("clip-name", clipName, clipOptions, onClipNameChange)}</div>
-            <div><label htmlFor="vae-name" className={labelClass}>VAE</label>{select("vae-name", vaeName, vaeOptions, onVaeNameChange)}</div>
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className={labelClass}>LoRAs</span>
-                <button
-                  type="button"
-                  disabled={busy || loras.length >= 16 || loraOptions.length === 0}
-                  onClick={() => onLorasChange([...loras, { lora: loraOptions[0], on: true, strength: "1" }])}
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#d5f06f] transition-colors hover:text-[#e2f88a] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Plus className="h-3 w-3" /> Add LoRA
-                </button>
-              </div>
-              {loras.length === 0 ? (
-                <p className="border border-dashed border-[#292d28] px-3 py-2.5 text-xs text-[#6f716d]">No LoRAs</p>
-              ) : (
-                <div className="space-y-2">
-                  {loras.map((row, index) => (
-                    <div key={`${row.lora}-${index}`} className="space-y-2 border border-[#292d28] bg-[#111311] p-2.5">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={row.on}
-                          onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, on: event.target.checked } : item))}
-                          disabled={busy}
-                          aria-label={`Enable LoRA ${index + 1}`}
-                          className="accent-[#d5f06f]"
-                        />
-                        <select
-                          value={row.lora}
-                          onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, lora: event.target.value } : item))}
-                          disabled={busy}
-                          className={`${fieldClass} min-w-0 flex-1 appearance-none py-2 text-xs`}
-                        >
-                          {!loraOptions.includes(row.lora) && <option value={row.lora}>Missing: {row.lora}</option>}
-                          {loraOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </select>
-                        <button type="button" onClick={() => onLorasChange(loras.filter((_, itemIndex) => itemIndex !== index))} disabled={busy} aria-label={`Remove LoRA ${index + 1}`} className="shrink-0 p-2 text-[#8a8d85] transition-colors hover:text-[#ef8c79] disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                      <label className="flex items-center gap-2 text-[10px] text-[#8a8d85]">
-                        Strength
-                        <input type="number" min="-10" max="10" step="0.05" value={row.strength} onChange={(event) => onLorasChange(loras.map((item, itemIndex) => itemIndex === index ? { ...item, strength: event.target.value } : item))} disabled={busy} className={`${fieldClass} py-2 font-mono`} />
-                      </label>
-                    </div>
-                  ))}
+            {!modelsLoading && modelOptions.length === 0 ? (
+              <p className="border border-dashed border-[#292d28] px-3 py-2.5 text-xs leading-5 text-[#8a8d85]">No installed Checkpoint or Diffusion Model gallery models.</p>
+            ) : (
+              <div>
+                <label htmlFor="gallery-model" className={labelClass}>Installed model</label>
+                <div className="relative">
+                  <select
+                    id="gallery-model"
+                    value={selectedModel ? `${selectedModel.model_id}:${selectedModel.version_id}:${selectedModel.file_id}` : ""}
+                    onChange={(event) => onModelChange(event.target.value)}
+                    disabled={busy || modelsLoading}
+                    className={`${fieldClass} appearance-none pr-9`}
+                  >
+                    <option value="">Choose a model</option>
+                    {modelOptions.map((model) => (
+                      <option key={`${model.model_id}:${model.version_id}:${model.file_id}`} value={`${model.model_id}:${model.version_id}:${model.file_id}`}>
+                        {model.title} · {model.model_type} · {model.version_name} · {model.filename}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f716d]" />
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+            <Link href="/models/gallery" className="inline-flex text-[11px] font-semibold text-[#d5f06f] hover:text-[#e2f88a]">Browse Models Gallery</Link>
           </div>
         )}
       </section>
 
       <div className="space-y-5 p-5">
-        <div role="tablist" aria-label="Generation mode" className="grid grid-cols-2 gap-1 border-b border-[#292d28]">
-          {(["text-to-image", "image-to-image"] as const).map((tab) => (
-            <button key={tab} type="button" role="tab" aria-selected={mode === tab} disabled={busy} onClick={() => onModeChange(tab)} className={`relative px-2 pb-3 text-left text-xs font-semibold transition-colors disabled:opacity-40 ${mode === tab ? "text-[#f2f0e9]" : "text-[#6f716d] hover:text-[#aaa8a1]"}`}>
-              {tab === "text-to-image" ? "Text to image" : "Image to image"}
-              {mode === tab && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[#d5f06f]" />}
-            </button>
-          ))}
+        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+          <div>
+            <span className="workspace-label block">Workflow</span>
+            <span className="mt-1 block text-xs font-semibold text-[var(--ink)]">Text to image</span>
+          </div>
+          <span className="rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface)] px-2 py-1 font-mono text-[9px] uppercase tracking-[.12em] text-[var(--ink-faint)]">Ready</span>
         </div>
 
-        {imageToImage ? (
-          <section className="space-y-4">
-            <div className="border-l-2 border-[#d5f06f] bg-[#d5f06f]/[.05] px-4 py-3 text-xs leading-relaxed text-[#aaa8a1]">
-              This workflow accepts text only. Reference images are staged for the next graph export.
-            </div>
-            <div><span className={labelClass}>Reference images</span><ImageUpload references={references} onChange={onReferencesChange} disabled={busy} /></div>
-          </section>
-        ) : (
-          <>
+        <>
             <div>
               <div className="mb-2 flex items-baseline justify-between"><label htmlFor="prompt-input" className={labelClass}>Describe the frame</label><span className={`font-mono text-[10px] ${promptWords >= MAX_PROMPT_WORDS ? "text-[#ef8c79]" : "text-[#6f716d]"}`}>{promptWords}/{MAX_PROMPT_WORDS} words</span></div>
               <textarea id="prompt-input" value={prompt} onChange={(e) => {
@@ -217,13 +163,12 @@ export default function ControlPanel(props: Props) {
               </div>
               <div><label htmlFor="denoise" className={labelClass}>Denoise · {denoise}</label><input id="denoise" type="range" min="0" max="1" step="0.05" value={denoise} onChange={(e) => onDenoiseChange(e.target.value)} disabled={busy} className="w-full" /></div>
             </div>}
-          </>
-        )}
+        </>
 
         <div className="flex items-end gap-2">
           <button type="button" onClick={onGenerate} disabled={!canGenerate} className="group flex min-w-0 flex-1 items-center justify-between rounded-[.6rem] bg-[#d5f06f] px-4 py-3.5 text-sm font-bold text-[#171b08] transition-all duration-200 hover:bg-[#e2f88a] active:scale-[.985] disabled:cursor-not-allowed disabled:bg-[#252824] disabled:text-[#62665e]">
-            <span>{busy ? "Building image" : imageToImage ? "Workflow unavailable" : "Generate image"}</span>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-1.5 font-mono text-[10px]"><Zap className="h-3.5 w-3.5" fill="currentColor" />~20 SEC</span>}
+            <span>{busy ? "Building image" : "Generate image"}</span>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" fill="currentColor" />}
           </button>
           <div className="w-[4.75rem] shrink-0"><label htmlFor="image-count" className={labelClass}>Images</label><input id="image-count" type="number" min="1" max="4" value={imageCount} onChange={(e) => onImageCountChange(e.target.value)} disabled={busy} className={`${fieldClass} font-mono`} /></div>
         </div>

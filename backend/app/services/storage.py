@@ -13,6 +13,8 @@ from ..schemas import GalleryItem
 
 logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+ASSET_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 class StorageError(RuntimeError):
@@ -35,8 +37,8 @@ class StorageService:
         return f"{self.settings.FILES_PUBLIC_BASE}/files/{key}"
 
     @staticmethod
-    def _metadata_path(image_path: Path) -> Path:
-        return image_path.with_suffix(f"{image_path.suffix}.json")
+    def _metadata_path(asset_path: Path) -> Path:
+        return asset_path.with_suffix(f"{asset_path.suffix}.json")
 
     def _gallery_item(self, path: Path) -> GalleryItem:
         stat = path.stat()
@@ -57,18 +59,18 @@ class StorageService:
             metadata=metadata,
         )
 
-    async def upload_image(
+    async def upload_asset(
         self,
         data: bytes,
         prompt_id: str,
         filename: str = "image.png",
-        content_type: str = "image/png",
+        content_type: str = "application/octet-stream",
         metadata: Optional[dict] = None,
         namespace: str | None = None,
     ) -> str:
         ext = Path(filename).suffix.lower()
-        if ext not in IMAGE_EXTENSIONS:
-            raise StorageError("Unsupported image extension")
+        if ext not in ASSET_EXTENSIONS:
+            raise StorageError("Unsupported asset extension")
         safe_prompt = "".join(ch for ch in prompt_id if ch.isalnum() or ch in "-_")[:80] or "result"
         prefix = namespace.strip("/\\") if namespace else ""
         key = "/".join(part for part in (prefix, safe_prompt, f"{uuid.uuid4().hex[:12]}{ext}") if part)
@@ -86,22 +88,20 @@ class StorageService:
         logger.info("Saved %s (%d bytes, %s)", dest, len(data), content_type)
         return self._file_url(key)
 
-    def list_recent(
-        self,
-        limit: int = 60,
-        *,
-        origin: str | None = None,
-        tool_id: str | None = None,
-        tool_type: str | None = None,
-        tag: str | None = None,
-    ) -> list[GalleryItem]:
+    async def upload_image(self, data: bytes, prompt_id: str, filename: str = "image.png", content_type: str = "image/png", metadata: Optional[dict] = None, namespace: str | None = None) -> str:
+        """Compatibility wrapper for existing image-generation callers."""
+        return await self.upload_asset(data, prompt_id, filename, content_type, metadata, namespace)
+
+    def list_recent(self, limit: int = 60, *, origin: str | None = None, tool_id: str | None = None, tool_type: str | None = None, tag: str | None = None) -> list[GalleryItem]:
         self.ensure_root()
-        files = [p for p in self.root.rglob("*") if p.suffix.lower() in IMAGE_EXTENSIONS and p.is_file()]
+        files = [p for p in self.root.rglob("*") if p.suffix.lower() in ASSET_EXTENSIONS and p.is_file()]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         items: list[GalleryItem] = []
         for path in files:
             item = self._gallery_item(path)
-            metadata = item.metadata.model_dump() if item.metadata is not None else {}
+            metadata = item.metadata or {}
+            if metadata.get("gallery_saved", True) is False:
+                continue
             item_origin = metadata.get("origin", metadata.get("source"))
             if origin and item_origin != origin:
                 continue
@@ -116,14 +116,38 @@ class StorageService:
                 break
         return items
 
-    def get_image(self, key: str) -> GalleryItem:
+    def get_asset(self, key: str) -> GalleryItem:
         path = (self.root / key).resolve()
         try:
             path.relative_to(self.root)
         except ValueError as exc:
-            raise StorageError("Invalid image key") from exc
-        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            raise StorageError("Invalid asset key") from exc
+        if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
             raise FileNotFoundError(key)
+        return self._gallery_item(path)
+
+    def get_image(self, key: str) -> GalleryItem:
+        return self.get_asset(key)
+
+    def set_saved(self, key: str, saved: bool) -> GalleryItem:
+        path = (self.root / key).resolve()
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise StorageError("Invalid asset key") from exc
+        if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
+            raise FileNotFoundError(key)
+        sidecar = self._metadata_path(path)
+        try:
+            raw = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else {}
+            if not isinstance(raw, dict):
+                raw = {}
+            raw["gallery_saved"] = saved
+            temp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+            temp.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp.replace(sidecar)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StorageError("Could not update asset visibility") from exc
         return self._gallery_item(path)
 
     def purge_prompt(self, prompt_id: str) -> int:

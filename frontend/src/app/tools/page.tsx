@@ -38,9 +38,9 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-function ToolVisual({ tool, featured = false }: { tool: ToolSummary; featured?: boolean }) {
+function ToolVisual({ tool }: { tool: ToolSummary }) {
   return (
-    <div className={`relative overflow-hidden bg-[#0b0c0b] ${featured ? "h-full min-h-48" : "h-32 sm:h-36"}`}>
+    <div className="relative h-32 overflow-hidden bg-[#0b0c0b] sm:h-36">
       {tool.thumbnail_url ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img src={tool.thumbnail_url} alt="" className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.04]" />
@@ -71,17 +71,17 @@ function ToolMeta({ tool }: { tool: ToolSummary }) {
   );
 }
 
-function ToolRow({ tool, featured = false }: { tool: ToolSummary; featured?: boolean }) {
+function ToolRow({ tool }: { tool: ToolSummary }) {
   return (
     <Link
       href={`/tools/${tool.tool_id}`}
-      className={`group grid overflow-hidden border border-[#292d28] bg-[#111311] transition duration-200 hover:-translate-y-0.5 hover:border-[#58634d] hover:bg-[#151815] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f] ${featured ? "md:grid-cols-[minmax(15rem,.9fr)_minmax(0,1.1fr)]" : "sm:grid-cols-[13rem_minmax(0,1fr)]"}`}
+      className="group grid overflow-hidden border border-[#292d28] bg-[#111311] transition duration-200 hover:-translate-y-0.5 hover:border-[#58634d] hover:bg-[#151815] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f] sm:grid-cols-[13rem_minmax(0,1fr)]"
     >
-      <ToolVisual tool={tool} featured={featured} />
-      <div className={`flex min-w-0 flex-col justify-between gap-5 p-4 sm:p-5 ${featured ? "md:p-7" : ""}`}>
+      <ToolVisual tool={tool} />
+      <div className="flex min-w-0 flex-col justify-between gap-5 p-4 sm:p-5">
         <div>
           <div className="mb-3 flex items-start justify-between gap-3">
-            <h2 className={`${featured ? "text-2xl md:text-3xl" : "text-base sm:text-lg"} min-w-0 truncate font-semibold tracking-[-.04em] text-[#f2f0e9]`}>{tool.name}</h2>
+            <h2 className="min-w-0 truncate text-base font-semibold tracking-[-.04em] text-[#f2f0e9] sm:text-lg">{tool.name}</h2>
             <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-[#6f716d] transition duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#d5f06f]" />
           </div>
           <ToolMeta tool={tool} />
@@ -122,9 +122,6 @@ export default function ToolStudioPage() {
     });
   }, [mode, query, tools]);
 
-  const featured = filteredTools[0];
-  const remaining = filteredTools.slice(1);
-
   return (
     <main id="main-content" className="h-full overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_84%_0%,rgba(213,240,111,.07),transparent_28rem)] px-4 py-5 pb-6 md:px-8 md:py-8 md:pb-10">
       <div className="mx-auto max-w-6xl">
@@ -144,9 +141,9 @@ export default function ToolStudioPage() {
               <span className="sr-only">Search tools</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workflows" className="h-10 w-full rounded-[.5rem] border border-[#292d28] bg-[#111311] pl-9 pr-3 text-sm text-[#deddd6] outline-none transition placeholder:text-[#6f716d] hover:border-[#3a4038] focus:border-[#d5f06f]/70 focus:ring-2 focus:ring-[#d5f06f]/10" />
             </label>
-            <div className="flex min-w-0 items-center gap-2 overflow-x-auto" role="tablist" aria-label="Filter by workflow type">
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1" aria-label="Filter by workflow type">
               <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-[#6f716d]" />
-              {MODE_FILTERS.map((filter) => <button key={filter.value} type="button" role="tab" aria-selected={mode === filter.value} onClick={() => setMode(filter.value)} className={`whitespace-nowrap rounded-[.4rem] border px-3 py-2 text-[11px] font-semibold transition duration-200 active:scale-[.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f] ${mode === filter.value ? "border-[#d5f06f]/50 bg-[#d5f06f]/10 text-[#d5f06f]" : "border-[#292d28] text-[#8a8d85] hover:border-[#3a4038] hover:text-[#deddd6]"}`}>{filter.label}</button>)}
+              {MODE_FILTERS.map((filter) => <button key={filter.value} type="button" aria-pressed={mode === filter.value} onClick={() => setMode(filter.value)} className={`whitespace-nowrap rounded-[.4rem] border px-3 py-2 text-[11px] font-semibold transition duration-200 active:scale-[.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f] ${mode === filter.value ? "border-[#d5f06f]/50 bg-[#d5f06f]/10 text-[#d5f06f]" : "border-[#292d28] text-[#8a8d85] hover:border-[#3a4038] hover:text-[#deddd6]"}`}>{filter.label}</button>)}
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between text-[10px] uppercase tracking-[.16em] text-[#6f716d]"><span>{loading ? "Loading shelf" : `${filteredTools.length} ${filteredTools.length === 1 ? "workflow" : "workflows"}`}</span><span className="font-mono">{tools.length.toString().padStart(2, "0")} total</span></div>
@@ -162,9 +159,8 @@ export default function ToolStudioPage() {
           ) : !filteredTools.length ? (
             <div className="grid min-h-56 place-items-center border border-dashed border-[#3a4038] bg-[#111311] p-8 text-center"><div><Search className="mx-auto mb-4 h-7 w-7 text-[#58634d]" /><h2 className="text-lg font-semibold text-[#f2f0e9]">No matching workflows.</h2><p className="mt-2 text-sm text-[#8a8d85]">Try another name or workflow type.</p><button type="button" onClick={() => { setQuery(""); setMode("all"); }} className="mt-4 text-sm font-semibold text-[#d5f06f] hover:text-[#e2f88a]">Clear filters</button></div></div>
           ) : (
-            <div className="space-y-3">
-              {featured && <ToolRow tool={featured} featured />}
-              {remaining.length > 0 && <div className="grid gap-3 sm:grid-cols-2">{remaining.map((tool) => <ToolRow key={tool.tool_id} tool={tool} />)}</div>}
+            <div className="grid gap-3 lg:grid-cols-2">
+              {filteredTools.map((tool) => <ToolRow key={tool.tool_id} tool={tool} />)}
             </div>
           )}
         </section>

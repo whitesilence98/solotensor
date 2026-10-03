@@ -6,6 +6,51 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+SUPPORTED_BASE_MODELS = (
+    "FLUX.1",
+    "Stable Diffusion XL (SDXL)",
+    "Stable Diffusion 1.5 (SD 1.5)",
+    "Stable Diffusion 3.5",
+    "Pony Diffusion V6 XL",
+    "Illustrious XL",
+    "KREA_2",
+    "Wan 2.1 / Wan 2.8",
+    "Z-Image / Z-Image-Turbo",
+    "Qwen-Image-2.1",
+    "Hunyuan-DiT",
+    "CogVideoX",
+    "Anima",
+    "Realistic Vision",
+)
+
+
+class AssistantPersona(str, Enum):
+    BACKEND = "backend"
+    FRONTEND = "frontend"
+
+
+class AssistantRequest(BaseModel):
+    """Body for POST /api/v1/assist."""
+
+    model_config = {"extra": "forbid"}
+
+    persona: AssistantPersona
+    message: str = Field(..., min_length=1, max_length=12_000)
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Message cannot be blank")
+        return value
+
+
+class AssistantResponse(BaseModel):
+    persona: AssistantPersona
+    answer: str
+
+
 class LoraSelection(BaseModel):
     """One ordered entry for rgthree's Power Lora Loader."""
 
@@ -25,14 +70,14 @@ class LoraSelection(BaseModel):
 class GenerateRequest(BaseModel):
     """Body for POST /api/v1/generate."""
 
+    model_config = {"extra": "forbid"}
+
+    model_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
+    version_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
+    file_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
     mode: Literal["text-to-image", "image-to-image"] = "text-to-image"
     prompt: str = Field(..., min_length=1, max_length=50_000)
     negative_prompt: str = ""
-    model: Literal["sdxl", "flux", "nano"] = "sdxl"
-    unet_name: str = Field("krea2\\krea2_turbo_fp8_scaled.safetensors", min_length=1, max_length=255)
-    clip_name: str = Field("qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors", min_length=1, max_length=255)
-    vae_name: str = Field("wan_2.1_vae.safetensors", min_length=1, max_length=255)
-    loras: list[LoraSelection] = Field(default_factory=list, max_length=16)
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
     steps: int = Field(10, ge=1, le=100)
     image_count: int = Field(1, ge=1, le=4)
@@ -53,14 +98,6 @@ class GenerateRequest(BaseModel):
             raise ValueError("Prompt must contain at most 1000 words")
         return value
 
-    @field_validator("unet_name", "clip_name", "vae_name")
-    @classmethod
-    def model_name_not_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Model filename cannot be blank")
-        return value
-
     @field_validator("width", "height")
     @classmethod
     def dimensions_multiple_of_eight(cls, value: int) -> int:
@@ -76,15 +113,40 @@ class GenerateRequest(BaseModel):
         return value
 
 
-class UploadedAsset(BaseModel):
+class GalleryItem(BaseModel):
+    """Stored asset descriptor returned by gallery and asset APIs."""
+
+    key: str
+    url: str
+    size: int
+    last_modified: str
+    metadata: dict[str, Any] | None = None
+
+
+class GalleryResponse(BaseModel):
+    """Paginated gallery payload."""
+
+    items: list[GalleryItem] = Field(default_factory=list)
+
+
+class GeneratedAsset(BaseModel):
+    """A generated file that can be previewed or downloaded."""
+
     filename: str
     url: str
+    kind: Literal["image", "video"] = "image"
+    poster_url: str | None = None
+    saved: bool = True
+
+
+# Kept as an import-compatible name for existing callers.
+UploadedAsset = GeneratedAsset
 
 
 class GenerationResult(BaseModel):
     prompt_id: str
     status: Literal["completed", "failed", "timeout"]
-    images: list[UploadedAsset]
+    images: list[GeneratedAsset]
     error: Optional[str] = None
     elapsed_ms: int
 
@@ -102,6 +164,14 @@ class GenerationMetadata(BaseModel):
     width: int | None = None
     height: int | None = None
     format_name: str = ""
+    model_id: str = ""
+    version_id: str = ""
+    file_id: str = ""
+    model_title: str = ""
+    model_type: str = ""
+    model_version: str = ""
+    model_category: str = ""
+    model_filename: str = ""
     unet_name: str = ""
     clip_name: str = ""
     vae_name: str = ""
@@ -113,19 +183,11 @@ class GenerationMetadata(BaseModel):
     tool_id: str | None = None
     tool_name: str | None = None
     tool_mode: str | None = None
+    tool_type: str | None = None
     aspect_ratio: str | None = None
-
-
-class GalleryItem(BaseModel):
-    key: str
-    url: str
-    size: int
-    last_modified: str
-    metadata: Optional[GenerationMetadata] = None
-
-
-class GalleryResponse(BaseModel):
-    items: list[GalleryItem]
+    kind: Literal["image", "video"] = "image"
+    gallery_saved: bool = True
+    controls: dict[str, Any] = Field(default_factory=dict)
 
 
 class HealthResponse(BaseModel):
@@ -199,6 +261,8 @@ class ToolExecuteRequest(BaseModel):
     prompt: str = Field("", max_length=50_000)
     aspect_ratio: ToolAspectRatio | None = None
     values: dict[str, Any] = Field(default_factory=dict)
+    client_id: str | None = Field(None, min_length=1, max_length=128)
+    save_to_gallery: bool = True
 
     model_config = {"extra": "forbid"}
 
@@ -212,8 +276,6 @@ class ToolExecutionResult(BaseModel):
     elapsed_ms: int
     tool_mode: ToolMode | None = None
     aspect_ratio: ToolAspectRatio | None = None
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +294,7 @@ class ModelCategory(str, Enum):
 
 class CreatorModelType(str, Enum):
     CHECKPOINT = "Checkpoint"
+    DIFFUSION_MODEL = "Diffusion Model"
     LORA = "LoRA"
     LYCORIS = "LyCORIS"
     VAE = "VAE"
@@ -254,10 +317,19 @@ class ModelPrecision(str, Enum):
 class ModelCompatibility(BaseModel):
     model_config = {"extra": "forbid"}
 
-    base_model: str = Field("SDXL 1.0", min_length=1, max_length=80)
-    vae: str = Field("Baked-in", min_length=1, max_length=255)
+    base_model: str = Field("Stable Diffusion XL (SDXL)", min_length=1, max_length=80)
+    vae: str | None = None
     text_encoders: list[str] = Field(default_factory=list, max_length=8)
     parent_model: str | None = Field(None, max_length=255)
+
+    @field_validator("base_model", mode="before")
+    @classmethod
+    def normalize_base_model(cls, value: Any) -> Any:
+        if value == "SDXL 1.0":
+            value = "Stable Diffusion XL (SDXL)"
+        if value not in SUPPORTED_BASE_MODELS:
+            raise ValueError("Unsupported base model")
+        return value
 
 
 class ModelGenerationSettings(BaseModel):
@@ -461,3 +533,37 @@ class ModelInstallResponse(BaseModel):
     installed: bool
     already_present: bool
     sha256: str
+
+
+class InstalledGalleryModel(BaseModel):
+    model_id: str
+    version_id: str
+    file_id: str
+    title: str
+    model_type: Literal["Checkpoint", "Diffusion Model"]
+    version_name: str
+    filename: str
+    category: Literal["checkpoints", "diffusion_models"]
+    sha256: str
+
+
+class InstalledGalleryModelList(BaseModel):
+    items: list[InstalledGalleryModel]
+
+
+class LocalModelSummary(BaseModel):
+    category: str
+    filename: str
+    size: int
+
+
+class LocalModelListResponse(BaseModel):
+    items: list[LocalModelSummary]
+
+
+class LocalModelImportRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    category: str = Field(..., min_length=1, max_length=64)
+    filename: str = Field(..., min_length=1, max_length=512)
+    precision: ModelPrecision = ModelPrecision.FP16

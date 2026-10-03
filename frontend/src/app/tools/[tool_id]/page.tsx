@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -14,9 +15,11 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useParams } from "next/navigation";
+import { VideoResultPreview } from "@/components/VideoResultPreview";
 import {
   api,
+  uuid,
+  type ProgressEvent,
   type ToolAspectRatio,
   type ToolControl,
   type ToolDetail,
@@ -215,8 +218,8 @@ function DynamicControl({
   return (
     <div>
       {label}
-      {control.kind === "prompt" ? (
-        <textarea id={id} value={String(value ?? control.value ?? "")} disabled={busy} onChange={(event) => onChange(event.target.value)} rows={6} placeholder="Describe the result you want…" className={`${FIELD} resize-y leading-relaxed`} />
+      {control.kind === "prompt" || control.kind === "text" ? (
+        <textarea id={id} value={String(value ?? control.value ?? "")} disabled={busy} onChange={(event) => onChange(event.target.value)} rows={6} placeholder={control.kind === "prompt" ? "Describe the result you want…" : undefined} className={`${FIELD} resize-y leading-relaxed`} />
       ) : (
         <div className="relative">
           <input
@@ -258,6 +261,9 @@ export default function ToolDetailPage() {
   const [result, setResult] = useState<ToolRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saveToGallery, setSaveToGallery] = useState(true);
+  const [progress, setProgress] = useState<ProgressEvent | null>(null);
+  const socket = useRef<WebSocket | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -270,7 +276,10 @@ export default function ToolDetailPage() {
     }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load tool."));
   }, [params.tool_id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => socket.current?.close();
+  }, [load]);
 
   const imageControls = useMemo(() => tool?.controls.filter((control) => control.kind === "image") ?? [], [tool]);
   const dimensionControls = useMemo(() => tool?.controls.some((control) => control.input_name === "width" || control.input_name === "height") ?? false, [tool]);
@@ -280,22 +289,25 @@ export default function ToolDetailPage() {
 
   const run = async () => {
     if (!tool || !canRun) return;
-    setBusy(true); setError(null); setResult(null);
-    try { setResult(await api.runTool(tool.tool_id, "", ratio, undefined, values, files)); }
+    const clientId = uuid();
+    setBusy(true); setError(null); setResult(null); setProgress({ type: "queued" });
+    const nextSocket = api.openProgressSocket(clientId, (event) => setProgress(event));
+    socket.current = nextSocket;
+    try { setResult(await api.runTool(tool.tool_id, "", ratio, undefined, values, files, { clientId, saveToGallery })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not run tool."); }
-    finally { setBusy(false); }
+    finally { nextSocket.close(); socket.current = null; setBusy(false); }
   };
 
   if (!tool && !error) {
-    return <main className="workspace-scroll h-full px-4 py-8 md:px-8" role="status" aria-busy="true"><div className="mx-auto max-w-7xl"><div className="h-4 w-24 animate-pulse rounded bg-[#20231f]" /><div className="mt-6 h-12 w-2/3 animate-pulse rounded bg-[#20231f]" /><div className="mt-10 grid gap-5 lg:grid-cols-[minmax(20rem,27rem)_1fr]"><div className="h-[34rem] animate-pulse rounded-2xl bg-[#111311]" /><div className="h-[34rem] animate-pulse rounded-2xl bg-[#111311]" /></div></div></main>;
+    return <main id="main-content" className="workspace-scroll h-full px-4 py-8 md:px-8" role="status" aria-busy="true"><div className="mx-auto max-w-7xl"><div className="h-4 w-24 animate-pulse rounded bg-[#20231f]" /><div className="mt-6 h-12 w-2/3 animate-pulse rounded bg-[#20231f]" /><div className="mt-10 grid gap-5 lg:grid-cols-[minmax(20rem,27rem)_1fr]"><div className="h-[34rem] animate-pulse rounded-2xl bg-[#111311]" /><div className="h-[34rem] animate-pulse rounded-2xl bg-[#111311]" /></div></div></main>;
   }
 
   if (error && !tool) {
-    return <main className="h-full overflow-y-auto overscroll-contain px-4 py-8 md:px-8"><div className="mx-auto max-w-3xl"><Link href="/tools" className="mb-8 inline-flex items-center gap-2 text-xs text-[#aaa8a1] hover:text-[#d5f06f]"><ArrowLeft className="h-4 w-4" /> All tools</Link><div role="alert" className="rounded-2xl border border-[#6d332e] bg-[#241412] p-6"><div className="flex gap-3"><AlertCircle className="h-5 w-5 shrink-0 text-[#ef8c79]" /><p className="text-sm leading-6 text-[#ef8c79]">{error}</p></div><button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-[#8f4b42] px-3 py-2 text-xs font-semibold text-[#f2c0b7] hover:bg-[#6d332e]/30"><RefreshCw className="h-3.5 w-3.5" /> Try again</button></div></div></main>;
+    return <main id="main-content" className="workspace-scroll h-full px-4 py-8 md:px-8"><div className="mx-auto max-w-3xl"><Link href="/tools" className="mb-8 inline-flex items-center gap-2 text-xs text-[#aaa8a1] hover:text-[#d5f06f]"><ArrowLeft className="h-4 w-4" /> All tools</Link><div role="alert" className="rounded-2xl border border-[#6d332e] bg-[#241412] p-6"><div className="flex gap-3"><AlertCircle className="h-5 w-5 shrink-0 text-[#ef8c79]" /><p className="text-sm leading-6 text-[#ef8c79]">{error}</p></div><button type="button" onClick={load} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-[#8f4b42] px-3 py-2 text-xs font-semibold text-[#f2c0b7] hover:bg-[#6d332e]/30"><RefreshCw className="h-3.5 w-3.5" /> Try again</button></div></div></main>;
   }
 
   return (
-    <main id="main-content" className="h-full overflow-y-auto overscroll-contain px-4 pb-6 pt-5 md:px-8 md:pb-10 md:pt-8">
+    <main id="main-content" className="workspace-scroll h-full px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8">
       <div className="mx-auto max-w-7xl">
         <nav aria-label="Breadcrumb" className="mb-7 flex items-center gap-2 text-xs text-[#6f716d]"><Link href="/tools" className="inline-flex items-center gap-2 transition hover:text-[#d5f06f]"><ArrowLeft className="h-3.5 w-3.5" /> AI Tool Studio</Link><ChevronRight className="h-3.5 w-3.5" /><span className="truncate text-[#aaa8a1]">{tool!.name}</span></nav>
 
@@ -314,14 +326,14 @@ export default function ToolDetailPage() {
 
             {!dimensionControls && <section className="rounded-2xl border border-[#292d28] bg-[#111311] p-5 md:p-6"><SectionHeading eyebrow="02 / Output" title="Aspect ratio" /><fieldset className="mt-5"><legend className="sr-only">Output aspect ratio</legend><div className="grid grid-cols-3 gap-2">{tool!.supported_aspect_ratios.filter((item) => RATIOS.includes(item)).map((item) => <button key={item} type="button" disabled={busy} aria-pressed={ratio === item} onClick={() => setRatio(item)} className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition disabled:opacity-40 ${ratio === item ? "border-[#d5f06f] bg-[#d5f06f] text-[#171b08]" : "border-[#30352e] text-[#aaa8a1] hover:border-[#58634d] hover:text-[#f2f0e9]"}`}>{item}</button>)}</div></fieldset></section>}
 
-            <section className="rounded-2xl border border-[#d5f06f]/25 bg-[#d5f06f]/[.045] p-5 md:p-6"><div className="flex gap-3"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#d5f06f]" /><div><p className="text-sm font-semibold text-[#f2f0e9]">Ready to render?</p><p className="mt-1 text-xs leading-5 text-[#8a8d85]">Your workflow stays private. Only the controls above are sent with this run.</p></div></div><button type="button" onClick={run} disabled={!canRun} aria-busy={busy} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#d5f06f] px-4 py-3.5 text-sm font-bold text-[#171b08] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45">{busy ? <><RefreshCw className="h-4 w-4 animate-spin" /> Rendering…</> : <><Play className="h-4 w-4 fill-current" /> Run tool</>}</button>{tool!.requires_image && missingImages.length > 0 && <p className="mt-3 text-center text-xs text-[#d5f06f]" role="status">Add {missingImages.length === 1 ? "the required image" : `${missingImages.length} required images`} to continue.</p>}</section>
+            <section className="rounded-2xl border border-[#d5f06f]/25 bg-[#d5f06f]/[.045] p-5 md:p-6"><div className="flex gap-3"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#d5f06f]" /><div><p className="text-sm font-semibold text-[#f2f0e9]">Ready to render?</p><p className="mt-1 text-xs leading-5 text-[#8a8d85]">Your workflow stays private. Only the controls above are sent with this run.</p></div></div><label className="mt-5 flex cursor-pointer items-center gap-2 text-xs text-[#deddd6]"><input type="checkbox" checked={saveToGallery} onChange={(event) => setSaveToGallery(event.target.checked)} className="h-4 w-4 accent-[#d5f06f]" /> Save completed output to Gallery</label><button type="button" onClick={run} disabled={!canRun} aria-busy={busy} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#d5f06f] px-4 py-3.5 text-sm font-bold text-[#171b08] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45">{busy ? <><RefreshCw className="h-4 w-4 animate-spin" /> Rendering…</> : <><Play className="h-4 w-4 fill-current" /> Run tool</>}</button>{tool!.requires_image && missingImages.length > 0 && <p className="mt-3 text-center text-xs text-[#d5f06f]" role="status">Add {missingImages.length === 1 ? "the required image" : `${missingImages.length} required images`} to continue.</p>}</section>
           </aside>
 
           <section className="min-h-[34rem] rounded-2xl border border-[#292d28] bg-[#0e100e] p-5 md:min-h-[46rem] md:p-7" aria-live="polite">
             <div className="mb-7 flex items-center justify-between border-b border-[#292d28] pb-4"><div className="flex items-center gap-3"><span className={`h-2 w-2 rounded-full ${busy ? "animate-pulse bg-[#d5f06f]" : result?.status === "completed" ? "bg-[#d5f06f]" : "bg-[#50554d]"}`} /><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">03 / Workspace</p><p className="mt-1 text-sm font-semibold text-[#deddd6]">{busy ? "Rendering workflow" : result ? "Latest result" : "Output preview"}</p></div></div><span className="font-mono text-[10px] text-[#6f716d]">{result ? `${result.elapsed_ms} MS` : "READY"}</span></div>
             {error && <div role="alert" className="mb-6 flex items-start gap-3 rounded-xl border border-[#6d332e] bg-[#241412] p-4 text-sm leading-6 text-[#ef8c79]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p>{error}</p></div>}
-            {busy && <div className="grid min-h-[26rem] place-items-center rounded-2xl border border-[#292d28] bg-[#111311] p-8"><div className="text-center"><div className="mx-auto mb-6 grid h-24 w-24 place-items-center rounded-full border border-[#d5f06f]/30"><RefreshCw className="h-7 w-7 animate-spin text-[#d5f06f]" /></div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">In progress</p><h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#f2f0e9]">Building your result</h2><p className="mt-2 text-sm text-[#8a8d85]">The workflow is being rendered by ComfyUI.</p></div></div>}
-            {!busy && result?.images.length ? <div><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">Completed</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#f2f0e9]">Fresh from the graph.</h2></div><CheckCircle2 className="h-5 w-5 text-[#d5f06f]" /></div><div className="grid gap-4 sm:grid-cols-2">{result.images.map((asset) => <a key={asset.url} href={asset.url} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-[#292d28] bg-[#111311] transition hover:border-[#d5f06f]"><img src={asset.url} alt={asset.filename} className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.02]" /><div className="flex items-center justify-between px-3 py-2 text-xs text-[#6f716d]"><span className="truncate">{asset.filename}</span><span className="ml-3 text-[#d5f06f]">Open ↗</span></div></a>)}</div></div> : null}
+            {busy && <div className="min-h-[26rem] rounded-2xl border border-[#292d28] bg-[#111311] p-8" role="status"><div className="shimmer h-2 w-full rounded-full" /><div className="mx-auto mt-16 max-w-md text-center"><RefreshCw className="mx-auto mb-5 h-7 w-7 animate-spin text-[#d5f06f]" /><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">{progress?.type === "progress" ? "Rendering" : progress?.type === "executing" ? "Executing" : "Queued"}</p><h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#f2f0e9]">Building your {tool!.output_kind}</h2><p className="mt-2 text-sm text-[#8a8d85]">{progress?.node ? `Working on node ${progress.node}` : "The workflow is being rendered by ComfyUI."}</p>{progress?.type === "progress" && (progress.max ?? 0) > 0 && <div className="mt-6"><div className="flex justify-between text-[10px] font-mono text-[#6f716d]"><span>Step {progress.value ?? 0} / {progress.max ?? 0}</span><span>{Math.round(((progress.value ?? 0) / (progress.max ?? 1)) * 100)}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#292d28]"><div className="h-full rounded-full bg-[#d5f06f] transition-[width] duration-300" style={{ width: `${Math.min(100, ((progress.value ?? 0) / (progress.max ?? 1)) * 100)}%` }} /></div></div>}</div></div>}
+            {!busy && result?.images.length ? <div><div className="mb-5 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">Completed</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#f2f0e9]">Fresh from the graph.</h2></div><CheckCircle2 className="h-5 w-5 text-[#d5f06f]" /></div><div className="grid gap-4 sm:grid-cols-2">{result.images.map((asset) => asset.kind === "video" || tool!.output_kind === "video" ? <VideoResultPreview key={asset.url} url={asset.url} filename={asset.filename} ratio={result.aspect_ratio ?? ratio} /> : <a key={asset.url} href={asset.url} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-[#292d28] bg-[#111311] transition hover:border-[#d5f06f]"><img src={asset.url} alt={asset.filename} className="aspect-square w-full object-cover transition duration-500 group-hover:scale-[1.02]" /><div className="flex items-center justify-between px-3 py-2 text-xs text-[#6f716d]"><span className="truncate">{asset.filename}</span><span className="ml-3 text-[#d5f06f]">Open ↗</span></div></a>)}</div><div className="mt-5 rounded-xl border border-[#292d28] bg-[#111311] p-4"><div className="flex items-center gap-2 text-xs font-semibold text-[#deddd6]"><SlidersHorizontal className="h-4 w-4 text-[#d5f06f]" /> Generation inspector</div><dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2"><div><dt className="text-[#6f716d]">Prompt ID</dt><dd className="mt-1 break-all font-mono text-[#deddd6]">{result.prompt_id}</dd></div><div><dt className="text-[#6f716d]">Aspect ratio</dt><dd className="mt-1 text-[#deddd6]">{result.aspect_ratio ?? ratio}</dd></div><div><dt className="text-[#6f716d]">Render time</dt><dd className="mt-1 text-[#deddd6]">{(result.elapsed_ms / 1000).toFixed(1)} s</dd></div><div><dt className="text-[#6f716d]">Gallery</dt><dd className="mt-1 text-[#deddd6]">{result.images[0]?.saved === false ? "Staged" : "Saved"}</dd></div></dl><p className="mt-4 text-xs text-[#6f716d]">Upscale and extend actions appear when compatible video workflows are registered.</p></div></div> : null}
             {!busy && result && !result.images.length && <div className="grid min-h-[26rem] place-items-center rounded-2xl border border-dashed border-[#3a4038] bg-[#111311] p-8 text-center"><div><AlertCircle className="mx-auto mb-4 h-7 w-7 text-[#ef8c79]" /><h2 className="text-xl font-semibold text-[#f2f0e9]">No output files</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#8a8d85]">The run completed, but the workflow did not return an image file.</p></div></div>}
             {!busy && !result && !error && <div className="grid min-h-[26rem] place-items-center rounded-2xl border border-dashed border-[#3a4038] bg-[#111311] p-8 text-center"><div><div className="mx-auto mb-6 grid h-20 w-20 place-items-center rounded-full border border-[#d5f06f]/20 bg-[#d5f06f]/[.04]"><Sparkles className="h-7 w-7 text-[#d5f06f]" /></div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6f716d]">Blank canvas</p><h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-[#f2f0e9]">Make something<br />worth keeping.</h2><p className="mx-auto mt-4 max-w-sm text-sm leading-6 text-[#8a8d85]">Set your inputs, then run the tool. Your first result will appear here.</p></div></div>}
           </section>

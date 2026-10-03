@@ -49,6 +49,7 @@ INFRASTRUCTURE_MARKERS = (
     "randomnoise",
 )
 LOCKED_EXECUTION_MARKERS = ("sampler", "ksampler", "scheduler", "noise")
+NON_INPUT_NODE_MARKERS = ("cleangpuused", "cleangpu", "ramclean")
 TEXT_CLASSES = {"cliptextencode", "cliptextencodeflux", "cliptextencodecontrolnet"}
 
 
@@ -121,10 +122,12 @@ def _prompt_roles(workflow: Workflow) -> dict[str, str]:
 def extract_controls(
     workflow: Workflow,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Expose only generation parameters that affect the output graph."""
     controls: list[dict[str, Any]] = []
     locked: list[dict[str, str]] = []
     seen: set[str] = set()
     roles = _prompt_roles(workflow)
+    sampler_fields = {"seed", "noise_seed", "steps", "cfg", "denoise"}
 
     def add(
         node_id: str,
@@ -165,97 +168,86 @@ def extract_controls(
         )
         seen.add(path)
 
-    for node_id in sorted(workflow):
-        node = workflow[node_id]
-        class_type = str(node.get("class_type", ""))
-        inputs = node["inputs"]
-        normalized = _norm(class_type)
-        if _is_infrastructure(class_type) and not (
-            "loadimage" in normalized and "image" in inputs
-        ):
-            locked.append({"id": node_id, "class_type": class_type})
-            continue
-        if any(marker in normalized for marker in LOCKED_EXECUTION_MARKERS):
-            continue
-        for input_name, raw in inputs.items():
-            if isinstance(raw, list):
-                continue
-            label = _label(input_name)
-            if (
-                "loadimage" in normalized
-                and input_name == "image"
-                and isinstance(raw, str)
-            ):
-                add(node_id, node, input_name, kind="image", label=label)
-            elif isinstance(raw, bool):
-                add(node_id, node, input_name, kind="boolean", label=label)
-            elif isinstance(raw, (int, float)) and not isinstance(raw, bool):
-                is_seed = input_name.lower() == "seed" or "seed" in normalized
-                minimum, maximum, step = (
-                    (-1, 2**32 - 1, 1) if is_seed else (None, None, None)
-                )
-                if "emptylatent" in normalized and input_name in {"width", "height"}:
-                    minimum, maximum, step = 64, 4096, 8
-                elif not is_seed and "int" in normalized:
-                    minimum, maximum, step = 1, 100, 1
-                elif not is_seed and isinstance(raw, int):
-                    minimum, maximum, step = 0, 100, 1
+    def add_sampler_value(
+        node_id: str,
+        node: dict[str, Any],
+        input_name: str,
+        raw: Any,
+    ) -> None:
+        is_seed = input_name in {"seed", "noise_seed"}
+        if input_name == "steps":
+            minimum, maximum, step = 1, 100, 1
+        elif input_name == "cfg":
+            minimum, maximum, step = 0, 30, 0.1
+        elif input_name == "denoise":
+            minimum, maximum, step = 0, 1, 0.01
+        else:
+            minimum, maximum, step = (-1, 2**32 - 1, 1)
+        kind = "seed" if is_seed else "number"
+        if not isinstance(raw, list):
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
                 add(
                     node_id,
                     node,
                     input_name,
-                    kind="seed" if is_seed else "number",
-                    label=label,
+                    kind=kind,
+                    label="Seed" if is_seed else _label(input_name),
                     numeric=True,
                     seed=is_seed,
                     minimum=minimum,
                     maximum=maximum,
                     step=step,
                 )
-            elif isinstance(raw, str):
-                if (
-                    input_name in {"text", "prompt"}
-                    or "text" in normalized
-                    or "prompt" in normalized
-                ):
-                    kind = "prompt" if input_name in {"text", "prompt"} else "text"
-                    role = roles.get(node_id)
-                    add(
-                        node_id,
-                        node,
-                        input_name,
-                        kind=kind,
-                        label=f"{role} prompt" if role else label,
-                    )
-                elif isinstance(raw, dict):
-                    options = raw.get("options", raw.get("values", []))
-                    if isinstance(options, list) and options:
-                        add(
-                            node_id,
-                            node,
-                            input_name,
-                            kind="select",
-                            label=label,
-                            value=raw.get("default", raw.get("value")),
-                            options=options,
-                        )
-            elif isinstance(raw, dict):
-                options = raw.get("options", raw.get("values", []))
-                if isinstance(options, list) and options:
-                    add(
-                        node_id,
-                        node,
-                        input_name,
-                        kind="select",
-                        label=label,
-                        value=raw.get("default", raw.get("value")),
-                        options=options,
-                    )
+            return
+        if not raw or not isinstance(raw[0], str):
+            return
+        source = workflow.get(raw[0])
+        if not isinstance(source, dict) or not isinstance(source.get("inputs"), dict):
+            return
+        source_inputs = source["inputs"]
+        source_input_name = input_name if input_name in source_inputs else "value"
+        source_value = source_inputs.get(source_input_name)
+        if isinstance(source_value, (int, float)) and not isinstance(
+            source_value, bool
+        ):
+            add(
+                raw[0],
+                source,
+                source_input_name,
+                kind=kind,
+                label="Seed" if is_seed else _label(input_name),
+                numeric=True,
+                seed=is_seed,
+                minimum=minimum,
+                maximum=maximum,
+                step=step,
+            )
+
+    for node_id in sorted(workflow):
+        node = workflow[node_id]
+        class_type = str(node.get("class_type", ""))
+        inputs = node["inputs"]
+        normalized = _norm(class_type)
+        is_sampler = "sampler" in normalized or "ksampler" in normalized
+        if any(marker in normalized for marker in NON_INPUT_NODE_MARKERS):
+            continue
+        if _is_infrastructure(class_type) and not (
+            "loadimage" in normalized and "image" in inputs
+        ):
+            locked.append({"id": node_id, "class_type": class_type})
+            continue
+        if "loadimage" in normalized and isinstance(inputs.get("image"), str):
+            add(node_id, node, "image", kind="image", label="Image")
+            continue
+        if is_sampler:
+            for input_name in sampler_fields:
+                if input_name in inputs:
+                    add_sampler_value(node_id, node, input_name, inputs[input_name])
+            continue
         if "emptylatent" in normalized:
             for input_name in ("width", "height"):
-                if (
-                    input_name in inputs
-                    and f"nodes.{node_id}.inputs.{input_name}" not in seen
+                if isinstance(inputs.get(input_name), (int, float)) and not isinstance(
+                    inputs[input_name], bool
                 ):
                     add(
                         node_id,
@@ -268,6 +260,43 @@ def extract_controls(
                         maximum=4096,
                         step=8,
                     )
+            continue
+        if normalized in TEXT_CLASSES and isinstance(inputs.get("text"), str):
+            role = roles.get(node_id)
+            add(
+                node_id,
+                node,
+                "text",
+                kind="prompt",
+                label=f"{role} prompt" if role else "Prompt",
+            )
+        elif normalized == "primitiveboolean":
+            input_name = next(
+                (name for name, value in inputs.items() if isinstance(value, bool)),
+                None,
+            )
+            if input_name is not None:
+                add(
+                    node_id,
+                    node,
+                    input_name,
+                    kind="boolean",
+                    label=_label(input_name),
+                )
+        elif normalized == "primitivestringmultiline":
+            input_name = next(
+                (name for name, value in inputs.items() if isinstance(value, str)),
+                None,
+            )
+            if input_name is not None:
+                add(
+                    node_id,
+                    node,
+                    input_name,
+                    kind="text",
+                    label=_label(input_name),
+                )
+
     if not controls:
         raise AIToolError("Workflow contains no supported editable controls")
     return controls, locked

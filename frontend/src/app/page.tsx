@@ -9,15 +9,12 @@ import {
   type GalleryItem,
   type GenerationMode,
   type GenerationResult,
-  type LoraSelection,
+  type InstalledGalleryModel,
   type ProgressEvent,
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 
-const DEFAULT_UNET = "krea2\\krea2_turbo_fp8_scaled.safetensors";
-const DEFAULT_CLIP = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors";
-const DEFAULT_VAE = "wan_2.1_vae.safetensors";
-const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v1";
+const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v2";
 const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> = {
   "1:1": [1024, 1024],
   "16:9": [1344, 768],
@@ -27,19 +24,16 @@ const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> =
 };
 const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"];
 
-interface LoraDraft {
-  lora: string;
-  on: boolean;
-  strength: string;
+interface ModelIdentity {
+  modelId: string;
+  versionId: string;
+  fileId: string;
 }
 
-interface SavedInputs {
+interface SavedInputs extends ModelIdentity {
   mode: GenerationMode;
   prompt: string;
   negativePrompt: string;
-  unetName: string;
-  clipName: string;
-  vaeName: string;
   seed: string;
   steps: string;
   imageCount: string;
@@ -48,7 +42,14 @@ interface SavedInputs {
   format: FormatKey;
   customWidth: string;
   customHeight: string;
-  loras: LoraDraft[];
+}
+
+function modelKey(model: ModelIdentity): string {
+  return `${model.modelId}:${model.versionId}:${model.fileId}`;
+}
+
+function galleryModelKey(model: InstalledGalleryModel): string {
+  return modelKey({ modelId: model.model_id, versionId: model.version_id, fileId: model.file_id });
 }
 
 function loadSavedInputs(): Partial<SavedInputs> | null {
@@ -57,19 +58,12 @@ function loadSavedInputs(): Partial<SavedInputs> | null {
     if (!saved || typeof saved !== "object") return null;
     const values = saved as Record<string, unknown>;
     const inputs: Partial<SavedInputs> = {};
-    if (values.mode === "text-to-image" || values.mode === "image-to-image") inputs.mode = values.mode;
-    for (const key of ["prompt", "negativePrompt", "unetName", "clipName", "vaeName", "seed", "steps", "imageCount", "cfg", "denoise", "customWidth", "customHeight"] as const) {
+    if (values.mode === "text-to-image") inputs.mode = values.mode;
+    for (const key of ["modelId", "versionId", "fileId", "prompt", "negativePrompt", "seed", "steps", "imageCount", "cfg", "denoise", "customWidth", "customHeight"] as const) {
       if (typeof values[key] === "string") inputs[key] = values[key];
     }
     if (typeof values.format === "string" && FORMAT_KEYS.includes(values.format as FormatKey)) {
       inputs.format = values.format as FormatKey;
-    }
-    if (Array.isArray(values.loras)) {
-      inputs.loras = values.loras.filter((item): item is LoraDraft => {
-        if (!item || typeof item !== "object") return false;
-        const row = item as Record<string, unknown>;
-        return typeof row.lora === "string" && typeof row.on === "boolean" && typeof row.strength === "string";
-      }).slice(0, 16);
     }
     return inputs;
   } catch {
@@ -81,14 +75,8 @@ export default function StudioPage() {
   const [mode, setMode] = useState<GenerationMode>("text-to-image");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
-  const [unetName, setUnetName] = useState(DEFAULT_UNET);
-  const [clipName, setClipName] = useState(DEFAULT_CLIP);
-  const [vaeName, setVaeName] = useState(DEFAULT_VAE);
-  const [unetOptions, setUnetOptions] = useState<string[]>([DEFAULT_UNET]);
-  const [clipOptions, setClipOptions] = useState<string[]>([DEFAULT_CLIP]);
-  const [vaeOptions, setVaeOptions] = useState<string[]>([DEFAULT_VAE]);
-  const [loraOptions, setLoraOptions] = useState<string[]>([]);
-  const [loras, setLoras] = useState<LoraDraft[]>([]);
+  const [selection, setSelection] = useState<ModelIdentity | null>(null);
+  const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [seed, setSeed] = useState("");
@@ -99,7 +87,7 @@ export default function StudioPage() {
   const [format, setFormat] = useState<FormatKey>("9:16");
   const [customWidth, setCustomWidth] = useState("768");
   const [customHeight, setCustomHeight] = useState("1344");
-  const [references, setReferences] = useState<string[]>([]);
+  const references: string[] = [];
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
@@ -108,6 +96,11 @@ export default function StudioPage() {
   const [hydrated, setHydrated] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const clientIdRef = useRef<string>("");
+
+  const selectedModel = useMemo(
+    () => selection ? modelOptions.find((item) => galleryModelKey(item) === modelKey(selection)) ?? null : null,
+    [modelOptions, selection],
+  );
 
   const refreshGallery = useCallback(async () => {
     try {
@@ -124,37 +117,40 @@ export default function StudioPage() {
       setFormat(settings.defaultFormat);
       setSteps(String(settings.defaultSteps));
       setImageCount(String(settings.defaultImageCount));
-      setHydrated(true);
-      return;
+    } else {
+      if (saved.mode !== undefined) setMode(saved.mode);
+      if (saved.prompt !== undefined) setPrompt(saved.prompt);
+      if (saved.negativePrompt !== undefined) setNegativePrompt(saved.negativePrompt);
+      if (saved.seed !== undefined) setSeed(saved.seed);
+      if (saved.steps !== undefined) setSteps(saved.steps);
+      if (saved.imageCount !== undefined) setImageCount(saved.imageCount);
+      if (saved.cfg !== undefined) setCfg(saved.cfg);
+      if (saved.denoise !== undefined) setDenoise(saved.denoise);
+      if (saved.format !== undefined) setFormat(saved.format);
+      if (saved.customWidth !== undefined) setCustomWidth(saved.customWidth);
+      if (saved.customHeight !== undefined) setCustomHeight(saved.customHeight);
+      if (saved.modelId && saved.versionId && saved.fileId) {
+        setSelection({ modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId });
+      }
     }
-    if (saved.mode !== undefined) setMode(saved.mode);
-    if (saved.prompt !== undefined) setPrompt(saved.prompt);
-    if (saved.negativePrompt !== undefined) setNegativePrompt(saved.negativePrompt);
-    if (saved.unetName !== undefined) setUnetName(saved.unetName);
-    if (saved.clipName !== undefined) setClipName(saved.clipName);
-    if (saved.vaeName !== undefined) setVaeName(saved.vaeName);
-    if (saved.seed !== undefined) setSeed(saved.seed);
-    if (saved.steps !== undefined) setSteps(saved.steps);
-    if (saved.imageCount !== undefined) setImageCount(saved.imageCount);
-    if (saved.cfg !== undefined) setCfg(saved.cfg);
-    if (saved.denoise !== undefined) setDenoise(saved.denoise);
-    if (saved.format !== undefined) setFormat(saved.format);
-    if (saved.customWidth !== undefined) setCustomWidth(saved.customWidth);
-    if (saved.customHeight !== undefined) setCustomHeight(saved.customHeight);
-    if (saved.loras !== undefined) setLoras(saved.loras);
+    const params = new URLSearchParams(window.location.search);
+    const modelId = params.get("model_id");
+    const versionId = params.get("version_id");
+    const fileId = params.get("file_id");
+    if (modelId && versionId && fileId) setSelection({ modelId, versionId, fileId });
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || modelsLoading) return;
     try {
       localStorage.setItem(SAVED_INPUTS_KEY, JSON.stringify({
         mode,
         prompt,
         negativePrompt,
-        unetName,
-        clipName,
-        vaeName,
+        modelId: selectedModel?.model_id ?? "",
+        versionId: selectedModel?.version_id ?? "",
+        fileId: selectedModel?.file_id ?? "",
         seed,
         steps,
         imageCount,
@@ -163,41 +159,27 @@ export default function StudioPage() {
         format,
         customWidth,
         customHeight,
-        loras,
       } satisfies SavedInputs));
     } catch {
       /* storage can be unavailable without blocking edits */
     }
-  }, [hydrated, mode, prompt, negativePrompt, unetName, clipName, vaeName, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight, loras]);
+  }, [hydrated, modelsLoading, mode, prompt, negativePrompt, selectedModel, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight]);
 
   useEffect(() => {
     let cancelled = false;
-    const categories = [
-      ["diffusion_models", (values: string[]) => {
-        setUnetOptions(values.length ? values : [unetName]);
-        if (values.length) setUnetName((current) => values.includes(current) ? current : values[0]);
-      }],
-      ["text_encoders", (values: string[]) => {
-        setClipOptions(values.length ? values : [clipName]);
-        if (values.length) setClipName((current) => values.includes(current) ? current : values[0]);
-      }],
-      ["vae", (values: string[]) => {
-        setVaeOptions(values.length ? values : [vaeName]);
-        if (values.length) setVaeName((current) => values.includes(current) ? current : values[0]);
-      }],
-      ["loras", (values: string[]) => setLoraOptions(values)],
-    ] as const;
-
-    Promise.allSettled(categories.map(([category]) => api.getModels(category))).then((results) => {
+    void api.listSelectableModels().then((items) => {
       if (cancelled) return;
-      const errors: string[] = [];
-      results.forEach((result, index) => {
-        const [, apply] = categories[index];
-        if (result.status === "fulfilled") apply(result.value);
-        else errors.push(`${categories[index][0]} unavailable`);
+      setModelOptions(items);
+      setSelection((current) => {
+        if (!current) return null;
+        const valid = items.some((item) => galleryModelKey(item) === modelKey(current));
+        if (!valid) setModelsError("The selected gallery model is unavailable or no longer installed.");
+        return valid ? current : null;
       });
-      setModelsError(errors.length ? `ComfyUI model discovery: ${errors.join(", ")}.` : null);
-      setModelsLoading(false);
+    }).catch((reason: unknown) => {
+      if (!cancelled) setModelsError(reason instanceof Error ? reason.message : "Could not load installed gallery models");
+    }).finally(() => {
+      if (!cancelled) setModelsLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
@@ -215,6 +197,10 @@ export default function StudioPage() {
 
   const handleGenerate = useCallback(async () => {
     if (mode !== "text-to-image" || !prompt.trim() || busy) return;
+    if (!selectedModel) {
+      setError("Select an installed model from Models Gallery before generating.");
+      return;
+    }
     const [resolvedWidth, resolvedHeight] = format === "custom"
       ? [customWidth, customHeight]
       : FORMATS[format].map(String);
@@ -225,15 +211,6 @@ export default function StudioPage() {
     const parsedWidth = Number(resolvedWidth);
     const parsedHeight = Number(resolvedHeight);
     const parsedSeed = seed.trim() ? Number(seed) : undefined;
-    const parsedLoras: LoraSelection[] = loras.map((row) => ({
-      lora: row.lora.trim(),
-      on: row.on,
-      strength: Number(row.strength),
-    }));
-    if (parsedLoras.some((row) => !row.lora || !Number.isFinite(row.strength) || row.strength < -10 || row.strength > 10)) {
-      setError("LoRA names and strengths must be valid ComfyUI values.");
-      return;
-    }
     if (!Number.isInteger(parsedSteps) || parsedSteps < 1 || parsedSteps > 100 ||
         !Number.isInteger(parsedImageCount) || parsedImageCount < 1 || parsedImageCount > 4 ||
         !Number.isFinite(parsedCfg) || parsedCfg < 0 || parsedCfg > 30 ||
@@ -266,13 +243,12 @@ export default function StudioPage() {
 
     try {
       const result: GenerationResult = await api.generate({
+        model_id: selectedModel.model_id,
+        version_id: selectedModel.version_id,
+        file_id: selectedModel.file_id,
         mode,
         prompt,
         negative_prompt: negativePrompt,
-        unet_name: unetName,
-        clip_name: clipName,
-        vae_name: vaeName,
-        loras: parsedLoras,
         seed: parsedSeed,
         steps: parsedSteps,
         image_count: parsedImageCount,
@@ -296,31 +272,37 @@ export default function StudioPage() {
       setBusy(false);
       setTimeout(() => ws.close(), 1500);
     }
-  }, [mode, prompt, negativePrompt, unetName, clipName, vaeName, loras, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight, busy, refreshGallery]);
+  }, [mode, prompt, negativePrompt, selectedModel, seed, steps, imageCount, cfg, denoise, format, customWidth, customHeight, busy, refreshGallery]);
 
-  const canGenerate = useMemo(() => mode === "text-to-image" && prompt.trim().length > 0 && !busy, [mode, prompt, busy]);
+  const canGenerate = useMemo(() => mode === "text-to-image" && prompt.trim().length > 0 && selectedModel !== null && !busy, [mode, prompt, selectedModel, busy]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-contain bg-transparent lg:flex-row">
       <ControlPanel
-        mode={mode}
-        onModeChange={setMode}
         prompt={prompt}
         onPromptChange={setPrompt}
         negativePrompt={negativePrompt}
         onNegativePromptChange={setNegativePrompt}
-        unetName={unetName}
-        unetOptions={unetOptions}
-        onUnetNameChange={setUnetName}
-        clipName={clipName}
-        clipOptions={clipOptions}
-        onClipNameChange={setClipName}
-        vaeName={vaeName}
-        vaeOptions={vaeOptions}
-        onVaeNameChange={setVaeName}
-        loras={loras}
-        loraOptions={loraOptions}
-        onLorasChange={setLoras}
+        selectedModel={selectedModel}
+        modelOptions={modelOptions}
+        onModelChange={(key) => {
+          const model = modelOptions.find((item) => galleryModelKey(item) === key) ?? null;
+          const next = model ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id } : null;
+          setSelection(next);
+          setModelsError(null);
+          const params = new URLSearchParams(window.location.search);
+          if (next) {
+            params.set("model_id", next.modelId);
+            params.set("version_id", next.versionId);
+            params.set("file_id", next.fileId);
+          } else {
+            params.delete("model_id");
+            params.delete("version_id");
+            params.delete("file_id");
+          }
+          const query = params.toString();
+          window.history.replaceState(null, "", query ? `/?${query}` : "/");
+        }}
         seed={seed}
         onSeedChange={setSeed}
         steps={steps}
@@ -337,8 +319,6 @@ export default function StudioPage() {
         onCustomHeightChange={setCustomHeight}
         format={format}
         onFormatChange={setFormat}
-        references={references}
-        onReferencesChange={setReferences}
         busy={busy}
         progress={progress}
         progressLabel={progressLabel}

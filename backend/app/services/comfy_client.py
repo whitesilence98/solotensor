@@ -103,6 +103,22 @@ class ComfyClient:
     # Workflow graph
     # ------------------------------------------------------------------ #
 
+    async def resolve_model_name(self, category: str, filename: str) -> str:
+        """Map a normalized gallery filename to the exact name ComfyUI enumerates.
+
+        ComfyUI lists subfolder models with OS separators ("sub\\model.safetensors"
+        on Windows) and validates node inputs against that list verbatim, while
+        gallery records store forward-slash paths, so translate before queueing.
+        """
+        wanted = filename.replace("\\", "/").lower()
+        names = await self.list_models(category)
+        for name in names:
+            if name.replace("\\", "/").lower() == wanted:
+                return name
+        raise ComfyClientError(
+            f"Model {filename} is not listed by ComfyUI under {category}"
+        )
+
     def load_workflow_template(self) -> Optional[dict[str, Any]]:
         """Load workflows/workflow_api.json if present (exported from the ComfyUI UI).
 
@@ -265,6 +281,54 @@ class ComfyClient:
             height=height,
         )
 
+    def build_gallery_workflow(
+        self,
+        *,
+        model_type: str,
+        filename: str,
+        prompt: str,
+        negative_prompt: str = "",
+        seed: Optional[int] = None,
+        steps: int = 10,
+        image_count: int = 1,
+        cfg: float = 1.0,
+        denoise: float = 1.0,
+        width: int = 768,
+        height: int = 1344,
+    ) -> dict[str, Any]:
+        if model_type == "Checkpoint":
+            return self._build_builtin_workflow(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                seed=seed,
+                steps=steps,
+                image_count=image_count,
+                cfg=cfg,
+                denoise=denoise,
+                width=width,
+                height=height,
+                checkpoint_name=filename,
+            )
+        if model_type == "Diffusion Model":
+            template = self.load_workflow_template()
+            if template is None:
+                raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
+            return self.patch_workflow_template(
+                template,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                seed=seed,
+                steps=steps,
+                image_count=image_count,
+                cfg=cfg,
+                denoise=denoise,
+                unet_name=filename,
+                loras=[],
+                width=width,
+                height=height,
+            )
+        raise ComfyClientError("Unsupported gallery model type")
+
     def _build_builtin_workflow(
         self,
         *,
@@ -280,8 +344,10 @@ class ComfyClient:
         style: str = "none",
         width: int = 768,
         height: int = 1344,
+        checkpoint_name: str | None = None,
     ) -> dict[str, Any]:
         preset = MODEL_PRESETS.get(model, MODEL_PRESETS["sdxl"])
+        checkpoint = checkpoint_name or preset["checkpoint"]
         suffix = STYLE_SUFFIXES.get(style, "")
         full_prompt = f"{prompt}, {suffix}" if suffix else prompt
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
@@ -289,7 +355,7 @@ class ComfyClient:
         graph: dict[str, Any] = {
             "1": {
                 "class_type": "CheckpointLoaderSimple",
-                "inputs": {"ckpt_name": preset["checkpoint"]},
+                "inputs": {"ckpt_name": checkpoint},
             },
             "2": {
                 "class_type": "CLIPTextEncode",
@@ -368,23 +434,23 @@ class ComfyClient:
             history: dict[str, Any] = resp.json()
         return history.get(prompt_id, {})
 
-    async def list_images(self, prompt_id: str) -> list[dict[str, str]]:
-        """Return {"filename", "subfolder", "folder_type"} for each output image."""
+    async def list_output_files(self, prompt_id: str, expected_kind: str = "image") -> list[dict[str, str]]:
+        """Return allowlisted persisted image/video descriptors from Comfy history."""
         history = await self.get_history(prompt_id)
         outputs = history.get("outputs", {})
-        images: list[dict[str, str]] = []
+        allowed = {".png", ".jpg", ".jpeg", ".webp", ".gif"} if expected_kind == "image" else {".mp4", ".webm", ".mov"}
+        files: list[dict[str, str]] = []
         for node_output in outputs.values():
-            for img in node_output.get("images", []):
-                if img.get("type") == "temp":
-                    continue
-                images.append(
-                    {
-                        "filename": img.get("filename", ""),
-                        "subfolder": img.get("subfolder", ""),
-                        "folder_type": img.get("type", "output"),
-                    }
-                )
-        return images
+            for collection in ("images", "gifs", "videos", "animated"):
+                for item in node_output.get(collection, []):
+                    filename = item.get("filename", "")
+                    if item.get("type") == "temp" or Path(filename).suffix.lower() not in allowed:
+                        continue
+                    files.append({"filename": filename, "subfolder": item.get("subfolder", ""), "folder_type": item.get("type", "output")})
+        return files
+
+    async def list_images(self, prompt_id: str) -> list[dict[str, str]]:
+        return await self.list_output_files(prompt_id, "image")
 
     async def fetch_image_bytes(self, image: dict[str, str]) -> bytes:
         """Download one output image via GET /view."""

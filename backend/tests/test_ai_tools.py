@@ -92,25 +92,113 @@ class AIToolServiceTests(unittest.TestCase):
     def test_zero_literal_and_random_seed_are_supported(self) -> None:
         workflow = {
             "seed": {"class_type": "Seed", "inputs": {"seed": 123}},
-            "sampling": {"class_type": "ModelSamplingAuraFlow", "inputs": {"shift": 1, "model": ["model", 0]}},
+            "sampling": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": ["seed", 0],
+                    "cfg": 7,
+                    "denoise": 1,
+                    "positive": ["text", 0],
+                },
+            },
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
             "model": {"class_type": "UNETLoader", "inputs": {"unet_name": "locked.safetensors"}},
         }
-        response = self.service.create(json.dumps(workflow).encode(), "Shift", ToolMode.TEXT_TO_IMAGE, ToolAspectRatio.SQUARE)
+        response = self.service.create(json.dumps(workflow).encode(), "Sampler", ToolMode.TEXT_TO_IMAGE, ToolAspectRatio.SQUARE)
         controls = {control.id: control for control in self.service.detail(response.tool_id).controls}
-        shift_id = "nodes.sampling.inputs.shift"
         seed_id = "nodes.seed.inputs.seed"
-        self.assertEqual(controls[shift_id].minimum, 0)
+        cfg_id = "nodes.sampling.inputs.cfg"
+        denoise_id = "nodes.sampling.inputs.denoise"
+        self.assertIn(seed_id, controls)
+        self.assertIn(cfg_id, controls)
+        self.assertIn(denoise_id, controls)
+        self.assertNotIn("nodes.sampling.inputs.positive", controls)
+        self.assertNotIn("nodes.model.inputs.unet_name", controls)
         graph, _ = self.service.build_graph(
             response.tool_id,
             "",
             ToolAspectRatio.SQUARE,
-            values={shift_id: 0, seed_id: -1},
+            values={seed_id: -1, cfg_id: 0},
         )
-        self.assertEqual(graph["sampling"]["inputs"]["shift"], 0)
         self.assertGreaterEqual(graph["seed"]["inputs"]["seed"], 0)
-        self.assertLessEqual(graph["seed"]["inputs"]["seed"], 2**32 - 1)
+        self.assertEqual(graph["sampling"]["inputs"]["cfg"], 0)
+        self.assertEqual(graph["sampling"]["inputs"]["denoise"], 1)
+
+    def test_unrelated_literal_inputs_are_not_exposed(self) -> None:
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "sampler": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": 1,
+                    "steps": 20,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "positive": ["text", 0],
+                },
+            },
+            "clean": {
+                "class_type": "easy cleanGpuUsed",
+                "inputs": {"anything": ["sampler", 0]},
+            },
+            "custom": {
+                "class_type": "CustomNode",
+                "inputs": {"enabled": True, "shift": 1.2, "mode": {"options": ["a", "b"]}},
+            },
+        }
+        controls, _ = extract_controls(workflow)
+        paths = {control["path"] for control in controls}
+        self.assertIn("nodes.sampler.inputs.seed", paths)
+        self.assertIn("nodes.sampler.inputs.steps", paths)
+        self.assertNotIn("nodes.sampler.inputs.sampler_name", paths)
+        self.assertNotIn("nodes.sampler.inputs.scheduler", paths)
+        self.assertNotIn("nodes.clean.inputs.anything", paths)
+        self.assertNotIn("nodes.custom.inputs.enabled", paths)
+        self.assertNotIn("nodes.custom.inputs.shift", paths)
+        self.assertNotIn("nodes.custom.inputs.mode", paths)
+    def test_primitive_boolean_is_exposed(self) -> None:
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "sampler": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 1, "positive": ["text", 0]},
+            },
+            "flag": {"class_type": "PrimitiveBoolean", "inputs": {"value": True}},
+        }
+        controls, _ = extract_controls(workflow)
+        paths = {control["path"] for control in controls}
+        self.assertIn("nodes.flag.inputs.value", paths)
+    def test_primitive_string_multiline_is_exposed(self) -> None:
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "sampler": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 1, "positive": ["text", 0]},
+            },
+            "copy": {
+                "class_type": "PrimitiveStringMultiline",
+                "inputs": {"value": "line one\nline two"},
+            },
+            "linked": {
+                "class_type": "PrimitiveStringMultiline",
+                "inputs": {"value": ["copy", 0]},
+            },
+        }
+        response = self.service.create(json.dumps(workflow).encode(), "Multiline", ToolMode.TEXT_TO_IMAGE, ToolAspectRatio.SQUARE)
+        controls = {control.id: control for control in self.service.detail(response.tool_id).controls}
+        control_id = "nodes.copy.inputs.value"
+        self.assertEqual(controls[control_id].kind, "text")
+        self.assertEqual(controls[control_id].value, "line one\nline two")
+        self.assertNotIn("nodes.linked.inputs.value", controls)
+        updated = "first line\nsecond line"
+        graph, _ = self.service.build_graph(
+            response.tool_id,
+            "",
+            ToolAspectRatio.SQUARE,
+            values={control_id: updated},
+        )
+        self.assertEqual(graph["copy"]["inputs"]["value"], updated)
 
 
 if __name__ == "__main__":
     unittest.main()
-

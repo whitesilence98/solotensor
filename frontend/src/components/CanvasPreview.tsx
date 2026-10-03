@@ -91,9 +91,9 @@ export default function CanvasPreview({ busy, progress, progressLabel, gallery, 
       <div className="mx-auto w-full max-w-[78rem] px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
         {error && <div role="alert" className="mb-7 flex items-start gap-3 border-l-2 border-[#ef8c79] bg-[#ef8c79]/[.06] px-4 py-3 text-sm text-[#efb1a5]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p className="leading-relaxed">{error}</p></div>}
 
-        {busy && <section aria-live="polite" className="mb-12">
+        {busy && <section aria-live="polite" className="mb-20">
           <div className="mb-4 flex items-end justify-between border-b border-[#292d28] pb-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#6f716d]">In progress</p><h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-[#f2f0e9]">{progressLabel || "Building your image"}</h2></div><span className="font-mono text-2xl text-[#d5f06f]">{progress}%</span></div>
-          <div className="mx-auto max-h-[60vh] max-w-full overflow-hidden rounded-[.75rem]" style={{ aspectRatio: `${outputWidth} / ${outputHeight}`, width: `min(100%, calc(60vh * ${outputWidth} / ${outputHeight}))` }}><div className="shimmer h-full w-full" /></div>
+          <div className="mx-auto max-w-full overflow-hidden rounded-[.75rem] max-h-[42rem]" style={{ aspectRatio: `${outputWidth} / ${outputHeight}` }}><div className="shimmer h-full w-full" /></div>
         </section>}
 
         {latest ? <section className="mb-14">

@@ -64,6 +64,20 @@ Open **http://localhost:3000**.
 | `frontend/src/components/` | `SidebarNav`, `ControlPanel`, `ImageUpload`, `CanvasPreview` |
 | `frontend/src/lib/api.ts` | Typed fetch + WebSocket client |
 
+## Code Assist (optional)
+
+Code Assist provides two stateless implementation personas: **Backend** for FastAPI, Pydantic, ComfyUI, and tests; **Frontend** for Next.js, React, TypeScript, Tailwind, and accessibility. It is disabled by default.
+
+```powershell
+# In backend/.env — never expose this credential as NEXT_PUBLIC_*.
+ASSISTANT_ENABLED=true
+ANTHROPIC_MODEL=claude-opus-5-5
+```
+
+Configure authentication with `ANTHROPIC_API_KEY` in the backend environment (or a local `ant auth login` profile), then restart Uvicorn. Only the selected persona, the submitted question, and fixed app architecture context are sent to the model. The assistant cannot read or modify local files, workflows, images, secrets, or the ComfyUI instance.
+
+This app is intended for localhost use. CORS is not authentication: do not expose Code Assist on a LAN or public network without authentication, durable rate limiting, audit controls, secret management, and a cost-abuse policy.
+
 ## How a generation flows
 
 1. UI opens a relay WS: `ws://localhost:8000/api/v1/ws/progress/{client_id}` (the backend forwards ComfyUI's `/ws` frames, including binary preview thumbnails).

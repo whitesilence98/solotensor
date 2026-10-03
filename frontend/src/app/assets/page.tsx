@@ -40,6 +40,7 @@ export default function AssetsPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [retryKey, setRetryKey] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export default function AssetsPage() {
     return () => {
       cancelled = true;
     };
-  }, [origin]);
+  }, [origin, retryKey]);
 
   // "/" focuses search, like every gallery tool.
   useEffect(() => {
@@ -89,12 +90,11 @@ export default function AssetsPage() {
   }, [byType, tab, query]);
 
   const shown = filtered.slice(0, visible);
-  const allLoaded = visible >= filtered.length;
 
   const commitSearch = useCallback(() => {
     setQuery(searchDraft);
     setVisible(PAGE_SIZE);
-  }, []);
+  }, [searchDraft]);
 
   const clearSearch = useCallback(() => {
     setSearchDraft("");
@@ -150,11 +150,11 @@ export default function AssetsPage() {
         </div>
 
         <div className="mx-auto max-w-[1600px] px-5 sm:px-6">
-          <nav role="tablist" aria-label="Asset type" className="flex gap-5">
+          <div aria-label="Asset type" className="flex gap-5">
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = tab === id;
               return (
-                <button key={id} role="tab" aria-selected={active} onClick={() => { setTab(id); setVisible(PAGE_SIZE); }} className={`relative flex shrink-0 items-center gap-2 pb-3 pt-1.5 text-sm font-medium transition-colors focus-visible:text-[var(--accent)] ${active ? "text-[var(--ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}>
+                <button key={id} type="button" aria-pressed={active} onClick={() => { setTab(id); setVisible(PAGE_SIZE); }} className={`relative flex shrink-0 items-center gap-2 pb-3 pt-1.5 text-sm font-medium transition-colors focus-visible:text-[var(--accent)] ${active ? "text-[var(--ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}>
                   <Icon className={`h-4 w-4 ${active ? "text-[var(--accent)]" : ""}`} />
                   {label}
                   <span className={`rounded px-1.5 py-0.5 text-[11px] tabular-nums ${active ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]" : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"}`}>{formatCount(counts[id])}</span>
@@ -162,7 +162,7 @@ export default function AssetsPage() {
                 </button>
               );
             })}
-          </nav>
+          </div>
           <div className="flex gap-2 overflow-x-auto py-3" aria-label="Asset source">
             {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
               <button key={source} type="button" onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }} className={`whitespace-nowrap rounded-[.4rem] border px-3 py-1.5 text-[11px] font-medium transition-colors ${origin === source ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"}`}>
@@ -181,16 +181,15 @@ export default function AssetsPage() {
               <div
                 key={i}
                 className="shimmer shimmer-dark rounded-xl"
-                style={{ height: 180 + ((i * 67) % 160) }}
+                style={{ height: 500 + ((i * 60) % 160) }}
               />
             ))}
           </div>
         ) : error ? (
-          <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-red-900/50 bg-red-950/30 px-6 text-center">
-            <p className="text-sm font-medium text-red-300">{error}</p>
-            <p className="mt-1.5 text-sm text-red-400/70">
-              Check that the FastAPI backend is running on port 8000.
-            </p>
+          <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center rounded-[var(--radius-panel)] px-6 text-center" role="alert">
+            <p className="text-sm font-medium text-[var(--danger)]">{error}</p>
+            <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check that the local API is running, then retry.</p>
+            <button type="button" onClick={() => { setLoading(true); setError(null); setRetryKey((key) => key + 1); }} className="workspace-action-secondary mt-4 px-3 py-2 text-xs">Try again</button>
           </div>
         ) : filtered.length === 0 ? (
           query ? (
@@ -212,32 +211,14 @@ export default function AssetsPage() {
               ))}
             </div>
             {filtered.length > shown.length && (
-              <p className="mt-2 text-center text-xs text-[var(--ink-faint)]">
-                Showing {shown.length} of {formatCount(filtered.length)}
-              </p>
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <p className="text-xs text-[var(--ink-faint)]">Showing {shown.length} of {formatCount(filtered.length)}</p>
+                <button type="button" onClick={() => setVisible((value) => value + PAGE_SIZE)} className="workspace-action-secondary gap-2 px-4 py-2.5 text-xs"><ArrowDown className="h-4 w-4" />Load more</button>
+              </div>
             )}
           </>
         )}
       </main>
-
-      {/* ---------------- FAB ---------------- */}
-      {!loading && !error && filtered.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-20 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setVisible((v) => v + PAGE_SIZE)}
-            disabled={allLoaded}
-            aria-label={allLoaded ? "All assets loaded" : "Load more assets"}
-              className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-[.55rem] bg-[var(--accent)] text-[var(--accent-ink)] shadow-[0_12px_28px_-12px_rgba(213,240,111,.55)] transition-all duration-200 ease-in-out ${
-                allLoaded
-                  ? "pointer-events-none scale-90 opacity-0"
-                  : "hover:scale-105 hover:bg-[#e2f88a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-              }`}
-          >
-            <ArrowDown className="h-5 w-5" />
-          </button>
-        </div>
-      )}
 
     </div>
   );

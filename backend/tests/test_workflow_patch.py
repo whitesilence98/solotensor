@@ -1,3 +1,4 @@
+import asyncio
 import json
 import unittest
 from pathlib import Path
@@ -77,6 +78,55 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(graph["4"]["inputs"]["height"], 640)
         self.assertEqual(graph["4"]["inputs"]["batch_size"], 4)
         self.assertEqual(graph["5"]["inputs"]["denoise"], 0.65)
+
+    def test_resolve_model_name_matches_comfyui_enumeration(self) -> None:
+        async def run() -> str:
+            async def fake_list(category: str) -> list[str]:
+                self.assertEqual(category, "diffusion_models")
+                return [
+                    "krea2\\krea2_turbo_fp8_scaled.safetensors",
+                    "z-image\\z_image_turbo_bf16.safetensors",
+                ]
+
+            client = ComfyClient()
+            client.list_models = fake_list  # type: ignore[method-assign]
+            return await client.resolve_model_name(
+                "diffusion_models", "z-image/z_image_turbo_bf16.safetensors"
+            )
+
+        self.assertEqual(asyncio.run(run()), "z-image\\z_image_turbo_bf16.safetensors")
+
+        async def run_missing() -> None:
+            async def fake_list(category: str) -> list[str]:
+                return ["other\\model.safetensors"]
+
+            client = ComfyClient()
+            client.list_models = fake_list  # type: ignore[method-assign]
+            await client.resolve_model_name(
+                "diffusion_models", "z-image/z_image_turbo_bf16.safetensors"
+            )
+
+        with self.assertRaises(ComfyClientError):
+            asyncio.run(run_missing())
+
+    def test_gallery_workflows_use_resolved_filename(self) -> None:
+        checkpoint = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="nested/checkpoint.safetensors",
+            prompt="test",
+        )
+        self.assertEqual(checkpoint["1"]["inputs"]["ckpt_name"], "nested/checkpoint.safetensors")
+
+        unet = self.client.build_gallery_workflow(
+            model_type="Diffusion Model",
+            filename="nested/unet.safetensors",
+            prompt="test",
+        )
+        self.assertEqual(unet["618:615"]["inputs"]["unet_name"], "nested/unet.safetensors")
+        self.assertFalse(any(key.lower().startswith("lora_") for key in unet["1043"]["inputs"]))
+
+        with self.assertRaises(ComfyClientError):
+            self.client.build_gallery_workflow(model_type="LoRA", filename="adapter.safetensors", prompt="test")
 
     def test_missing_required_node_fails(self) -> None:
         template = json.loads(json.dumps(self.template))
