@@ -5,6 +5,8 @@ node_modules/
 .next/
 dist/
 
+.claude/
+
 # Generated assets and creator uploads
 backend/generated/
 backend/models/

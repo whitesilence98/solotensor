@@ -368,23 +368,23 @@ class ComfyClient:
             history: dict[str, Any] = resp.json()
         return history.get(prompt_id, {})
 
-    async def list_images(self, prompt_id: str) -> list[dict[str, str]]:
-        """Return {"filename", "subfolder", "folder_type"} for each output image."""
+    async def list_output_files(self, prompt_id: str, expected_kind: str = "image") -> list[dict[str, str]]:
+        """Return allowlisted persisted image/video descriptors from Comfy history."""
         history = await self.get_history(prompt_id)
         outputs = history.get("outputs", {})
-        images: list[dict[str, str]] = []
+        allowed = {".png", ".jpg", ".jpeg", ".webp", ".gif"} if expected_kind == "image" else {".mp4", ".webm", ".mov"}
+        files: list[dict[str, str]] = []
         for node_output in outputs.values():
-            for img in node_output.get("images", []):
-                if img.get("type") == "temp":
-                    continue
-                images.append(
-                    {
-                        "filename": img.get("filename", ""),
-                        "subfolder": img.get("subfolder", ""),
-                        "folder_type": img.get("type", "output"),
-                    }
-                )
-        return images
+            for collection in ("images", "gifs", "videos", "animated"):
+                for item in node_output.get(collection, []):
+                    filename = item.get("filename", "")
+                    if item.get("type") == "temp" or Path(filename).suffix.lower() not in allowed:
+                        continue
+                    files.append({"filename": filename, "subfolder": item.get("subfolder", ""), "folder_type": item.get("type", "output")})
+        return files
+
+    async def list_images(self, prompt_id: str) -> list[dict[str, str]]:
+        return await self.list_output_files(prompt_id, "image")
 
     async def fetch_image_bytes(self, image: dict[str, str]) -> bytes:
         """Download one output image via GET /view."""

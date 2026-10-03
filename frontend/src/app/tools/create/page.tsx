@@ -1,7 +1,8 @@
 "use client";
 
 import { ChangeEvent, useRef, useState } from "react";
-import { FileImage, FileJson, Plus, Upload, X } from "lucide-react";
+import { ArrowLeft, FileImage, FileJson, Plus, Upload, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, type ToolAspectRatio, type ToolMode } from "@/lib/api";
 
@@ -44,7 +45,7 @@ export default function CreateToolPage() {
     finally { setBusy(false); }
   };
 
-  return <main id="main-content" className="workspace-scroll h-full px-4 py-6 md:px-8 md:py-10"><div className="mx-auto max-w-3xl"><header className="mb-8 border-b border-[#292d28] pb-6"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#d5f06f]">AI Tool Studio / New tool</p><h1 className="text-3xl font-semibold text-[#f2f0e9] md:text-5xl">Create a tool</h1><p className="mt-3 text-sm text-[#aaa8a1]">Expose safe workflow controls. Models, samplers, and workflow internals stay server-owned.</p></header>
+  return <main id="main-content" className="workspace-scroll h-full px-4 py-6 md:px-8 md:py-10"><div className="mx-auto max-w-3xl"><Link href="/tools" className="workspace-action-quiet mb-5 gap-2 py-1 text-xs"><ArrowLeft className="h-4 w-4" /> AI Tool Studio</Link><header className="mb-8 border-b border-[#292d28] pb-6"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#d5f06f]">AI Tool Studio / New tool</p><h1 className="text-3xl font-semibold text-[#f2f0e9] md:text-5xl">Create a tool</h1><p className="mt-3 text-sm text-[#aaa8a1]">Expose safe workflow controls. Models, samplers, and workflow internals stay server-owned.</p></header>
     <section className="space-y-6 rounded-2xl border border-[#292d28] bg-[#111311] p-5 md:p-7" aria-busy={busy}>
       <label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#aaa8a1]">Tool name</span><input value={name} onChange={(event) => setName(event.target.value)} disabled={busy} maxLength={120} placeholder="Portrait maker" className={field} /></label>
       <div><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#aaa8a1]">Workflow JSON</span><button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="flex w-full flex-col items-center rounded-xl border border-dashed border-[#3a4038] bg-[#0b0c0b] px-6 py-10 text-center transition hover:border-[#d5f06f] disabled:cursor-not-allowed disabled:opacity-50"><input ref={inputRef} type="file" accept=".json,application/json" onChange={choose} className="sr-only" /><Upload className="mb-3 h-6 w-6 text-[#d5f06f]" /><span className="text-sm text-[#f2f0e9]">{file?.name ?? "Choose workflow_api.json"}</span><span className="mt-1 text-xs text-[#6f716d]">ComfyUI API-format workflow only</span></button>{file && <div className="mt-2 flex items-center justify-between rounded-lg bg-[#20231f] px-3 py-2 text-xs text-[#aaa8a1]"><span className="truncate">{file.name}</span><button type="button" disabled={busy} onClick={() => setFile(null)} aria-label="Remove workflow file" className="p-1 hover:text-[#ef8c79]"><X className="h-3.5 w-3.5" /></button></div>}</div>

@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.schemas import GenerateRequest
+from app.schemas import AssistantRequest, GenerateRequest, ModelCompatibility, ModelGenerationSettings, SUPPORTED_BASE_MODELS
 
 
 class PromptValidationTests(unittest.TestCase):
@@ -29,6 +29,43 @@ class PromptValidationTests(unittest.TestCase):
             GenerateRequest(prompt="test", loras=[{"lora": "a.safetensors", "strength": 11}])
         with self.assertRaises(ValidationError):
             GenerateRequest(prompt="test", loras=[{"lora": f"{index}.safetensors"} for index in range(17)])
+
+
+class ModelCompatibilityValidationTests(unittest.TestCase):
+    def test_accepts_exact_supported_base_models(self) -> None:
+        self.assertEqual({ModelCompatibility(base_model=model).base_model for model in SUPPORTED_BASE_MODELS}, set(SUPPORTED_BASE_MODELS))
+
+    def test_normalizes_legacy_sdxl_base_model(self) -> None:
+        self.assertEqual(ModelCompatibility(base_model="SDXL 1.0").base_model, "Stable Diffusion XL (SDXL)")
+
+    def test_rejects_unsupported_base_model(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelCompatibility(base_model="arbitrary")
+
+    def test_allows_no_vae_and_empty_lists(self) -> None:
+        compatibility = ModelCompatibility(vae=None, text_encoders=[])
+        generation = ModelGenerationSettings(trigger_words=[])
+        self.assertEqual(compatibility.base_model, "Stable Diffusion XL (SDXL)")
+        self.assertIsNone(compatibility.vae)
+        self.assertEqual(compatibility.text_encoders, [])
+        self.assertEqual(generation.trigger_words, [])
+
+
+class CodeAssistantSchemaTests(unittest.TestCase):
+    def test_accepts_backend_and_frontend_personas(self) -> None:
+        self.assertEqual(AssistantRequest(persona="backend", message="Add a route").persona.value, "backend")
+        self.assertEqual(AssistantRequest(persona="frontend", message="Add a page").persona.value, "frontend")
+
+    def test_trims_and_rejects_invalid_messages(self) -> None:
+        self.assertEqual(AssistantRequest(persona="backend", message="  Hello  ").message, "Hello")
+        for payload in (
+            {"persona": "backend", "message": "   "},
+            {"persona": "backend", "message": "x" * 12_001},
+            {"persona": "other", "message": "Hello"},
+            {"persona": "backend", "message": "Hello", "model": "anything"},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                AssistantRequest(**payload)
 
 
 if __name__ == "__main__":

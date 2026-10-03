@@ -22,6 +22,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .schemas import (
+    AssistantRequest,
+    AssistantResponse,
     GenerateRequest,
     GenerationResult,
     GalleryItem,
@@ -39,6 +41,8 @@ from .schemas import (
     ModelVersionCreateRequest,
     ModelVersionResponse,
     ModelInstallResponse,
+    LocalModelImportRequest,
+    LocalModelListResponse,
     PublicModelListResponse,
     ToolAspectRatio,
     ToolCatalogResponse,
@@ -50,6 +54,12 @@ from .schemas import (
     UploadedAsset,
 )
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
+from .services.code_assistant import (
+    AssistantRateLimited,
+    AssistantUnavailable,
+    AssistantUpstreamError,
+    get_code_assistant_service,
+)
 from .services.comfy_client import ComfyClientError, get_comfy_client
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.storage import StorageError, StorageService, get_storage
@@ -62,6 +72,7 @@ storage = get_storage()
 storage.ensure_root()
 model_storage = get_model_service()
 model_storage.ensure_root()
+code_assistant = get_code_assistant_service(settings)
 
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 
@@ -73,6 +84,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("shutdown")
+async def close_code_assistant() -> None:
+    await code_assistant.close()
+
 
 # Serve saved images: http://localhost:8000/files/<prompt_id>/<hash>.png
 app.mount("/files", StaticFiles(directory=str(storage.root)), name="files")
@@ -124,7 +141,27 @@ async def health() -> HealthResponse:
     )
 
 
+@app.post("/api/v1/assist", response_model=AssistantResponse)
+async def assist(req: AssistantRequest) -> AssistantResponse:
+    """Answer a single code-assistance question without tools or persistence."""
+    if not settings.ASSISTANT_ENABLED:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Code Assist is disabled. Set ASSISTANT_ENABLED=true in the backend environment.",
+        )
+    try:
+        answer = await code_assistant.answer(req.persona, req.message)
+    except AssistantRateLimited as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except AssistantUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AssistantUpstreamError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return AssistantResponse(persona=req.persona, answer=answer)
+
+
 MODEL_CATEGORIES = {"diffusion_models", "text_encoders", "vae", "loras"}
+
 
 
 def _model_http_error(exc: Exception) -> HTTPException:
@@ -133,6 +170,22 @@ def _model_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ModelConflict):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/api/v1/models/local", response_model=LocalModelListResponse)
+async def list_local_models(q: str | None = None, category: str | None = None, limit: int = 50) -> LocalModelListResponse:
+    try:
+        return LocalModelListResponse(items=model_storage.local_models(q, category, limit))
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local", response_model=ModelResponse)
+async def import_local_model_file(model_id: str, version_id: str, req: LocalModelImportRequest) -> ModelResponse:
+    try:
+        return model_storage.import_local_file(model_id, version_id, req.category, req.filename, req.precision)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
 
 
 @app.get("/api/v1/models/public", response_model=PublicModelListResponse)
@@ -468,6 +521,8 @@ async def _run_tool(
     values: dict[str, object] | None = None,
     files: list[UploadFile] | None = None,
     image_control_ids: list[str] | None = None,
+    client_id: str | None = None,
+    save_to_gallery: bool = True,
 ) -> ToolExecutionResult:
     tools = get_ai_tool_service()
     try:
@@ -503,10 +558,10 @@ async def _run_tool(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All input image controls are required")
     try:
         graph, resolved = tools.build_graph(tool_id, prompt, chosen_ratio, values=values, images=uploaded_images)
-        client_id = f"tool-{uuid.uuid4().hex}"
+        session_id = client_id or f"tool-{uuid.uuid4().hex}"
         started = time.monotonic()
-        prompt_id = await comfy.queue_prompt(graph, client_id)
-        final_status = await comfy.wait_until_done(prompt_id, client_id)
+        prompt_id = await comfy.queue_prompt(graph, session_id)
+        final_status = await comfy.wait_until_done(prompt_id, session_id)
     except AIToolError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except ComfyClientError as exc:
@@ -515,12 +570,13 @@ async def _run_tool(
     if final_status != "completed":
         return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
     assets: list[UploadedAsset] = []
-    metadata_base = {"origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id, "tool_name": detail.name, "tool_type": detail.mode.value, "tool_mode": detail.mode.value, "prompt": prompt, "aspect_ratio": chosen_ratio.value, "width": resolved["width"], "height": resolved["height"], "prompt_id": prompt_id, "created_at": datetime.now(timezone.utc).isoformat(), "elapsed_ms": elapsed_ms, "tags": ["ai_tool_studio", detail.mode.value]}
+    kind = detail.output_kind
+    metadata_base = {"origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id, "tool_name": detail.name, "tool_type": detail.mode.value, "tool_mode": detail.mode.value, "kind": kind, "gallery_saved": save_to_gallery, "prompt": prompt, "aspect_ratio": chosen_ratio.value, "width": resolved["width"], "height": resolved["height"], "prompt_id": prompt_id, "created_at": datetime.now(timezone.utc).isoformat(), "elapsed_ms": elapsed_ms, "controls": values or {}, "tags": ["ai_tool_studio", detail.mode.value]}
     try:
-        for image in await comfy.list_images(prompt_id):
-            blob = await comfy.fetch_image_bytes(image)
-            url = await storage.upload_image(blob, prompt_id, image["filename"], metadata={**metadata_base, "source_filename": image["filename"]}, namespace=f"tools/{tool_id}")
-            assets.append(UploadedAsset(filename=image["filename"], url=url))
+        for output in await comfy.list_output_files(prompt_id, kind):
+            blob = await comfy.fetch_image_bytes(output)
+            url = await storage.upload_asset(blob, prompt_id, output["filename"], metadata={**metadata_base, "source_filename": output["filename"]}, namespace=f"tools/{tool_id}")
+            assets.append(UploadedAsset(filename=output["filename"], url=url, kind=kind, saved=save_to_gallery))
     except (ComfyClientError, StorageError) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="AI Tool output retrieval failed") from exc
     return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status="completed", images=assets, error=None, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
@@ -528,7 +584,7 @@ async def _run_tool(
 
 @app.post("/api/tools/execute", response_model=ToolExecutionResult)
 async def execute_tool(req: ToolExecuteRequest) -> ToolExecutionResult:
-    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None, req.values)
+    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None, req.values, client_id=req.client_id, save_to_gallery=req.save_to_gallery)
 
 
 @app.post("/api/tools/{tool_id}/run", response_model=ToolExecutionResult)
@@ -538,6 +594,8 @@ async def run_tool(
     aspect_ratio: ToolAspectRatio | None = Form(None),
     values: str = Form("{}"),
     image_control_ids: str = Form("[]"),
+    client_id: str | None = Form(None),
+    save_to_gallery: bool = Form(True),
     files: Annotated[list[UploadFile] | None, File()] = None,
 ) -> ToolExecutionResult:
     try:
@@ -547,7 +605,17 @@ async def run_tool(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values and image control IDs must be valid JSON") from exc
     if not isinstance(parsed_values, dict) or not isinstance(parsed_image_ids, list) or not all(isinstance(item, str) for item in parsed_image_ids):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values must be an object and image control IDs an array")
-    return await _run_tool(tool_id, prompt, aspect_ratio, None, parsed_values, files, parsed_image_ids)
+    return await _run_tool(
+        tool_id,
+        prompt,
+        aspect_ratio,
+        None,
+        values=parsed_values,
+        files=files,
+        image_control_ids=parsed_image_ids,
+        client_id=client_id,
+        save_to_gallery=save_to_gallery,
+    )
 
 @app.get("/api/tools/{tool_id}/thumbnail")
 async def tool_thumbnail(tool_id: str) -> FileResponse:
@@ -618,11 +686,26 @@ async def gallery(limit: int = 60) -> GalleryResponse:
     return GalleryResponse(items=items)
 
 
-@app.get("/api/v1/images/{key:path}", response_model=GalleryItem)
-async def image_detail(key: str) -> GalleryItem:
+@app.get("/api/v1/assets/{key:path}", response_model=GalleryItem)
+async def asset_detail(key: str) -> GalleryItem:
     try:
-        return storage.get_image(key)
+        return storage.get_asset(key)
     except FileNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Image not found") from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
     except StorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.patch("/api/v1/assets/{key:path}", response_model=GalleryItem)
+async def save_asset(key: str, saved: bool) -> GalleryItem:
+    try:
+        return storage.set_saved(key, saved)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/images/{key:path}", response_model=GalleryItem)
+async def image_detail(key: str) -> GalleryItem:
+    return await asset_detail(key)

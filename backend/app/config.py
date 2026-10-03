@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # Optional same-host ComfyUI filesystem root. Installation is disabled when unset.
     COMFY_MODEL_ROOT: str | None = None
 
+    # --- Code assistance -------------------------------------------------
+    # Disabled by default so installing the dependency never starts paid calls.
+    ASSISTANT_ENABLED: bool = False
+    ANTHROPIC_MODEL: str = "claude-opus-5-5"
+    ASSISTANT_TIMEOUT_SECONDS: float = 45.0
+
     # --- App -------------------------------------------------------------
     APP_NAME: str = "Comfy Studio API"
     ALLOWED_ORIGINS: str = (

@@ -38,6 +38,7 @@ SAMPLE_EXTENSIONS = {
     ".webm": "video",
     ".mov": "video",
 }
+LOCAL_MODEL_CATEGORIES = ("checkpoints", "diffusion_models", "loras", "vae", "text_encoders", "embeddings")
 
 
 class ModelError(RuntimeError):
@@ -71,6 +72,16 @@ class ModelService:
     @staticmethod
     def _now() -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _clean_relative_filename(filename: str) -> str:
+        path = Path(filename.replace("\\", "/"))
+        if path.is_absolute() or not path.parts or ".." in path.parts or any(not part or part in {".", ".."} for part in path.parts):
+            raise ModelError("Invalid model filename")
+        value = "/".join(path.parts)
+        if len(value) > 512:
+            raise ModelError("Invalid model filename")
+        return value
 
     @staticmethod
     def _clean_filename(filename: str) -> str:
@@ -227,6 +238,106 @@ class ModelService:
         except KeyError as exc:
             raise ModelError("Unsupported creator model type") from exc
 
+    def _comfy_root(self) -> Path:
+        root_value = self.settings.COMFY_MODEL_ROOT
+        if not root_value:
+            raise ModelConflict("ComfyUI model browsing is not configured; set COMFY_MODEL_ROOT")
+        root = Path(root_value).expanduser().resolve()
+        if not root.is_dir():
+            raise ModelError("Configured COMFY_MODEL_ROOT does not exist")
+        return root
+
+    @staticmethod
+    def _local_category(category: str) -> str:
+        if category not in LOCAL_MODEL_CATEGORIES:
+            raise ModelError("Unsupported ComfyUI model category")
+        return category
+
+    def local_models(self, query: str | None = None, category: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        root = self._comfy_root()
+        categories = [self._local_category(category)] if category else LOCAL_MODEL_CATEGORIES
+        needle = (query or "").strip().lower()
+        limit = max(1, min(limit, 100))
+        items: list[dict[str, Any]] = []
+        for name in categories:
+            base = (root / "models" / name).resolve()
+            if not base.is_dir() or base != root / "models" / name:
+                continue
+            for path in base.rglob("*"):
+                if not path.is_file() or path.is_symlink() or path.suffix.lower() not in MODEL_EXTENSIONS:
+                    continue
+                resolved = path.resolve()
+                if resolved != base and base not in resolved.parents:
+                    continue
+                relative = path.relative_to(base).as_posix()
+                if needle and needle not in relative.lower():
+                    continue
+                items.append({"category": name, "filename": relative, "size": path.stat().st_size})
+        return sorted(items, key=lambda item: (item["category"], item["filename"].lower()))[:limit]
+
+    def import_local_file(self, model_id: str, version_id: str, category: str, filename: str, precision: ModelPrecision) -> ModelResponse:
+        root = self._comfy_root()
+        category = self._local_category(category)
+        relative = Path(filename)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ModelError("Unsafe ComfyUI model filename")
+        category_path = root / "models" / category
+        category_root = category_path.resolve()
+        if category_root != category_path or not category_root.is_dir():
+            raise ModelNotFound("Local ComfyUI model category not found")
+        candidate = category_root / relative
+        source = candidate.resolve()
+        if source.parent != category_root and category_root not in source.parents:
+            raise ModelError("Unsafe ComfyUI model filename")
+        if candidate.is_symlink() or not source.is_file():
+            raise ModelNotFound("Local ComfyUI model not found")
+        size = source.stat().st_size
+        if size == 0:
+            raise ModelError("Model file is empty")
+        if size > self.settings.MODEL_MAX_BYTES:
+            raise ModelError("Model file is too large")
+
+        record = self._read(model_id)
+        version = self._version(record, version_id)
+        name = self._clean_filename(source.name)
+        suffix = source.suffix.lower()
+        if suffix not in MODEL_EXTENSIONS:
+            raise ModelError("Unsupported model file type")
+        file_id = uuid.uuid4().hex
+        target = self.root / model_id / version_id / "files" / f"{file_id}{suffix}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256()
+        copied = 0
+        try:
+            with source.open("rb") as src, target.open("xb") as dst:
+                while chunk := src.read(1024 * 1024):
+                    copied += len(chunk)
+                    if copied > self.settings.MODEL_MAX_BYTES:
+                        raise ModelError("Model file is too large")
+                    digest.update(chunk)
+                    dst.write(chunk)
+        except ModelError:
+            target.unlink(missing_ok=True)
+            raise
+        except OSError as exc:
+            target.unlink(missing_ok=True)
+            raise ModelError("Could not import local model file") from exc
+        if copied == 0:
+            target.unlink(missing_ok=True)
+            raise ModelError("Model file is empty")
+        version.setdefault("files", []).append({
+            "file_id": file_id,
+            "filename": self._clean_relative_filename(relative.as_posix()),
+            "size": copied,
+            "sha256": digest.hexdigest(),
+            "precision": precision.value,
+            "visible": True,
+            "stored_name": target.name,
+        })
+        record["updated_at"] = self._now()
+        self._write(record)
+        return self._response(record)
+
     def install_file(self, model_id: str, version_id: str, file_id: str) -> dict[str, Any]:
         record = self._read(model_id)
         if record.get("visibility") != "Public" or not record.get("published_at"):
@@ -247,10 +358,11 @@ class ModelService:
         destination_root = (root / "models" / category).resolve()
         destination_root.mkdir(parents=True, exist_ok=True)
         source = self.file_path(model_id, version_id, file_id)
-        filename = self._clean_filename(item["filename"])
+        filename = self._clean_relative_filename(item["filename"])
         destination = (destination_root / filename).resolve()
-        if destination.parent != destination_root:
+        if destination != destination_root and destination_root not in destination.parents:
             raise ModelError("Unsafe ComfyUI destination")
+        destination.parent.mkdir(parents=True, exist_ok=True)
         source_hash = item["sha256"]
         if destination.is_file():
             existing_hash = hashlib.sha256(destination.read_bytes()).hexdigest()

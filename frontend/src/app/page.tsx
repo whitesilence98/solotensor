@@ -57,7 +57,7 @@ function loadSavedInputs(): Partial<SavedInputs> | null {
     if (!saved || typeof saved !== "object") return null;
     const values = saved as Record<string, unknown>;
     const inputs: Partial<SavedInputs> = {};
-    if (values.mode === "text-to-image" || values.mode === "image-to-image") inputs.mode = values.mode;
+    if (values.mode === "text-to-image") inputs.mode = values.mode;
     for (const key of ["prompt", "negativePrompt", "unetName", "clipName", "vaeName", "seed", "steps", "imageCount", "cfg", "denoise", "customWidth", "customHeight"] as const) {
       if (typeof values[key] === "string") inputs[key] = values[key];
     }
@@ -99,7 +99,7 @@ export default function StudioPage() {
   const [format, setFormat] = useState<FormatKey>("9:16");
   const [customWidth, setCustomWidth] = useState("768");
   const [customHeight, setCustomHeight] = useState("1344");
-  const [references, setReferences] = useState<string[]>([]);
+  const references: string[] = [];
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
@@ -303,8 +303,6 @@ export default function StudioPage() {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden overscroll-contain bg-transparent lg:flex-row">
       <ControlPanel
-        mode={mode}
-        onModeChange={setMode}
         prompt={prompt}
         onPromptChange={setPrompt}
         negativePrompt={negativePrompt}
@@ -337,8 +335,6 @@ export default function StudioPage() {
         onCustomHeightChange={setCustomHeight}
         format={format}
         onFormatChange={setFormat}
-        references={references}
-        onReferencesChange={setReferences}
         busy={busy}
         progress={progress}
         progressLabel={progressLabel}

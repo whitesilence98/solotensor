@@ -5,6 +5,13 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export type AssistantPersona = "backend" | "frontend";
+
+export interface AssistantResponse {
+  persona: AssistantPersona;
+  answer: string;
+}
+
 export type GenerationMode = "text-to-image" | "image-to-image";
 
 export type ModelCategory = "diffusion_models" | "text_encoders" | "vae" | "loras";
@@ -38,6 +45,9 @@ export interface GeneratePayload {
 export interface UploadedAsset {
   filename: string;
   url: string;
+  kind?: "image" | "video";
+  poster_url?: string | null;
+  saved?: boolean;
 }
 
 export interface ToolControl {
@@ -223,7 +233,7 @@ export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
 
 export interface CreatorModelCompatibility {
   base_model: string;
-  vae: string;
+  vae: string | null;
   text_encoders: string[];
   parent_model: string | null;
 }
@@ -331,7 +341,22 @@ export interface ModelInstallResponse {
 
 export interface PublicModelListResponse { items: PublicModelSummary[]; }
 
+export interface LocalModelSummary {
+  category: string;
+  filename: string;
+  size: number;
+}
+
+export interface LocalModelListResponse { items: LocalModelSummary[]; }
+
 export const api = {
+  async askAssistant(persona: AssistantPersona, message: string): Promise<AssistantResponse> {
+    return request<AssistantResponse>("/api/v1/assist", {
+      method: "POST",
+      body: JSON.stringify({ persona, message }),
+    });
+  },
+
   async listPublicModels(query = ""): Promise<PublicModelListResponse> {
     const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
     return request<PublicModelListResponse>(`/api/v1/models/public${params}`);
@@ -343,6 +368,20 @@ export const api = {
 
   async installModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
     return request<ModelInstallResponse>(`/api/v1/models/public/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/${encodeURIComponent(fileId)}/install`, { method: "POST" });
+  },
+
+  async listLocalModels(query = "", category?: string): Promise<LocalModelListResponse> {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (category) params.set("category", category);
+    return request<LocalModelListResponse>(`/api/v1/models/local${params.size ? `?${params}` : ""}`);
+  },
+
+  async importLocalModelFile(modelId: string, versionId: string, category: string, filename: string, precision: ModelPrecision = "FP16"): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/import-local`, {
+      method: "POST",
+      body: JSON.stringify({ category, filename, precision }),
+    });
   },
 
   async listCreatorModels(filters: { visibility?: ModelVisibility; q?: string } = {}): Promise<CreatorModel[]> {
@@ -441,11 +480,13 @@ export const api = {
     return (await resp.json()) as ToolDetail;
   },
 
-  async runTool(toolId: string, prompt: string, aspectRatio: ToolAspectRatio, image?: File, values: Record<string, string | number | boolean> = {}, images: Record<string, File> = {}): Promise<ToolRunResult> {
+  async runTool(toolId: string, prompt: string, aspectRatio: ToolAspectRatio, image?: File, values: Record<string, string | number | boolean> = {}, images: Record<string, File> = {}, options: { clientId?: string; saveToGallery?: boolean } = {}): Promise<ToolRunResult> {
     const form = new FormData();
     form.append("prompt", prompt);
     form.append("aspect_ratio", aspectRatio);
     form.append("values", JSON.stringify(values));
+    form.append("client_id", options.clientId ?? "");
+    form.append("save_to_gallery", String(options.saveToGallery ?? true));
     const imageIds = Object.keys(images);
     form.append("image_control_ids", JSON.stringify(imageIds));
     Object.values(images).forEach((file) => form.append("files", file, file.name));
@@ -458,8 +499,16 @@ export const api = {
     return (await resp.json()) as ToolRunResult;
   },
 
+  async getAsset(key: string): Promise<GalleryItem> {
+    return request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}`);
+  },
+
+  async patchAssetSaved(key: string, saved: boolean): Promise<GalleryItem> {
+    return request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}?saved=${saved}`, { method: "PATCH" });
+  },
+
   async getImage(key: string): Promise<GalleryItem> {
-    return request<GalleryItem>(`/api/v1/images/${key.split("/").map(encodeURIComponent).join("/")}`);
+    return this.getAsset(key);
   },
 
   async getModels(category: ModelCategory): Promise<string[]> {
