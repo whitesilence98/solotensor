@@ -6,6 +6,7 @@ node_modules/
 dist/
 
 .claude/
+.agent/
 
 # Generated assets and creator uploads
 backend/generated/

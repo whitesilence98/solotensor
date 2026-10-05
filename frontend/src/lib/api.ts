@@ -14,7 +14,13 @@ export interface AssistantResponse {
 
 export type GenerationMode = "text-to-image" | "image-to-image";
 
-export type ModelCategory = "diffusion_models" | "text_encoders" | "vae" | "loras";
+export type ModelCategory =
+  | "diffusion_models"
+  | "text_encoders"
+  | "vae"
+  | "loras"
+  | "checkpoints"
+  | "embeddings";
 
 export interface LoraSelection {
   lora: string;
@@ -22,10 +28,22 @@ export interface LoraSelection {
   strength: number;
 }
 
+export interface LoraAdapterPayload {
+  lora?: string;
+  model_id?: string;
+  version_id?: string;
+  file_id?: string;
+  strength: number;
+  on: boolean;
+}
+
 export interface GeneratePayload {
   model_id: string;
   version_id: string;
   file_id: string;
+  base_model_id?: string;
+  base_version_id?: string;
+  base_file_id?: string;
   mode: GenerationMode;
   prompt: string;
   negative_prompt?: string;
@@ -39,6 +57,12 @@ export interface GeneratePayload {
   denoise: number;
   client_id?: string;
   reference_images?: string[];
+  lora_adapters?: LoraAdapterPayload[];
+}
+
+export interface ClipOptions {
+  encoders: string[];
+  types: string[];
 }
 
 export interface UploadedAsset {
@@ -240,8 +264,12 @@ export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
 
 export interface CreatorModelCompatibility {
   base_model: string;
+  base_model_id: string | null;
+  base_version_id: string | null;
+  base_file_id: string | null;
   vae: string | null;
-  text_encoders: string[];
+  text_encoder: string | null;
+  clip_type: string | null;
   parent_model: string | null;
 }
 
@@ -351,11 +379,17 @@ export interface InstalledGalleryModel {
   version_id: string;
   file_id: string;
   title: string;
-  model_type: "Checkpoint" | "Diffusion Model";
+  model_type: "Checkpoint" | "Diffusion Model" | "LoRA" | "LyCORIS";
   version_name: string;
   filename: string;
-  category: "checkpoints" | "diffusion_models";
+  category: "checkpoints" | "diffusion_models" | "loras";
   sha256: string;
+  vae: string | null;
+  text_encoder: string | null;
+  clip_type: string | null;
+  base_model_id: string | null;
+  base_version_id: string | null;
+  base_file_id: string | null;
 }
 
 export interface InstalledGalleryModelList { items: InstalledGalleryModel[]; }
@@ -466,6 +500,10 @@ export const api = {
 
   async deleteCreatorModel(modelId: string): Promise<void> {
     await request<unknown>(`/api/v1/models/id/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+  },
+
+  async getClipOptions(): Promise<ClipOptions> {
+    return request<ClipOptions>("/api/v1/clip-options");
   },
 
   async generate(payload: GeneratePayload): Promise<GenerationResult> {

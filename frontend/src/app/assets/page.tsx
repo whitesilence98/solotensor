@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import AssetCard from "@/components/AssetCard";
 import EmptyState from "@/components/EmptyState";
+import WorkspaceFooter from "@/components/WorkspaceFooter";
 import { api, withTypes, type AssetRecord, type AssetType } from "@/lib/api";
 
 const PAGE_SIZE = 24;
@@ -126,7 +127,7 @@ export default function AssetsPage() {
             <p className="workspace-kicker">Library / local outputs</p>
             <h1 className="mt-1 truncate text-xl font-semibold tracking-[-.04em] text-[var(--ink)] sm:text-2xl">Asset library</h1>
           </div>
-          <Link href="/" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[.55rem] bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[#e2f88a] active:scale-[.97]">
+          <Link href="/" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[.55rem] bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] active:scale-[.97]">
             <Sparkles className="h-4 w-4" />
             <span className="hidden sm:inline">New render</span>
           </Link>
@@ -180,7 +181,7 @@ export default function AssetsPage() {
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
               <div
                 key={i}
-                className="shimmer shimmer-dark rounded-xl"
+                className="shimmer workspace-skeleton"
                 style={{ height: 500 + ((i * 60) % 160) }}
               />
             ))}
@@ -218,6 +219,7 @@ export default function AssetsPage() {
             )}
           </>
         )}
+        <WorkspaceFooter />
       </main>
 
     </div>

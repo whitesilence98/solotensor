@@ -21,6 +21,7 @@ class WorkflowPatchTests(unittest.TestCase):
             negative_prompt="blurry",
             unet_name="custom\\model.safetensors",
             clip_name="custom_clip.safetensors",
+            clip_type="custom_type",
             vae_name="custom_vae.safetensors",
             seed=123,
             steps=17,
@@ -38,6 +39,7 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(graph["700"]["inputs"]["text"], "blurry")
         self.assertEqual(graph["618:615"]["inputs"]["unet_name"], "custom\\model.safetensors")
         self.assertEqual(graph["618:616"]["inputs"]["clip_name"], "custom_clip.safetensors")
+        self.assertEqual(graph["618:616"]["inputs"]["type"], "custom_type")
         self.assertEqual(graph["618:617"]["inputs"]["vae_name"], "custom_vae.safetensors")
         self.assertEqual(graph["867"]["inputs"]["seed"], 123)
         self.assertEqual(graph["1028"]["inputs"]["noise_seed"], 123)
@@ -128,6 +130,40 @@ class WorkflowPatchTests(unittest.TestCase):
         with self.assertRaises(ComfyClientError):
             self.client.build_gallery_workflow(model_type="LoRA", filename="adapter.safetensors", prompt="test")
 
+    def test_lora_workflows_use_selected_base_and_adapter(self) -> None:
+        diffusion = self.client.build_lora_workflow(
+            base_model_type="Diffusion Model",
+            base_filename="base\\model.safetensors",
+            lora_filename="style\\adapter.safetensors",
+            clip_name="encoder.safetensors",
+            clip_type="custom_type",
+            vae_name="vae.safetensors",
+            prompt="test",
+        )
+        self.assertEqual(diffusion["618:615"]["inputs"]["unet_name"], "base\\model.safetensors")
+        self.assertEqual(diffusion["1043"]["inputs"]["lora_1"]["lora"], "style\\adapter.safetensors")
+        self.assertEqual(diffusion["1043"]["inputs"]["lora_1"]["strength"], 1.0)
+
+        checkpoint = self.client.build_lora_workflow(
+            base_model_type="Checkpoint",
+            base_filename="base.safetensors",
+            lora_filename="adapter.safetensors",
+            prompt="test",
+        )
+        self.assertEqual(checkpoint["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertEqual(checkpoint["1"]["inputs"]["ckpt_name"], "base.safetensors")
+        self.assertEqual(checkpoint["2"]["class_type"], "LoraLoader")
+        self.assertEqual(checkpoint["2"]["inputs"]["lora_name"], "adapter.safetensors")
+
+    def test_lora_builder_rejects_non_base_model(self) -> None:
+        with self.assertRaises(ComfyClientError):
+            self.client.build_lora_workflow(
+                base_model_type="LoRA",
+                base_filename="base.safetensors",
+                lora_filename="adapter.safetensors",
+                prompt="test",
+            )
+
     def test_missing_required_node_fails(self) -> None:
         template = json.loads(json.dumps(self.template))
         del template["621"]
@@ -147,6 +183,57 @@ class WorkflowPatchTests(unittest.TestCase):
         del template["1043"]
         with self.assertRaises(ComfyClientError):
             self.client.patch_workflow_template(template, prompt="test")
+
+    def test_multi_lora_checkpoint_chaining(self) -> None:
+        loras = [
+            {"lora": "style\\cyberpunk.safetensors", "strength": 0.7, "on": True},
+            {"lora": "character\\hero.safetensors", "strength": 0.5, "on": True},
+        ]
+        graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="base.safetensors",
+            clip_name="",
+            clip_type="",
+            vae_name="",
+            prompt="cyber hero",
+            negative_prompt="blurry",
+            loras=loras,
+        )
+        self.assertEqual(graph["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertEqual(graph["lora_1"]["class_type"], "LoraLoader")
+        self.assertEqual(graph["lora_1"]["inputs"]["lora_name"], "style\\cyberpunk.safetensors")
+        self.assertEqual(graph["lora_1"]["inputs"]["strength_model"], 0.7)
+        self.assertEqual(graph["lora_1"]["inputs"]["model"], ["1", 0])
+        self.assertEqual(graph["lora_1"]["inputs"]["clip"], ["1", 1])
+
+        self.assertEqual(graph["lora_2"]["class_type"], "LoraLoader")
+        self.assertEqual(graph["lora_2"]["inputs"]["lora_name"], "character\\hero.safetensors")
+        self.assertEqual(graph["lora_2"]["inputs"]["strength_model"], 0.5)
+        self.assertEqual(graph["lora_2"]["inputs"]["model"], ["lora_1", 0])
+        self.assertEqual(graph["lora_2"]["inputs"]["clip"], ["lora_1", 1])
+
+        self.assertEqual(graph["3"]["inputs"]["clip"], ["lora_2", 1])
+        self.assertEqual(graph["4"]["inputs"]["clip"], ["lora_2", 1])
+        self.assertEqual(graph["6"]["inputs"]["model"], ["lora_2", 0])
+
+    def test_gallery_workflow_with_loras_diffusion_model(self) -> None:
+        loras = [
+            {"lora": "style\\anime.safetensors", "strength": 0.8, "on": True},
+            {"lora": "concept\\lighting.safetensors", "strength": 0.6, "on": True},
+        ]
+        graph = self.client.build_gallery_workflow(
+            model_type="Diffusion Model",
+            filename="flux_unet.safetensors",
+            clip_name="clip_l.safetensors",
+            clip_type="flux",
+            vae_name="ae.safetensors",
+            prompt="anime girl",
+            negative_prompt="",
+            loras=loras,
+        )
+        self.assertEqual(graph["1043"]["inputs"]["lora_1"], {"on": True, "lora": "style\\anime.safetensors", "strength": 0.8})
+        self.assertEqual(graph["1043"]["inputs"]["lora_2"], {"on": True, "lora": "concept\\lighting.safetensors", "strength": 0.6})
+
 
 
 if __name__ == "__main__":

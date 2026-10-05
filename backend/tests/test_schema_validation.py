@@ -2,7 +2,14 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.schemas import AssistantRequest, GenerateRequest, ModelCompatibility, ModelGenerationSettings, SUPPORTED_BASE_MODELS
+from app.schemas import (
+    AssistantRequest,
+    GenerateRequest,
+    LoraAdapterSelection,
+    ModelCompatibility,
+    ModelGenerationSettings,
+    SUPPORTED_BASE_MODELS,
+)
 
 
 IDS = {
@@ -25,19 +32,71 @@ class PromptValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             GenerateRequest(prompt="test")
 
+    def test_accepts_optional_lora_base_identity(self) -> None:
+        request = GenerateRequest(
+            prompt="test",
+            base_model_id="d" * 32,
+            base_version_id="e" * 32,
+            base_file_id="f" * 32,
+            **IDS,
+        )
+        self.assertEqual(request.base_model_id, "d" * 32)
+
+    def test_rejects_partial_lora_base_identity(self) -> None:
+        for fields in (
+            {"base_model_id": "d" * 32},
+            {"base_model_id": "d" * 32, "base_version_id": "e" * 32},
+            {"base_version_id": "e" * 32, "base_file_id": "f" * 32},
+        ):
+            with self.subTest(fields=fields), self.assertRaises(ValidationError):
+                GenerateRequest(prompt="test", **IDS, **fields)
+
+    def test_rejects_partial_model_compatibility_base_identity(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelCompatibility(base_model_id="d" * 32)
+
     def test_rejects_legacy_model_fields(self) -> None:
         for field, value in (
             ("model", "sdxl"),
             ("unet_name", "model.safetensors"),
-            ("clip_name", "clip.safetensors"),
             ("vae_name", "vae.safetensors"),
             ("loras", []),
         ):
             with self.subTest(field=field), self.assertRaises(ValidationError):
                 GenerateRequest(prompt="test", **IDS, **{field: value})
 
+    def test_accepts_lora_adapters(self) -> None:
+        req = GenerateRequest(
+            prompt="test",
+            **IDS,
+            lora_adapters=[
+                LoraAdapterSelection(
+                    model_id="d" * 32,
+                    version_id="e" * 32,
+                    file_id="f" * 32,
+                    strength=0.75,
+                    on=True,
+                ),
+                LoraAdapterSelection(
+                    lora="style/detail.safetensors",
+                    strength=0.6,
+                    on=False,
+                ),
+            ],
+        )
+        self.assertEqual(len(req.lora_adapters), 2)
+        self.assertEqual(req.lora_adapters[0].strength, 0.75)
+        self.assertEqual(req.lora_adapters[1].lora, "style/detail.safetensors")
 
-class ModelCompatibilityValidationTests(unittest.TestCase):
+    def test_rejects_invalid_lora_adapters(self) -> None:
+        # Neither lora nor gallery file provided
+        with self.assertRaises(ValidationError):
+            LoraAdapterSelection()
+        # Incomplete gallery identity
+        with self.assertRaises(ValidationError):
+            LoraAdapterSelection(model_id="d" * 32, version_id="e" * 32)
+
+
     def test_accepts_exact_supported_base_models(self) -> None:
         self.assertEqual({ModelCompatibility(base_model=model).base_model for model in SUPPORTED_BASE_MODELS}, set(SUPPORTED_BASE_MODELS))
 
@@ -49,12 +108,23 @@ class ModelCompatibilityValidationTests(unittest.TestCase):
             ModelCompatibility(base_model="arbitrary")
 
     def test_allows_no_vae_and_empty_lists(self) -> None:
-        compatibility = ModelCompatibility(vae=None, text_encoders=[])
+        compatibility = ModelCompatibility(vae=None, text_encoder=None, clip_type=None)
         generation = ModelGenerationSettings(trigger_words=[])
         self.assertEqual(compatibility.base_model, "Stable Diffusion XL (SDXL)")
         self.assertIsNone(compatibility.vae)
-        self.assertEqual(compatibility.text_encoders, [])
+        self.assertIsNone(compatibility.text_encoder)
+        self.assertIsNone(compatibility.clip_type)
         self.assertEqual(generation.trigger_words, [])
+
+    def test_migrates_legacy_encoder_list(self) -> None:
+        compatibility = ModelCompatibility(text_encoders=["encoder.safetensors"], clip_type="krea2")
+        self.assertEqual(compatibility.text_encoder, "encoder.safetensors")
+
+    def test_requires_encoder_and_clip_type_together(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelCompatibility(text_encoder="encoder.safetensors")
+        with self.assertRaises(ValidationError):
+            ModelCompatibility(clip_type="krea2")
 
 
 class CodeAssistantSchemaTests(unittest.TestCase):

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SUPPORTED_BASE_MODELS = (
@@ -67,6 +67,31 @@ class LoraSelection(BaseModel):
         return value
 
 
+class LoraAdapterSelection(BaseModel):
+    """An active LoRA adapter with weight and optional gallery identity."""
+
+    model_config = {"extra": "forbid"}
+
+    lora: Optional[str] = None
+    model_id: Optional[str] = Field(None, pattern=r"^[0-9a-f]{32}$")
+    version_id: Optional[str] = Field(None, pattern=r"^[0-9a-f]{32}$")
+    file_id: Optional[str] = Field(None, pattern=r"^[0-9a-f]{32}$")
+    strength: float = Field(1.0, ge=-10.0, le=10.0)
+    on: bool = True
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "LoraAdapterSelection":
+        has_file = self.file_id is not None
+        has_name = bool(self.lora and self.lora.strip())
+        if not has_file and not has_name:
+            raise ValueError("LoRA adapter requires either a gallery file identity or a lora name")
+        if (self.model_id is not None or self.version_id is not None or self.file_id is not None) and not (
+            self.model_id and self.version_id and self.file_id
+        ):
+            raise ValueError("model_id, version_id, and file_id must be provided together")
+        return self
+
+
 class GenerateRequest(BaseModel):
     """Body for POST /api/v1/generate."""
 
@@ -75,6 +100,9 @@ class GenerateRequest(BaseModel):
     model_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
     version_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
     file_id: str = Field(..., pattern=r"^[0-9a-f]{32}$")
+    base_model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     mode: Literal["text-to-image", "image-to-image"] = "text-to-image"
     prompt: str = Field(..., min_length=1, max_length=50_000)
     negative_prompt: str = ""
@@ -90,6 +118,7 @@ class GenerateRequest(BaseModel):
     style: str = Field("none", max_length=64)
     client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
     reference_images: list[str] = Field(default_factory=list)
+    lora_adapters: list[LoraAdapterSelection] = Field(default_factory=list)
 
     @field_validator("prompt")
     @classmethod
@@ -97,6 +126,13 @@ class GenerateRequest(BaseModel):
         if len(value.split()) > 1_000:
             raise ValueError("Prompt must contain at most 1000 words")
         return value
+
+    @model_validator(mode="after")
+    def validate_base_identity(self) -> "GenerateRequest":
+        base_ids = (self.base_model_id, self.base_version_id, self.base_file_id)
+        if any(value is not None for value in base_ids) and not all(value is not None for value in base_ids):
+            raise ValueError("base_model_id, base_version_id, and base_file_id must be set together")
+        return self
 
     @field_validator("width", "height")
     @classmethod
@@ -318,9 +354,37 @@ class ModelCompatibility(BaseModel):
     model_config = {"extra": "forbid"}
 
     base_model: str = Field("Stable Diffusion XL (SDXL)", min_length=1, max_length=80)
+    base_model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     vae: str | None = None
-    text_encoders: list[str] = Field(default_factory=list, max_length=8)
+    text_encoder: str | None = Field(None, min_length=1, max_length=255)
+    clip_type: str | None = Field(None, min_length=1, max_length=64)
     parent_model: str | None = Field(None, max_length=255)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_encoder(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        legacy = data.pop("text_encoders", None)
+        if "text_encoder" not in data and isinstance(legacy, list) and legacy:
+            data["text_encoder"] = legacy[0]
+        return data
+
+    @model_validator(mode="after")
+    def validate_base_identity(self) -> "ModelCompatibility":
+        base_ids = (self.base_model_id, self.base_version_id, self.base_file_id)
+        if any(value is not None for value in base_ids) and not all(value is not None for value in base_ids):
+            raise ValueError("base_model_id, base_version_id, and base_file_id must be set together")
+        return self
+
+    @model_validator(mode="after")
+    def validate_encoder_stack(self) -> "ModelCompatibility":
+        if (self.text_encoder is None) != (self.clip_type is None):
+            raise ValueError("text_encoder and clip_type must be set together")
+        return self
 
     @field_validator("base_model", mode="before")
     @classmethod
@@ -540,11 +604,17 @@ class InstalledGalleryModel(BaseModel):
     version_id: str
     file_id: str
     title: str
-    model_type: Literal["Checkpoint", "Diffusion Model"]
+    model_type: Literal["Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"]
     version_name: str
     filename: str
-    category: Literal["checkpoints", "diffusion_models"]
+    category: Literal["checkpoints", "diffusion_models", "loras"]
     sha256: str
+    vae: str | None = None
+    text_encoder: str | None = None
+    clip_type: str | None = None
+    base_model_id: str | None = None
+    base_version_id: str | None = None
+    base_file_id: str | None = None
 
 
 class InstalledGalleryModelList(BaseModel):

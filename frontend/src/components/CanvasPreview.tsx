@@ -1,13 +1,55 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Expand, ImageIcon } from "lucide-react";
+import {
+  AlertCircle,
+  Bell,
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  Expand,
+  Filter,
+  FolderOpen,
+  Grid2X2,
+  ImageIcon,
+  List,
+  Loader2,
+  Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  Sparkles,
+  Volume2,
+  X,
+  Zap,
+} from "lucide-react";
 import type { GalleryItem } from "@/lib/api";
 
+export type MediaFilter = "all" | "video" | "image" | "audio";
+export type ViewMode = "grid" | "list";
+
 interface Props {
-  busy: boolean; progress: number; progressLabel: string; gallery: GalleryItem[];
-  error: string | null; outputWidth: number; outputHeight: number; referenceImage: string | null;
+  prompt: string;
+  onPromptChange: (v: string) => void;
+  imageCount: string;
+  onImageCountChange: (v: string) => void;
+  canGenerate: boolean;
+  onGenerate: () => void;
+  busy: boolean;
+  progress: number;
+  progressLabel: string;
+  gallery: GalleryItem[];
+  error: string | null;
+  outputWidth: number;
+  outputHeight: number;
+  referenceImage: string | null;
+  isSidebarCollapsed: boolean;
+  onToggleSidebarCollapse: () => void;
+  onReload: () => void;
 }
 
 function detailHref(item: GalleryItem): string {
@@ -41,16 +83,11 @@ function ComparisonSlider({ before, after }: { before: string; after: string }) 
   return (
     <div
       ref={frameRef}
-      className="group relative isolate mx-auto w-full max-w-[64rem] overflow-hidden rounded-[.8rem] border border-[#292d28] bg-[#111311] select-none touch-none"
+      className="group relative isolate mx-auto w-full max-w-[64rem] overflow-hidden rounded-xl border border-[#2b2d35] bg-[#121316] select-none touch-none shadow-2xl"
       style={{ aspectRatio: "16 / 10" }}
-      onPointerDown={(event) => { setDragging(true); updatePosition(event.clientX); }}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-          event.preventDefault();
-          setPosition((value) => Math.min(100, Math.max(0, value + (event.key === "ArrowRight" ? 2 : -2))));
-        }
-        if (event.key === "Home") setPosition(0);
-        if (event.key === "End") setPosition(100);
+      onPointerDown={(event) => {
+        setDragging(true);
+        updatePosition(event.clientX);
       }}
       role="slider"
       tabIndex={0}
@@ -58,57 +95,555 @@ function ComparisonSlider({ before, after }: { before: string; after: string }) 
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(position)}
-      aria-valuetext={`${Math.round(position)} percent generated result`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={after} alt="Generated image after transformation" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
+      <img
+        src={after}
+        alt="Generated image"
+        className="absolute inset-0 h-full w-full object-contain"
+        draggable={false}
+      />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={before} alt="Reference image before generation" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }} draggable={false} />
-      <span className="pointer-events-none absolute left-3 top-3 rounded-[.35rem] bg-[#0b0c0b]/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[.16em] text-[#f2f0e9] backdrop-blur">Before</span>
-      <span className="pointer-events-none absolute right-3 top-3 rounded-[.35rem] bg-[#d5f06f] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.16em] text-[#171b08]">After</span>
+      <img
+        src={before}
+        alt="Reference image"
+        className="absolute inset-0 h-full w-full object-contain"
+        style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
+        draggable={false}
+      />
+      <span className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#e2e4e9] backdrop-blur">
+        Before
+      </span>
+      <span className="pointer-events-none absolute right-3 top-3 rounded-md bg-[var(--accent)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)]">
+        After
+      </span>
       <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${position}%` }}>
-        <span className="absolute inset-y-0 -translate-x-1/2 border-l border-white/80 shadow-[0_0_0_1px_rgba(11,12,11,.35)]" />
-        <span className="absolute left-1/2 top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-[#0b0c0b]/85 text-[#f2f0e9] shadow-[0_8px_24px_-8px_rgba(0,0,0,.8)] backdrop-blur">
-          <span className="text-lg leading-none" aria-hidden>↔</span>
+        <span className="absolute inset-y-0 -translate-x-1/2 border-l border-white shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
+        <span className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-[#121316]/90 text-white shadow-xl backdrop-blur">
+          <span className="text-sm font-bold" aria-hidden>↔</span>
         </span>
       </div>
-      <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[#0b0c0b]/75 px-3 py-1.5 text-[10px] font-semibold tracking-[.08em] text-[#deddd6] opacity-0 transition-opacity duration-200 group-hover:opacity-100 sm:opacity-100">Drag to compare · {Math.round(position)}%</span>
     </div>
   );
 }
 
-export default function CanvasPreview({ busy, progress, progressLabel, gallery, error, outputWidth, outputHeight, referenceImage }: Props) {
-  const latest = gallery[0];
+export default function CanvasPreview(props: Props) {
+  const {
+    prompt,
+    onPromptChange,
+    imageCount,
+    onImageCountChange,
+    canGenerate,
+    onGenerate,
+    busy,
+    progress,
+    progressLabel,
+    gallery,
+    error,
+    outputWidth,
+    outputHeight,
+    referenceImage,
+    isSidebarCollapsed,
+    onToggleSidebarCollapse,
+    onReload,
+  } = props;
+
+  const [activeTab, setActiveTab] = useState<MediaFilter>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [imageCountOpen, setImageCountOpen] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Filter gallery items by active tab (all, video, image, audio)
+  const filteredGallery = useMemo(() => {
+    return gallery.filter((item) => {
+      const ext = item.key.slice(item.key.lastIndexOf(".")).toLowerCase();
+      const isVideo = [".mp4", ".webm", ".mov", ".mkv"].includes(ext);
+      const isAudio = [".mp3", ".wav", ".flac", ".ogg"].includes(ext);
+      if (activeTab === "video") return isVideo;
+      if (activeTab === "audio") return isAudio;
+      if (activeTab === "image") return !isVideo && !isAudio;
+      return true;
+    });
+  }, [gallery, activeTab]);
+
+  const latest = filteredGallery[0];
   const canCompare = Boolean(referenceImage && latest && !busy);
 
+  const copyPromptText = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1800);
+    } catch {
+      setCopiedKey(null);
+    }
+  };
+
   return (
-    <main id="main-content" className="workspace-scroll relative h-[58%] min-w-0 flex-1 bg-[radial-gradient(circle_at_68%_28%,rgba(213,240,111,.055),transparent_26rem)] lg:h-auto">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[#292d28] bg-[#0b0c0b]/85 px-5 py-3 backdrop-blur-xl sm:px-7">
-        <div className="flex items-center gap-3"><span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-[#d5f06f]" : "bg-[#50554d]"}`} /><span className="text-xs font-semibold text-[#aaa8a1]">{busy ? "Rendering" : canCompare ? "Comparison ready" : "Canvas ready"}</span></div>
-        <span className="font-mono text-[10px] tabular-nums text-[#6f716d]">{gallery.length.toString().padStart(2, "0")} OUTPUTS</span>
+    <main
+      id="main-content"
+      className="workspace-scroll relative flex h-full min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[#e2e4e9]"
+    >
+      {/* 1. Top Bar: Prompt Input + Image Count Dropdown + Generate Button */}
+      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#24262c] bg-[#1a1b20]/95 px-4 py-2.5 backdrop-blur-xl">
+        {/* Left: Expand button if sidebar is collapsed */}
+        {isSidebarCollapsed && (
+          <button
+            type="button"
+            onClick={onToggleSidebarCollapse}
+            title="Expand Models Panel"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#2b2d35] bg-[#21232a] text-[#8b909a] hover:border-[#3d414d] hover:text-white transition"
+          >
+            <PanelLeftOpen className="h-4 w-4 text-[var(--accent)]" />
+          </button>
+        )}
+
+        {/* Prompt Input Box */}
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => onPromptChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
+                onGenerate();
+              }
+            }}
+            placeholder="Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85…"
+            disabled={busy}
+            className="w-full rounded-lg border border-[#2d3039] bg-[#22242a] px-3.5 py-2 text-xs text-white placeholder-[#6f737d] outline-none transition focus:border-[var(--accent)] focus:ring-1 focus:ring-[color-mix(in_srgb,var(--accent)_30%,transparent)] disabled:opacity-50"
+          />
+        </div>
+
+        {/* Image Count Dropdown Button */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setImageCountOpen((v) => !v)}
+            disabled={busy}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-[#2d3039] bg-[#22242a] px-3 text-xs font-semibold text-[#dedee2] hover:bg-[#282b32] transition"
+          >
+            <span>{imageCount} {Number(imageCount) === 1 ? "image" : "images"}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-[#8b909a]" />
+          </button>
+
+          {imageCountOpen && (
+            <div className="absolute right-0 top-full mt-1.5 z-40 w-32 rounded-lg border border-[#2d3039] bg-[#1d1f25] py-1 shadow-2xl">
+              {["1", "2", "3", "4"].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => {
+                    onImageCountChange(n);
+                    setImageCountOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-xs text-left transition ${
+                    imageCount === n
+                      ? "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)] font-semibold"
+                      : "text-[#dedee2] hover:bg-[#262831]"
+                  }`}
+                >
+                  <span>{n} {n === "1" ? "image" : "images"}</span>
+                  {imageCount === n && <Check className="h-3.5 w-3.5" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Generate Button: Tensor.Art Vibrant Cyan/Indigo Gradient */}
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={!canGenerate}
+          className="group flex h-9 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-5 text-xs font-bold text-[var(--accent-ink)] shadow-lg shadow-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:brightness-105 active:scale-[0.98] transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Rendering ({progress}%)</span>
+            </>
+          ) : (
+            <>
+              <span>Generate -</span>
+              <Zap className="h-3.5 w-3.5 fill-current text-[#7ef4e4]" />
+              <span>0.5</span>
+            </>
+          )}
+        </button>
       </header>
 
-      <div className="mx-auto w-full max-w-[78rem] px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
-        {error && <div role="alert" className="mb-7 flex items-start gap-3 border-l-2 border-[#ef8c79] bg-[#ef8c79]/[.06] px-4 py-3 text-sm text-[#efb1a5]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p className="leading-relaxed">{error}</p></div>}
+      {/* 2. Sub-Header Toolbar (All, Video, Image, Audio | View Switchers | Collapse | Manage | Reload | Assets) */}
+      <div className="sticky top-[49px] z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#24262c] bg-[var(--surface)] px-4 py-1.5 text-xs">
+        {/* Left Section: Filter Tabs & View Switchers */}
+        <div className="flex items-center gap-1.5">
+          {/* Filter Pills */}
+          <div className="flex items-center rounded-lg bg-[#1f2127] p-0.5 border border-[#282a32]">
+            {(["all", "video", "image", "audio"] as MediaFilter[]).map((tab) => {
+              const active = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold capitalize transition ${
+                    active
+                      ? "bg-[#2d3039] text-white shadow-sm"
+                      : "text-[#8b909a] hover:text-[#e2e4e9]"
+                  }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
 
-        {busy && <section aria-live="polite" className="mb-20">
-          <div className="mb-4 flex items-end justify-between border-b border-[#292d28] pb-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#6f716d]">In progress</p><h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-[#f2f0e9]">{progressLabel || "Building your image"}</h2></div><span className="font-mono text-2xl text-[#d5f06f]">{progress}%</span></div>
-          <div className="mx-auto max-w-full overflow-hidden rounded-[.75rem] max-h-[42rem]" style={{ aspectRatio: `${outputWidth} / ${outputHeight}` }}><div className="shimmer h-full w-full" /></div>
-        </section>}
+          {/* View Mode Toggle: List vs Grid */}
+          <div className="ml-1 flex items-center rounded-lg bg-[#1f2127] p-0.5 border border-[#282a32]">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              className={`rounded-md p-1.5 transition ${
+                viewMode === "list" ? "bg-[#2d3039] text-[var(--accent)]" : "text-[#8b909a] hover:text-white"
+              }`}
+            >
+              <List className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              className={`rounded-md p-1.5 transition ${
+                viewMode === "grid" ? "bg-[#2d3039] text-[var(--accent)]" : "text-[#8b909a] hover:text-white"
+              }`}
+            >
+              <Grid2X2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
-        {latest ? <section className="mb-14">
-          <div className="mb-4 flex items-end justify-between border-b border-[#292d28] pb-3"><div><p className="text-[10px] font-semibold uppercase tracking-[.2em] text-[#6f716d]">{canCompare ? "Before / after" : `Latest / ${gallery.length.toString().padStart(2, "0")}`}</p><h2 className="mt-1 text-[clamp(1.75rem,4vw,3.5rem)] font-semibold leading-none tracking-[-.065em] text-[#f2f0e9]">{canCompare ? "See what changed." : "Fresh from the graph."}</h2></div><Link href={detailHref(latest)} className="hidden items-center gap-2 text-xs font-semibold text-[#aaa8a1] transition-colors hover:text-[#d5f06f] sm:flex"><Expand className="h-4 w-4" />View details</Link></div>
-          {canCompare ? <ComparisonSlider before={referenceImage!} after={latest.url} /> : <Link href={detailHref(latest)} className="group relative block w-full overflow-hidden rounded-[.8rem] bg-[#111311] shadow-[0_26px_80px_-36px_rgba(126,152,52,.35)]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}<img src={latest.url} alt="Latest generated image" className="max-h-[42rem] w-full object-contain transition-transform duration-500 group-hover:scale-[1.008]" /><span className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-md bg-[#0b0c0b]/80 text-[#f2f0e9] opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"><Expand className="h-4 w-4" /></span>
-          </Link>}
-          {canCompare && <p className="mt-3 text-center text-[10px] uppercase tracking-[.16em] text-[#6f716d]">Use arrow keys or drag the handle across the image</p>}
-        </section> : !busy && <section className="grid min-h-[30rem] place-items-center border border-[#292d28] bg-[#0e100e]/60 px-6 py-16">
-          <div className="max-w-xl text-center"><div className="relative mx-auto mb-7 grid h-24 w-24 place-items-center"><span className="absolute inset-0 animate-[breathe_3s_ease-in-out_infinite] rounded-full border border-[#d5f06f]/20" /><span className="absolute inset-4 rounded-full border border-[#d5f06f]/30" /><ImageIcon className="h-6 w-6 text-[#d5f06f]" strokeWidth={1.6} /></div><p className="text-[10px] font-semibold uppercase tracking-[.22em] text-[#6f716d]">Blank canvas</p><h2 className="mt-3 text-[clamp(2.2rem,6vw,5.25rem)] font-semibold leading-[.88] tracking-[-.075em] text-[#f2f0e9]">Give the model<br />something to see.</h2><p className="mx-auto mt-5 max-w-[48ch] text-sm leading-6 text-[#8a8d85]">Write a specific prompt. Choose a format. The first result lands here and stays in your library.</p></div>
-        </section>}
+          {/* Filter Funnel Icon */}
+          <button
+            type="button"
+            title="Filter options"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8b909a] hover:bg-[#202228] hover:text-white transition"
+          >
+            <Filter className="h-3.5 w-3.5" />
+          </button>
 
-        {gallery.length > 1 && <section><div className="mb-4 flex items-center justify-between border-b border-[#292d28] pb-3"><h2 className="text-sm font-semibold text-[#deddd6]">Recent work</h2><span className="font-mono text-[10px] text-[#6f716d]">{gallery.length} FILES</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{gallery.slice(1).map((item) => <Link key={item.key} href={detailHref(item)} className="group relative aspect-square overflow-hidden rounded-[.45rem] bg-[#111311]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}<img src={item.url} alt={item.key} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" /><span className="absolute inset-0 bg-[#d5f06f]/0 transition-colors group-hover:bg-[#d5f06f]/[.05]" /></Link>)}</div></section>}
+          {/* Bell / Mute Toggle Icon */}
+          <button
+            type="button"
+            onClick={() => setIsMuted((v) => !v)}
+            title={isMuted ? "Unmute alerts" : "Mute alerts"}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8b909a] hover:bg-[#202228] hover:text-white transition"
+          >
+            <Bell className={`h-3.5 w-3.5 ${isMuted ? "text-[#6c707d]" : "text-[#8b909a]"}`} />
+          </button>
+        </div>
+
+        {/* Right Section: Collapse, Manage, Reload, Assets */}
+        <div className="flex items-center gap-1.5">
+          {/* Collapse Left Panel Button */}
+          <button
+            type="button"
+            onClick={onToggleSidebarCollapse}
+            className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-[#8b909a] hover:bg-[#202228] hover:text-white transition"
+          >
+            <ChevronRight
+              className={`h-3.5 w-3.5 transition-transform ${isSidebarCollapsed ? "rotate-180" : ""}`}
+            />
+            <span>{isSidebarCollapsed ? "Expand" : "Collapse"}</span>
+          </button>
+
+          {/* Manage Button */}
+          <button
+            type="button"
+            className="rounded-md px-2.5 py-1 text-xs font-medium text-[#8b909a] hover:bg-[#202228] hover:text-white transition"
+          >
+            Manage
+          </button>
+
+          {/* Reload Button */}
+          <button
+            type="button"
+            onClick={onReload}
+            title="Reload outputs"
+            className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-[#8b909a] hover:bg-[#202228] hover:text-white transition"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Reload</span>
+          </button>
+
+          {/* Assets Button (Links to /assets) */}
+          <Link
+            href="/assets"
+            className="flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-[#8b909a] hover:bg-[#202228] hover:text-[var(--accent)] transition"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            <span>Assets</span>
+          </Link>
+        </div>
       </div>
+
+      {/* 3. Main Content Area */}
+      <div className="flex-1 p-5 md:p-8">
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 flex items-start gap-3 rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-4 text-xs text-[var(--danger)]">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {/* Live Generation Progress Card */}
+        {busy && (
+          <section className="mb-10 rounded-2xl border border-[#2b2d35] bg-[#1a1b20] p-5 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                  In Progress
+                </p>
+                <h3 className="mt-0.5 text-sm font-semibold text-white">
+                  {progressLabel || "Building your image…"}
+                </h3>
+              </div>
+              <span className="font-mono text-xl font-bold text-[var(--accent)]">{progress}%</span>
+            </div>
+
+            {/* Glowing Cyan Progress Bar */}
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[#272931]">
+              <div
+                className="h-full bg-[var(--accent)] transition-all duration-300 shadow-[0_0_12px_color-mix(in_srgb,var(--accent)_45%,transparent)]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            {/* Shimmer Preview Canvas Frame */}
+            <div
+              className="mt-4 mx-auto max-w-full overflow-hidden rounded-xl border border-[#282a32] max-h-[32rem]"
+              style={{ aspectRatio: `${outputWidth} / ${outputHeight}` }}
+            >
+              <div className="shimmer h-full w-full" />
+            </div>
+          </section>
+        )}
+
+        {/* Before / After Comparison Slider if reference image exists */}
+        {canCompare && (
+          <section className="mb-8">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#8b909a]">Before / After Comparison</span>
+            </div>
+            <ComparisonSlider before={referenceImage!} after={latest.url} />
+          </section>
+        )}
+
+        {/* Outputs Grid or Empty State */}
+        {filteredGallery.length === 0 && !busy ? (
+          /* "Nothing here yet" Tensor.Art Minimalist Empty State */
+          <div className="flex h-96 flex-col items-center justify-center text-center">
+            <p className="text-sm font-medium text-[#6f737d]">Nothing here yet</p>
+          </div>
+        ) : (
+          /* Render Gallery Outputs */
+          <div
+            className={
+              viewMode === "grid"
+                ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5"
+                : "space-y-3"
+            }
+          >
+            {filteredGallery.map((item) => {
+              const meta = item.metadata;
+              const promptText = meta?.prompt ?? "Generated artwork";
+
+              if (viewMode === "list") {
+                return (
+                  <div
+                    key={item.key}
+                    onClick={() => setSelectedAsset(item)}
+                    className="group flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-[#262830] bg-[#1a1b20] p-3 transition hover:border-[#3d414d] hover:bg-[#202229]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-[#252830]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.url} alt={item.key} className="h-full w-full object-cover" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-white">{promptText}</p>
+                        <p className="mt-1 truncate font-mono text-[11px] text-[#8b909a]">
+                          {meta?.model_title ?? "ComfyUI"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyPromptText(promptText, item.key);
+                        }}
+                        className="rounded-lg bg-[#272931] p-2 text-[#8b909a] hover:text-white transition"
+                        title="Copy prompt"
+                      >
+                        {copiedKey === item.key ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                      <a
+                        href={item.url}
+                        download
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-lg bg-[#272931] p-2 text-[#8b909a] hover:text-white transition"
+                        title="Download"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={item.key}
+                  onClick={() => setSelectedAsset(item)}
+                  className="group relative cursor-pointer overflow-hidden rounded-xl border border-[#262830] bg-[#1a1b20] transition hover:-translate-y-0.5 hover:border-[#3d414d] hover:shadow-xl"
+                  style={{ aspectRatio: "1 / 1" }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.url}
+                    alt={promptText}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                  />
+
+                  {/* Hover Overlay */}
+                  <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/85 via-black/30 to-transparent p-3 opacity-0 transition group-hover:opacity-100">
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyPromptText(promptText, item.key);
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-black/70 text-white backdrop-blur hover:bg-[var(--accent)] hover:text-black transition"
+                        title="Copy prompt"
+                      >
+                        {copiedKey === item.key ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                      <a
+                        href={item.url}
+                        download
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-black/70 text-white backdrop-blur hover:bg-[var(--accent)] hover:text-black transition"
+                        title="Download"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+
+                    <p className="line-clamp-2 text-[11px] leading-snug text-white">
+                      {promptText}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Asset Detail Lightbox Modal */}
+      {selectedAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
+          <div className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#2b2d35] bg-[#17181d] shadow-2xl lg:flex-row">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setSelectedAsset(null)}
+              className="absolute right-3.5 top-3.5 z-20 rounded-full bg-black/70 p-1.5 text-white backdrop-blur hover:bg-white hover:text-black transition"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Left Image View */}
+            <div className="relative flex min-h-[300px] flex-1 items-center justify-center bg-[#101114] p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedAsset.url}
+                alt=""
+                className="max-h-[80vh] max-w-full rounded-lg object-contain"
+              />
+            </div>
+
+            {/* Right Details Panel */}
+            <div className="workspace-scroll flex w-full flex-col justify-between border-t border-[#262830] bg-[#1a1b20] p-6 lg:w-96 lg:border-l lg:border-t-0">
+              <div className="space-y-4">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                    Generation Details
+                  </span>
+                  <h3 className="mt-1 text-sm font-semibold text-white">
+                    {selectedAsset.metadata?.model_title ?? "Basic Model"}
+                  </h3>
+                </div>
+
+                {/* Prompt */}
+                <div>
+                  <span className="text-[10px] font-semibold uppercase text-[#8b909a]">Prompt</span>
+                  <p className="mt-1 max-h-32 overflow-y-auto rounded-lg bg-[#141518] p-3 text-xs leading-relaxed text-white">
+                    {selectedAsset.metadata?.prompt ?? "No prompt recorded"}
+                  </p>
+                </div>
+
+                {/* Parameters */}
+                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                  <div className="rounded-lg bg-[#141518] p-2.5">
+                    <span className="block text-[9px] text-[#8b909a] uppercase">Seed</span>
+                    <span className="text-white">{selectedAsset.metadata?.seed ?? "N/A"}</span>
+                  </div>
+                  <div className="rounded-lg bg-[#141518] p-2.5">
+                    <span className="block text-[9px] text-[#8b909a] uppercase">Steps</span>
+                    <span className="text-white">{selectedAsset.metadata?.steps ?? "N/A"}</span>
+                  </div>
+                  <div className="rounded-lg bg-[#141518] p-2.5">
+                    <span className="block text-[9px] text-[#8b909a] uppercase">CFG</span>
+                    <span className="text-white">{selectedAsset.metadata?.cfg ?? "N/A"}</span>
+                  </div>
+                  <div className="rounded-lg bg-[#141518] p-2.5">
+                    <span className="block text-[9px] text-[#8b909a] uppercase">Format</span>
+                    <span className="text-white">{selectedAsset.metadata?.format_name ?? "1:1"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex items-center gap-2 pt-4 border-t border-[#262830]">
+                <button
+                  type="button"
+                  onClick={() => copyPromptText(selectedAsset.metadata?.prompt ?? "", "modal")}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#2d3039] bg-[#22242b] py-2.5 text-xs font-semibold text-white hover:bg-[#2a2d36] transition"
+                >
+                  <Copy className="h-3.5 w-3.5 text-[var(--accent)]" />
+                  <span>{copiedKey === "modal" ? "Copied!" : "Copy Prompt"}</span>
+                </button>
+                <a
+                  href={selectedAsset.url}
+                  download
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] py-2.5 text-xs font-bold text-[var(--accent-ink)] hover:bg-[#22e6cf] transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Download</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

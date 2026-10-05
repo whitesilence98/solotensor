@@ -80,12 +80,24 @@ class ModelServiceTests(unittest.TestCase):
         with self.assertRaises(ModelNotFound):
             self.service.resolve_installed_gallery_file(self.model.model_id, self.version.version_id, file_id)
 
-        unsupported = self.service.create(ModelCreateRequest(title="Adapter", model_type=CreatorModelType.LORA))
-        unsupported_file = self.service.add_file(unsupported.model_id, unsupported.versions[0].version_id, "adapter.safetensors", data, ModelPrecision.FP16).versions[0].files[0]
-        self.service.publish(unsupported.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC))
-        with self.assertRaises(ModelConflict):
-            self.service.resolve_installed_gallery_file(unsupported.model_id, unsupported.versions[0].version_id, unsupported_file.file_id)
-
+        self.service.patch_file(self.model.model_id, self.version.version_id, file_id, ModelFilePatchRequest(visible=True))
+        adapter = self.service.create(ModelCreateRequest(
+            title="Adapter",
+            model_type=CreatorModelType.LORA,
+            compatibility={
+                "base_model_id": self.model.model_id,
+                "base_version_id": self.version.version_id,
+                "base_file_id": file_id,
+            },
+        ))
+        adapter_file = self.service.add_file(adapter.model_id, adapter.versions[0].version_id, "adapter.safetensors", data, ModelPrecision.FP16).versions[0].files[0]
+        self.service.publish(adapter.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC))
+        adapter_path = Path(self.comfy.name) / "models" / "loras" / "adapter.safetensors"
+        adapter_path.parent.mkdir(parents=True)
+        adapter_path.write_bytes(data)
+        resolved_adapter = self.service.resolve_installed_gallery_file(adapter.model_id, adapter.versions[0].version_id, adapter_file.file_id)
+        self.assertEqual(resolved_adapter["category"], "loras")
+        self.assertIsNone(resolved_adapter["text_encoder"])
         private_model = self.service.create(ModelCreateRequest(title="Private"))
         private_file = self.service.add_file(private_model.model_id, private_model.versions[0].version_id, "private.safetensors", data, ModelPrecision.FP16).versions[0].files[0]
         with self.assertRaises(ModelNotFound):

@@ -10,6 +10,7 @@ import {
   saveSettings,
   type StudioSettings,
 } from "@/lib/settings";
+import WorkspaceFooter from "@/components/WorkspaceFooter";
 
 const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "1:1": "Square · 1024 × 1024",
@@ -19,8 +20,8 @@ const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "3:2": "Wide · 1216 × 832",
 };
 
-const fieldLabel = "text-[11px] font-bold uppercase tracking-[.14em] text-[#aaa8a1]";
-const fieldHelp = "mt-2 block text-xs leading-5 text-[#6f716d]";
+const fieldLabel = "text-[11px] font-bold uppercase tracking-[.14em] text-[var(--ink-soft)]";
+const fieldHelp = "mt-2 block text-xs leading-5 text-[var(--ink-faint)]";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
@@ -54,33 +55,33 @@ export default function SettingsPage() {
   return (
     <main id="main-content" className="workspace-scroll h-full min-h-0 px-4 py-6 pb-28 md:px-8 md:py-10 md:pb-10">
       <div className="mx-auto max-w-4xl">
-        <header className="border-b border-[#292d28] pb-7 md:pb-9">
+        <header className="border-b border-[var(--line)] pb-7 md:pb-9">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-[.55rem] border border-[#3a4038] bg-[#181b18] text-[#d5f06f]">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
                 <Settings2 className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
               </div>
               <p className="workspace-kicker">Studio preferences</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-[-.045em] text-[#f2f0e9] md:text-5xl">Settings</h1>
-              <p className="mt-3 max-w-[58ch] text-sm leading-6 text-[#aaa8a1]">
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-.045em] text-[var(--ink)] md:text-5xl">Settings</h1>
+              <p className="mt-3 max-w-[58ch] text-sm leading-6 text-[var(--ink-soft)]">
                 Set the defaults SoloTensor uses when you start a fresh generation session. Changes stay in this browser.
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2 border border-[#292d28] bg-[#111311] px-3 py-2 text-xs text-[#aaa8a1]" role="status" aria-live="polite" aria-atomic="true">
-              <Check className="h-3.5 w-3.5 text-[#d5f06f]" strokeWidth={2} aria-hidden="true" />
+            <div className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ink-soft)]" role="status" aria-live="polite" aria-atomic="true">
+              <Check className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2} aria-hidden="true" />
               <span>{status}</span>
             </div>
           </div>
         </header>
 
-        <section className="mt-6 overflow-hidden border border-[#292d28] bg-[#111311] md:mt-8" aria-labelledby="generation-heading">
-          <div className="grid gap-4 border-b border-[#292d28] px-5 py-5 md:grid-cols-[auto_1fr] md:gap-5 md:px-7 md:py-6">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[.5rem] border border-[#3a4038] bg-[#181b18] text-[#d5f06f]">
+        <section className="mt-6 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)] md:mt-8" aria-labelledby="generation-heading">
+          <div className="grid gap-4 border-b border-[var(--line)] px-5 py-5 md:grid-cols-[auto_1fr] md:gap-5 md:px-7 md:py-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
               <SlidersHorizontal className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
             </div>
             <div>
-              <h2 id="generation-heading" className="text-lg font-semibold tracking-[-.02em] text-[#f2f0e9]">Generation defaults</h2>
-              <p className="mt-1 max-w-[60ch] text-sm leading-6 text-[#8a8d85]">These values seed a new generator form. Existing saved inputs remain unchanged.</p>
+              <h2 id="generation-heading" className="text-lg font-semibold tracking-[-.02em] text-[var(--ink)]">Generation defaults</h2>
+              <p className="mt-1 max-w-[60ch] text-sm leading-6 text-[var(--ink-soft)]">These values seed a new generator form. Existing saved inputs remain unchanged.</p>
             </div>
           </div>
 
@@ -137,20 +138,21 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="mt-4 flex flex-col gap-4 border border-[#292d28] bg-[#0e100e] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6" aria-label="Local settings storage">
-          <p className="max-w-[52ch] text-xs leading-5 text-[#6f716d]">Settings are stored locally on this device. They are not synced to an account or server.</p>
+        <section className="mt-4 flex flex-col gap-4 rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface-sunken)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6" aria-label="Local settings storage">
+          <p className="max-w-[52ch] text-xs leading-5 text-[var(--ink-faint)]">Settings are stored locally on this device. They are not synced to an account or server.</p>
           <div className="flex shrink-0 items-center gap-2">
             {previousSettings && <button type="button" onClick={undoReset} className="workspace-action-quiet px-2 py-2 text-xs">Undo reset</button>}
             <button
             type="button"
             onClick={handleReset}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[.5rem] border border-[#3a4038] px-3 py-2.5 text-xs font-semibold text-[#aaa8a1] transition hover:border-[#d5f06f] hover:text-[#f2f0e9] active:scale-[.98]"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3 py-2.5 text-xs font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--ink)] active:scale-[.98]"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
               Reset settings
             </button>
           </div>
         </section>
+        <WorkspaceFooter />
       </div>
     </main>
   );

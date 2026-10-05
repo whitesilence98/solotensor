@@ -36,7 +36,7 @@ export default function SidebarNav() {
         href={href}
         aria-label={label}
         aria-current={active ? "page" : undefined}
-        className={`${primary ? "flex" : "hidden md:flex"} group relative h-11 w-12 items-center justify-center rounded-[var(--radius-control)] transition duration-200 active:scale-[.96] ${active ? "bg-[var(--surface-soft)] text-[var(--accent)] shadow-[inset_0_0_0_1px_rgba(213,240,111,.14)]" : "text-[var(--ink-faint)] hover:bg-[#151715] hover:text-[var(--ink)]"}`}
+        className={`${primary ? "flex" : "hidden md:flex"} group relative h-11 w-12 items-center justify-center rounded-[var(--radius-control)] transition duration-200 active:scale-[.96] ${active ? "bg-[var(--surface-soft)] text-[var(--accent)] shadow-[inset_0_0_0_1px_rgba(6,182,212,.25)]" : "text-[var(--ink-faint)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"}`}
       >
         <Icon className="h-[1.15rem] w-[1.15rem]" strokeWidth={1.8} />
         <span className="pointer-events-none absolute bottom-auto left-[calc(100%+.65rem)] hidden whitespace-nowrap rounded-[.35rem] border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 md:block">{label}</span>
@@ -46,8 +46,8 @@ export default function SidebarNav() {
   };
 
   return (
-    <nav aria-label="Primary navigation" className="fixed bottom-0 left-0 z-40 flex h-[var(--mobile-nav-height)] w-full items-center border-t border-[var(--line)] bg-[var(--overlay)] px-2 shadow-[0_-14px_32px_-24px_rgba(213,240,111,.35)] backdrop-blur-xl md:static md:h-full md:w-20 md:shrink-0 md:flex-col md:justify-start md:border-r md:border-t-0 md:px-0 md:py-5 md:shadow-[14px_0_32px_-28px_rgba(213,240,111,.3)]">
-      <Link href="/" className="hidden h-10 w-10 items-center justify-center rounded-[.55rem] bg-[var(--accent)] text-[var(--accent-ink)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#e2f88a] active:scale-[.97] md:mb-8 md:flex" aria-label="SoloTensor home">
+    <nav aria-label="Primary navigation" className="fixed bottom-0 left-0 z-40 flex h-[var(--mobile-nav-height)] w-full items-center border-t border-[var(--line)] bg-[var(--overlay)] px-2 shadow-[0_-14px_32px_-24px_rgba(6,182,212,.2)] backdrop-blur-xl md:static md:h-full md:w-20 md:shrink-0 md:flex-col md:justify-start md:border-r md:border-t-0 md:px-0 md:py-5 md:shadow-[14px_0_32px_-28px_rgba(6,182,212,.15)]">
+      <Link href="/" className="hidden h-10 w-10 items-center justify-center rounded-[.55rem] bg-[var(--accent)] text-[var(--accent-ink)] transition duration-200 hover:-translate-y-0.5 hover:bg-[var(--accent-hover)] active:scale-[.97] md:mb-8 md:flex" aria-label="SoloTensor home">
         <Layers3 className="h-5 w-5" strokeWidth={2.2} />
       </Link>
 

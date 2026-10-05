@@ -125,6 +125,17 @@ class ModelService:
             raise ModelError("Stored model is invalid")
         if record.get("model_type") == "UNET":
             record["model_type"] = "Diffusion Model"
+        compatibility = record.get("compatibility")
+        if isinstance(compatibility, dict):
+            legacy = compatibility.pop("text_encoders", None)
+            if (
+                "text_encoder" not in compatibility
+                and isinstance(legacy, list)
+                and legacy
+            ):
+                compatibility["text_encoder"] = legacy[0]
+            compatibility.setdefault("text_encoder", None)
+            compatibility.setdefault("clip_type", None)
         return record
 
     def _version(self, record: dict[str, Any], version_id: str) -> dict[str, Any]:
@@ -218,6 +229,30 @@ class ModelService:
             versions=versions,
         )
 
+    def _validate_base_association(
+        self,
+        model_type: str,
+        compatibility: dict[str, Any],
+        *,
+        require_public: bool = False,
+    ) -> None:
+        if model_type not in {"LoRA", "LyCORIS"}:
+            return
+        base_ids = tuple(compatibility.get(key) for key in ("base_model_id", "base_version_id", "base_file_id"))
+        if any(value is None for value in base_ids):
+            raise ModelConflict("LoRA and LyCORIS models require a concrete base model")
+        base_record = self._read(base_ids[0])
+        if require_public and (base_record.get("visibility") != "Public" or not base_record.get("published_at")):
+            raise ModelConflict("The LoRA base model must be public before publishing this adapter")
+        if base_record.get("model_type") not in {"Checkpoint", "Diffusion Model"}:
+            raise ModelConflict("LoRA base must be a Checkpoint or Diffusion Model")
+        base_version = self._version(base_record, base_ids[1])
+        base_file = next((item for item in base_version.get("files", []) if item.get("file_id") == base_ids[2]), None)
+        if base_file is None or not base_file.get("visible", False):
+            raise ModelConflict("The configured LoRA base file is unavailable")
+        if require_public:
+            self.resolve_installed_gallery_file(*base_ids)
+
     def create(self, payload: ModelCreateRequest) -> ModelResponse:
         model_id = uuid.uuid4().hex
         now = self._now()
@@ -286,6 +321,7 @@ class ModelService:
                 record[key] = {**record[key], **value}
             else:
                 record[key] = value
+        self._validate_base_association(record.get("model_type", ""), record.get("compatibility", {}))
         record["updated_at"] = self._now()
         self._write(record)
         return self._response(record)
@@ -312,13 +348,15 @@ class ModelService:
         version_id: str,
         file_id: str,
         verify_hash: bool = True,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         record = self._read(model_id)
         if record.get("visibility") != "Public" or not record.get("published_at"):
             raise ModelNotFound("Model not found")
         model_type = record.get("model_type")
-        if model_type not in {"Checkpoint", "Diffusion Model"}:
-            raise ModelConflict("Only Checkpoint and Diffusion Model gallery models can generate")
+        if model_type not in {"Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"}:
+            raise ModelConflict(
+                "Only Checkpoint, Diffusion Model, LoRA, and LyCORIS gallery models can generate"
+            )
         version = self._version(record, version_id)
         item = next(
             (
@@ -356,6 +394,7 @@ class ModelService:
                 )
         elif destination.stat().st_size != item.get("size"):
             raise ModelConflict("Gallery model file is not installed")
+        compatibility = record.get("compatibility", {})
         return {
             "model_id": model_id,
             "version_id": version_id,
@@ -366,12 +405,18 @@ class ModelService:
             "filename": filename,
             "category": category,
             "sha256": item["sha256"],
+            "vae": compatibility.get("vae"),
+            "text_encoder": compatibility.get("text_encoder"),
+            "clip_type": compatibility.get("clip_type"),
+            "base_model_id": compatibility.get("base_model_id"),
+            "base_version_id": compatibility.get("base_version_id"),
+            "base_file_id": compatibility.get("base_file_id"),
         }
 
-    def selectable_gallery_files(self) -> list[dict[str, str]]:
-        items: list[dict[str, str]] = []
+    def selectable_gallery_files(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
         for model in self.public_list():
-            if model.model_type.value not in {"Checkpoint", "Diffusion Model"}:
+            if model.model_type.value not in {"Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"}:
                 continue
             for version in model.versions:
                 for item in version.files:
@@ -386,9 +431,24 @@ class ModelService:
                         )
                     except (ModelError, ModelConflict, ModelNotFound):
                         continue
+        base_keys = {
+            (item["model_id"], item["version_id"], item["file_id"])
+            for item in items
+            if item["model_type"] in {"Checkpoint", "Diffusion Model"}
+        }
+        items = [
+            item for item in items
+            if item["model_type"] in {"Checkpoint", "Diffusion Model"}
+            or (
+                item.get("base_model_id"),
+                item.get("base_version_id"),
+                item.get("base_file_id"),
+            ) in base_keys
+        ]
         return sorted(
             items,
             key=lambda item: (
+                item["model_type"] not in {"Checkpoint", "Diffusion Model"},
                 item["title"].lower(),
                 item["version_name"].lower(),
                 item["filename"].lower(),
@@ -727,9 +787,9 @@ class ModelService:
             if item.get("file_id") == file_id:
                 stored_name = item.get("stored_name")
                 if stored_name:
-                    (
-                        self.root / model_id / version_id / "files" / stored_name
-                    ).unlink(missing_ok=True)
+                    (self.root / model_id / version_id / "files" / stored_name).unlink(
+                        missing_ok=True
+                    )
                 # In-place registrations ("Use an existing ComfyUI model") only
                 # remove the record — the ComfyUI file itself stays untouched.
                 version["files"].pop(index)
@@ -793,6 +853,12 @@ class ModelService:
                 raise ModelConflict("A title is required before publishing")
             if not any(version.get("files") for version in record.get("versions", [])):
                 raise ModelConflict("Upload at least one model file before publishing")
+            compatibility = record.get("compatibility", {})
+            self._validate_base_association(
+                record.get("model_type", ""),
+                compatibility,
+                require_public=True,
+            )
             record["published_at"] = self._now()
         else:
             record["published_at"] = None

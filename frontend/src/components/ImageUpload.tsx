@@ -61,10 +61,10 @@ export default function ImageUpload({ references, onChange, disabled }: Props) {
             void addFiles(e.dataTransfer.files);
           }
         }}
-        className={`flex cursor-pointer items-center justify-center gap-2 rounded-[.55rem] border border-dashed px-3 py-4 text-xs transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#d5f06f] ${
+        className={`flex cursor-pointer items-center justify-center gap-2 rounded-[.55rem] border border-dashed px-3 py-4 text-xs transition-all duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
           dragging
-            ? "border-[#d5f06f] bg-[#d5f06f]/10 text-[#d5f06f]"
-            : "border-[#3a4038] bg-[#111311] text-[#6f716d] hover:border-[#555c50] hover:text-[#aaa8a1]"
+            ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+            : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink-soft)]"
         }`}
       >
         <ImagePlus className="h-4 w-4" />
@@ -91,7 +91,7 @@ export default function ImageUpload({ references, onChange, disabled }: Props) {
             dataUrl ? (
               <div
                 key={i}
-                className="group relative aspect-square overflow-hidden rounded-[.4rem] border border-[#292d28]"
+                className="group relative aspect-square overflow-hidden rounded-[var(--radius-media)] border border-[var(--line)]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -103,15 +103,15 @@ export default function ImageUpload({ references, onChange, disabled }: Props) {
                   type="button"
                   aria-label={`Remove reference ${i + 1}`}
                   onClick={() => removeAt(i)}
-                  className="absolute inset-0 flex items-center justify-center bg-[#0b0c0b]/75 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center bg-[var(--ground)]/75 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                 >
-                  <X className="h-4 w-4 text-white" />
+                  <X className="h-4 w-4 text-[var(--ink)]" />
                 </button>
               </div>
             ) : (
               <div
                 key={`empty-${i}`}
-                className="aspect-square rounded-[.4rem] border border-dashed border-[#292d28] bg-[#111311]/50"
+                className="aspect-square rounded-[var(--radius-media)] border border-dashed border-[var(--line)] bg-[var(--surface)]/50"
               />
             )
           )}

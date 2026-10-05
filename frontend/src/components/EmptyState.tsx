@@ -38,19 +38,19 @@ export default function EmptyState({
   const s = STATES[kind];
   const Icon = s.icon;
   return (
-    <div className="flex min-h-[420px] flex-col items-center justify-center border border-[#292d28] bg-[#0e100e]/60 px-6 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-[.65rem] border border-[#d5f06f]/25 bg-[#d5f06f]/[.06]">
-        <Icon className="h-6 w-6 text-[#d5f06f]" />
+    <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 py-16">
+      <div className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-panel)] border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]">
+        <Icon className="h-6 w-6 text-[var(--accent)]" />
       </div>
-      <h3 className="mt-5 text-lg font-semibold tracking-[-.03em] text-[#f2f0e9]">
+      <h3 className="mt-5 text-lg font-semibold tracking-[-.03em] text-[var(--ink)]">
         {s.title}
       </h3>
-      <p className="mt-2 max-w-sm text-sm leading-relaxed text-[#8a8d85]">{s.body}</p>
+      <p className="mt-2 max-w-sm text-sm leading-relaxed text-[var(--ink-soft)]">{s.body}</p>
       {kind === "image" && onClearSearch ? (
         <button
           type="button"
           onClick={onClearSearch}
-          className="mt-6 inline-flex items-center gap-1.5 rounded-[.5rem] bg-[#d5f06f] px-4 py-2.5 text-sm font-semibold text-[#171b08] transition-all duration-200 hover:bg-[#e2f88a] active:scale-[.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f]"
+          className="workspace-action-primary mt-6 gap-1.5 px-4 py-2.5 text-sm"
         >
           {s.hint}
           <ArrowRight className="h-3.5 w-3.5" />
@@ -58,14 +58,14 @@ export default function EmptyState({
       ) : (
         <Link
           href="/"
-          className="mt-6 inline-flex items-center gap-1.5 rounded-[.5rem] bg-[#d5f06f] px-4 py-2.5 text-sm font-semibold text-[#171b08] transition-all duration-200 hover:bg-[#e2f88a] active:scale-[.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d5f06f]"
+          className="workspace-action-primary mt-6 gap-1.5 px-4 py-2.5 text-sm"
         >
           <Sparkles className="h-3.5 w-3.5" />
           {s.hint}
         </Link>
       )}
       {"tabHint" in s && (
-        <p className="mt-3 text-xs text-[#6f716d]">{s.tabHint}</p>
+        <p className="mt-3 text-xs text-[var(--ink-faint)]">{s.tabHint}</p>
       )}
     </div>
   );

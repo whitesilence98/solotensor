@@ -162,7 +162,14 @@ async def assist(req: AssistantRequest) -> AssistantResponse:
     return AssistantResponse(persona=req.persona, answer=answer)
 
 
-MODEL_CATEGORIES = {"diffusion_models", "text_encoders", "vae", "loras"}
+MODEL_CATEGORIES = {
+    "diffusion_models",
+    "text_encoders",
+    "vae",
+    "loras",
+    "checkpoints",
+    "embeddings",
+}
 
 
 
@@ -366,6 +373,15 @@ async def models(category: str) -> list[str]:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
+@app.get("/api/v1/clip-options")
+async def clip_options() -> dict[str, list[str]]:
+    try:
+        comfy = get_comfy_client()
+        return {"encoders": await comfy.list_models("text_encoders"), "types": await comfy.clip_types()}
+    except ComfyClientError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
 # ---------------------------------------------------------------------- #
 # Generation
 # ---------------------------------------------------------------------- #
@@ -382,8 +398,34 @@ async def generate(req: GenerateRequest) -> GenerationResult:
 
     try:
         selected_model = model_storage.resolve_installed_gallery_file(req.model_id, req.version_id, req.file_id)
+        is_lora = selected_model["model_type"] in {"LoRA", "LyCORIS"}
+        if is_lora:
+            expected_base = (
+                selected_model.get("base_model_id"),
+                selected_model.get("base_version_id"),
+                selected_model.get("base_file_id"),
+            )
+            base_ids = (req.base_model_id, req.base_version_id, req.base_file_id)
+            if expected_base != base_ids:
+                raise ModelConflict("This LoRA is compatible only with its configured base model")
+            base_model = model_storage.resolve_installed_gallery_file(*base_ids)  # type: ignore[arg-type]
+            if base_model["model_type"] not in {"Checkpoint", "Diffusion Model"}:
+                raise ModelConflict("LoRA base must be a Checkpoint or Diffusion Model")
+        else:
+            if any(value is not None for value in (req.base_model_id, req.base_version_id, req.base_file_id)):
+                raise ModelConflict("Base model identity is only valid for LoRA generation")
+            base_model = selected_model
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
+
+    clip_name = base_model.get("text_encoder")
+    clip_type = base_model.get("clip_type")
+    vae_name = base_model.get("vae")
+    if base_model["model_type"] == "Diffusion Model" and (not clip_name or not clip_type or not vae_name):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Configure a text encoder, CLIP type, and VAE for the selected base model before generating",
+        )
 
     comfy = get_comfy_client()
     client_id = req.client_id or str(uuid.uuid4())
@@ -391,27 +433,93 @@ async def generate(req: GenerateRequest) -> GenerationResult:
     started = time.monotonic()
 
     try:
-        # ComfyUI validates node inputs against its own enumerated filenames
-        # (backslash subfolders on Windows), so translate the gallery's
-        # forward-slash name to the exact form ComfyUI expects before queueing.
-        comfy_filename = await comfy.resolve_model_name(
-            selected_model["category"], selected_model["filename"]
-        )
-        graph = comfy.build_gallery_workflow(
-            model_type=selected_model["model_type"],
-            filename=comfy_filename,
-            prompt=req.prompt,
-            negative_prompt=req.negative_prompt,
-            seed=resolved_seed,
-            steps=req.steps,
-            image_count=req.image_count,
-            cfg=req.cfg,
-            denoise=req.denoise,
-            width=req.width,
-            height=req.height,
-        )
+        active_loras: list[dict[str, Any]] = []
+        if is_lora:
+            resolved_primary_lora = await comfy.resolve_model_name("loras", selected_model["filename"])
+            active_loras.append({"lora": resolved_primary_lora, "strength": 1.0, "on": True})
+
+        for adapter in req.lora_adapters:
+            if not adapter.on:
+                continue
+            if adapter.model_id and adapter.version_id and adapter.file_id:
+                adapter_model = model_storage.resolve_installed_gallery_file(
+                    adapter.model_id, adapter.version_id, adapter.file_id
+                )
+                if adapter_model["model_type"] not in {"LoRA", "LyCORIS"}:
+                    raise ModelConflict("Adapter model must be a LoRA or LyCORIS")
+                raw_filename = adapter_model["filename"]
+            elif adapter.lora:
+                raw_filename = adapter.lora
+            else:
+                continue
+
+            resolved_adapter_lora = await comfy.resolve_model_name("loras", raw_filename)
+            existing = next((item for item in active_loras if item["lora"] == resolved_adapter_lora), None)
+            if existing is not None:
+                existing["strength"] = adapter.strength
+                existing["on"] = adapter.on
+            else:
+                active_loras.append({
+                    "lora": resolved_adapter_lora,
+                    "strength": adapter.strength,
+                    "on": adapter.on,
+                })
+
+        resolved_base = await comfy.resolve_model_name(base_model["category"], base_model["filename"])
+        resolved_clip = ""
+        resolved_clip_type = ""
+        resolved_vae = ""
+        if base_model["model_type"] == "Diffusion Model":
+            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name)
+            resolved_clip_type = await comfy.resolve_clip_type(clip_type)
+            resolved_vae = await comfy.resolve_model_name("vae", vae_name)
+        elif clip_name and clip_type:
+            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name)
+            resolved_clip_type = await comfy.resolve_clip_type(clip_type)
+            if vae_name:
+                resolved_vae = await comfy.resolve_model_name("vae", vae_name)
+
+        if is_lora:
+            graph = comfy.build_lora_workflow(
+                base_model_type=base_model["model_type"],
+                base_filename=resolved_base,
+                lora_filename=active_loras[0]["lora"] if active_loras else "",
+                clip_name=resolved_clip,
+                clip_type=resolved_clip_type,
+                vae_name=resolved_vae,
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                seed=resolved_seed,
+                steps=req.steps,
+                image_count=req.image_count,
+                cfg=req.cfg,
+                denoise=req.denoise,
+                width=req.width,
+                height=req.height,
+                loras=active_loras,
+            )
+        else:
+            graph = comfy.build_gallery_workflow(
+                model_type=selected_model["model_type"],
+                filename=resolved_base,
+                clip_name=resolved_clip,
+                clip_type=resolved_clip_type,
+                vae_name=resolved_vae,
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                seed=resolved_seed,
+                steps=req.steps,
+                image_count=req.image_count,
+                cfg=req.cfg,
+                denoise=req.denoise,
+                width=req.width,
+                height=req.height,
+                loras=active_loras,
+            )
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
     except ComfyClientError as exc:
         logger.error("ComfyUI error: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
@@ -443,6 +551,14 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         "model_version": selected_model["version_name"],
         "model_category": selected_model["category"],
         "model_filename": selected_model["filename"],
+        "clip_name": clip_name or "",
+        "clip_type": clip_type or "",
+        "base_model_id": base_model["model_id"] if is_lora else "",
+        "base_version_id": base_model["version_id"] if is_lora else "",
+        "base_file_id": base_model["file_id"] if is_lora else "",
+        "base_model_filename": base_model["filename"] if is_lora else "",
+        "lora_filename": selected_model["filename"] if is_lora else (active_loras[0]["lora"] if active_loras else ""),
+        "loras": active_loras,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_ms": elapsed_ms,
     }
