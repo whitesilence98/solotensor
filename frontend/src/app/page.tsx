@@ -20,7 +20,7 @@ import {
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 
-const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v3";
+const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v4";
 
 const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> = {
   "1:1": [1024, 1024],
@@ -35,35 +35,7 @@ const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"]
 const DEFAULT_SAMPLE_PROMPT =
   "Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85mm lens, atmospheric haze, volumetric rim lighting, fine textures";
 
-const DEFAULT_LORAS: ActiveLora[] = [
-  {
-    id: "lora-apex",
-    title: "Apex Detailer ⚜ - Krea 2",
-    baseModel: "KREA_2",
-    weight: 0.7,
-  },
-  {
-    id: "lora-fever",
-    title: "Fever Dream Mood | KR2 & ZIT …",
-    baseModel: "KREA_2",
-    weight: 0.6,
-  },
-  {
-    id: "lora-han",
-    title: "Han Solo CHARACTER - KREA-2",
-    baseModel: "KREA_2",
-    weight: 1.0,
-  },
-];
 
-const DEFAULT_EMBEDDINGS: ActiveEmbedding[] = [
-  {
-    id: "emb-nxfang",
-    title: "*NxFang 𝕓 - Test",
-    baseModel: "KREA_2",
-    weight: 0.4,
-  },
-];
 
 interface ModelIdentity {
   modelId: string;
@@ -94,8 +66,8 @@ export default function StudioPage() {
   const [modelsLoading, setModelsLoading] = useState(true);
 
   // Active LoRAs & Embeddings (matching Tensor.Art stacked list)
-  const [loras, setLoras] = useState<ActiveLora[]>(DEFAULT_LORAS);
-  const [embeddings, setEmbeddings] = useState<ActiveEmbedding[]>(DEFAULT_EMBEDDINGS);
+  const [loras, setLoras] = useState<ActiveLora[]>([]);
+  const [embeddings, setEmbeddings] = useState<ActiveEmbedding[]>([]);
 
   const [seed, setSeed] = useState("");
   const [steps, setSteps] = useState("25");
@@ -224,29 +196,7 @@ export default function StudioPage() {
         if (cancelled) return;
         setModelOptions(items);
 
-        // If local LoRAs exist in gallery, update DEFAULT_LORAS with real gallery IDs if matched
-        const realLoras = items.filter((m) => m.model_type === "LoRA" || m.model_type === "LyCORIS");
-        if (realLoras.length > 0) {
-          setLoras((prev) => {
-            const hasReal = prev.some((p) => p.modelId);
-            if (!hasReal) {
-              const firstReal = realLoras[0];
-              return [
-                {
-                  id: `${firstReal.model_id}:${firstReal.file_id}`,
-                  title: firstReal.title,
-                  baseModel: firstReal.base_model_id ? "KREA_2" : "SDXL",
-                  weight: 0.8,
-                  modelId: firstReal.model_id,
-                  versionId: firstReal.version_id,
-                  fileId: firstReal.file_id,
-                },
-                ...prev.slice(0, 2),
-              ];
-            }
-            return prev;
-          });
-        }
+
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -310,13 +260,13 @@ export default function StudioPage() {
 
     // Build active lora_adapters from the Tensor.Art stacked LoRA cards
     const loraAdapters: LoraAdapterPayload[] = loras
-      .filter((l) => Boolean(l.modelId && l.fileId && l.versionId))
+      .filter((l) => Boolean(l.modelId && l.fileId && l.versionId) && l.enabled !== false)
       .map((l) => ({
         model_id: l.modelId!,
         version_id: l.versionId!,
         file_id: l.fileId!,
         strength: l.weight,
-        on: true,
+        on: l.enabled !== false,
       }));
 
     const [resolvedWidth, resolvedHeight] =
@@ -425,14 +375,16 @@ export default function StudioPage() {
   ]);
 
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-[var(--ground)]">
+    <div className="workspace-bezel relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-transparent p-2 sm:p-3 lg:flex-row lg:gap-3 lg:overflow-hidden">
       {/* Left Control Panel (Collapsible) */}
       <div
-        className={`transition-all duration-300 ease-in-out ${
-          isSidebarCollapsed ? "w-0 overflow-hidden opacity-0 pointer-events-none" : "w-full lg:w-[24.5rem]"
+        className={`min-h-0 shrink-0 ${
+          isSidebarCollapsed ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none" : "h-auto w-full lg:h-full lg:w-[24.5rem]"
         }`}
       >
         <ControlPanel
+          prompt={prompt}
+          onPromptChange={setPrompt}
           selectedModel={selectedModel}
           modelOptions={modelOptions}
           onModelChange={(key) => {

@@ -395,6 +395,16 @@ class ModelService:
         elif destination.stat().st_size != item.get("size"):
             raise ModelConflict("Gallery model file is not installed")
         compatibility = record.get("compatibility", {})
+        cover_url = None
+        for ver in record.get("versions", []):
+            for sample in ver.get("samples", []):
+                if sample.get("sample_id"):
+                    cover_url = self._public_sample_url(
+                        model_id, ver.get("version_id", version_id), sample["sample_id"]
+                    )
+                    break
+            if cover_url:
+                break
         return {
             "model_id": model_id,
             "version_id": version_id,
@@ -411,6 +421,7 @@ class ModelService:
             "base_model_id": compatibility.get("base_model_id"),
             "base_version_id": compatibility.get("base_version_id"),
             "base_file_id": compatibility.get("base_file_id"),
+            "cover_url": cover_url,
         }
 
     def selectable_gallery_files(self) -> list[dict[str, Any]]:

@@ -3,7 +3,53 @@
  * Uses native fetch + WebSocket (no axios dependency needed).
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
+
+/**
+ * Resolves media/sample/cover URLs returned by backend.
+ * Rewrites localhost/127.0.0.1 URLs to relative paths (/api/... or /files/...)
+ * so they proxy cleanly through Next.js rewrite bridge across LAN and remote clients.
+ */
+export function resolveMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    const isLocalhost =
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "0.0.0.0";
+
+    if (typeof window !== "undefined") {
+      if (
+        isLocalhost ||
+        parsed.hostname === window.location.hostname ||
+        parsed.port === "8000"
+      ) {
+        if (
+          parsed.pathname.startsWith("/api/") ||
+          parsed.pathname.startsWith("/files/")
+        ) {
+          return `${parsed.pathname}${parsed.search}`;
+        }
+        parsed.hostname = window.location.hostname;
+        return parsed.toString();
+      }
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
 
 export type AssistantPersona = "backend" | "frontend";
 
@@ -80,14 +126,19 @@ export interface ToolControl {
   meta_title: string | null;
   kind: "prompt" | "text" | "seed" | "number" | "select" | "boolean" | "image";
   value: string | number | boolean;
+  default?: string | number | boolean;
   numeric: boolean;
   seed: boolean;
   options: Array<string | number>;
   minimum: number | null;
   maximum: number | null;
+  min?: number | null;
+  max?: number | null;
   step: number | null;
   node_id: string;
   input_name: string;
+  role?: string | null;
+  recommended?: boolean;
 }
 
 export interface ToolParseResponse {
@@ -130,6 +181,11 @@ export interface ToolDetail extends ToolSummary {
 export interface ToolRunResult extends ToolExecutionResult {
   tool_mode: ToolMode | null;
   aspect_ratio: ToolAspectRatio | null;
+}
+
+export interface DeleteToolResponse {
+  deleted: boolean;
+  tool_id: string;
 }
 
 export interface GenerationResult {
@@ -390,6 +446,7 @@ export interface InstalledGalleryModel {
   base_model_id: string | null;
   base_version_id: string | null;
   base_file_id: string | null;
+  cover_url?: string | null;
 }
 
 export interface InstalledGalleryModelList { items: InstalledGalleryModel[]; }
@@ -414,16 +471,40 @@ export const api = {
 
   async listPublicModels(query = ""): Promise<PublicModelListResponse> {
     const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
-    return request<PublicModelListResponse>(`/api/v1/models/public${params}`);
+    const res = await request<PublicModelListResponse>(`/api/v1/models/public${params}`);
+    if (res?.items) {
+      res.items = res.items.map((item) => ({
+        ...item,
+        cover_url: resolveMediaUrl(item.cover_url),
+      }));
+    }
+    return res;
   },
 
   async listSelectableModels(): Promise<InstalledGalleryModel[]> {
     const response = await request<InstalledGalleryModelList>("/api/v1/models/public/selectable");
-    return response.items;
+    return (response.items || []).map((item) => ({
+      ...item,
+      cover_url: resolveMediaUrl(item.cover_url),
+    }));
   },
 
   async getPublicModel(modelId: string): Promise<CreatorModel> {
-    return request<CreatorModel>(`/api/v1/models/public/${encodeURIComponent(modelId)}`);
+    const model = await request<CreatorModel>(`/api/v1/models/public/${encodeURIComponent(modelId)}`);
+    if (model?.versions) {
+      model.versions = model.versions.map((ver) => ({
+        ...ver,
+        files: (ver.files || []).map((file) => ({
+          ...file,
+          download_url: resolveMediaUrl(file.download_url) || file.download_url,
+        })),
+        samples: (ver.samples || []).map((sample) => ({
+          ...sample,
+          url: resolveMediaUrl(sample.url) || sample.url,
+        })),
+      }));
+    }
+    return model;
   },
 
   async installModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
@@ -517,25 +598,43 @@ export const api = {
     const params = new URLSearchParams({ limit: String(limit) });
     Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
     const resp = await request<{ items: GalleryItem[] }>(`/api/v1/gallery?${params}`);
-    return resp.items;
+    return (resp.items || []).map((item) => ({
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+    }));
   },
 
   async getTools(): Promise<ToolSummary[]> {
     const resp = await request<{ items: ToolSummary[] }>("/api/tools");
-    return resp.items;
+    return (resp.items || []).map((tool) => ({
+      ...tool,
+      thumbnail_url: resolveMediaUrl(tool.thumbnail_url),
+    }));
   },
 
   async getTool(toolId: string): Promise<ToolDetail> {
-    return request<ToolDetail>(`/api/tools/${encodeURIComponent(toolId)}`);
+    const detail = await request<ToolDetail>(`/api/tools/${encodeURIComponent(toolId)}`);
+    return {
+      ...detail,
+      thumbnail_url: resolveMediaUrl(detail.thumbnail_url),
+    };
   },
 
-  async createTool(file: File, name: string, mode: ToolMode, aspectRatio: ToolAspectRatio, thumbnail?: File): Promise<ToolDetail> {
+  async deleteTool(toolId: string): Promise<boolean> {
+    const resp = await request<DeleteToolResponse>(`/api/tools/${encodeURIComponent(toolId)}`, {
+      method: "DELETE",
+    });
+    return resp.deleted;
+  },
+
+  async createTool(file: File, name: string, mode: ToolMode, aspectRatio: ToolAspectRatio, thumbnail?: File, controls?: ToolControl[]): Promise<ToolDetail> {
     const form = new FormData();
     form.append("workflow_api", file, "workflow_api.json");
     form.append("name", name);
     form.append("mode", mode);
     form.append("aspect_ratio", aspectRatio);
     if (thumbnail) form.append("thumbnail", thumbnail, thumbnail.name);
+    if (controls) form.append("controls", JSON.stringify(controls));
     const resp = await fetch(`${API_BASE}/api/tools/create`, { method: "POST", body: form });
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
@@ -564,11 +663,27 @@ export const api = {
   },
 
   async getAsset(key: string): Promise<GalleryItem> {
-    return request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}`);
+    const item = await request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}`);
+    return {
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+    };
   },
 
   async patchAssetSaved(key: string, saved: boolean): Promise<GalleryItem> {
-    return request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}?saved=${saved}`, { method: "PATCH" });
+    const item = await request<GalleryItem>(`/api/v1/assets/${key.split("/").map(encodeURIComponent).join("/")}?saved=${saved}`, { method: "PATCH" });
+    return {
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+    };
+  },
+
+  async deleteAsset(key: string): Promise<boolean> {
+    const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+    await request<{ deleted: boolean; key: string }>(`/api/v1/gallery/${encodedKey}`, {
+      method: "DELETE",
+    });
+    return true;
   },
 
   async getImage(key: string): Promise<GalleryItem> {
@@ -610,7 +725,15 @@ export const api = {
     clientId: string,
     onEvent: (event: ProgressEvent) => void
   ): WebSocket {
-    const wsBase = API_BASE.replace(/^http/, "ws");
+    let wsBase: string;
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      wsBase = process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws");
+    } else if (typeof window !== "undefined") {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      wsBase = `${proto}//${window.location.hostname}:8000`;
+    } else {
+      wsBase = "ws://127.0.0.1:8000";
+    }
     const ws = new WebSocket(`${wsBase}/api/v1/ws/progress/${clientId}`);
     ws.onmessage = (msg) => {
       // Binary frames are ComfyUI live previews — not structured events.

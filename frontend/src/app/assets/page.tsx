@@ -10,6 +10,7 @@ import {
   ImageIcon,
   Search,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import AssetCard from "@/components/AssetCard";
 import EmptyState from "@/components/EmptyState";
@@ -42,7 +43,25 @@ export default function AssetsPage() {
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
   const [retryKey, setRetryKey] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteAsset(deleteTarget);
+      setAssets((prev) => prev.filter((a) => a.key !== deleteTarget));
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleting]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,15 +138,16 @@ export default function AssetsPage() {
   };
 
   return (
-    <div id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 antialiased">
+    <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
       {/* ---------------- Header ---------------- */}
-      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl">
+      <header className="workspace-command top-0 z-30 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4">
         <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-5 py-4 sm:px-6">
           <div className="min-w-0 flex-1">
-            <p className="workspace-kicker">Library / local outputs</p>
-            <h1 className="mt-1 truncate text-xl font-semibold tracking-[-.04em] text-[var(--ink)] sm:text-2xl">Asset library</h1>
+            <p className="workspace-kicker">Personal catalog</p>
+            <h1 className="workspace-heading mt-1 text-3xl font-semibold tracking-tighter sm:text-4xl">Asset library</h1>
+            <p className="mt-1 text-xs text-[var(--ink-faint)]">Browse generated images, motion, and 3D output.</p>
           </div>
-          <Link href="/" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[.55rem] bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] active:scale-[.97]">
+          <Link href="/" className="workspace-action-primary inline-flex h-10 shrink-0 items-center gap-2 px-3.5 text-xs font-bold">
             <Sparkles className="h-4 w-4" />
             <span className="hidden sm:inline">New render</span>
           </Link>
@@ -144,9 +164,10 @@ export default function AssetsPage() {
               onBlur={commitSearch}
               placeholder="Search local filenames…"
               aria-label="Search local filenames"
-              className="workspace-field h-11 w-full pl-10 pr-16 text-sm placeholder:text-[var(--ink-faint)]"
+              className="workspace-field h-11 w-full pl-10 pr-20 text-sm placeholder:text-[var(--ink-faint)]"
             />
-            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink-faint)] sm:block">/</kbd>
+            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink-faint)] sm:block">/</kbd>
+            {searchDraft && <button type="button" onClick={clearSearch} aria-label="Clear asset search" className="workspace-action-quiet absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center sm:right-14"><span aria-hidden>×</span></button>}
           </div>
         </div>
 
@@ -158,15 +179,15 @@ export default function AssetsPage() {
                 <button key={id} type="button" aria-pressed={active} onClick={() => { setTab(id); setVisible(PAGE_SIZE); }} className={`relative flex shrink-0 items-center gap-2 pb-3 pt-1.5 text-sm font-medium transition-colors focus-visible:text-[var(--accent)] ${active ? "text-[var(--ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}>
                   <Icon className={`h-4 w-4 ${active ? "text-[var(--accent)]" : ""}`} />
                   {label}
-                  <span className={`rounded px-1.5 py-0.5 text-[11px] tabular-nums ${active ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)]" : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"}`}>{formatCount(counts[id])}</span>
-                  <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--accent)] ${active ? "opacity-100" : "opacity-0"}`} />
+                  <span className={`border border-[var(--line)] px-1.5 py-0.5 text-[11px] tabular-nums ${active ? "border-[var(--accent)] text-[var(--accent)]" : "text-[var(--ink-faint)]"}`}>{formatCount(counts[id])}</span>
+                  <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 bg-[var(--accent)] ${active ? "opacity-100" : "opacity-0"}`} />
                 </button>
               );
             })}
           </div>
           <div className="flex gap-2 overflow-x-auto py-3" aria-label="Asset source">
             {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
-              <button key={source} type="button" onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }} className={`whitespace-nowrap rounded-[.4rem] border px-3 py-1.5 text-[11px] font-medium transition-colors ${origin === source ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"}`}>
+              <button key={source} type="button" aria-pressed={origin === source} onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }} className={`workspace-chip min-h-9 whitespace-nowrap px-3 py-1.5 text-[11px] ${origin === source ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"}`}>
                 {source === "all" ? "All sources" : source === "workspace" ? "Workspace" : "AI tools"}
               </button>
             ))}
@@ -175,19 +196,23 @@ export default function AssetsPage() {
       </header>
 
       {/* ---------------- Grid ---------------- */}
-      <main className="mx-auto max-w-[1600px] px-5 pb-8 pt-6 sm:px-6">
+      <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-[calc(var(--mobile-nav-height)+2rem)] pt-6 sm:px-6 sm:pb-8" aria-label="Asset results">
+        <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
+          <p aria-live="polite">{loading ? "Loading assets…" : `Showing ${formatCount(shown.length)} of ${formatCount(filtered.length)} ${tab === "3d" ? "3D assets" : `${tab}${filtered.length === 1 ? "" : "s"}`}`}</p>
+          {!loading && query && <button type="button" onClick={clearSearch} className="workspace-action-quiet min-h-9 px-2 text-xs">Clear search</button>}
+        </div>
         {loading ? (
           <div className="masonry" aria-label="Loading assets" aria-busy="true">
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
               <div
                 key={i}
                 className="shimmer workspace-skeleton"
-                style={{ height: 500 + ((i * 60) % 160) }}
+                style={{ height: 280 + ((i * 40) % 120) }}
               />
             ))}
           </div>
         ) : error ? (
-          <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center rounded-[var(--radius-panel)] px-6 text-center" role="alert">
+          <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 text-center" role="alert">
             <p className="text-sm font-medium text-[var(--danger)]">{error}</p>
             <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check that the local API is running, then retry.</p>
             <button type="button" onClick={() => { setLoading(true); setError(null); setRetryKey((key) => key + 1); }} className="workspace-action-secondary mt-4 px-3 py-2 text-xs">Try again</button>
@@ -208,20 +233,72 @@ export default function AssetsPage() {
                   saved={savedKeys.has(asset.key)}
                   onBookmark={() => toggleSaved(asset.key)}
                   onOpen={() => router.push(`/assets/${asset.key.split("/").map(encodeURIComponent).join("/")}`)}
+                  onDelete={() => setDeleteTarget(asset.key)}
                 />
               ))}
             </div>
             {filtered.length > shown.length && (
-              <div className="mt-6 flex flex-col items-center gap-2">
+              <div className="mt-6 flex flex-col items-center gap-2 pb-4">
                 <p className="text-xs text-[var(--ink-faint)]">Showing {shown.length} of {formatCount(filtered.length)}</p>
-                <button type="button" onClick={() => setVisible((value) => value + PAGE_SIZE)} className="workspace-action-secondary gap-2 px-4 py-2.5 text-xs"><ArrowDown className="h-4 w-4" />Load more</button>
+                <button type="button" onClick={() => setVisible((value) => value + PAGE_SIZE)} className="workspace-action-primary gap-2 px-5 py-3 text-xs"><ArrowDown className="h-4 w-4" />Load more</button>
               </div>
             )}
           </>
         )}
         <WorkspaceFooter />
-      </main>
+      </section>
 
-    </div>
+      {deleteTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ground)]/80 p-4 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] text-[var(--danger)]">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 id="delete-dialog-title" className="text-base font-bold text-[var(--ink)]">
+                  Delete asset permanently?
+                </h3>
+                <p className="mt-1 break-all font-mono text-xs text-[var(--ink-faint)]">
+                  {deleteTarget}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]">
+                  This media file and its metadata sidecar will be permanently removed from disk. This action cannot be undone.
+                </p>
+                {deleteError && (
+                  <p className="mt-2 text-xs font-semibold text-[var(--danger)]" role="alert">
+                    {deleteError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-[var(--line)] pt-4">
+              <button
+                type="button"
+                onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
+                disabled={deleting}
+                className="workspace-action-secondary px-4 py-2 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--danger)]/90 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete asset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   );
 }

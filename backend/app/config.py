@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     )
     # Development-only fallback for Next.js dev ports. Set empty in production.
     ALLOWED_ORIGIN_REGEX: str = (
-        r"^https?://(localhost|127\.0\.0\.1|\[::1\]):[0-9]{2,5}$"
+        r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|\[::1\]):[0-9]{2,5}$"
     )
     UPLOAD_MAX_BYTES: int = 10 * 1024 * 1024
 

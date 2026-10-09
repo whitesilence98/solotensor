@@ -150,6 +150,37 @@ class StorageService:
             raise StorageError("Could not update asset visibility") from exc
         return self._gallery_item(path)
 
+    def delete_asset(self, key: str) -> bool:
+        if not key or not str(key).strip():
+            raise StorageError("Invalid asset key")
+        path = (self.root / key).resolve()
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise StorageError("Invalid asset key") from exc
+        if path == self.root:
+            raise StorageError("Invalid asset key")
+        if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
+            raise FileNotFoundError(key)
+
+        sidecar = self._metadata_path(path)
+        try:
+            if sidecar.is_file():
+                sidecar.unlink(missing_ok=True)
+            path.unlink()
+        except OSError as exc:
+            raise StorageError(f"Could not delete asset {key}: {exc}") from exc
+
+        try:
+            parent = path.parent
+            if parent != self.root and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+        except OSError:
+            pass
+
+        logger.info("Deleted asset %s", key)
+        return True
+
     def purge_prompt(self, prompt_id: str) -> int:
         target = self.root / prompt_id
         if not target.is_dir():

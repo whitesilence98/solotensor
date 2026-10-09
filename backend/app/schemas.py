@@ -165,6 +165,13 @@ class GalleryResponse(BaseModel):
     items: list[GalleryItem] = Field(default_factory=list)
 
 
+class DeleteAssetResponse(BaseModel):
+    """Response returned after deleting an asset."""
+
+    deleted: bool = True
+    key: str
+
+
 class GeneratedAsset(BaseModel):
     """A generated file that can be previewed or downloaded."""
 
@@ -253,15 +260,57 @@ class ToolControl(BaseModel):
     label: str
     meta_title: str | None = None
     kind: Literal["prompt", "text", "seed", "number", "select", "boolean", "image"]
-    value: Any
+    value: Any = None
+    default: Any = None
     numeric: bool = False
     seed: bool = False
     options: list[Any] = Field(default_factory=list)
     minimum: float | None = None
     maximum: float | None = None
+    min: float | None = None
+    max: float | None = None
     step: float | None = None
     node_id: str
     input_name: str
+    role: str | None = None
+    recommended: bool = True
+
+    model_config = {"extra": "allow"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        res = dict(data)
+        if "value" in res and res.get("default") is None:
+            res["default"] = res["value"]
+        elif "default" in res and res.get("value") is None:
+            res["value"] = res["default"]
+        if "minimum" in res and res.get("min") is None:
+            res["min"] = res["minimum"]
+        elif "min" in res and res.get("minimum") is None:
+            res["minimum"] = res["min"]
+        if "maximum" in res and res.get("max") is None:
+            res["max"] = res["maximum"]
+        elif "max" in res and res.get("maximum") is None:
+            res["maximum"] = res["max"]
+        if "id" in res and not res.get("path"):
+            res["path"] = res["id"]
+        elif "path" in res and not res.get("id"):
+            res["id"] = res["path"]
+        return res
+
+
+class CreateToolRequest(BaseModel):
+    workflow_api: dict[str, Any] | str
+    name: str = Field("Untitled tool", min_length=1, max_length=120)
+    mode: ToolMode = ToolMode.TEXT_TO_IMAGE
+    aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE
+    controls: list[ToolControl] | None = None
+    thumbnail_base64: str | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class ToolParseResponse(BaseModel):
@@ -312,6 +361,11 @@ class ToolExecutionResult(BaseModel):
     elapsed_ms: int
     tool_mode: ToolMode | None = None
     aspect_ratio: ToolAspectRatio | None = None
+
+
+class DeleteToolResponse(BaseModel):
+    deleted: bool = True
+    tool_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -615,6 +669,7 @@ class InstalledGalleryModel(BaseModel):
     base_model_id: str | None = None
     base_version_id: str | None = None
     base_file_id: str | None = None
+    cover_url: str | None = None
 
 
 class InstalledGalleryModelList(BaseModel):

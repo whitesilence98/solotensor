@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Check, Copy, Download, ExternalLink, ImageIcon } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Check, Copy, Download, ExternalLink, ImageIcon, Trash2 } from "lucide-react";
 import { api, assetTypeOf, type GalleryItem } from "@/lib/api";
 import { formatBytes } from "@/components/AssetCard";
 import { VideoResultPreview } from "@/components/VideoResultPreview";
@@ -28,7 +28,7 @@ function Detail({ label, value }: { label: string; value: string | number | null
 
   return (
     <div className="min-w-0 border-t border-[var(--line)] py-2.5 [@media(max-height:650px)]:py-0.5">
-      <dt className="text-[9px] font-semibold uppercase tracking-[.12em] text-[var(--ink-faint)]">{label}</dt>
+      <dt className="text-[9px] font-semibold text-[var(--ink-faint)]">{label}</dt>
       <dd className="mt-1 truncate font-mono text-[11px] leading-4 text-[var(--ink)]" title={String(shown)}>{shown}</dd>
     </div>
   );
@@ -81,6 +81,7 @@ function moveTab<T extends string>(
 }
 
 export default function AssetDetailPage() {
+  const router = useRouter();
   const params = useParams<{ key: string[] }>();
   const key = params.key.map(decodeURIComponent).join("/");
   const [asset, setAsset] = useState<GalleryItem | null>(null);
@@ -89,6 +90,22 @@ export default function AssetDetailPage() {
   const [inspectorView, setInspectorView] = useState<InspectorView>("prompt");
   const [promptCopyState, setPromptCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [retryKey, setRetryKey] = useState(0);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!asset || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteAsset(asset.key);
+      router.push("/assets");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
+      setDeleting(false);
+    }
+  };
 
   const copyPrompt = async () => {
     if (!asset?.metadata?.prompt) return;
@@ -121,10 +138,10 @@ export default function AssetDetailPage() {
   const filename = asset ? basename(asset.key) : "";
 
   return (
-    <main id="main-content" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_34%_20%,rgba(6,182,212,.04),transparent_30rem)]">
-      <header className="flex h-12 shrink-0 items-center border-b border-[var(--line)] bg-[var(--ground)]/92 px-4 backdrop-blur-xl sm:px-6">
+    <main id="main-content" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ground)]">
+      <header className="flex h-12 shrink-0 items-center border-b border-[var(--line)] bg-[var(--ground)] px-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-[96rem] items-center justify-between gap-4">
-          <Link href="/assets" className="flex shrink-0 items-center gap-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:text-[var(--accent)]">
+          <Link href="/assets" className="flex shrink-0 items-center gap-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors duration-200 hover:text-[var(--accent)]">
             <ArrowLeft className="h-4 w-4" />Library
           </Link>
           {asset && <span className="max-w-[58vw] truncate font-mono text-[10px] text-[var(--ink-faint)]" title={asset.key}>{asset.key}</span>}
@@ -144,7 +161,7 @@ export default function AssetDetailPage() {
               aria-controls={`asset-view-panel-${view}`}
               onClick={() => setMobileView(view)}
               onKeyDown={(event) => moveTab(event, mobileTabs, mobileView, setMobileView, "asset-view-tab")}
-              className={`relative text-xs font-semibold capitalize transition-colors ${mobileView === view ? "text-[var(--ink)] after:absolute after:inset-x-3 after:bottom-0 after:h-px after:bg-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}
+              className={`relative text-xs font-semibold capitalize transition-colors duration-200 ${mobileView === view ? "text-[var(--ink)] after:absolute after:inset-x-3 after:bottom-0 after:h-px after:bg-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}
             >
               {view}
             </button>
@@ -165,34 +182,54 @@ export default function AssetDetailPage() {
           </div>
         </section>
       ) : !asset ? (
-        <section className="mx-auto grid h-full min-h-0 w-full max-w-[96rem] flex-1 gap-3 p-3 sm:p-4 md:grid-cols-[minmax(0,1fr)_20rem] md:p-5" aria-label="Loading asset" aria-busy="true">
-          <div className="shimmer min-h-0 rounded-[var(--radius-panel)]" />
-          <div className="shimmer hidden min-h-0 rounded-[var(--radius-panel)] md:block" />
+        <section className="mx-auto grid h-full min-h-0 w-full max-w-[96rem] flex-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_20rem] md:p-4" aria-label="Loading asset" aria-busy="true">
+          <div className="shimmer min-h-0 border border-[var(--line)]" />
+          <div className="shimmer hidden min-h-0 border border-[var(--line)] md:block" />
         </section>
       ) : (
-        <div className="mx-auto grid h-full min-h-0 w-full max-w-[96rem] flex-1 gap-3 p-3 sm:p-4 md:grid-cols-[minmax(0,1fr)_20rem] md:p-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="mx-auto grid h-full min-h-0 w-full max-w-[96rem] flex-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_20rem] md:p-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <section
             id="asset-view-panel-preview"
             role="tabpanel"
             aria-labelledby="asset-view-tab-preview"
-            className={`${mobileView === "preview" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col gap-2 md:flex`}
+            className={`${mobileView === "preview" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col gap-4 md:flex`}
           >
             {isVideo ? (
-              <VideoResultPreview
-                url={asset.url}
-                filename={filename}
-                ratio={asset.metadata?.aspect_ratio ?? "16:9"}
-                bounded
-              />
+              <>
+                <VideoResultPreview
+                  url={asset.url}
+                  filename={filename}
+                  ratio={asset.metadata?.aspect_ratio ?? "16:9"}
+                  bounded
+                />
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    className="inline-flex items-center gap-2 whitespace-nowrap border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3.5 py-2 text-xs font-semibold text-[var(--danger)] transition-colors duration-200 hover:bg-[var(--danger-line)]/50 active:scale-[.97]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete asset
+                  </button>
+                </div>
+              </>
             ) : (
               <>
-                <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface-sunken)] p-2 sm:p-4">
+                <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] p-4">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={asset.url} alt={asset.metadata?.prompt || filename} className="h-full max-h-full w-full max-w-full object-contain" />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <a href={asset.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[.97]"><ExternalLink className="h-3.5 w-3.5" />Open original</a>
-                  <a href={asset.url} download className="inline-flex items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] transition-colors hover:bg-[var(--surface-soft)] active:scale-[.97]"><Download className="h-3.5 w-3.5" />Download</a>
+                  <a href={asset.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 whitespace-nowrap bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-[var(--accent-ink)] transition-colors duration-200 hover:bg-[var(--accent-hover)] active:scale-[.97]"><ExternalLink className="h-3.5 w-3.5" />Open original</a>
+                  <a href={asset.url} download className="inline-flex items-center gap-2 whitespace-nowrap border border-[var(--line-strong)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] transition-colors duration-200 hover:bg-[var(--surface-soft)] active:scale-[.97]"><Download className="h-3.5 w-3.5" />Download</a>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    className="inline-flex items-center gap-2 whitespace-nowrap border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3.5 py-2 text-xs font-semibold text-[var(--danger)] transition-colors duration-200 hover:bg-[var(--danger-line)]/50 active:scale-[.97]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete asset
+                  </button>
                 </div>
               </>
             )}
@@ -205,7 +242,7 @@ export default function AssetDetailPage() {
             className={`${mobileView === "details" ? "flex" : "hidden"} workspace-panel min-h-0 min-w-0 flex-col overflow-hidden p-4 md:flex`}
           >
             <div className="shrink-0">
-              <p className="font-mono text-[9px] font-semibold uppercase tracking-[.14em] text-[var(--accent)]">{isVideo ? "Video asset" : "Image asset"}</p>
+              <p className="font-mono text-[9px] font-semibold text-[var(--accent)]">{isVideo ? "Video asset" : "Image asset"}</p>
               <h1 className="mt-1 truncate text-xl font-semibold tracking-[-.035em] text-[var(--ink)]" title={filename}>{filename}</h1>
             </div>
 
@@ -221,7 +258,7 @@ export default function AssetDetailPage() {
                   aria-controls={`asset-panel-${tab.id}`}
                   onClick={() => setInspectorView(tab.id)}
                   onKeyDown={(event) => moveTab(event, inspectorTabs.map(({ id }) => id), inspectorView, setInspectorView, "asset-info-tab")}
-                  className={`relative pb-2.5 text-[11px] font-semibold transition-colors ${inspectorView === tab.id ? "text-[var(--ink)] after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}
+                  className={`relative pb-2.5 text-[11px] font-semibold transition-colors duration-200 ${inspectorView === tab.id ? "text-[var(--ink)] after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}
                 >
                   {tab.label}
                 </button>
@@ -233,13 +270,13 @@ export default function AssetDetailPage() {
                 <section id="asset-panel-prompt" role="tabpanel" className="flex h-full min-h-0 flex-col gap-4">
                   {asset.metadata ? (
                     <>
-                      <div className="min-h-0 border-l-2 border-[var(--accent)] pl-3">
+                      <div className="min-h-0">
                         <div className="flex items-center justify-between gap-3">
-                          <h2 className="text-[9px] font-semibold uppercase tracking-[.12em] text-[var(--ink-faint)]">Prompt</h2>
+                          <h2 className="text-[9px] font-semibold text-[var(--ink-faint)]">Prompt</h2>
                           <button
                             type="button"
                             onClick={copyPrompt}
-                            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[var(--line-strong)] px-2 text-[10px] font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] active:scale-[.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                            className="inline-flex h-7 shrink-0 items-center gap-1.5 border border-[var(--line-strong)] px-2 text-[10px] font-semibold text-[var(--ink-soft)] transition-colors duration-200 hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] active:scale-[.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
                             aria-label="Copy prompt to clipboard"
                           >
                             {promptCopyState === "copied" ? <Check className="h-3 w-3 text-[var(--accent)]" /> : <Copy className="h-3 w-3" />}
@@ -253,7 +290,7 @@ export default function AssetDetailPage() {
                       </div>
                       {asset.metadata.negative_prompt && (
                         <div className="min-h-0 border-l border-[var(--line)] pl-3">
-                          <h2 className="text-[9px] font-semibold uppercase tracking-[.12em] text-[var(--ink-faint)]">Excluded</h2>
+                          <h2 className="text-[9px] font-semibold text-[var(--ink-faint)]">Excluded</h2>
                           <p className="mt-2 overflow-hidden text-xs leading-5 text-[var(--ink-soft)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:6]" title={asset.metadata.negative_prompt}>{asset.metadata.negative_prompt}</p>
                         </div>
                       )}
@@ -313,6 +350,58 @@ export default function AssetDetailPage() {
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {confirmDeleteOpen && asset && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="detail-delete-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ground)]/80 p-4 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] text-[var(--danger)]">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 id="detail-delete-title" className="text-base font-bold text-[var(--ink)]">
+                  Delete asset permanently?
+                </h3>
+                <p className="mt-1 break-all font-mono text-xs text-[var(--ink-faint)]">
+                  {asset.key}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]">
+                  This media file and its metadata sidecar will be permanently removed from disk. This action cannot be undone.
+                </p>
+                {deleteError && (
+                  <p className="mt-2 text-xs font-semibold text-[var(--danger)]" role="alert">
+                    {deleteError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-[var(--line)] pt-4">
+              <button
+                type="button"
+                onClick={() => { setConfirmDeleteOpen(false); setDeleteError(null); }}
+                disabled={deleting}
+                className="workspace-action-secondary px-4 py-2 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--danger)]/90 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete asset"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>

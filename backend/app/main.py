@@ -26,6 +26,7 @@ from .schemas import (
     AssistantResponse,
     GenerateRequest,
     GenerationResult,
+    DeleteAssetResponse,
     GalleryItem,
     GalleryResponse,
     HealthResponse,
@@ -46,8 +47,11 @@ from .schemas import (
     LocalModelImportRequest,
     LocalModelListResponse,
     PublicModelListResponse,
+    CreateToolRequest,
+    DeleteToolResponse,
     ToolAspectRatio,
     ToolCatalogResponse,
+    ToolControl,
     ToolDetail,
     ToolExecutionResult,
     ToolMode,
@@ -348,6 +352,9 @@ async def publish_creator_model(model_id: str, req: ModelPublishRequest) -> Mode
 
 
 @app.get("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
+@app.head("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
+@app.get("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download")
+@app.head("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download")
 async def download_model_file(model_id: str, version_id: str, file_id: str) -> FileResponse:
     try:
         return FileResponse(model_storage.public_file_path(model_id, version_id, file_id))
@@ -356,6 +363,9 @@ async def download_model_file(model_id: str, version_id: str, file_id: str) -> F
 
 
 @app.get("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
+@app.head("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
+@app.get("/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download")
+@app.head("/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download")
 async def download_model_sample(model_id: str, version_id: str, sample_id: str) -> FileResponse:
     try:
         return FileResponse(model_storage.public_sample_path(model_id, version_id, sample_id))
@@ -610,6 +620,7 @@ async def create_tool(
     mode: ToolMode = Form(...),
     aspect_ratio: ToolAspectRatio = Form(...),
     thumbnail: UploadFile | None = File(None),
+    controls: str | None = Form(None),
 ) -> ToolDetail:
     if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
@@ -625,9 +636,47 @@ async def create_tool(
         thumbnail_data = await thumbnail.read(settings.UPLOAD_MAX_BYTES + 1)
         if len(thumbnail_data) > settings.UPLOAD_MAX_BYTES:
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Thumbnail image is too large")
+    custom_controls = None
+    if controls:
+        try:
+            parsed = json.loads(controls)
+            if not isinstance(parsed, list):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Controls must be a JSON array")
+            custom_controls = [ToolControl.model_validate(c) for c in parsed]
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid controls JSON: {exc}") from exc
     try:
         summary = get_ai_tool_service().create(
-            payload, name, mode, aspect_ratio, thumbnail_data, thumbnail_ext
+            payload,
+            name,
+            mode,
+            aspect_ratio,
+            thumbnail_data,
+            thumbnail_ext,
+            custom_controls=custom_controls,
+        )
+        return get_ai_tool_service().detail(summary.tool_id)
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.post("/api/tools", response_model=ToolDetail)
+async def create_tool_json(req: CreateToolRequest) -> ToolDetail:
+    """Create a tool with optional user-customized controls via JSON payload."""
+    raw_workflow = req.workflow_api
+    if isinstance(raw_workflow, dict):
+        payload = json.dumps(raw_workflow).encode("utf-8")
+    elif isinstance(raw_workflow, str):
+        payload = raw_workflow.encode("utf-8")
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid workflow_api format")
+    try:
+        summary = get_ai_tool_service().create(
+            payload,
+            req.name,
+            req.mode,
+            req.aspect_ratio,
+            custom_controls=req.controls,
         )
         return get_ai_tool_service().detail(summary.tool_id)
     except AIToolError as exc:
@@ -645,6 +694,17 @@ async def get_tool(tool_id: str) -> ToolDetail:
         return get_ai_tool_service().detail(tool_id)
     except AIToolNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.delete("/api/tools/{tool_id}", response_model=DeleteToolResponse)
+async def delete_tool_endpoint(tool_id: str) -> DeleteToolResponse:
+    try:
+        get_ai_tool_service().delete(tool_id)
+        return DeleteToolResponse(deleted=True, tool_id=tool_id)
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except AIToolError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -845,3 +905,19 @@ async def save_asset(key: str, saved: bool) -> GalleryItem:
 @app.get("/api/v1/images/{key:path}", response_model=GalleryItem)
 async def image_detail(key: str) -> GalleryItem:
     return await asset_detail(key)
+
+
+@app.delete("/api/v1/gallery/{key:path}", response_model=DeleteAssetResponse)
+async def delete_gallery_asset(key: str) -> DeleteAssetResponse:
+    try:
+        storage.delete_asset(key)
+        return DeleteAssetResponse(deleted=True, key=key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.delete("/api/v1/assets/{key:path}", response_model=DeleteAssetResponse)
+async def delete_asset_endpoint(key: str) -> DeleteAssetResponse:
+    return await delete_gallery_asset(key)

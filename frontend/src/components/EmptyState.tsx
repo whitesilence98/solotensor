@@ -38,35 +38,25 @@ export default function EmptyState({
   const s = STATES[kind];
   const Icon = s.icon;
   return (
-    <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 py-16">
-      <div className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-panel)] border border-[color-mix(in_srgb,var(--accent)_25%,transparent)] bg-[color-mix(in_srgb,var(--accent)_6%,transparent)]">
-        <Icon className="h-6 w-6 text-[var(--accent)]" />
+    <div className="workspace-empty workspace-bezel flex min-h-[420px] flex-col items-center justify-center p-1.5 text-center">
+      <div className="workspace-core flex h-full w-full flex-col items-center justify-center px-6 py-16">
+        <div className="workspace-icon-island h-16 w-16 border border-[var(--accent-ambient)] text-[var(--accent)] shadow-ambient-glow rounded-2xl bg-[var(--surface-soft)]">
+          <Icon className="h-7 w-7" strokeWidth={1.5} />
+        </div>
+        <div className="workspace-kicker mt-8">Your library is ready</div>
+        <h3 className="workspace-heading mt-3 text-xl font-semibold text-[var(--ink)]">{s.title}</h3>
+        <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ink-soft)]">{s.body}</p>
+        {kind === "image" && onClearSearch ? (
+          <button type="button" onClick={onClearSearch} className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
+            {s.hint}<ArrowRight className="h-4.5 w-4.5" strokeWidth={1.5} />
+          </button>
+        ) : (
+          <Link href="/" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
+            <Sparkles className="h-4.5 w-4.5" strokeWidth={1.5} />{s.hint}
+          </Link>
+        )}
+        {"tabHint" in s && <p className="mt-5 text-xs text-[var(--ink-faint)]">{s.tabHint}</p>}
       </div>
-      <h3 className="mt-5 text-lg font-semibold tracking-[-.03em] text-[var(--ink)]">
-        {s.title}
-      </h3>
-      <p className="mt-2 max-w-sm text-sm leading-relaxed text-[var(--ink-soft)]">{s.body}</p>
-      {kind === "image" && onClearSearch ? (
-        <button
-          type="button"
-          onClick={onClearSearch}
-          className="workspace-action-primary mt-6 gap-1.5 px-4 py-2.5 text-sm"
-        >
-          {s.hint}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </button>
-      ) : (
-        <Link
-          href="/"
-          className="workspace-action-primary mt-6 gap-1.5 px-4 py-2.5 text-sm"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          {s.hint}
-        </Link>
-      )}
-      {"tabHint" in s && (
-        <p className="mt-3 text-xs text-[var(--ink-faint)]">{s.tabHint}</p>
-      )}
     </div>
   );
 }

@@ -20,68 +20,115 @@ const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "3:2": "Wide · 1216 × 832",
 };
 
-const fieldLabel = "text-[11px] font-bold uppercase tracking-[.14em] text-[var(--ink-soft)]";
+const fieldLabel = "text-[11px] font-bold text-[var(--ink-soft)]";
 const fieldHelp = "mt-2 block text-xs leading-5 text-[var(--ink-faint)]";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState("Loading settings…");
-  const [previousSettings, setPreviousSettings] = useState<StudioSettings | null>(null);
+  const [previousSettings, setPreviousSettings] =
+    useState<StudioSettings | null>(null);
 
   useEffect(() => {
     setSettings(loadSettings());
     setStatus("Saved locally");
   }, []);
 
-  const updateSetting = <Key extends keyof StudioSettings>(key: Key, value: StudioSettings[Key]) => {
+  const updateSetting = <Key extends keyof StudioSettings>(
+    key: Key,
+    value: StudioSettings[Key],
+  ) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
-    setStatus(saveSettings(next) ? "Saved locally" : "Could not save settings locally");
+    setStatus(
+      saveSettings(next) ? "Saved locally" : "Could not save settings locally",
+    );
   };
 
   const handleReset = () => {
     setPreviousSettings(settings);
     setSettings(DEFAULT_SETTINGS);
-    setStatus(resetSettings() ? "Settings reset. Undo is available." : "Could not save the reset locally");
+    setStatus(
+      resetSettings()
+        ? "Settings reset. Undo is available."
+        : "Could not save the reset locally",
+    );
   };
 
   const undoReset = () => {
     if (!previousSettings) return;
     setSettings(previousSettings);
-    setStatus(saveSettings(previousSettings) ? "Previous settings restored" : "Could not restore settings locally");
+    setStatus(
+      saveSettings(previousSettings)
+        ? "Previous settings restored"
+        : "Could not restore settings locally",
+    );
     setPreviousSettings(null);
   };
 
   return (
-    <main id="main-content" className="workspace-scroll h-full min-h-0 px-4 py-6 pb-28 md:px-8 md:py-10 md:pb-10">
+    <main
+      id="main-content"
+      className="workspace-scroll h-full min-h-0 bg-[var(--ground)] px-4 py-6 pb-28 md:px-8 md:py-10 md:pb-10"
+    >
       <div className="mx-auto max-w-4xl">
         <header className="border-b border-[var(--line)] pb-7 md:pb-9">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
-                <Settings2 className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-ambient)] bg-[var(--surface-soft)] text-[var(--accent)] shadow-ambient-glow">
+                <Settings2
+                  className="h-6 w-6"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
               </div>
-              <p className="workspace-kicker">Studio preferences</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-[-.045em] text-[var(--ink)] md:text-5xl">Settings</h1>
-              <p className="mt-3 max-w-[58ch] text-sm leading-6 text-[var(--ink-soft)]">
-                Set the defaults SoloTensor uses when you start a fresh generation session. Changes stay in this browser.
+              <h1 className="workspace-title mt-2">
+                Settings
+              </h1>
+              <p className="workspace-copy mt-3">
+                Set the defaults SoloTensor uses when you start a fresh
+                generation session. Changes stay in this browser.
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--ink-soft)]" role="status" aria-live="polite" aria-atomic="true">
-              <Check className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={2} aria-hidden="true" />
+            <div
+              className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-xs text-[var(--ink-soft)]"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <Check
+                className="h-3.5 w-3.5 text-[var(--accent)]"
+                strokeWidth={2}
+                aria-hidden="true"
+              />
               <span>{status}</span>
             </div>
           </div>
         </header>
 
-        <section className="mt-6 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)] md:mt-8" aria-labelledby="generation-heading">
+        <section
+          className="workspace-bezel mt-6 overflow-hidden p-1 md:mt-8"
+          aria-labelledby="generation-heading"
+        >
           <div className="grid gap-4 border-b border-[var(--line)] px-5 py-5 md:grid-cols-[auto_1fr] md:gap-5 md:px-7 md:py-6">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
-              <SlidersHorizontal className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-soft)] text-[var(--accent)]">
+              <SlidersHorizontal
+                className="h-4 w-4"
+                strokeWidth={1.8}
+                aria-hidden="true"
+              />
             </div>
             <div>
-              <h2 id="generation-heading" className="text-lg font-semibold tracking-[-.02em] text-[var(--ink)]">Generation defaults</h2>
-              <p className="mt-1 max-w-[60ch] text-sm leading-6 text-[var(--ink-soft)]">These values seed a new generator form. Existing saved inputs remain unchanged.</p>
+              <h2
+                id="generation-heading"
+                className="text-lg font-semibold tracking-[-.02em] text-[var(--ink)]"
+              >
+                Generation defaults
+              </h2>
+              <p className="mt-1 max-w-[60ch] text-sm leading-6 text-[var(--ink-soft)]">
+                These values seed a new generator form. Existing saved inputs
+                remain unchanged.
+              </p>
             </div>
           </div>
 
@@ -92,13 +139,24 @@ export default function SettingsPage() {
                 <select
                   id="default-format"
                   value={settings.defaultFormat}
-                  onChange={(event) => updateSetting("defaultFormat", event.target.value as StudioSettings["defaultFormat"])}
+                  onChange={(event) =>
+                    updateSetting(
+                      "defaultFormat",
+                      event.target.value as StudioSettings["defaultFormat"],
+                    )
+                  }
                   aria-describedby="default-format-help"
                   className="workspace-field mt-2 w-full px-3 py-3 text-sm outline-none"
                 >
-                  {SETTING_FORMATS.map((format) => <option key={format} value={format}>{formatLabels[format]}</option>)}
+                  {SETTING_FORMATS.map((format) => (
+                    <option key={format} value={format}>
+                      {formatLabels[format]}
+                    </option>
+                  ))}
                 </select>
-                <span id="default-format-help" className={fieldHelp}>Custom dimensions remain available from the generator.</span>
+                <span id="default-format-help" className={fieldHelp}>
+                  Custom dimensions remain available from the generator.
+                </span>
               </label>
 
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
@@ -111,11 +169,21 @@ export default function SettingsPage() {
                     max={100}
                     step={1}
                     value={settings.defaultSteps}
-                    onChange={(event) => updateSetting("defaultSteps", Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
+                    onChange={(event) =>
+                      updateSetting(
+                        "defaultSteps",
+                        Math.min(
+                          100,
+                          Math.max(1, Number(event.target.value) || 1),
+                        ),
+                      )
+                    }
                     aria-describedby="default-steps-help"
                     className="workspace-field mt-2 w-full px-3 py-3 text-sm outline-none"
                   />
-                  <span id="default-steps-help" className={fieldHelp}>Higher values can add detail and render time.</span>
+                  <span id="default-steps-help" className={fieldHelp}>
+                    Higher values can add detail and render time.
+                  </span>
                 </label>
 
                 <label className="block" htmlFor="default-image-count">
@@ -127,25 +195,49 @@ export default function SettingsPage() {
                     max={4}
                     step={1}
                     value={settings.defaultImageCount}
-                    onChange={(event) => updateSetting("defaultImageCount", Math.min(4, Math.max(1, Number(event.target.value) || 1)))}
+                    onChange={(event) =>
+                      updateSetting(
+                        "defaultImageCount",
+                        Math.min(
+                          4,
+                          Math.max(1, Number(event.target.value) || 1),
+                        ),
+                      )
+                    }
                     aria-describedby="default-image-count-help"
                     className="workspace-field mt-2 w-full px-3 py-3 text-sm outline-none"
                   />
-                  <span id="default-image-count-help" className={fieldHelp}>The local workflow supports up to four outputs.</span>
+                  <span id="default-image-count-help" className={fieldHelp}>
+                    The local workflow supports up to four outputs.
+                  </span>
                 </label>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mt-4 flex flex-col gap-4 rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface-sunken)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6" aria-label="Local settings storage">
-          <p className="max-w-[52ch] text-xs leading-5 text-[var(--ink-faint)]">Settings are stored locally on this device. They are not synced to an account or server.</p>
+        <section
+          className="workspace-bezel mt-4 flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6"
+          aria-label="Local settings storage"
+        >
+          <p className="max-w-[52ch] text-xs leading-5 text-[var(--ink-faint)]">
+            Settings are stored locally on this device. They are not synced to
+            an account or server.
+          </p>
           <div className="flex shrink-0 items-center gap-2">
-            {previousSettings && <button type="button" onClick={undoReset} className="workspace-action-quiet px-2 py-2 text-xs">Undo reset</button>}
+            {previousSettings && (
+              <button
+                type="button"
+                onClick={undoReset}
+                className="workspace-action-quiet px-2 py-2 text-xs"
+              >
+                Undo reset
+              </button>
+            )}
             <button
-            type="button"
-            onClick={handleReset}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3 py-2.5 text-xs font-semibold text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--ink)] active:scale-[.98]"
+              type="button"
+              onClick={handleReset}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3 py-2.5 text-xs font-semibold text-[var(--ink-soft)] transition duration-200 hover:border-[var(--accent)] hover:text-[var(--ink)] active:scale-[.98]"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
               Reset settings
