@@ -114,7 +114,7 @@ export default function AssistPage() {
                   disabled={pending}
                   onClick={() => setPersona(id)}
                   aria-pressed={selected}
-                  className={`flex items-start gap-3 workspace-core rounded-[var(--radius-panel)] border p-4 text-left transition-[transform,border-color,background-color] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-wait disabled:opacity-70 ${selected ? "border-[var(--accent)]/50 bg-[var(--accent)]/5" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--line-strong)]"}`}
+                  className={`flex items-start gap-3 workspace-core rounded-[var(--radius-panel)] border p-4 text-left transition-[transform,border-color,background-color] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-wait disabled:opacity-70 ${selected ? "border-[var(--accent)]/50 bg-[var(--accent)]/5" : "border-[var(--line)] bg-[var(--surface-raised)] hover:border-[var(--line-strong)]"}`}
                 >
                   <span
                     className={`grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius-control)] ${selected ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"}`}

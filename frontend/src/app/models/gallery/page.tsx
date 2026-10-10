@@ -83,107 +83,60 @@ function TensorModelCard({ item }: { item: PublicModelSummary }) {
   return (
     <Link
       href={`/models/gallery/${item.model_id}`}
-      className="workspace-bezel group relative flex flex-col overflow-hidden p-0 transition-[transform,border-color,box-shadow] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] hover:-translate-y-1 hover:border-[var(--line-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="group relative flex aspect-[3/4] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out"
     >
-      {/* 1. Visual Showcase (Tensor.art 3:4 Aspect Ratio) */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden bg-[var(--surface-soft)]">
-        {coverUrl && !imgError ? (
-          <img
-            src={coverUrl}
-            alt={item.title}
-            loading="lazy"
-            onError={() => setImgError(true)}
-            className="h-full w-full object-cover transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] group-hover:scale-105"
-          />
-        ) : (
-          <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
-            <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)]">
-                {item.model_type === "LoRA" ? (
-                  <Layers className="h-6 w-6 opacity-80" />
-                ) : (
-                  <Box className="h-6 w-6 opacity-80" />
-                )}
-              </div>
-              <span className="line-clamp-2 text-[11px] font-semibold text-[var(--ink-faint)]">
-                {item.title}
-              </span>
+      {/* Full-Bleed Media */}
+      {coverUrl && !imgError ? (
+        <img
+          src={coverUrl}
+          alt={item.title}
+          loading="lazy"
+          onError={() => setImgError(true)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
+          <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+              {item.model_type === "LoRA" ? (
+                <Layers className="h-6 w-6 opacity-80" />
+              ) : (
+                <Box className="h-6 w-6 opacity-80" />
+              )}
             </div>
+            <span className="line-clamp-2 text-xs font-semibold text-[var(--ink-faint)]">
+              {item.title}
+            </span>
           </div>
-        )}
-
-        {/* Ambient Bottom Gradient Scrim */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-[var(--media-scrim)] opacity-80" />
-
-        {/* Floating Top Badges */}
-        <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
-          {/* Model Type Pill */}
-          <span
-            className={`inline-flex items-center rounded-[var(--radius-control)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${typeBadgeStyle}`}
-          >
-            {item.model_type}
-          </span>
-
-          {/* Base Model Pill */}
-          <span className="inline-flex items-center rounded-[var(--radius-control)] bg-[var(--surface)]/80 px-2 py-0.5 text-[10px] font-bold text-[var(--ink)] border border-[var(--line)] ">
-            {shortBase}
-          </span>
         </div>
+      )}
 
-        {/* Hover Quick Action Overlay (Tensor.art Hallmark: Prominent Use/Run Pill) */}
-        <div className="absolute inset-x-3 bottom-3 flex translate-y-2 items-center justify-between opacity-0 transition duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-          <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Use Model</span>
-          </span>
-          <span className="rounded-[var(--radius-control)] bg-[var(--surface)]/90 px-2 py-1 font-mono text-[10px] font-semibold text-[var(--ink)] border border-[var(--line)]">
-            {item.version_count}{" "}
-            {item.version_count === 1 ? "version" : "versions"}
-          </span>
-        </div>
+      {/* Atmospheric Bottom Gradient Scrim */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+
+      {/* Floating Top Badges */}
+      <div className="absolute inset-x-3.5 top-3.5 z-10 flex items-center justify-between pointer-events-none">
+        <span
+          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border ${typeBadgeStyle}`}
+        >
+          {item.model_type}
+        </span>
+        <span className="inline-flex items-center rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-bold text-white/90 backdrop-blur-md">
+          {shortBase}
+        </span>
       </div>
 
-      {/* 2. Metadata / Details (Tensor.art Lower Section) */}
-      <div className="flex flex-1 flex-col justify-between p-3.5">
-        <div>
-          {/* Title */}
-          <h3
-            className="truncate text-xs sm:text-sm font-bold text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors"
-            title={item.title}
-          >
-            {item.title}
-          </h3>
-
-          {/* Category & Tags Row */}
-          <div className="mt-2 flex flex-wrap items-center gap-1">
-            <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink-soft)]">
-              {item.category}
-            </span>
-            {item.tags.slice(0, 2).map((tag) => (
-              <span
-                key={tag}
-                className="truncate max-w-[80px] rounded bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent)]"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer Metrics Row */}
-        <div className="mt-3.5 flex items-center justify-between border-t border-[var(--line)] pt-2 text-[10px] text-[var(--ink-faint)]">
-          <span
-            className="truncate max-w-[110px] font-medium"
-            title={item.base_model}
-          >
-            {item.base_model}
-          </span>
-          <div className="flex items-center gap-1.5 shrink-0 font-mono">
-            <span>{item.file_count} f</span>
-            <span>·</span>
-            <span>{item.sample_count} img</span>
-          </div>
-        </div>
+      {/* Bottom Typography Overlay */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-5">
+        <h3
+          className="truncate text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-sm transition-colors group-hover:text-[var(--accent)]"
+          title={item.title}
+        >
+          {item.title}
+        </h3>
+        <p className="mt-0.5 truncate text-xs sm:text-sm font-medium text-white/75 drop-shadow-sm">
+          {item.category} • {shortBase} {item.sample_count > 0 ? `• ${item.sample_count} samples` : ""}
+        </p>
       </div>
     </Link>
   );
@@ -449,14 +402,8 @@ export default function ModelGalleryPage() {
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
               <div
                 key={i}
-                className="flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)]"
-              >
-                <div className="shimmer aspect-[3/4] w-full" />
-                <div className="space-y-2 p-3">
-                  <div className="shimmer h-3.5 w-3/4 rounded" />
-                  <div className="shimmer h-3 w-1/2 rounded" />
-                </div>
-              </div>
+                className="shimmer aspect-[3/4] w-full rounded-[20px] border border-[var(--line)] bg-[var(--surface)]"
+              />
             ))}
           </div>
         )}

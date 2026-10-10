@@ -5,17 +5,13 @@ import Link from "next/link";
 import {
  AlertCircle,
  Check,
- ChevronDown,
- ChevronRight,
  Copy,
  Download,
  FolderOpen,
  Grid2X2,
  List,
- Loader2,
  PanelLeftOpen,
  RefreshCw,
- Zap,
 } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { resolveMediaUrl, type GalleryItem } from "@/lib/api";
@@ -24,12 +20,12 @@ export type MediaFilter = "all" | "video" | "image" | "audio";
 export type ViewMode = "grid" | "list";
 
 interface Props {
- prompt: string;
- onPromptChange: (v: string) => void;
- imageCount: string;
- onImageCountChange: (v: string) => void;
- canGenerate: boolean;
- onGenerate: () => void;
+ prompt?: string;
+ onPromptChange?: (v: string) => void;
+ imageCount?: string;
+ onImageCountChange?: (v: string) => void;
+ canGenerate?: boolean;
+ onGenerate?: () => void;
  busy: boolean;
  progress: number;
  progressLabel: string;
@@ -132,10 +128,6 @@ function ComparisonSlider({ before, after }: { before: string; after: string }) 
 
 export default function CanvasPreview(props: Props) {
  const {
-  prompt,
-  onPromptChange,
-  imageCount,
-  onImageCountChange,
   canGenerate,
   onGenerate,
   busy,
@@ -153,7 +145,6 @@ export default function CanvasPreview(props: Props) {
 
  const [activeTab, setActiveTab] = useState<MediaFilter>("all");
  const [viewMode, setViewMode] = useState<ViewMode>("grid");
- const [imageCountOpen, setImageCountOpen] = useState(false);
  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -188,186 +179,112 @@ export default function CanvasPreview(props: Props) {
    id="main-content"
    className="workspace-core workspace-scroll relative flex h-auto min-h-[36rem] min-w-0 flex-1 flex-col overflow-y-auto rounded-[1.35rem] border border-white/10 bg-[color-mix(in_srgb,var(--ground)_88%,var(--surface))] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.18)] lg:h-full"
   >
-   {/* 1. Top Bar: Prompt Input + Image Count Dropdown + Generate Button */}
-   <header className="workspace-command top-0 z-30 m-2 flex items-center gap-2 border border-[var(--line-strong)] bg-[rgba(15,18,15,.82)] px-3 py-2 shadow-[0_14px_42px_rgba(3,8,4,.32)] backdrop-blur-xl sm:gap-3 sm:px-4">
-    {/* Left: Expand button if sidebar is collapsed */}
-    {isSidebarCollapsed && (
+   {/* Viewport Control Strip */}
+   <header className="workspace-command top-0 z-30 m-2 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-[var(--line-strong)] bg-[rgba(15,18,15,.85)] px-3.5 py-2.5 shadow-[0_14px_42px_rgba(3,8,4,.32)] backdrop-blur-xl">
+    {/* Left Group */}
+    <div className="flex items-center gap-2 min-w-0">
      <button
       type="button"
       onClick={onToggleSidebarCollapse}
-      aria-label="Expand recipe panel"
-      title="Expand recipe panel"
-      className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
+      aria-label={isSidebarCollapsed ? "Expand inspector panel" : "Collapse inspector panel"}
+      title={isSidebarCollapsed ? "Expand inspector panel" : "Collapse inspector panel"}
+      className="flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--accent)] hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] hover:bg-[var(--surface-soft)] transition shrink-0"
      >
-      <PanelLeftOpen className="h-4 w-4 text-[var(--accent)]" />
-     </button>
-    )}
-
-    {/* Prompt Input Box */}
-    <div className="relative flex-1">
-     <input
-      type="text"
-      value={prompt}
-      onChange={(e) => onPromptChange(e.target.value)}
-      onKeyDown={(e) => {
-       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
-        onGenerate();
-       }
-      }}
-      placeholder="Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85…"
-      disabled={busy}
-      className="workspace-field w-full rounded-xl border border-white/10 bg-black/20 px-3.5 py-2 text-xs text-[var(--ink)] shadow-inner shadow-black/20 placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--accent)_18%,transparent)] disabled:opacity-50"
-     />
-    </div>
-
-    {/* Image Count Dropdown Button */}
-    <div className="relative">
-     <button
-      type="button"
-      onClick={() => setImageCountOpen((v) => !v)}
-      disabled={busy}
-      className="flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] focus-visible:bg-[var(--surface-soft)] transition"
-     >
-      <span>{imageCount} {Number(imageCount) === 1 ? "image" : "images"}</span>
-      <ChevronDown className="h-3.5 w-3.5 text-[var(--ink-faint)]" />
+      <PanelLeftOpen
+       className={`h-4 w-4 transition-transform duration-200 ${
+        isSidebarCollapsed ? "" : "rotate-180"
+       }`}
+      />
      </button>
 
-     {imageCountOpen && (
-      <div className="absolute right-0 top-full mt-1.5 z-40 w-32 rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] py-1 ">
-       {["1", "2", "3", "4"].map((n) => (
-        <button
-         key={n}
-         type="button"
-         onClick={() => {
-          onImageCountChange(n);
-          setImageCountOpen(false);
-         }}
-         className={`flex w-full items-center justify-between px-3 py-1.5 text-xs text-left transition ${
-          imageCount === n
-           ? "bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)] font-semibold"
-           : "text-[var(--ink)] hover:bg-[var(--surface-soft)] focus-visible:bg-[var(--surface-soft)]"
-         }`}
-        >
-         <span>{n} {n === "1" ? "image" : "images"}</span>
-         {imageCount === n && <Check className="h-3.5 w-3.5" />}
-        </button>
-       ))}
-      </div>
-     )}
-    </div>
+     <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[var(--surface-raised)] px-2.5 py-1 text-[11px] font-mono text-[var(--ink-soft)] shrink-0">
+      <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+      <span>{outputWidth} × {outputHeight}</span>
+     </div>
 
-    {/* Generate action */}
-    <button
-     type="button"
-     onClick={onGenerate}
-     disabled={!canGenerate}
-     className="workspace-action-primary flex h-10 min-w-28 items-center gap-2 px-5 text-xs"
-    >
-     {busy ? (
-      <>
-       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-       <span>Rendering {progress}%</span>
-      </>
-     ) : (
-      <>
-       <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-       <span>Generate</span>
-      </>
-     )}
-    </button>
-   </header>
-
-   {/* Output toolbar */}
-   <div className="relative z-20 mx-2 flex flex-wrap items-center justify-between gap-2 rounded-b-2xl border border-white/5 bg-[var(--surface)] px-3 py-2 text-xs sm:px-4">
-    {/* Media filters and view switcher */}
-    <div className="flex items-center gap-1.5">
-     {/* Filter Pills */}
+     {/* Media Filter Pills */}
      <div className="flex items-center rounded-xl bg-[var(--surface-raised)] p-0.5 border border-[var(--line)]">
-      {(["all", "video", "image", "audio"] as MediaFilter[]).map((tab) => {
+      {(["all", "image", "video"] as MediaFilter[]).map((tab) => {
        const active = activeTab === tab;
+       const label = tab === "all" ? "All" : tab === "image" ? "Visuals" : "Motion";
        return (
         <button
          key={tab}
          type="button"
          onClick={() => setActiveTab(tab)}
-         className={`rounded-xl px-3 py-1 text-xs font-semibold capitalize transition ${
+         className={`rounded-lg px-2.5 py-1 text-xs font-semibold capitalize transition ${
           active
-           ? "bg-[var(--line-strong)] text-[var(--ink)] "
+           ? "bg-[var(--accent)] text-[var(--accent-ink)]"
            : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
          }`}
         >
-         {tab}
+         {label}
         </button>
        );
       })}
      </div>
+    </div>
 
-     {/* View Mode Toggle: List vs Grid */}
-     <div className="ml-1 flex items-center rounded-xl bg-[var(--surface-raised)] p-0.5 border border-[var(--line)]">
-      <button
-       type="button"
-       onClick={() => setViewMode("list")}
-       aria-label="List view"
-       aria-pressed={viewMode === "list"}
-       title="List view"
-       className={`rounded-xl p-1.5 transition ${
-        viewMode === "list" ? "bg-[var(--line-strong)] text-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
-       }`}
-      >
-       <List className="h-3.5 w-3.5" />
-      </button>
+    {/* Right Group */}
+    <div className="flex items-center gap-2 shrink-0">
+     <span className="hidden md:inline-block font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
+      {filteredGallery.length} {filteredGallery.length === 1 ? "Output" : "Outputs"}
+     </span>
+
+     {/* View Mode Toggle: Grid vs List */}
+     <div className="flex items-center rounded-xl bg-[var(--surface-raised)] p-0.5 border border-[var(--line)]">
       <button
        type="button"
        onClick={() => setViewMode("grid")}
        aria-label="Grid view"
        aria-pressed={viewMode === "grid"}
        title="Grid view"
-       className={`rounded-xl p-1.5 transition ${
-        viewMode === "grid" ? "bg-[var(--line-strong)] text-[var(--accent)]" : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
+       className={`rounded-lg p-1.5 transition ${
+        viewMode === "grid"
+         ? "bg-[var(--line-strong)] text-[var(--accent)]"
+         : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
        }`}
       >
        <Grid2X2 className="h-3.5 w-3.5" />
       </button>
+      <button
+       type="button"
+       onClick={() => setViewMode("list")}
+       aria-label="List view"
+       aria-pressed={viewMode === "list"}
+       title="List view"
+       className={`rounded-lg p-1.5 transition ${
+        viewMode === "list"
+         ? "bg-[var(--line-strong)] text-[var(--accent)]"
+         : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
+       }`}
+      >
+       <List className="h-3.5 w-3.5" />
+      </button>
      </div>
-
-    </div>
-
-    {/* Workspace actions */}
-    <div className="flex items-center gap-1.5">
-     {/* Collapse Left Panel Button */}
-     <button
-      type="button"
-      onClick={onToggleSidebarCollapse}
-      className="flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-medium text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
-     >
-      <ChevronRight
-       className={`h-3.5 w-3.5 transition-transform ${isSidebarCollapsed ? "rotate-180" : ""}`}
-      />
-      <span>{isSidebarCollapsed ? "Expand" : "Collapse"}</span>
-     </button>
-
 
      {/* Reload Button */}
      <button
       type="button"
       onClick={onReload}
+      aria-label="Reload outputs"
       title="Reload outputs"
-      className="flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-medium text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
+      className="flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] focus-visible:border-[var(--line-strong)] focus-visible:text-[var(--ink)] transition"
      >
       <RefreshCw className="h-3.5 w-3.5" />
-      <span>Reload</span>
      </button>
 
      {/* Assets Button (Links to /assets) */}
      <Link
       href="/assets"
-      className="flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-medium text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--accent)] focus-visible:text-[var(--accent)] transition"
+      title="View all assets"
+      className="flex h-8 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 text-xs font-medium text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--accent)] focus-visible:border-[var(--line-strong)] focus-visible:text-[var(--accent)] transition"
      >
       <FolderOpen className="h-3.5 w-3.5" />
-      <span>Assets</span>
+      <span className="hidden sm:inline">Assets</span>
      </Link>
     </div>
-   </div>
+   </header>
 
    {/* 3. Main Content Area */}
    <div className="flex-1 px-3 pb-5 pt-4 sm:p-6 lg:p-8">
@@ -520,7 +437,7 @@ export default function CanvasPreview(props: Props) {
          }}
          role="button"
          tabIndex={0}
-         className="media-frame group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[var(--overlay)] shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:-translate-y-0.5 focus-visible:-translate-y-0.5 hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] "
+         className="media-frame group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[var(--overlay)] shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] focus-visible:-translate-y-0.5 hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] "
          style={{ aspectRatio: "1 / 1" }}
         >
          {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -528,40 +445,10 @@ export default function CanvasPreview(props: Props) {
           src={resolveMediaUrl(item.url) || item.url}
           alt={promptText}
           loading="lazy"
-          className="h-full w-full object-cover transition duration-300 group-hover:scale-105 group-focus-within:scale-105"
+          className="h-full w-full object-cover"
          />
 
-         {/* Hover Overlay */}
-         <div className="absolute inset-0 flex flex-col justify-between bg-[var(--surface-soft)]  p-3 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-          <div className="flex justify-end gap-1.5">
-           <button
-            type="button"
-            onClick={(e) => {
-             e.stopPropagation();
-             copyPromptText(promptText, item.key);
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--media-control)] text-[var(--media-control-ink)]  hover:bg-[var(--accent)] focus-visible:bg-[var(--accent)] hover:text-[var(--accent-ink)] focus-visible:text-[var(--accent-ink)] transition"
-            aria-label="Copy prompt"
-            title="Copy prompt"
-           >
-            {copiedKey === item.key ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
-           </button>
-           <a
-            href={resolveMediaUrl(item.url) || item.url}
-            download
-            onClick={(e) => e.stopPropagation()}
-            className="flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--media-control)] text-[var(--media-control-ink)]  hover:bg-[var(--accent)] focus-visible:bg-[var(--accent)] hover:text-[var(--accent-ink)] focus-visible:text-[var(--accent-ink)] transition"
-            aria-label="Download output"
-            title="Download"
-           >
-            <Download className="h-3.5 w-3.5" />
-           </a>
-          </div>
 
-          <p className="line-clamp-2 text-[11px] leading-snug text-[var(--ink)]">
-           {promptText}
-          </p>
-         </div>
         </div>
        );
       })}

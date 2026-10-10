@@ -14,6 +14,7 @@ import {
  HelpCircle,
  Info,
  Layers,
+ Loader2,
  Lock,
  Minus,
  Plus,
@@ -147,6 +148,12 @@ interface Props {
  format: FormatKey;
  onFormatChange: (v: FormatKey) => void;
  busy: boolean;
+ canGenerate?: boolean;
+ onGenerate?: () => void;
+ progress?: number;
+ progressLabel?: string;
+ imageCount?: string;
+ onImageCountChange?: (v: string) => void;
  modelsLoading?: boolean;
  modelsError?: string | null;
 }
@@ -179,6 +186,12 @@ export default function ControlPanel(props: Props) {
   format,
   onFormatChange,
   busy,
+  canGenerate = false,
+  onGenerate,
+  progress = 0,
+  progressLabel,
+  imageCount = "1",
+  onImageCountChange,
   modelsLoading,
   modelsError,
  } = props;
@@ -187,6 +200,7 @@ export default function ControlPanel(props: Props) {
  const [modelPickerOpen, setModelPickerOpen] = useState(false);
  const [loraPickerOpen, setLoraPickerOpen] = useState(false);
  const [embeddingPickerOpen, setEmbeddingPickerOpen] = useState(false);
+ const [imageCountOpen, setImageCountOpen] = useState(false);
 
  // Model Picker Filter States
  const [modelSearchQuery, setModelSearchQuery] = useState("");
@@ -432,9 +446,9 @@ export default function ControlPanel(props: Props) {
  };
 
  return (
-  <aside className="workspace-core workspace-scroll h-full min-h-0 w-full shrink-0 rounded-[1.35rem] border border-white/10 bg-[var(--surface)] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.16)] lg:h-full lg:w-[24.5rem]">
+  <aside className="workspace-core relative flex flex-col h-full min-h-0 w-full shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[var(--surface)] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.16)] lg:h-full lg:w-[24.5rem]">
    {/* Top Mode Tabs: Text2Img, Img2Img, Edit, Video, Prime */}
-   <div className="flex items-center justify-between border-b border-[var(--line)] px-3 pt-2">
+   <div className="flex items-center justify-between border-b border-[var(--line)] px-3 pt-2 shrink-0">
     <div className="flex items-center gap-1 overflow-x-auto workspace-scroll-x">
      {MODES.map((mode) => {
       const active = activeMode === mode.id;
@@ -467,7 +481,7 @@ export default function ControlPanel(props: Props) {
     </div>
    </div>
 
-   <div className="p-4 space-y-4">
+   <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
     {/* Section Title: Models */}
     <div className="flex items-center justify-between">
      <h2 className="text-[14px] font-bold text-[var(--ink)] tracking-tight">Models</h2>
@@ -491,7 +505,10 @@ export default function ControlPanel(props: Props) {
         Basic Model
        </span>
        {baseModelTag && (
-        <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+        <span
+         className="shrink-0 max-w-[120px] truncate rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]"
+         title={baseModelTag}
+        >
          {baseModelTag}
         </span>
        )}
@@ -499,7 +516,7 @@ export default function ControlPanel(props: Props) {
       <button
        type="button"
        onClick={() => setModelPickerOpen(true)}
-       className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] focus-visible:text-[var(--accent-hover)] transition"
+       className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] focus-visible:text-[var(--accent-hover)] transition shrink-0"
        title="Replace Basic Model"
       >
        <RefreshCw className="h-3 w-3" />
@@ -507,21 +524,21 @@ export default function ControlPanel(props: Props) {
       </button>
      </div>
 
-     <div className="flex items-stretch gap-1.5">
+     <div className="flex items-stretch gap-1.5 min-w-0">
       <button
        type="button"
        aria-label="Choose basic model"
        onClick={() => setModelPickerOpen(true)}
-       className="workspace-command  group flex flex-1 items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)]"
+       className="workspace-command group flex flex-1 items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] min-w-0"
       >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 w-full min-w-0">
        {/* Model Thumbnail */}
        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)]">
         {currentModelCover ? (
          <img
           src={currentModelCover}
           alt={selectedModel?.title ?? "Model preview"}
-          className="h-full w-full object-cover transition group-hover:scale-105 group-focus-within:scale-105"
+          className="h-full w-full object-cover"
           onError={(e) => {
            (e.currentTarget as HTMLElement).style.display = "none";
           }}
@@ -541,23 +558,29 @@ export default function ControlPanel(props: Props) {
 
        {/* Title, Category & Specs */}
        <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-         <span className="truncate text-xs font-bold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
+        <div className="flex items-center gap-1.5 min-w-0">
+         <span
+          className="truncate min-w-0 block text-xs font-bold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition"
+          title={selectedModel?.title ?? "Select Basic Model"}
+         >
           {selectedModel?.title ?? "Select Basic Model"}
          </span>
         </div>
-        <div className="mt-1 flex items-center gap-1.5">
+        <div className="mt-1 flex items-center gap-1.5 min-w-0">
          {selectedModel ? (
           <>
-           <span className="inline-flex items-center rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--ink-faint)]">
+           <span className="shrink-0 inline-flex items-center rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--ink-faint)]">
             {selectedModel.model_type}
            </span>
-           <p className="truncate font-mono text-[10px] text-[var(--ink-faint)]">
+           <p
+            className="truncate min-w-0 font-mono text-[10px] text-[var(--ink-faint)]"
+            title={selectedModel.filename}
+           >
             {selectedModel.filename}
            </p>
           </>
          ) : (
-          <p className="truncate text-[10px] text-[var(--ink-faint)]">
+          <p className="truncate min-w-0 text-[10px] text-[var(--ink-faint)]">
            Click to choose a model from gallery
           </p>
          )}
@@ -565,7 +588,7 @@ export default function ControlPanel(props: Props) {
        </div>
 
        {/* Action Chevron */}
-       <div className="flex items-center">
+       <div className="flex items-center shrink-0">
         <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--surface-raised)] text-[var(--ink-faint)] group-hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-focus-within:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
          <ChevronRight className="h-4 w-4" />
         </span>
@@ -578,7 +601,7 @@ export default function ControlPanel(props: Props) {
         aria-label="Model details"
         title="Model Details"
         onClick={() => setInfoTooltip(`${selectedModel.title} • ${selectedModel.model_type} • File: ${selectedModel.filename}`)}
-        className="rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition"
+        className="rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
        >
         <Info className="h-3.5 w-3.5" />
        </button>
@@ -643,14 +666,22 @@ export default function ControlPanel(props: Props) {
 
            <div className="min-w-0 flex-1">
             {/* Title Row */}
-            <div className="flex items-center justify-between gap-1">
-             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="truncate text-xs font-bold text-[var(--ink)]">
+            <div className="flex items-center justify-between gap-1 min-w-0">
+             <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
+              <span
+               className="truncate min-w-0 block text-xs font-bold text-[var(--ink)]"
+               title={lora.title}
+              >
                {lora.title}
               </span>
-              <span className="shrink-0 rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.2 text-[9px] font-semibold text-[var(--ink-faint)]">
-               {lora.baseModel}
-              </span>
+              {lora.baseModel && (
+               <span
+                className="shrink-0 max-w-[100px] truncate rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--ink-faint)]"
+                title={lora.baseModel}
+               >
+                {lora.baseModel}
+               </span>
+              )}
              </div>
 
              {/* Quick Action Icons: Mute/Power & Remove */}
@@ -797,9 +828,12 @@ export default function ControlPanel(props: Props) {
           </div>
 
           <div className="min-w-0 flex-1">
-           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 min-w-0">
-             <span className="truncate text-xs font-semibold text-[var(--ink)]">
+           <div className="flex items-center justify-between gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0 flex-1 mr-1">
+             <span
+              className="truncate min-w-0 block text-xs font-semibold text-[var(--ink)]"
+              title={emb.title}
+             >
               {emb.title}
              </span>
             </div>
@@ -861,6 +895,88 @@ export default function ControlPanel(props: Props) {
       <Plus className="h-3.5 w-3.5 text-[var(--accent)]" />
       <span>Add Embedding Token</span>
      </button>
+    </div>
+
+    {/* Prompt Composer Section (Positive Prompt + Negative Prompt Adjacent) */}
+    <div className="border-t border-[var(--line)] pt-4 space-y-3.5">
+     <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+       <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        Prompt Composer
+       </span>
+      </div>
+      {prompt && onPromptChange && (
+       <button
+        type="button"
+        onClick={() => onPromptChange("")}
+        className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
+       >
+        Clear prompt
+       </button>
+      )}
+     </div>
+
+     {/* Positive Prompt */}
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <label htmlFor="positive-prompt" className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)]">
+        <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+        <span>Prompt</span>
+       </label>
+       <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+        {prompt ? `${prompt.length} chars` : "Required"}
+       </span>
+      </div>
+      <textarea
+       id="positive-prompt"
+       value={prompt ?? ""}
+       onChange={(e) => onPromptChange?.(e.target.value)}
+       onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
+         e.preventDefault();
+         onGenerate?.();
+        }
+       }}
+       rows={4}
+       placeholder="Describe your scene, subjects, atmosphere, style, camera angle, and lighting…"
+       disabled={busy}
+       className="workspace-field w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[5.5rem]"
+      />
+     </div>
+
+     {/* Negative Prompt (Exclude) - Directly Adjacent */}
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <label htmlFor="neg-prompt" className="flex items-center gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
+        <span>Negative Prompt (Exclude)</span>
+       </label>
+       {negativePrompt && onNegativePromptChange && (
+        <button
+         type="button"
+         onClick={() => onNegativePromptChange("")}
+         className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
+        >
+         Clear
+        </button>
+       )}
+      </div>
+      <textarea
+       id="neg-prompt"
+       value={negativePrompt ?? ""}
+       onChange={(e) => onNegativePromptChange?.(e.target.value)}
+       onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
+         e.preventDefault();
+         onGenerate?.();
+        }
+       }}
+       rows={3}
+       placeholder="worst quality, low quality, blurry, distorted, extra limbs, bad anatomy…"
+       disabled={busy}
+       className="workspace-field w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[4rem]"
+      />
+     </div>
     </div>
 
     {/* Divider */}
@@ -961,22 +1077,6 @@ export default function ControlPanel(props: Props) {
 
       {advancedOpen && (
        <div className="space-y-3.5 border-t border-[var(--line)] p-3 pt-3.5">
-        {/* Negative Prompt */}
-        <div>
-         <label htmlFor="neg-prompt" className="mb-1.5 block text-[10px] font-semibold uppercase text-[var(--ink-faint)]">
-          Negative Prompt (Exclude)
-         </label>
-         <textarea
-          id="neg-prompt"
-          value={negativePrompt}
-          onChange={(e) => onNegativePromptChange(e.target.value)}
-          placeholder="worst quality, low quality, blurry, distorted…"
-          rows={3}
-          disabled={busy}
-          className="w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-xs text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none focus:border-[var(--accent)]"
-         />
-        </div>
-
         {/* Seed, Steps, CFG */}
         <div className="grid grid-cols-3 gap-2">
          <div>
@@ -1041,6 +1141,74 @@ export default function ControlPanel(props: Props) {
        </div>
       )}
      </div>
+    </div>
+   </div>
+
+   {/* Sticky Bottom Generation Action Bar */}
+   <div className="sticky bottom-0 z-20 shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_94%,transparent)] backdrop-blur-md p-3.5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+    <div className="flex items-center gap-2">
+     {/* Batch Image Count Selector */}
+     <div className="relative">
+      <button
+       type="button"
+       onClick={() => setImageCountOpen((v) => !v)}
+       disabled={busy}
+       title="Batch count"
+       className="flex h-10 items-center gap-1.5 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] focus-visible:bg-[var(--surface-soft)] transition shrink-0"
+      >
+       <span>{imageCount || "1"}x</span>
+       <ChevronDown className="h-3 w-3 text-[var(--ink-faint)]" />
+      </button>
+
+      {imageCountOpen && (
+       <div className="absolute bottom-full left-0 mb-1.5 z-40 w-32 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] py-1 shadow-2xl">
+        {["1", "2", "3", "4"].map((n) => (
+         <button
+          key={n}
+          type="button"
+          onClick={() => {
+           onImageCountChange?.(n);
+           setImageCountOpen(false);
+          }}
+          className={`flex w-full items-center justify-between px-3 py-1.5 text-xs text-left transition ${
+           imageCount === n
+            ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)] font-bold"
+            : "text-[var(--ink)] hover:bg-[var(--surface-soft)]"
+          }`}
+         >
+          <span>{n} {n === "1" ? "image" : "images"}</span>
+          {imageCount === n && <Check className="h-3 w-3" />}
+         </button>
+        ))}
+       </div>
+      )}
+     </div>
+
+     {/* Primary Generate Button */}
+     <button
+      type="button"
+      onClick={onGenerate}
+      disabled={!canGenerate || busy}
+      className="workspace-action-primary flex h-10 flex-1 items-center justify-between rounded-xl px-4 text-xs font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+     >
+      {busy ? (
+       <div className="flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin text-[var(--accent-ink)]" aria-hidden="true" />
+        <span>Rendering {progress ?? 0}%</span>
+       </div>
+      ) : (
+       <div className="flex items-center gap-1.5">
+        <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+        <span>Generate</span>
+       </div>
+      )}
+
+      <div className="flex items-center gap-1.5 opacity-80">
+       <span className="font-mono text-[10px]">
+        {busy ? progressLabel || "Rendering" : "⌘↵"}
+       </span>
+      </div>
+     </button>
     </div>
    </div>
 
@@ -1147,63 +1315,62 @@ export default function ControlPanel(props: Props) {
              onModelChange(key);
              setModelPickerOpen(false);
             }}
-            className={`group relative flex flex-col overflow-hidden rounded-xl border text-left transition ${
+            className={`group relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-[18px] border text-left transition-all duration-300 ease-out hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
              isCurrent
-              ? "border-[var(--accent)] ring-1 ring-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--surface))]"
-              : "border-[var(--line)] bg-[var(--surface)] hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] "
+              ? "border-[var(--accent)] ring-2 ring-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--surface))]"
+              : "border-[var(--line)] bg-[var(--surface-soft)] hover:border-[var(--line-strong)]"
             }`}
            >
-            {/* Cover image header */}
-            <div className="relative aspect-[16/9] w-full overflow-hidden bg-[var(--surface-soft)] border-b border-[var(--line)]">
-             {cover ? (
-              <img
-               src={cover}
-               alt={m.title}
-               className="h-full w-full object-cover transition group-hover:scale-105 group-focus-within:scale-105"
-               onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = "none";
-               }}
-              />
-             ) : (
-              <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)]  text-[var(--accent)]">
-               <Box className="h-8 w-8 opacity-60" />
-              </div>
-             )}
-             <div className="absolute inset-0 bg-[var(--surface-soft)]  pointer-events-none" />
-
-             {/* Top Tag Overlays */}
-             <div className="absolute top-2 left-2 flex items-center gap-1">
-              <span className="rounded-xl bg-[var(--media-scrim-strong)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--ink)] uppercase">
-               {m.model_type === "Checkpoint" ? "CKPT" : "DIFF"}
-              </span>
+            {/* Full-Bleed Cover Image */}
+            {cover ? (
+             <img
+              src={cover}
+              alt={m.title}
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={(e) => {
+               (e.currentTarget as HTMLElement).style.display = "none";
+              }}
+             />
+            ) : (
+             <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
+              <Box className="h-8 w-8 opacity-60" />
              </div>
+            )}
 
-             {/* Current Active Indicator Badge */}
-             {isCurrent && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 rounded-xl bg-[var(--accent)] px-2 py-0.5 text-[10px] font-bold text-[var(--accent-ink)] ">
-               <Check className="h-3 w-3" />
-               <span>Active</span>
-              </div>
-             )}
+            {/* Atmospheric Bottom Gradient Scrim */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
 
-             <span className="absolute bottom-1.5 left-2 font-mono text-[9px] font-bold text-[var(--ink)] ">
+            {/* Top Tag Overlays */}
+            <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
+             <span className="rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold text-white/90 backdrop-blur-md uppercase tracking-wider">
+              {m.model_type === "Checkpoint" ? "CKPT" : "DIFF"}
+             </span>
+             <span className="rounded-md border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white/80 backdrop-blur-md">
               {m.version_name || "v1.0"}
              </span>
             </div>
 
-            {/* Card Details */}
-            <div className="p-3">
-             <h4 className="truncate text-xs font-bold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
+            {/* Current Active Indicator Badge */}
+            {isCurrent && (
+             <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
+              <Check className="h-3 w-3" />
+              <span>Active</span>
+             </div>
+            )}
+
+            {/* Bottom Typography Overlay */}
+            <div className="relative z-10 p-3.5 flex flex-col justify-end w-full pointer-events-none">
+             <h4 className="truncate text-sm sm:text-base font-bold tracking-tight text-white drop-shadow-sm group-hover:text-[var(--accent)] transition-colors">
               {m.title}
              </h4>
-             <p className="mt-1 truncate font-mono text-[10px] text-[var(--ink-faint)]">
-              {m.filename}
+             <p className="mt-0.5 truncate text-[11px] font-medium text-white/75">
+              {[m.version_name || "v1.0", pub?.category || m.model_type].filter(Boolean).join(" • ")}
              </p>
-             <div className="mt-2.5 flex items-center justify-between pt-1 border-t border-[var(--line)]">
-              <span className="text-[10px] font-medium text-[var(--ink-faint)]">
-               {pub?.category || m.model_type}
+             <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px]">
+              <span className="truncate font-mono text-white/55 max-w-[65%]">
+               {m.filename}
               </span>
-              <span className="text-[11px] font-bold text-[var(--accent)] group-hover:underline group-focus-within:underline">
+              <span className="font-bold text-[var(--accent)] drop-shadow-sm">
                {isCurrent ? "Current model" : "Select →"}
               </span>
              </div>
@@ -1365,16 +1532,25 @@ export default function ControlPanel(props: Props) {
 
             {/* Title & Metadata */}
             <div className="min-w-0 flex-1">
-             <div className="flex items-center gap-1.5">
-              <span className="truncate text-xs font-bold text-[var(--ink)]">
+             <div className="flex items-center gap-1.5 min-w-0">
+              <span
+               className="truncate min-w-0 block text-xs font-bold text-[var(--ink)]"
+               title={item.title}
+              >
                {item.title}
               </span>
              </div>
-             <div className="mt-1 flex items-center gap-1.5">
-              <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] px-1.5 py-0.2 text-[9px] font-bold text-[var(--accent)]">
+             <div className="mt-1 flex items-center gap-1.5 min-w-0">
+              <span
+               className="shrink-0 max-w-[110px] truncate rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--accent)]"
+               title={item.baseModel}
+              >
                {item.baseModel}
               </span>
-              <span className="rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.2 text-[9px] font-medium text-[var(--ink-faint)]">
+              <span
+               className="shrink-0 max-w-[100px] truncate rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--ink-faint)]"
+               title={item.category}
+              >
                {item.category}
               </span>
              </div>

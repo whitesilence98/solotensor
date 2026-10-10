@@ -426,6 +426,12 @@ export default function StudioPage() {
           format={format}
           onFormatChange={setFormat}
           busy={busy}
+          canGenerate={canGenerate}
+          onGenerate={handleGenerate}
+          progress={progress}
+          progressLabel={progressLabel}
+          imageCount={imageCount}
+          onImageCountChange={setImageCount}
           modelsLoading={modelsLoading}
           modelsError={modelsError}
         />
@@ -433,10 +439,6 @@ export default function StudioPage() {
 
       {/* Main Canvas Area */}
       <CanvasPreview
-        prompt={prompt}
-        onPromptChange={setPrompt}
-        imageCount={imageCount}
-        onImageCountChange={setImageCount}
         canGenerate={canGenerate}
         onGenerate={handleGenerate}
         busy={busy}

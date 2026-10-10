@@ -32,13 +32,13 @@ export function formatBytes(size: number): string {
 /* ------------------------------------------------------------------ */
 
 const QUICK_BTN =
-  "workspace-icon-island flex h-10 w-10 items-center justify-center border border-[var(--line)] bg-[var(--core)] text-[var(--ink)] " +
-  "transition-[transform,border-color,background-color,color,opacity] duration-200 hover:border-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] active:scale-[.96] " +
+  "flex h-8 w-8 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/80 " +
+  "backdrop-blur-md transition hover:border-white/40 hover:bg-black/70 hover:text-white active:scale-95 " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
 
 const DANGER_BTN =
-  "workspace-icon-island flex h-10 w-10 items-center justify-center border border-[var(--line)] bg-[var(--core)] text-[var(--ink-soft)] " +
-  "transition-[transform,border-color,background-color,color,opacity] duration-200 hover:border-[var(--danger)] hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] active:scale-[.96] " +
+  "flex h-8 w-8 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/70 " +
+  "backdrop-blur-md transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)] hover:text-white active:scale-95 " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--danger)]";
 
 interface QuickActionsProps {
@@ -50,7 +50,7 @@ interface QuickActionsProps {
 
 function QuickActions({ saved, onBookmark, onDownload, onDelete }: QuickActionsProps) {
   return (
-    <div className="asset-quick absolute right-3 top-3 flex gap-1.5">
+    <div className="absolute right-3 top-3 z-20 flex gap-1.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
       <button
         type="button"
         aria-label={saved ? "Remove bookmark" : "Bookmark asset"}
@@ -62,7 +62,7 @@ function QuickActions({ saved, onBookmark, onDownload, onDelete }: QuickActionsP
         className={QUICK_BTN}
       >
         <Bookmark
-          className="h-4 w-4"
+          className="h-3.5 w-3.5"
           fill={saved ? "currentColor" : "none"}
         />
       </button>
@@ -75,7 +75,7 @@ function QuickActions({ saved, onBookmark, onDownload, onDelete }: QuickActionsP
         }}
         className={QUICK_BTN}
       >
-        <Download className="h-4 w-4" />
+        <Download className="h-3.5 w-3.5" />
       </button>
       {onDelete && (
         <button
@@ -87,20 +87,9 @@ function QuickActions({ saved, onBookmark, onDownload, onDelete }: QuickActionsP
           }}
           className={DANGER_BTN}
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-3.5 w-3.5" />
         </button>
       )}
-    </div>
-  );
-}
-
-function CreatorRow({ name }: { name: string }) {
-  return (
-    <div className="asset-creator pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-[var(--line)] bg-[var(--surface)] px-3 py-2">
-      <span aria-hidden className="flex h-6 w-6 shrink-0 items-center justify-center bg-[var(--accent)] text-[10px] font-semibold text-[var(--accent-ink)]">
-        {name.slice(0, 1).toUpperCase()}
-      </span>
-      <span className="truncate text-xs font-medium text-[var(--ink)]">{name}</span>
     </div>
   );
 }
@@ -132,13 +121,28 @@ function ImageCard({
     a.click();
   }, [mediaUrl, asset.key]);
 
+  const filename = asset.key.split("/").pop() ?? asset.key;
+  const title = asset.metadata?.prompt || filename;
+
   return (
-    <article className="asset-card workspace-bezel group relative overflow-hidden p-0 transition-[transform,border-color,box-shadow] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] hover:-translate-y-1 hover:border-[var(--line-strong)] focus-within:border-[var(--accent)]">
+    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open ${asset.key}`} className="block w-full cursor-zoom-in text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+        {/* Full-Bleed Media */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={mediaUrl} alt={asset.key} loading="lazy" className="w-full object-cover" />
-        <div className="asset-veil pointer-events-none absolute inset-0 bg-[color-mix(in_srgb,var(--ground)_35%,transparent)]" />
-        <CreatorRow name={asset.key.split("/").pop() ?? asset.key} />
+
+        {/* Atmospheric Bottom Gradient Scrim */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+
+        {/* Bottom Typography Overlay */}
+        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
+          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
+            {title}
+          </h3>
+          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
+            {asset.metadata?.model_title || "Visual output"}
+          </p>
+        </div>
       </button>
       <QuickActions saved={saved} onBookmark={onBookmark} onDownload={download} onDelete={onDelete} />
     </article>
@@ -183,8 +187,11 @@ function VideoCard({
     return () => media.removeEventListener("change", update);
   }, []);
 
+  const filename = asset.key.split("/").pop() ?? asset.key;
+  const title = asset.metadata?.prompt || filename;
+
   return (
-    <article className="asset-card workspace-bezel group relative overflow-hidden p-0 transition-[transform,border-color,box-shadow] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] hover:-translate-y-1 hover:border-[var(--line-strong)] focus-within:border-[var(--accent)]">
+    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open video ${asset.key}`} className="block w-full cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
         <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
           <video
@@ -198,13 +205,27 @@ function VideoCard({
             className="h-full w-full object-cover"
           />
         </div>
-        <div className="asset-veil pointer-events-none absolute inset-0 flex items-center justify-center bg-[color-mix(in_srgb,var(--ground)_25%,transparent)]">
-          <span className="flex h-12 w-12 items-center justify-center border border-[var(--line)] bg-[var(--surface)]">
-            <Play className="h-5 w-5 translate-x-[1px] text-[var(--accent)]" fill="currentColor" />
+
+        {/* Top-left Video Tag */}
+        <div className="absolute left-3 top-3 z-10 pointer-events-none">
+          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur-md">
+            <Play className="h-2.5 w-2.5 text-[var(--accent)]" fill="currentColor" />
+            <span>Motion</span>
           </span>
         </div>
-        <span className="absolute bottom-12 right-3 border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-[var(--ink)]">Video</span>
-        <CreatorRow name={asset.key.split("/").pop() ?? asset.key} />
+
+        {/* Atmospheric Bottom Gradient Scrim */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+
+        {/* Bottom Typography Overlay */}
+        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
+          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
+            {title}
+          </h3>
+          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
+            {asset.metadata?.model_title || "Video animation"}
+          </p>
+        </div>
       </button>
       <QuickActions saved={saved} onBookmark={onBookmark} onDownload={download} onDelete={onDelete} />
     </article>
@@ -218,18 +239,34 @@ function VideoCard({
 function ModelCard({ asset, onOpen }: { asset: AssetRecord; onOpen: () => void }) {
   const { w, h } = aspectFromKey(asset.key);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
+  const filename = asset.key.split("/").pop() ?? asset.key;
+
   return (
-    <article className="asset-card asset-3d relative overflow-hidden border border-[var(--line)] bg-[var(--surface-raised)] transition-colors duration-200 hover:border-[var(--line-strong)] focus-within:border-[var(--accent)]">
+    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open 3D asset ${asset.key}`} className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
         <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl} alt={asset.key} loading="lazy" className="asset-3d-cube h-full w-full object-cover" />
+          <img src={mediaUrl} alt={asset.key} loading="lazy" className="h-full w-full object-cover" />
         </div>
-        <span className="absolute left-3 top-3 inline-flex items-center gap-1 border border-[var(--accent)] bg-[var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent-ink)]">
-          <Box className="h-3 w-3" /> 3D
-        </span>
-        <div className="asset-veil pointer-events-none absolute inset-x-0 bottom-0 flex justify-center border-t border-[var(--line)] bg-[var(--surface)] p-3">
-          <span className="border border-[var(--line)] bg-[var(--surface)] px-3 py-1 text-xs font-medium text-[var(--ink)]">Open details</span>
+
+        {/* Top-left 3D Tag */}
+        <div className="absolute left-3 top-3 z-10 pointer-events-none">
+          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90 backdrop-blur-md">
+            <Box className="h-3 w-3" /> 3D
+          </span>
+        </div>
+
+        {/* Atmospheric Bottom Gradient Scrim */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+
+        {/* Bottom Typography Overlay */}
+        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
+          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
+            {filename}
+          </h3>
+          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
+            3D Spatial Model
+          </p>
         </div>
       </button>
     </article>

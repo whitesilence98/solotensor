@@ -42,28 +42,43 @@ function TensorToolCard({
   return (
     <Link
       href={`/tools/${tool.tool_id}`}
-      className="workspace-bezel group relative flex flex-col overflow-hidden p-0 transition-[transform,border-color,box-shadow] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] hover:-translate-y-1 hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out"
     >
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-[var(--surface-soft)]">
-        {thumbUrl && !imgError ? (
-          <img src={thumbUrl} alt={tool.name} loading="lazy" onError={() => setImgError(true)} className="h-full w-full object-cover transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] group-hover:scale-105" />
-        ) : (
-          <div className="grid h-full place-items-center bg-[var(--surface-soft)] p-6 text-center">
-            <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
-              <div className="flex h-12 w-12 items-center justify-center border border-[var(--line)] bg-[var(--surface)]">
-                {isVideo ? <Film className="h-6 w-6 opacity-80" /> : <Sparkles className="h-6 w-6 opacity-80" />}
-              </div>
-              <span className="line-clamp-2 text-[11px] font-semibold text-[var(--ink-faint)]">{tool.name}</span>
+      {/* Full-Bleed Media */}
+      {thumbUrl && !imgError ? (
+        <img
+          src={thumbUrl}
+          alt={tool.name}
+          loading="lazy"
+          onError={() => setImgError(true)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-6 text-center">
+          <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+              {isVideo ? <Film className="h-6 w-6 opacity-80" /> : <Sparkles className="h-6 w-6 opacity-80" />}
             </div>
+            <span className="line-clamp-2 text-xs font-semibold text-[var(--ink-faint)]">{tool.name}</span>
           </div>
-        )}
-        <div className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 border border-[var(--accent)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+        </div>
+      )}
+
+      {/* Atmospheric Bottom Gradient Scrim */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+
+      {/* Floating Top Metadata & Actions */}
+      <div className="absolute inset-x-3.5 top-3.5 z-10 flex items-center justify-between">
+        <div className="pointer-events-none flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white/90 backdrop-blur-md">
             {isVideo ? <Film className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
             {isVideo ? "Motion" : "Visual"}
           </span>
-          <span className="border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--ink)]">{tool.default_aspect_ratio}</span>
+          <span className="rounded-md border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white/80 backdrop-blur-md">
+            {tool.default_aspect_ratio}
+          </span>
         </div>
+
         <button
           type="button"
           onClick={(e) => {
@@ -72,30 +87,20 @@ function TensorToolCard({
             onDelete(tool);
           }}
           aria-label={`Delete ${tool.name}`}
-          className="absolute right-2.5 top-2.5 z-10 flex h-7 w-7 items-center justify-center border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] opacity-0 transition hover:border-[var(--danger-line)] hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] group-hover:opacity-100 focus-visible:opacity-100"
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/70 opacity-0 backdrop-blur-md transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)] hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
-        <div className="absolute inset-x-3 bottom-3 flex translate-y-2 items-center justify-between opacity-0 transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-          <span className="inline-flex items-center gap-1.5 bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-[var(--accent-ink)]"><Zap className="h-3.5 w-3.5" />Launch Tool</span>
-          <span className="border border-[var(--line)] bg-[var(--surface)] px-2 py-1 font-mono text-[10px] font-semibold text-[var(--ink)]">{MODE_LABELS[tool.mode]}</span>
-        </div>
       </div>
-      <div className="flex flex-1 flex-col justify-between p-4">
-        <div>
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="truncate text-sm font-bold text-[var(--ink)] transition-colors group-hover:text-[var(--accent)]">{tool.name}</h3>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--ink-faint)] group-hover:text-[var(--accent)]" />
-          </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            <span className="border border-[var(--line)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ink-soft)]">{MODE_LABELS[tool.mode]}</span>
-            <span className={`border px-2 py-0.5 text-[10px] font-semibold ${tool.requires_image ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)] text-[var(--ink-soft)]"}`}>{tool.requires_image ? "Image Input" : "Prompt Driven"}</span>
-          </div>
-        </div>
-        <div className="mt-4 flex items-center justify-between border-t border-[var(--line)] pt-3 text-[11px] text-[var(--ink-faint)]">
-          <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3 w-3" />Added {formatDate(tool.created_at)}</span>
-          <span className="font-semibold text-[var(--accent)] group-hover:underline">Open →</span>
-        </div>
+
+      {/* Bottom Typography Overlay */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-5">
+        <h3 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-sm transition-colors group-hover:text-[var(--accent)]">
+          {tool.name}
+        </h3>
+        <p className="mt-0.5 truncate text-xs sm:text-sm font-medium text-white/75 drop-shadow-sm">
+          {MODE_LABELS[tool.mode]} {tool.requires_image ? "• Image Input" : "• Prompt Driven"}
+        </p>
       </div>
     </Link>
   );
@@ -167,7 +172,7 @@ export default function ToolStudioPage() {
       </header>
       <section className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]"><p aria-live="polite">{loading ? "Loading tools…" : `Showing ${filteredTools.length} of ${tools.length} workflow${tools.length === 1 ? "" : "s"}`}</p>{hasActiveFilters && <button type="button" onClick={clearFilters} className="workspace-action-quiet min-h-9 px-2 text-xs">Clear filters</button>}</div>
-        {loading && <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading tools">{[1,2,3,4,5,6,7,8].map((item) => <div key={item} className="flex flex-col overflow-hidden border border-[var(--line)] bg-[var(--surface)]"><div className="shimmer aspect-[16/10] w-full" /><div className="space-y-2 p-4"><div className="shimmer h-4 w-3/4" /><div className="shimmer h-3 w-1/2" /></div></div>)}</div>}
+        {loading && <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading tools">{[1,2,3,4,5,6,7,8].map((item) => <div key={item} className="shimmer aspect-[16/10] w-full rounded-[20px] border border-[var(--line)] bg-[var(--surface)]" />)}</div>}
         {!loading && error && <div role="alert" className="border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center text-sm text-[var(--danger)]"><p className="font-semibold">{error}</p><button type="button" onClick={load} className="mt-3 inline-flex items-center gap-1.5 border border-[var(--danger-line)] px-4 py-2 text-xs font-bold transition hover:bg-[var(--danger-line)]/50"><RefreshCw className="h-3.5 w-3.5" />Retry</button></div>}
         {!loading && !error && filteredTools.length === 0 && <div className="border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] p-12 text-center"><div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]"><Wrench className="h-7 w-7 opacity-70" /></div><h3 className="text-base font-bold text-[var(--ink)]">{hasActiveFilters ? "No matching workflows" : "Your workflow shelf is empty"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-[var(--ink-faint)]">{hasActiveFilters ? "Try searching with a different keyword or resetting the workflow mode filter." : "Create your first AI Tool by importing a ComfyUI workflow_api.json file."}</p>{hasActiveFilters ? <button type="button" onClick={clearFilters} className="mt-4 bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Clear all filters</button> : <Link href="/tools/create" className="mt-4 inline-block bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Create your first tool</Link>}</div>}
         {!loading && !error && filteredTools.length > 0 && <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filteredTools.map((tool) => <TensorToolCard key={tool.tool_id} tool={tool} onDelete={setToolToDelete} />)}</div>}
