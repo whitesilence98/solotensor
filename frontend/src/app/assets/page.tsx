@@ -15,7 +15,16 @@ import {
 import AssetCard from "@/components/AssetCard";
 import EmptyState from "@/components/EmptyState";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
-import { api, withTypes, type AssetRecord, type AssetType } from "@/lib/api";
+import WorkspaceModal from "@/components/WorkspaceModal";
+import AssetInspectionStage from "@/components/AssetInspectionStage";
+import {
+  api,
+  withTypes,
+  type AssetRecord,
+  type AssetType,
+  type GalleryItem,
+  type InstalledGalleryModel,
+} from "@/lib/api";
 
 const PAGE_SIZE = 24;
 
@@ -73,6 +82,67 @@ export default function AssetsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Shallow Modal Inspection Stage
+  const [selectedAsset, setSelectedAsset] = useState<AssetRecord | null>(null);
+  const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .listSelectableModels()
+      .then((items) => {
+        if (!cancelled) setModelOptions(items);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openAsset = useCallback((asset: AssetRecord) => {
+    setSelectedAsset(asset);
+    try {
+      const encoded = asset.key.split("/").map(encodeURIComponent).join("/");
+      window.history.pushState({ assetKey: asset.key }, "", `/assets/${encoded}`);
+    } catch {
+      // Ignore in restricted environments
+    }
+  }, []);
+
+  const closeAsset = useCallback(() => {
+    setSelectedAsset(null);
+    try {
+      window.history.pushState(null, "", "/assets");
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const selectAssetInCarousel = useCallback((item: GalleryItem) => {
+    setSelectedAsset(item as AssetRecord);
+    try {
+      const encoded = item.key.split("/").map(encodeURIComponent).join("/");
+      window.history.replaceState({ assetKey: item.key }, "", `/assets/${encoded}`);
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state?.assetKey) {
+        const match = assets.find((a) => a.key === e.state.assetKey);
+        if (match) {
+          setSelectedAsset(match);
+          return;
+        }
+      }
+      setSelectedAsset(null);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [assets]);
+
   const handleDelete = useCallback(async () => {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
@@ -80,13 +150,16 @@ export default function AssetsPage() {
     try {
       await api.deleteAsset(deleteTarget);
       setAssets((prev) => prev.filter((a) => a.key !== deleteTarget));
+      if (selectedAsset?.key === deleteTarget) {
+        closeAsset();
+      }
       setDeleteTarget(null);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Failed to delete asset");
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, deleting]);
+  }, [deleteTarget, deleting, selectedAsset, closeAsset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,7 +326,7 @@ export default function AssetsPage() {
                   asset={asset}
                   saved={savedKeys.has(asset.key)}
                   onBookmark={() => toggleSaved(asset.key)}
-                  onOpen={() => router.push(`/assets/${asset.key.split("/").map(encodeURIComponent).join("/")}`)}
+                  onOpen={() => openAsset(asset)}
                   onDelete={() => setDeleteTarget(asset.key)}
                 />
               ))}
@@ -268,6 +341,29 @@ export default function AssetsPage() {
         )}
         <WorkspaceFooter />
       </section>
+
+      {/* Shallow History Inspection Modal */}
+      <WorkspaceModal
+        open={Boolean(selectedAsset)}
+        onClose={closeAsset}
+        headless
+        size="media"
+      >
+        {selectedAsset && (
+          <AssetInspectionStage
+            mode="modal"
+            asset={selectedAsset}
+            items={filtered}
+            modelOptions={modelOptions}
+            onSelectAsset={selectAssetInCarousel}
+            onClose={closeAsset}
+            onDeleteOutput={(key) => {
+              setAssets((prev) => prev.filter((a) => a.key !== key));
+              closeAsset();
+            }}
+          />
+        )}
+      </WorkspaceModal>
 
       {deleteTarget && (
         <div
