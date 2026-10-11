@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
  AlertCircle,
@@ -215,6 +215,39 @@ export default function ControlPanel(props: Props) {
 
  const [advancedOpen, setAdvancedOpen] = useState(false);
  const [infoTooltip, setInfoTooltip] = useState<string | null>(null);
+
+ // WD14 Image Interrogation State
+ const tagFileInputRef = useRef<HTMLInputElement>(null);
+ const [interrogating, setInterrogating] = useState(false);
+ const [interrogateToast, setInterrogateToast] = useState<string | null>(null);
+
+ const handleInterrogateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setInterrogating(true);
+  setInterrogateToast(null);
+  try {
+   const res = await api.interrogateImage(file);
+   if (res.tags && res.tags.length > 0) {
+    const tagString = res.tags.join(", ");
+    if (onPromptChange) {
+     const current = prompt?.trim() || "";
+     onPromptChange(current ? `${current}, ${tagString}` : tagString);
+    }
+    setInterrogateToast(`+${res.tags.length} WD14 tags!`);
+    setTimeout(() => setInterrogateToast(null), 3000);
+   } else {
+    setInterrogateToast("No tags detected");
+    setTimeout(() => setInterrogateToast(null), 2500);
+   }
+  } catch (err) {
+   setInterrogateToast(err instanceof Error ? err.message : "Auto-tagging failed");
+   setTimeout(() => setInterrogateToast(null), 3000);
+  } finally {
+   setInterrogating(false);
+   if (tagFileInputRef.current) tagFileInputRef.current.value = "";
+  }
+ };
  const isValidDimension = (value: string) => {
   const dimension = Number(value);
   return Number.isInteger(dimension) && dimension >= 64 && dimension <= 4096 && dimension % 8 === 0;
@@ -978,15 +1011,43 @@ export default function ControlPanel(props: Props) {
         Prompt Composer
        </span>
       </div>
-      {prompt && onPromptChange && (
+      <div className="flex items-center gap-2.5">
+       {interrogateToast && (
+        <span className="font-mono text-[9px] text-[var(--accent)] animate-pulse">
+         {interrogateToast}
+        </span>
+       )}
+       <input
+        ref={tagFileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleInterrogateFile}
+        className="hidden"
+       />
        <button
         type="button"
-        onClick={() => onPromptChange("")}
-        className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
+        onClick={() => tagFileInputRef.current?.click()}
+        disabled={interrogating || busy}
+        className="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] hover:underline transition disabled:opacity-50"
+        title="Upload an image to auto-detect and insert WD14 prompt tags"
        >
-        Clear prompt
+        {interrogating ? (
+         <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+         <Tag className="h-3 w-3" />
+        )}
+        <span>{interrogating ? "Detecting…" : "Auto-tag image"}</span>
        </button>
-      )}
+       {prompt && onPromptChange && (
+        <button
+         type="button"
+         onClick={() => onPromptChange("")}
+         className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
+        >
+         Clear prompt
+        </button>
+       )}
+      </div>
      </div>
 
      {/* Positive Prompt */}

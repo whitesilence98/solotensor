@@ -1,0 +1,42 @@
+{
+  "1": {
+    "inputs": {
+      "image": "images (1) (1).jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "23": {
+    "inputs": {
+      "model": "wd-convnext-tagger-v3",
+      "threshold": 0.35,
+      "character_threshold": 0.85,
+      "replace_underscore": true,
+      "trailing_comma": false,
+      "exclude_tags": "",
+      "tags": "outdoors, sky, day, blurry, no humans, animal, cat, building, scenery, motor vehicle, city, car, road, cityscape, skyscraper",
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "WD14Tagger|pysssss",
+    "_meta": {
+      "title": "WD14 Tagger 🐍"
+    }
+  },
+  "29": {
+    "inputs": {
+      "text": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "Show Text 🐍"
+    }
+  }
+}

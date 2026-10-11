@@ -253,6 +253,16 @@ export interface AssetRecord extends GalleryItem {
   type: AssetType;
 }
 
+export interface TagSummary {
+  name: string;
+  count: number;
+}
+
+export interface TagInterrogateResult {
+  tags: string[];
+  elapsed_ms: number;
+}
+
 /** Known video / 3D file extensions, for when the backend grows those types. */
 const VIDEO_EXT = new Set([".mp4", ".webm", ".mov", ".mkv"]);
 const MODEL_EXT = new Set([".glb", ".gltf", ".obj", ".fbx", ".blend", ".splat"]);
@@ -597,9 +607,26 @@ export const api = {
     });
   },
 
-  async getGallery(limit = 60, filters: { origin?: string; tool_id?: string; tool_type?: string; tag?: string } = {}): Promise<GalleryItem[]> {
+  async getGallery(
+    limit = 60,
+    filters: {
+      origin?: string;
+      tool_id?: string;
+      tool_type?: string;
+      tag?: string;
+      tags?: string[];
+      tag_mode?: "all" | "any";
+    } = {}
+  ): Promise<GalleryItem[]> {
     const params = new URLSearchParams({ limit: String(limit) });
-    Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (!value) return;
+      if (key === "tags" && Array.isArray(value)) {
+        if (value.length > 0) params.set("tags", value.join(","));
+      } else if (typeof value === "string") {
+        params.set(key, value);
+      }
+    });
     const resp = await request<{ items: GalleryItem[] }>(`/api/v1/gallery?${params}`);
     return (resp.items || []).map((item) => ({
       ...item,
@@ -691,6 +718,48 @@ export const api = {
 
   async getImage(key: string): Promise<GalleryItem> {
     return this.getAsset(key);
+  },
+
+  async getPopularTags(limit = 50): Promise<TagSummary[]> {
+    const resp = await request<{ items: TagSummary[] }>(`/api/v1/tags?limit=${limit}`);
+    return resp.items || [];
+  },
+
+  async autoTagAsset(key: string): Promise<GalleryItem> {
+    const encoded = key.split("/").map(encodeURIComponent).join("/");
+    const item = await request<GalleryItem>(`/api/v1/assets/${encoded}/tags/auto`, {
+      method: "POST",
+    });
+    return {
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+    };
+  },
+
+  async updateAssetTags(key: string, tags: string[]): Promise<GalleryItem> {
+    const encoded = key.split("/").map(encodeURIComponent).join("/");
+    const item = await request<GalleryItem>(`/api/v1/assets/${encoded}/tags`, {
+      method: "PUT",
+      body: JSON.stringify({ tags }),
+    });
+    return {
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+    };
+  },
+
+  async interrogateImage(file: File): Promise<TagInterrogateResult> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const resp = await fetch(`${API_BASE}/api/v1/tagger/interrogate`, {
+      method: "POST",
+      body: form,
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not interrogate image");
+    }
+    return (await resp.json()) as TagInterrogateResult;
   },
 
   async getModels(category: ModelCategory): Promise<string[]> {

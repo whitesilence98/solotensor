@@ -47,6 +47,10 @@ from .schemas import (
     LocalModelImportRequest,
     LocalModelListResponse,
     PublicModelListResponse,
+    TagInterrogateResponse,
+    TagSummary,
+    TagSummaryList,
+    TagUpdateRequest,
     CreateToolRequest,
     DeleteToolResponse,
     ToolAspectRatio,
@@ -69,6 +73,7 @@ from .services.code_assistant import (
 from .services.comfy_client import ComfyClientError, get_comfy_client
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.storage import StorageError, StorageService, get_storage
+from .services.tagger import TaggerError, get_tagger_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("comfy_studio")
@@ -885,18 +890,83 @@ async def ws_progress(websocket: WebSocket, client_id: str) -> None:
 
 
 @app.get("/api/v1/gallery", response_model=GalleryResponse)
-async def gallery(limit: int = 60) -> GalleryResponse:
+async def gallery(
+    limit: int = 60,
+    origin: str | None = None,
+    tool_id: str | None = None,
+    tool_type: str | None = None,
+    tag: str | None = None,
+    tags: str | None = None,
+    tag_mode: str = "all",
+) -> GalleryResponse:
     if limit < 1 or limit > settings.GALLERY_LIMIT:
         limit = settings.GALLERY_LIMIT
     try:
         import asyncio
 
+        parsed_tags = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
         items = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: storage.list_recent(limit=limit)
+            None,
+            lambda: storage.list_recent(
+                limit=limit,
+                origin=origin,
+                tool_id=tool_id,
+                tool_type=tool_type,
+                tag=tag,
+                tags=parsed_tags,
+                tag_mode=tag_mode,
+            ),
         )
     except StorageError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return GalleryResponse(items=items)
+
+
+@app.get("/api/v1/tags", response_model=TagSummaryList)
+async def list_popular_tags(limit: int = 50) -> TagSummaryList:
+    if limit < 1 or limit > 200:
+        limit = 50
+    tags = storage.list_popular_tags(limit=limit)
+    return TagSummaryList(items=[TagSummary(**item) for item in tags])
+
+
+@app.post("/api/v1/tagger/interrogate", response_model=TagInterrogateResponse)
+async def interrogate_image(file: UploadFile = File(...)) -> TagInterrogateResponse:
+    started = time.monotonic()
+    content = await file.read(25 * 1024 * 1024)
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty image file")
+    tagger = get_tagger_service()
+    try:
+        tags = await tagger.interrogate_image(content, filename=file.filename or "image.png")
+    except TaggerError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    return TagInterrogateResponse(tags=tags, elapsed_ms=elapsed_ms)
+
+
+@app.post("/api/v1/assets/{key:path}/tags/auto", response_model=GalleryItem)
+async def auto_tag_asset(key: str) -> GalleryItem:
+    tagger = get_tagger_service()
+    try:
+        await tagger.auto_tag_asset(key)
+        return storage.get_asset(key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except TaggerError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.put("/api/v1/assets/{key:path}/tags", response_model=GalleryItem)
+async def update_asset_tags(key: str, req: TagUpdateRequest) -> GalleryItem:
+    try:
+        return storage.update_tags(key, req.tags)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/assets/{key:path}", response_model=GalleryItem)

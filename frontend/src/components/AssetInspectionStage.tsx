@@ -12,14 +12,18 @@ import {
   Download,
   ExternalLink,
   Layers,
+  Loader2,
   Maximize2,
   Minimize2,
+  Plus,
   Sparkles,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
 import { formatBytes } from "@/components/AssetCard";
 import {
+  api,
   assetTypeOf,
   resolveMediaUrl,
   type GalleryItem,
@@ -119,6 +123,91 @@ export default function AssetInspectionStage({
   const [isZoomed, setIsZoomed] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Tagging State
+  const [tags, setTags] = useState<string[]>(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
+  const [isTagging, setIsTagging] = useState(false);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [newTagDraft, setNewTagDraft] = useState("");
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [tagToast, setTagToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTags(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
+    setTagError(null);
+  }, [asset.key, asset.metadata?.tags]);
+
+  const handleAutoTag = async () => {
+    if (isTagging) return;
+    setIsTagging(true);
+    setTagError(null);
+    try {
+      const updated = await api.autoTagAsset(asset.key);
+      const newTags = Array.isArray(updated.metadata?.tags) ? updated.metadata.tags : [];
+      setTags(newTags);
+      if (asset.metadata) {
+        asset.metadata.tags = newTags;
+      }
+      setTagToast("WD14 tags detected!");
+      setTimeout(() => setTagToast(null), 2500);
+    } catch (err) {
+      setTagError(err instanceof Error ? err.message : "Auto-tagging failed");
+    } finally {
+      setIsTagging(false);
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    const nextTags = tags.filter((t) => t !== tagToRemove);
+    setTags(nextTags);
+    if (asset.metadata) {
+      asset.metadata.tags = nextTags;
+    }
+    try {
+      await api.updateAssetTags(asset.key, nextTags);
+    } catch {
+      setTags(tags);
+    }
+  };
+
+  const handleAddTagSubmit = async () => {
+    const trimmed = newTagDraft.trim().toLowerCase();
+    if (!trimmed) {
+      setIsAddingTag(false);
+      return;
+    }
+    if (tags.includes(trimmed)) {
+      setNewTagDraft("");
+      setIsAddingTag(false);
+      return;
+    }
+    const nextTags = [...tags, trimmed];
+    setTags(nextTags);
+    setNewTagDraft("");
+    setIsAddingTag(false);
+    if (asset.metadata) {
+      asset.metadata.tags = nextTags;
+    }
+    try {
+      await api.updateAssetTags(asset.key, nextTags);
+    } catch {
+      setTags(tags);
+    }
+  };
+
+  const handleAppendTagToPrompt = (tagToAppend: string) => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVED_INPUTS_KEY) ?? "{}");
+      const currentPrompt = typeof saved.prompt === "string" ? saved.prompt : "";
+      const updatedPrompt = currentPrompt ? `${currentPrompt}, ${tagToAppend}` : tagToAppend;
+      saved.prompt = updatedPrompt;
+      localStorage.setItem(SAVED_INPUTS_KEY, JSON.stringify(saved));
+      setTagToast(`Added #${tagToAppend} to prompt`);
+      setTimeout(() => setTagToast(null), 2500);
+    } catch {
+      // ignore
+    }
+  };
 
   const meta = asset.metadata;
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
@@ -612,6 +701,107 @@ export default function AssetInspectionStage({
               <span className="mt-1 block font-bold text-[var(--ink)] truncate">
                 {asset.size ? formatBytes(asset.size) : "PNG"} · {meta?.format_name ?? "1:1"}
               </span>
+            </div>
+          </div>
+
+          {/* Tags Deck (WD14 Interrogation & Curation) */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Tag className="h-3 w-3 text-[var(--accent)]" />
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                  Tags ({tags.length})
+                </span>
+                {tagToast && (
+                  <span className="font-mono text-[9px] text-[var(--accent)] animate-pulse">
+                    {tagToast}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleAutoTag}
+                disabled={isTagging}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition disabled:opacity-50"
+                title="Run WD14 Tagger workflow to auto-detect tags"
+              >
+                {isTagging ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                <span>{isTagging ? "Detecting…" : "Auto-tag (WD14)"}</span>
+              </button>
+            </div>
+
+            {tagError && (
+              <p className="text-[10px] text-[var(--danger)]" role="alert">
+                {tagError}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto workspace-scroll">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="group inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] hover:border-[var(--line-strong)] transition"
+                >
+                  <a
+                    href={`/assets?tags=${encodeURIComponent(tag)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-[var(--accent)] transition"
+                    title={`Browse assets with #${tag}`}
+                  >
+                    <span className="text-[var(--accent)]">#</span>
+                    <span>{tag}</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleAppendTagToPrompt(tag)}
+                    title="Append to Studio prompt"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--accent)] transition px-0.5 font-bold"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTag(tag)}
+                    title="Remove tag"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+
+              {isAddingTag ? (
+                <div className="inline-flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newTagDraft}
+                    onChange={(e) => setNewTagDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddTagSubmit();
+                      if (e.key === "Escape") setIsAddingTag(false);
+                    }}
+                    onBlur={handleAddTagSubmit}
+                    autoFocus
+                    placeholder="tag name…"
+                    className="h-5 w-24 rounded border border-[var(--accent)] bg-[var(--surface-raised)] px-1.5 text-[10px] font-mono text-[var(--ink)] outline-none"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingTag(true)}
+                  className="inline-flex items-center gap-0.5 rounded-md border border-dashed border-[var(--line)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition"
+                  title="Add tag"
+                >
+                  <Plus className="h-2.5 w-2.5" />
+                  <span>tag</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

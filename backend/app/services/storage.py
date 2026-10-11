@@ -6,7 +6,7 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..config import Settings, get_settings
 from ..schemas import GalleryItem
@@ -92,7 +92,17 @@ class StorageService:
         """Compatibility wrapper for existing image-generation callers."""
         return await self.upload_asset(data, prompt_id, filename, content_type, metadata, namespace)
 
-    def list_recent(self, limit: int = 60, *, origin: str | None = None, tool_id: str | None = None, tool_type: str | None = None, tag: str | None = None) -> list[GalleryItem]:
+    def list_recent(
+        self,
+        limit: int = 60,
+        *,
+        origin: str | None = None,
+        tool_id: str | None = None,
+        tool_type: str | None = None,
+        tag: str | None = None,
+        tags: list[str] | None = None,
+        tag_mode: str = "all",
+    ) -> list[GalleryItem]:
         self.ensure_root()
         files = [p for p in self.root.rglob("*") if p.suffix.lower() in ASSET_EXTENSIONS and p.is_file()]
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
@@ -111,6 +121,16 @@ class StorageService:
                 continue
             if tag and tag not in (metadata.get("tags") or []):
                 continue
+            if tags:
+                item_tags = {str(t).lower() for t in (metadata.get("tags") or [])}
+                req_tags = [str(t).lower() for t in tags if str(t).strip()]
+                if req_tags:
+                    if tag_mode == "any":
+                        if not any(t in item_tags for t in req_tags):
+                            continue
+                    else:  # "all"
+                        if not all(t in item_tags for t in req_tags):
+                            continue
             items.append(item)
             if len(items) >= limit:
                 break
@@ -149,6 +169,43 @@ class StorageService:
         except (OSError, json.JSONDecodeError) as exc:
             raise StorageError("Could not update asset visibility") from exc
         return self._gallery_item(path)
+
+    def update_tags(self, key: str, tags: list[str]) -> GalleryItem:
+        path = (self.root / key).resolve()
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise StorageError("Invalid asset key") from exc
+        if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
+            raise FileNotFoundError(key)
+        sidecar = self._metadata_path(path)
+        try:
+            raw = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else {}
+            if not isinstance(raw, dict):
+                raw = {}
+            raw["tags"] = tags
+            temp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+            temp.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp.replace(sidecar)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StorageError("Could not update asset tags") from exc
+        return self._gallery_item(path)
+
+    def list_popular_tags(self, limit: int = 50) -> list[dict[str, Any]]:
+        self.ensure_root()
+        counts: dict[str, int] = {}
+        for p in self.root.rglob("*.json"):
+            try:
+                raw = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for tag in raw.get("tags") or []:
+                        if isinstance(tag, str) and tag.strip():
+                            norm = tag.strip().lower()
+                            counts[norm] = counts.get(norm, 0) + 1
+            except Exception:
+                continue
+        sorted_tags = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        return [{"name": name, "count": count} for name, count in sorted_tags]
 
     def delete_asset(self, key: str) -> bool:
         if not key or not str(key).strip():

@@ -13,3 +13,4 @@ dist/
 backend/generated/
 backend/models/
 backend/tool_data/
+tool_data/

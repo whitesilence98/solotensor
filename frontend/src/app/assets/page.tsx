@@ -24,6 +24,7 @@ import {
   type AssetType,
   type GalleryItem,
   type InstalledGalleryModel,
+  type TagSummary,
 } from "@/lib/api";
 
 const PAGE_SIZE = 24;
@@ -86,6 +87,10 @@ export default function AssetsPage() {
   const [selectedAsset, setSelectedAsset] = useState<AssetRecord | null>(null);
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
 
+  // Tags Filter State
+  const [popularTags, setPopularTags] = useState<TagSummary[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     void api
@@ -97,6 +102,71 @@ export default function AssetsPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getPopularTags(40)
+      .then((items) => {
+        if (!cancelled) setPopularTags(items);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Sync initial query params (?tags=... or ?tag=...)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tagParam = params.get("tag");
+    const tagsParam = params.get("tags");
+    if (tagsParam) {
+      const parsed = tagsParam
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+      setSelectedTags(parsed);
+    } else if (tagParam) {
+      setSelectedTags([tagParam.trim().toLowerCase()]);
+    }
+  }, []);
+
+  const toggleTag = useCallback((tagName: string) => {
+    const norm = tagName.trim().toLowerCase();
+    setSelectedTags((prev) => {
+      const next = prev.includes(norm) ? prev.filter((t) => t !== norm) : [...prev, norm];
+      try {
+        const url = new URL(window.location.href);
+        if (next.length > 0) {
+          url.searchParams.set("tags", next.join(","));
+          url.searchParams.delete("tag");
+        } else {
+          url.searchParams.delete("tags");
+          url.searchParams.delete("tag");
+        }
+        window.history.replaceState(null, "", url.pathname + (url.search ? url.search : ""));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    setVisible(PAGE_SIZE);
+  }, []);
+
+  const clearTags = useCallback(() => {
+    setSelectedTags([]);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tags");
+      url.searchParams.delete("tag");
+      window.history.replaceState(null, "", url.pathname + (url.search ? url.search : ""));
+    } catch {
+      // ignore
+    }
+    setVisible(PAGE_SIZE);
   }, []);
 
   const openAsset = useCallback((asset: AssetRecord) => {
@@ -202,10 +272,16 @@ export default function AssetsPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = byType[tab];
+    let list = byType[tab];
+    if (selectedTags.length > 0) {
+      list = list.filter((a) => {
+        const itemTags = (a.metadata?.tags || []).map((t) => t.toLowerCase());
+        return selectedTags.every((st) => itemTags.includes(st));
+      });
+    }
     if (!q) return list;
     return list.filter((a) => a.key.toLowerCase().includes(q));
-  }, [byType, tab, query]);
+  }, [byType, tab, query, selectedTags]);
 
   const shown = filtered.slice(0, visible);
 
@@ -239,65 +315,209 @@ export default function AssetsPage() {
     <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
       {/* ---------------- Header ---------------- */}
       <header className="workspace-command top-0 z-30 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-4 px-5 py-4 sm:px-6">
-          <div className="min-w-0 flex-1">
-            <p className="workspace-kicker">Personal catalog</p>
-            <h1 className="workspace-heading mt-1 text-3xl font-semibold tracking-tighter sm:text-4xl">Asset library</h1>
-            <p className="mt-1 text-xs text-[var(--ink-faint)]">Browse generated images, motion, and 3D output.</p>
+        {/* Row 1: Brand / Title + Segmented Type Switcher + New Render CTA */}
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="min-w-0">
+            <p className="workspace-kicker text-[10px]">Personal catalog</p>
+            <h1 className="workspace-heading mt-0.5 text-2xl font-bold tracking-tight text-[var(--ink)]">Asset library</h1>
           </div>
-          <Link href="/" className="workspace-action-primary inline-flex h-10 shrink-0 items-center gap-2 px-3.5 text-xs font-bold">
-            <Sparkles className="h-4 w-4" />
+
+          {/* Segmented Type Switcher (Images / Videos / 3D) */}
+          <div
+            role="tablist"
+            aria-label="Asset type"
+            className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1"
+          >
+            {TABS.map(({ id, label, icon: Icon }) => {
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setTab(id);
+                    setVisible(PAGE_SIZE);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                    active
+                      ? "bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm border border-[var(--line-strong)]"
+                      : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  <Icon className={`h-3.5 w-3.5 ${active ? "text-[var(--accent)]" : ""}`} />
+                  <span>{label}</span>
+                  <span
+                    className={`font-mono text-[10px] tabular-nums rounded px-1 py-0.2 ${
+                      active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-bold" : "text-[var(--ink-faint)]"
+                    }`}
+                  >
+                    {formatCount(counts[id])}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/"
+            className="workspace-action-primary inline-flex h-9 shrink-0 items-center gap-1.5 px-3.5 text-xs font-bold"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">New render</span>
           </Link>
         </div>
-        <div className="mx-auto flex max-w-[1600px] gap-4 px-5 pb-3 sm:px-6">
+
+        {/* Row 2: Unified Command Bar (Search + Source Selector) */}
+        <div className="mx-auto flex max-w-[1600px] flex-col sm:flex-row items-stretch sm:items-center gap-2.5 px-4 pb-2.5 sm:px-6">
+          {/* Search Field */}
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
             <input
               ref={searchRef}
               type="search"
               value={searchDraft}
               onChange={(e) => setSearchDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") commitSearch(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitSearch();
+              }}
               onBlur={commitSearch}
               placeholder="Search local filenames…"
               aria-label="Search local filenames"
-              className="workspace-field h-11 w-full pl-10 pr-20 text-sm placeholder:text-[var(--ink-faint)]"
+              className="workspace-field h-9 w-full pl-9 pr-16 text-xs placeholder:text-[var(--ink-faint)]"
             />
-            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink-faint)] sm:block">/</kbd>
-            {searchDraft && <button type="button" onClick={clearSearch} aria-label="Clear asset search" className="workspace-action-quiet absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center sm:right-14"><span aria-hidden>×</span></button>}
+            <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--ink-faint)] sm:block">
+              /
+            </kbd>
+            {searchDraft && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                aria-label="Clear asset search"
+                className="workspace-action-quiet absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center sm:right-10 text-xs"
+              >
+                <span aria-hidden>×</span>
+              </button>
+            )}
           </div>
-        </div>
 
-        <div className="mx-auto max-w-[1600px] px-5 sm:px-6">
-          <div aria-label="Asset type" className="flex gap-5">
-            {TABS.map(({ id, label, icon: Icon }) => {
-              const active = tab === id;
-              return (
-                <button key={id} type="button" aria-pressed={active} onClick={() => { setTab(id); setVisible(PAGE_SIZE); }} className={`relative flex shrink-0 items-center gap-2 pb-3 pt-1.5 text-sm font-medium transition-colors focus-visible:text-[var(--accent)] ${active ? "text-[var(--ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"}`}>
-                  <Icon className={`h-4 w-4 ${active ? "text-[var(--accent)]" : ""}`} />
-                  {label}
-                  <span className={`border border-[var(--line)] px-1.5 py-0.5 text-[11px] tabular-nums ${active ? "border-[var(--accent)] text-[var(--accent)]" : "text-[var(--ink-faint)]"}`}>{formatCount(counts[id])}</span>
-                  <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 bg-[var(--accent)] ${active ? "opacity-100" : "opacity-0"}`} />
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex gap-2 overflow-x-auto py-3" aria-label="Asset source">
+          {/* Source Filter Group */}
+          <div
+            className="flex items-center shrink-0 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1"
+            aria-label="Asset source"
+          >
             {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
-              <button key={source} type="button" aria-pressed={origin === source} onClick={() => { setOrigin(source); setVisible(PAGE_SIZE); setLoading(true); setError(null); }} className={`workspace-chip min-h-9 whitespace-nowrap px-3 py-1.5 text-[11px] ${origin === source ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"}`}>
-                {source === "all" ? "All sources" : source === "workspace" ? "Workspace" : "AI tools"}
+              <button
+                key={source}
+                type="button"
+                aria-pressed={origin === source}
+                onClick={() => {
+                  setOrigin(source);
+                  setVisible(PAGE_SIZE);
+                  setLoading(true);
+                  setError(null);
+                }}
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1 font-mono text-[10px] uppercase font-semibold transition ${
+                  origin === source
+                    ? "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm"
+                    : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                }`}
+              >
+                {source === "all" ? "All Sources" : source === "workspace" ? "Workspace" : "AI Tools"}
               </button>
             ))}
           </div>
         </div>
+
+        {/* Row 3: Compact Tags & Filter Rail */}
+        {popularTags.length > 0 && (
+          <div className="mx-auto max-w-[1600px] px-4 pb-2 sm:px-6">
+            <div
+              className="flex items-center gap-1.5 overflow-x-auto border-t border-[var(--line)] pt-2 no-scrollbar"
+              aria-label="Tag filters"
+            >
+              <button
+                type="button"
+                onClick={clearTags}
+                className={`min-h-6 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold transition ${
+                  selectedTags.length === 0
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                }`}
+              >
+                All tags
+              </button>
+              {popularTags.map(({ name, count }) => {
+                const active = selectedTags.includes(name.toLowerCase());
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleTag(name)}
+                    className={`min-h-6 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px] transition ${
+                      active
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <span className={active ? "text-[var(--accent-ink)]" : "text-[var(--accent)]"}>#</span>
+                    <span>{name}</span>
+                    <span className="ml-1 opacity-60">({count})</span>
+                  </button>
+                );
+              })}
+              {selectedTags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearTags}
+                  className="workspace-action-quiet min-h-6 shrink-0 whitespace-nowrap px-1.5 text-[10px] font-mono text-[var(--danger)] hover:underline"
+                >
+                  Clear tags ({selectedTags.length})
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ---------------- Grid ---------------- */}
       <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-[calc(var(--mobile-nav-height)+2rem)] pt-6 sm:px-6 sm:pb-8" aria-label="Asset results">
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
-          <p aria-live="polite">{loading ? "Loading assets…" : `Showing ${formatCount(shown.length)} of ${formatCount(filtered.length)} ${tab === "3d" ? "3D assets" : `${tab}${filtered.length === 1 ? "" : "s"}`}`}</p>
-          {!loading && query && <button type="button" onClick={clearSearch} className="workspace-action-quiet min-h-9 px-2 text-xs">Clear search</button>}
+          <div className="flex items-center gap-2 flex-wrap">
+            <p aria-live="polite">
+              {loading
+                ? "Loading assets…"
+                : `Showing ${formatCount(shown.length)} of ${formatCount(filtered.length)} ${
+                    tab === "3d" ? "3D assets" : `${tab}${filtered.length === 1 ? "" : "s"}`
+                  }`}
+            </p>
+            {selectedTags.length > 0 && (
+              <span className="font-mono text-[11px] text-[var(--accent)]">
+                filtered by: {selectedTags.map((t) => `#${t}`).join(", ")}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedTags.length > 0 && (
+              <button
+                type="button"
+                onClick={clearTags}
+                className="workspace-action-quiet min-h-9 px-2 text-xs text-[var(--danger)]"
+              >
+                Reset tags
+              </button>
+            )}
+            {!loading && query && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="workspace-action-quiet min-h-9 px-2 text-xs"
+              >
+                Clear search
+              </button>
+            )}
+          </div>
         </div>
         {loading ? (
           <div className="masonry" aria-label="Loading assets" aria-busy="true">

@@ -695,3 +695,23 @@ class LocalModelImportRequest(BaseModel):
     category: str = Field(..., min_length=1, max_length=64)
     filename: str = Field(..., min_length=1, max_length=512)
     precision: ModelPrecision = ModelPrecision.FP16
+
+
+class TagSummary(BaseModel):
+    name: str
+    count: int
+
+
+class TagSummaryList(BaseModel):
+    items: list[TagSummary]
+
+
+class TagUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    tags: list[str] = Field(..., max_length=100)
+
+
+class TagInterrogateResponse(BaseModel):
+    tags: list[str]
+    elapsed_ms: int
+
