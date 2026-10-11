@@ -11,6 +11,7 @@ import {
   api,
   uuid,
   type GalleryItem,
+  type GalleryMetadata,
   type GeneratePayload,
   type GenerationMode,
   type GenerationResult,
@@ -77,6 +78,7 @@ export default function StudioPage() {
   const [format, setFormat] = useState<FormatKey>("9:16");
   const [customWidth, setCustomWidth] = useState("768");
   const [customHeight, setCustomHeight] = useState("1344");
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -374,6 +376,48 @@ export default function StudioPage() {
     refreshGallery,
   ]);
 
+  const handleRemix = useCallback((meta: GalleryMetadata) => {
+    if (meta.prompt) setPrompt(meta.prompt);
+    if (typeof meta.negative_prompt === "string") setNegativePrompt(meta.negative_prompt);
+    if (meta.seed !== undefined && meta.seed !== null) setSeed(String(meta.seed));
+    if (meta.steps !== undefined && meta.steps !== null) setSteps(String(meta.steps));
+    if (meta.cfg !== undefined && meta.cfg !== null) setCfg(String(meta.cfg));
+    if (meta.denoise !== undefined && meta.denoise !== null) setDenoise(String(meta.denoise));
+    if (meta.format_name && FORMAT_KEYS.includes(meta.format_name as FormatKey)) {
+      setFormat(meta.format_name as FormatKey);
+    }
+    if (meta.width && meta.height) {
+      setCustomWidth(String(meta.width));
+      setCustomHeight(String(meta.height));
+    }
+    if (meta.model_id && meta.version_id && meta.file_id) {
+      setSelection({
+        modelId: meta.model_id,
+        versionId: meta.version_id,
+        fileId: meta.file_id,
+      });
+    }
+    if (Array.isArray(meta.loras) && meta.loras.length > 0) {
+      const activeLoras: ActiveLora[] = meta.loras.map((l, index) => ({
+        id: `remix-${index}-${l.lora}`,
+        title: l.lora,
+        baseModel: "SDXL",
+        weight: l.strength,
+        enabled: l.on,
+      }));
+      setLoras(activeLoras);
+    }
+  }, []);
+
+  const handleDeleteOutput = useCallback(async (key: string) => {
+    try {
+      await api.deleteAsset(key);
+      await refreshGallery();
+    } catch (err) {
+      console.error("Failed to delete asset:", err);
+    }
+  }, [refreshGallery]);
+
   return (
     <div className="workspace-bezel relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-transparent p-2 sm:p-3 lg:flex-row lg:gap-3 lg:overflow-hidden">
       {/* Left Control Panel (Collapsible) */}
@@ -448,10 +492,13 @@ export default function StudioPage() {
         error={error}
         outputWidth={outputDimensions.width}
         outputHeight={outputDimensions.height}
-        referenceImage={null}
+        referenceImage={referenceImage}
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebarCollapse={() => setIsSidebarCollapsed((v) => !v)}
         onReload={refreshGallery}
+        onRemix={handleRemix}
+        onSetReferenceImage={setReferenceImage}
+        onDeleteOutput={handleDeleteOutput}
       />
     </div>
   );

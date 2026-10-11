@@ -48,10 +48,41 @@ const BASE_MODEL_FILTERS = [
 ];
 
 /**
- * Creator-model gallery card.
+ * 1:1 Mirroring Skeleton for Model Gallery Card (Zero-CLS)
  */
-function TensorModelCard({ item }: { item: PublicModelSummary }) {
+function ModelCardSkeleton({ index }: { index: number }) {
+  return (
+    <div
+      style={{ animationDelay: `${index * 40}ms` }}
+      className="relative flex aspect-[3/4] w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+    >
+      {/* Background base shimmer */}
+      <div className="absolute inset-0 shimmer opacity-60" />
+
+      {/* Floating Top Badges Mirror */}
+      <div className="absolute inset-x-3.5 top-3.5 z-10 flex items-center justify-between pointer-events-none">
+        <div className="h-5 w-16 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+        <div className="h-5 w-12 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+      </div>
+
+      {/* Atmospheric Bottom Gradient Scrim */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 via-50% to-transparent" />
+
+      {/* Bottom Typography Overlay Mirror */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-5 space-y-2 pointer-events-none">
+        <div className="h-6 w-3/4 rounded-lg bg-white/20 shimmer" />
+        <div className="h-4 w-1/2 rounded-md bg-white/10 shimmer mt-1.5" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Creator-model gallery card with progressive image hydration.
+ */
+function TensorModelCard({ item, index = 0 }: { item: PublicModelSummary; index?: number }) {
   const [imgError, setImgError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const coverUrl = resolveMediaUrl(item.cover_url);
 
   // Type badge styling
@@ -83,16 +114,29 @@ function TensorModelCard({ item }: { item: PublicModelSummary }) {
   return (
     <Link
       href={`/models/gallery/${item.model_id}`}
+      style={{ animationDelay: `${index * 30}ms` }}
       className="group relative flex aspect-[3/4] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out"
     >
-      {/* Full-Bleed Media */}
+      {/* Background Shimmer Placeholder while media decodes */}
+      {coverUrl && !imgError && (
+        <div
+          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        />
+      )}
+
+      {/* Full-Bleed Media with smooth progressive hydration */}
       {coverUrl && !imgError ? (
         <img
           src={coverUrl}
           alt={item.title}
           loading="lazy"
+          onLoad={() => setIsLoaded(true)}
           onError={() => setImgError(true)}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
         />
       ) : (
         <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
@@ -393,17 +437,14 @@ export default function ModelGalleryPage() {
           </p>
         </div>
 
-        {/* Loading Shimmer State */}
+        {/* Loading Shimmer State (1:1 Layout Parity) */}
         {loading && (
           <div
-            className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+            className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4"
             aria-label="Loading models"
           >
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
-              <div
-                key={i}
-                className="shimmer aspect-[3/4] w-full rounded-[20px] border border-[var(--line)] bg-[var(--surface)]"
-              />
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i, idx) => (
+              <ModelCardSkeleton key={i} index={idx} />
             ))}
           </div>
         )}
@@ -461,11 +502,11 @@ export default function ModelGalleryPage() {
           </div>
         )}
 
-        {/* Tensor.art Card Grid */}
+        {/* Tensor.art Card Grid with smooth cross-fade */}
         {!loading && !error && filteredItems.length > 0 && (
-          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4">
-            {filteredItems.map((item) => (
-              <TensorModelCard key={item.model_id} item={item} />
+          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4 animate-in fade-in duration-300 ease-out">
+            {filteredItems.map((item, idx) => (
+              <TensorModelCard key={item.model_id} item={item} index={idx} />
             ))}
           </div>
         )}

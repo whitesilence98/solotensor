@@ -498,6 +498,23 @@ export default function ControlPanel(props: Props) {
     )}
 
     {/* 1. Basic Model Card (Tensor.art layout & controls) */}
+    {modelsLoading && !selectedModel ? (
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        Basic Model
+       </span>
+       <div className="h-4 w-14 rounded-xl bg-white/10 shimmer" />
+      </div>
+      <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 min-w-0">
+       <div className="h-12 w-12 shrink-0 rounded-xl bg-[var(--surface-soft)] shimmer border border-white/5" />
+       <div className="min-w-0 flex-1 space-y-2">
+        <div className="h-3.5 w-3/4 rounded bg-white/15 shimmer" />
+        <div className="h-2.5 w-1/2 rounded bg-white/10 shimmer mt-1.5" />
+       </div>
+      </div>
+     </div>
+    ) : (
     <div className="space-y-1.5">
      <div className="flex items-center justify-between">
       <div className="flex items-center gap-1.5">
@@ -608,6 +625,7 @@ export default function ControlPanel(props: Props) {
       )}
      </div>
     </div>
+    )}
 
     {/* 2. LoRA Cards Section (Tensor.art layout & controls) */}
     <div className="space-y-2">
@@ -944,12 +962,12 @@ export default function ControlPanel(props: Props) {
       />
      </div>
 
-     {/* Negative Prompt (Exclude) - Directly Adjacent */}
+     {/* Negative Prompt - Directly Adjacent */}
      <div className="space-y-1.5">
       <div className="flex items-center justify-between">
        <label htmlFor="neg-prompt" className="flex items-center gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
-        <span>Negative Prompt (Exclude)</span>
+        <span>Negative Prompt</span>
        </label>
        {negativePrompt && onNegativePromptChange && (
         <button
@@ -1321,12 +1339,14 @@ export default function ControlPanel(props: Props) {
               : "border-[var(--line)] bg-[var(--surface-soft)] hover:border-[var(--line-strong)]"
             }`}
            >
-            {/* Full-Bleed Cover Image */}
+            {/* Full-Bleed Cover Image with shimmer */}
+            {cover && <div className="absolute inset-0 shimmer opacity-50" />}
             {cover ? (
              <img
               src={cover}
               alt={m.title}
-              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
               onError={(e) => {
                (e.currentTarget as HTMLElement).style.display = "none";
               }}
@@ -1514,13 +1534,15 @@ export default function ControlPanel(props: Props) {
            }`}
           >
            <div className="flex items-start gap-3">
-            {/* Thumbnail */}
+            {/* Thumbnail with shimmer */}
             <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] grid place-items-center">
+             {item.thumbnailUrl && <div className="absolute inset-0 shimmer opacity-40" />}
              {item.thumbnailUrl ? (
               <img
                src={resolveMediaUrl(item.thumbnailUrl) || item.thumbnailUrl}
                alt={item.title}
-               className="h-full w-full object-cover"
+               loading="lazy"
+               className="relative z-10 h-full w-full object-cover transition-opacity duration-300"
                onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = "none";
                }}

@@ -28,30 +28,79 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
+/**
+ * 1:1 Mirroring Skeleton for Tool Studio Card (Zero-CLS)
+ */
+function ToolCardSkeleton({ index }: { index: number }) {
+  return (
+    <div
+      style={{ animationDelay: `${index * 40}ms` }}
+      className="relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+    >
+      {/* Background base shimmer */}
+      <div className="absolute inset-0 shimmer opacity-60" />
+
+      {/* Floating Top Metadata & Actions Mirror */}
+      <div className="absolute inset-x-3.5 top-3.5 z-10 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-1.5">
+          <div className="h-5 w-16 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+          <div className="h-5 w-10 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+        </div>
+        <div className="h-7 w-7 rounded-lg border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+      </div>
+
+      {/* Atmospheric Bottom Gradient Scrim */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 via-50% to-transparent" />
+
+      {/* Bottom Typography Overlay Mirror */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-5 space-y-2 pointer-events-none">
+        <div className="h-6 w-2/3 rounded-lg bg-white/20 shimmer" />
+        <div className="h-4 w-1/3 rounded-md bg-white/10 shimmer mt-1.5" />
+      </div>
+    </div>
+  );
+}
+
 function TensorToolCard({
   tool,
   onDelete,
+  index = 0,
 }: {
   tool: ToolSummary;
   onDelete: (tool: ToolSummary) => void;
+  index?: number;
 }) {
   const [imgError, setImgError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const isVideo = tool.mode.includes("video");
   const thumbUrl = resolveMediaUrl(tool.thumbnail_url);
 
   return (
     <Link
       href={`/tools/${tool.tool_id}`}
+      style={{ animationDelay: `${index * 30}ms` }}
       className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out"
     >
-      {/* Full-Bleed Media */}
+      {/* Background Shimmer Placeholder while media decodes */}
+      {thumbUrl && !imgError && (
+        <div
+          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        />
+      )}
+
+      {/* Full-Bleed Media with smooth progressive hydration */}
       {thumbUrl && !imgError ? (
         <img
           src={thumbUrl}
           alt={tool.name}
           loading="lazy"
+          onLoad={() => setIsLoaded(true)}
           onError={() => setImgError(true)}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
         />
       ) : (
         <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-6 text-center">
@@ -172,10 +221,22 @@ export default function ToolStudioPage() {
       </header>
       <section className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]"><p aria-live="polite">{loading ? "Loading tools…" : `Showing ${filteredTools.length} of ${tools.length} workflow${tools.length === 1 ? "" : "s"}`}</p>{hasActiveFilters && <button type="button" onClick={clearFilters} className="workspace-action-quiet min-h-9 px-2 text-xs">Clear filters</button>}</div>
-        {loading && <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading tools">{[1,2,3,4,5,6,7,8].map((item) => <div key={item} className="shimmer aspect-[16/10] w-full rounded-[20px] border border-[var(--line)] bg-[var(--surface)]" />)}</div>}
+        {loading && (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading tools">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((item, idx) => (
+              <ToolCardSkeleton key={item} index={idx} />
+            ))}
+          </div>
+        )}
         {!loading && error && <div role="alert" className="border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center text-sm text-[var(--danger)]"><p className="font-semibold">{error}</p><button type="button" onClick={load} className="mt-3 inline-flex items-center gap-1.5 border border-[var(--danger-line)] px-4 py-2 text-xs font-bold transition hover:bg-[var(--danger-line)]/50"><RefreshCw className="h-3.5 w-3.5" />Retry</button></div>}
         {!loading && !error && filteredTools.length === 0 && <div className="border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] p-12 text-center"><div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]"><Wrench className="h-7 w-7 opacity-70" /></div><h3 className="text-base font-bold text-[var(--ink)]">{hasActiveFilters ? "No matching workflows" : "Your workflow shelf is empty"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-[var(--ink-faint)]">{hasActiveFilters ? "Try searching with a different keyword or resetting the workflow mode filter." : "Create your first AI Tool by importing a ComfyUI workflow_api.json file."}</p>{hasActiveFilters ? <button type="button" onClick={clearFilters} className="mt-4 bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Clear all filters</button> : <Link href="/tools/create" className="mt-4 inline-block bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Create your first tool</Link>}</div>}
-        {!loading && !error && filteredTools.length > 0 && <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filteredTools.map((tool) => <TensorToolCard key={tool.tool_id} tool={tool} onDelete={setToolToDelete} />)}</div>}
+        {!loading && !error && filteredTools.length > 0 && (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in duration-300 ease-out">
+            {filteredTools.map((tool, idx) => (
+              <TensorToolCard key={tool.tool_id} tool={tool} onDelete={setToolToDelete} index={idx} />
+            ))}
+          </div>
+        )}
       </section>
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8"><WorkspaceFooter /></div>
 

@@ -1,20 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
  AlertCircle,
  Check,
+ ChevronLeft,
+ ChevronRight,
  Copy,
  Download,
+ ExternalLink,
  FolderOpen,
  Grid2X2,
+ Layers,
  List,
+ Maximize2,
+ Minimize2,
  PanelLeftOpen,
  RefreshCw,
+ Sparkles,
+ Trash2,
+ X,
 } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
-import { resolveMediaUrl, type GalleryItem } from "@/lib/api";
+import { formatBytes } from "@/components/AssetCard";
+import { resolveMediaUrl, type GalleryItem, type GalleryMetadata } from "@/lib/api";
 
 export type MediaFilter = "all" | "video" | "image" | "audio";
 export type ViewMode = "grid" | "list";
@@ -37,6 +47,9 @@ interface Props {
  isSidebarCollapsed: boolean;
  onToggleSidebarCollapse: () => void;
  onReload: () => void;
+ onRemix?: (meta: GalleryMetadata) => void;
+ onSetReferenceImage?: (url: string) => void;
+ onDeleteOutput?: (key: string) => void;
 }
 
 function ComparisonSlider({ before, after }: { before: string; after: string }) {
@@ -126,6 +139,138 @@ function ComparisonSlider({ before, after }: { before: string; after: string }) 
  );
 }
 
+function CanvasGridCard({
+ item,
+ promptText,
+ onClick,
+}: {
+ item: GalleryItem;
+ promptText: string;
+ onClick: () => void;
+}) {
+ const [isLoaded, setIsLoaded] = useState(false);
+ const mediaUrl = resolveMediaUrl(item.url) || item.url;
+
+ return (
+  <div
+   onClick={onClick}
+   onKeyDown={(event) => {
+    if (event.key === "Enter" || event.key === " ") {
+     event.preventDefault();
+     onClick();
+    }
+   }}
+   role="button"
+   tabIndex={0}
+   className="media-frame group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[var(--overlay)] shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] focus-visible:-translate-y-0.5 hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)]"
+   style={{ aspectRatio: "1 / 1" }}
+  >
+   {/* Underlying Shimmer Placeholder */}
+   <div
+    className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+     isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+    }`}
+   />
+   {/* Full-Bleed Media with smooth progressive hydration */}
+   {/* eslint-disable-next-line @next/next/no-img-element */}
+   <img
+    src={mediaUrl}
+    alt={promptText}
+    loading="lazy"
+    onLoad={() => setIsLoaded(true)}
+    className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
+     isLoaded ? "opacity-100" : "opacity-0"
+    }`}
+   />
+  </div>
+ );
+}
+
+function CanvasListCard({
+ item,
+ promptText,
+ meta,
+ onClick,
+ onCopy,
+ copied,
+}: {
+ item: GalleryItem;
+ promptText: string;
+ meta: GalleryItem["metadata"];
+ onClick: () => void;
+ onCopy: () => void;
+ copied: boolean;
+}) {
+ const [isLoaded, setIsLoaded] = useState(false);
+ const mediaUrl = resolveMediaUrl(item.url) || item.url;
+
+ return (
+  <div
+   onClick={onClick}
+   onKeyDown={(event) => {
+    if (event.key === "Enter" || event.key === " ") {
+     event.preventDefault();
+     onClick();
+    }
+   }}
+   role="button"
+   tabIndex={0}
+   className="group flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--overlay)] p-3 transition hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)]"
+  >
+   <div className="flex items-center gap-3 min-w-0">
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-[var(--surface-raised)]">
+     <div
+      className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+       isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+      }`}
+     />
+     {/* eslint-disable-next-line @next/next/no-img-element */}
+     <img
+      src={mediaUrl}
+      alt={item.key}
+      loading="lazy"
+      onLoad={() => setIsLoaded(true)}
+      className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
+       isLoaded ? "opacity-100" : "opacity-0"
+      }`}
+     />
+    </div>
+    <div className="min-w-0">
+     <p className="truncate text-xs font-medium text-[var(--ink)]">{promptText}</p>
+     <p className="mt-1 truncate font-mono text-[11px] text-[var(--ink-faint)]">
+      {meta?.model_title ?? "ComfyUI"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
+     </p>
+    </div>
+   </div>
+
+   <div className="flex items-center gap-2">
+    <button
+     type="button"
+     onClick={(e) => {
+      e.stopPropagation();
+      onCopy();
+     }}
+     className="rounded-xl bg-[var(--surface-soft)] p-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
+     aria-label="Copy prompt"
+     title="Copy prompt"
+    >
+     {copied ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+    <a
+     href={item.url}
+     download
+     onClick={(e) => e.stopPropagation()}
+     className="rounded-xl bg-[var(--surface-soft)] p-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
+     aria-label="Download output"
+     title="Download"
+    >
+     <Download className="h-3.5 w-3.5" />
+    </a>
+   </div>
+  </div>
+ );
+}
+
 export default function CanvasPreview(props: Props) {
  const {
   canGenerate,
@@ -141,12 +286,17 @@ export default function CanvasPreview(props: Props) {
   isSidebarCollapsed,
   onToggleSidebarCollapse,
   onReload,
+  onRemix,
+  onSetReferenceImage,
+  onDeleteOutput,
  } = props;
 
  const [activeTab, setActiveTab] = useState<MediaFilter>("all");
  const [viewMode, setViewMode] = useState<ViewMode>("grid");
  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+ const [isZoomed, setIsZoomed] = useState(false);
+ const [confirmDelete, setConfirmDelete] = useState(false);
 
  // Filter gallery items by active tab (all, video, image, audio)
  const filteredGallery = useMemo(() => {
@@ -163,6 +313,64 @@ export default function CanvasPreview(props: Props) {
 
  const latest = filteredGallery[0];
  const canCompare = Boolean(referenceImage && latest && !busy);
+
+ const selectedIndex = selectedAsset
+  ? filteredGallery.findIndex((item) => item.key === selectedAsset.key)
+  : -1;
+
+ const handlePrev = useCallback(() => {
+  if (filteredGallery.length <= 1) return;
+  const currIdx = selectedAsset
+   ? filteredGallery.findIndex((i) => i.key === selectedAsset.key)
+   : -1;
+  if (currIdx > 0) {
+   setSelectedAsset(filteredGallery[currIdx - 1]);
+  } else {
+   setSelectedAsset(filteredGallery[filteredGallery.length - 1]);
+  }
+ }, [filteredGallery, selectedAsset]);
+
+ const handleNext = useCallback(() => {
+  if (filteredGallery.length <= 1) return;
+  const currIdx = selectedAsset
+   ? filteredGallery.findIndex((i) => i.key === selectedAsset.key)
+   : -1;
+  if (currIdx >= 0 && currIdx < filteredGallery.length - 1) {
+   setSelectedAsset(filteredGallery[currIdx + 1]);
+  } else {
+   setSelectedAsset(filteredGallery[0]);
+  }
+ }, [filteredGallery, selectedAsset]);
+
+ // Reset zoom and delete confirmation when selected asset changes
+ useEffect(() => {
+  setIsZoomed(false);
+  setConfirmDelete(false);
+ }, [selectedAsset?.key]);
+
+ // Keyboard navigation for carousel stage
+ useEffect(() => {
+  if (!selectedAsset) return;
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    return;
+   }
+   if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    handlePrev();
+   } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    handleNext();
+   } else if (e.key === "Escape" && isZoomed) {
+    e.preventDefault();
+    setIsZoomed(false);
+   }
+  };
+
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
+ }, [selectedAsset, handlePrev, handleNext, isZoomed]);
 
  const copyPromptText = async (text: string, key: string) => {
   try {
@@ -357,12 +565,12 @@ export default function CanvasPreview(props: Props) {
       </button>
      </section>
     ) : (
-     /* Render Gallery Outputs */
+     /* Render Gallery Outputs with smooth cross-fade and progressive hydration */
      <div
       className={
        viewMode === "grid"
-        ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5"
-        : "space-y-3"
+        ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 animate-in fade-in duration-300 ease-out"
+        : "space-y-3 animate-in fade-in duration-300 ease-out"
       }
      >
       {filteredGallery.map((item) => {
@@ -371,85 +579,25 @@ export default function CanvasPreview(props: Props) {
 
        if (viewMode === "list") {
         return (
-         <div
+         <CanvasListCard
           key={item.key}
+          item={item}
+          promptText={promptText}
+          meta={meta}
           onClick={() => setSelectedAsset(item)}
-          onKeyDown={(event) => {
-           if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setSelectedAsset(item);
-           }
-          }}
-          role="button"
-          tabIndex={0}
-          className="group flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--overlay)] p-3 transition hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)]"
-         >
-          <div className="flex items-center gap-3 min-w-0">
-           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-[var(--surface-raised)]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={resolveMediaUrl(item.url) || item.url} alt={item.key} className="h-full w-full object-cover" />
-           </div>
-           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-[var(--ink)]">{promptText}</p>
-            <p className="mt-1 truncate font-mono text-[11px] text-[var(--ink-faint)]">
-             {meta?.model_title ?? "ComfyUI"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
-            </p>
-           </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-           <button
-            type="button"
-            onClick={(e) => {
-             e.stopPropagation();
-             copyPromptText(promptText, item.key);
-            }}
-            className="rounded-xl bg-[var(--surface-soft)] p-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
-            aria-label="Copy prompt"
-            title="Copy prompt"
-           >
-            {copiedKey === item.key ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
-           </button>
-           <a
-            href={item.url}
-            download
-            onClick={(e) => e.stopPropagation()}
-            className="rounded-xl bg-[var(--surface-soft)] p-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
-            aria-label="Download output"
-            title="Download"
-           >
-            <Download className="h-3.5 w-3.5" />
-           </a>
-          </div>
-         </div>
+          onCopy={() => copyPromptText(promptText, item.key)}
+          copied={copiedKey === item.key}
+         />
         );
        }
 
        return (
-        <div
+        <CanvasGridCard
          key={item.key}
+         item={item}
+         promptText={promptText}
          onClick={() => setSelectedAsset(item)}
-         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-           event.preventDefault();
-           setSelectedAsset(item);
-          }
-         }}
-         role="button"
-         tabIndex={0}
-         className="media-frame group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[var(--overlay)] shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] focus-visible:-translate-y-0.5 hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] "
-         style={{ aspectRatio: "1 / 1" }}
-        >
-         {/* eslint-disable-next-line @next/next/no-img-element */}
-         <img
-          src={resolveMediaUrl(item.url) || item.url}
-          alt={promptText}
-          loading="lazy"
-          className="h-full w-full object-cover"
-         />
-
-
-        </div>
+        />
        );
       })}
      </div>
@@ -459,87 +607,416 @@ export default function CanvasPreview(props: Props) {
    {/* Asset Detail Lightbox Modal */}
    <WorkspaceModal
     open={Boolean(selectedAsset)}
-    onClose={() => setSelectedAsset(null)}
-    title="Output details"
-    description="Review the generated media and the parameters stored with it."
-    eyebrow="Generated asset"
+    onClose={() => {
+     setSelectedAsset(null);
+     setIsZoomed(false);
+     setConfirmDelete(false);
+    }}
+    headless
     size="media"
    >
-    {selectedAsset && (
-     <div className="grid max-h-[75vh] min-h-0 overflow-hidden border-t border-[var(--line)] lg:grid-cols-[minmax(0,1fr)_24rem]">
-      {/* Left Image View */}
-      <div className="relative flex min-h-[300px] items-center justify-center bg-[var(--surface-sunken)] p-4">
-       {/* eslint-disable-next-line @next/next/no-img-element */}
-       <img
-        src={resolveMediaUrl(selectedAsset.url) || selectedAsset.url}
-        alt={selectedAsset.metadata?.prompt ?? "Generated artwork"}
-        className="max-h-[80vh] max-w-full rounded-xl object-contain"
-       />
-      </div>
+    {selectedAsset && (() => {
+     const meta = selectedAsset.metadata;
+     const mediaUrl = resolveMediaUrl(selectedAsset.url) || selectedAsset.url;
+     const rawMediaUrl = selectedAsset.url;
+     const currentNum = String(Math.max(1, selectedIndex + 1)).padStart(2, "0");
+     const totalNum = String(filteredGallery.length).padStart(2, "0");
 
-      {/* Right Details Panel */}
-      <div className="workspace-scroll flex w-full flex-col justify-between border-t border-[var(--line)] bg-[var(--overlay)] p-6 lg:w-96 lg:border-l lg:border-t-0">
-       <div className="space-y-4">
-        <div>
-         <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
-          Generation Details
+     return (
+      <div className="relative grid max-h-[85vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface)] lg:grid-cols-[minmax(0,1fr)_24.5rem] shadow-2xl">
+       {/* Floating Close Button on mobile / small screens */}
+       <button
+        type="button"
+        onClick={() => {
+         setSelectedAsset(null);
+         setIsZoomed(false);
+         setConfirmDelete(false);
+        }}
+        className="absolute top-3.5 right-3.5 z-30 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white active:scale-95 shadow-md lg:hidden"
+        aria-label="Close dialog"
+        title="Close (Esc)"
+       >
+        <X className="h-4 w-4" />
+       </button>
+
+       {/* Left Column: Atmospheric Media Stage */}
+       <div className="relative flex min-h-[380px] lg:min-h-[580px] flex-col items-center justify-center overflow-hidden bg-[var(--surface-sunken)] p-4 sm:p-6 select-none">
+        {/* Ambient blurred backdrop scrim mirroring artwork palette */}
+        <div
+         className="pointer-events-none absolute inset-0 -z-0 opacity-25 blur-3xl scale-125 transition-opacity duration-700 overflow-hidden"
+         aria-hidden="true"
+        >
+         {/* eslint-disable-next-line @next/next/no-img-element */}
+         <img
+          src={mediaUrl}
+          alt=""
+          className="h-full w-full object-cover"
+         />
+        </div>
+
+        {/* Top Floating Output Counter Pill */}
+        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 backdrop-blur-md shadow-md">
+         <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+         <span className="font-mono text-[10px] tracking-widest text-[var(--accent)] uppercase font-semibold">
+          {currentNum} / {totalNum} OUTPUTS
          </span>
-         <h3 className="mt-1 text-sm font-semibold text-[var(--ink)]">
-          {selectedAsset.metadata?.model_title ?? "Basic Model"}
-         </h3>
         </div>
 
-        {/* Prompt */}
-        <div>
-         <span className="text-[10px] font-semibold uppercase text-[var(--ink-faint)]">Prompt</span>
-         <p className="mt-1 max-h-32 overflow-y-auto rounded-xl bg-[var(--surface)] p-3 text-xs leading-relaxed text-[var(--ink)]">
-          {selectedAsset.metadata?.prompt ?? "No prompt recorded"}
-         </p>
+        {/* Top Floating Stage Controls */}
+        <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5">
+         <button
+          type="button"
+          onClick={() => setIsZoomed((z) => !z)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white"
+          title={isZoomed ? "Fit to view (Esc)" : "100% 1:1 Pixel Scale"}
+          aria-label={isZoomed ? "Fit to view" : "100% Pixel Scale"}
+         >
+          {isZoomed ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+         </button>
+         <a
+          href={rawMediaUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white"
+          title="Open uncompressed raw file in new tab"
+          aria-label="Open raw file"
+         >
+          <ExternalLink className="h-4 w-4" />
+         </a>
         </div>
 
-        {/* Parameters */}
-        <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-         <div className="rounded-xl bg-[var(--surface)] p-2.5">
-          <span className="block text-[9px] text-[var(--ink-faint)] uppercase">Seed</span>
-          <span className="text-[var(--ink)]">{selectedAsset.metadata?.seed ?? "N/A"}</span>
-         </div>
-         <div className="rounded-xl bg-[var(--surface)] p-2.5">
-          <span className="block text-[9px] text-[var(--ink-faint)] uppercase">Steps</span>
-          <span className="text-[var(--ink)]">{selectedAsset.metadata?.steps ?? "N/A"}</span>
-         </div>
-         <div className="rounded-xl bg-[var(--surface)] p-2.5">
-          <span className="block text-[9px] text-[var(--ink-faint)] uppercase">CFG</span>
-          <span className="text-[var(--ink)]">{selectedAsset.metadata?.cfg ?? "N/A"}</span>
-         </div>
-         <div className="rounded-xl bg-[var(--surface)] p-2.5">
-          <span className="block text-[9px] text-[var(--ink-faint)] uppercase">Format</span>
-          <span className="text-[var(--ink)]">{selectedAsset.metadata?.format_name ?? "1:1"}</span>
-         </div>
+        {/* Previous / Next Floating Chevrons */}
+        {filteredGallery.length > 1 && (
+         <>
+          <button
+           type="button"
+           onClick={(e) => {
+            e.stopPropagation();
+            handlePrev();
+           }}
+           className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white/80 backdrop-blur-md hover:border-white/30 hover:bg-black/90 hover:text-white transition active:scale-95 shadow-2xl"
+           title="Previous output (← Arrow Left)"
+           aria-label="Previous output"
+          >
+           <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+           type="button"
+           onClick={(e) => {
+            e.stopPropagation();
+            handleNext();
+           }}
+           className="absolute right-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white/80 backdrop-blur-md hover:border-white/30 hover:bg-black/90 hover:text-white transition active:scale-95 shadow-2xl"
+           title="Next output (→ Arrow Right)"
+           aria-label="Next output"
+          >
+           <ChevronRight className="h-5 w-5" />
+          </button>
+         </>
+        )}
+
+        {/* Active Image on Inspection Stage */}
+        <div
+         className={`relative z-10 flex h-full w-full items-center justify-center ${
+          isZoomed ? "overflow-auto cursor-grab active:cursor-grabbing p-4" : "p-2"
+         }`}
+        >
+         {/* eslint-disable-next-line @next/next/no-img-element */}
+         <img
+          src={mediaUrl}
+          alt={meta?.prompt ?? "Generated artwork"}
+          onClick={() => setIsZoomed((z) => !z)}
+          className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${
+           isZoomed
+            ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
+            : "max-h-[78vh] max-w-full object-contain cursor-zoom-in"
+          }`}
+         />
         </div>
        </div>
 
-       {/* Action Buttons */}
-       <div className="mt-6 flex items-center gap-2 pt-4 border-t border-[var(--line)]">
-        <button
-         type="button"
-         onClick={() => copyPromptText(selectedAsset.metadata?.prompt ?? "", "modal")}
-         className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] py-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] transition"
-        >
-         <Copy className="h-3.5 w-3.5 text-[var(--accent)]" />
-         <span>{copiedKey === "modal" ? "Copied!" : "Copy Prompt"}</span>
-        </button>
-        <a
-         href={selectedAsset.url}
-         download
-         className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] py-2.5 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] focus-visible:bg-[var(--accent-hover)] transition"
-        >
-         <Download className="h-3.5 w-3.5" />
-         <span>Download</span>
-        </a>
+       {/* Right Column: Deep Recipe & Parameter Inspector */}
+       <div className="workspace-scroll flex w-full flex-col justify-between border-t border-[var(--line)] bg-[var(--surface)] p-5 lg:w-[24.5rem] lg:border-l lg:border-t-0 overflow-y-auto max-h-[85vh]">
+        <div className="space-y-4">
+         {/* Streamlined Header & Model Strip */}
+         <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
+          <div className="min-w-0 flex items-center gap-2">
+           <span className="rounded-md bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
+            {meta?.model_category ? meta.model_category.toUpperCase() : "SDXL"}
+           </span>
+           <h3
+            className="text-xs font-bold text-[var(--ink)] truncate"
+            title={meta?.model_title ?? "Standard Model"}
+           >
+            {meta?.model_title ?? "Standard Model"}
+           </h3>
+          </div>
+
+          <button
+           type="button"
+           onClick={() => {
+            setSelectedAsset(null);
+            setIsZoomed(false);
+            setConfirmDelete(false);
+           }}
+           className="hidden lg:flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:border-white/20 hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] transition shrink-0 active:scale-95"
+           aria-label="Close dialog"
+           title="Close (Esc)"
+          >
+           <X className="h-4 w-4" />
+          </button>
+         </div>
+
+         {/* Applied LoRA Stack if present */}
+         {Array.isArray(meta?.loras) && meta.loras.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+           {meta.loras.map((lora, idx) => (
+            <span
+             key={idx}
+             className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)]"
+            >
+             <span className="text-[var(--accent)]">#</span>
+             <span className="truncate max-w-[120px]">{lora.lora}</span>
+             <span className="text-[var(--ink-faint)] font-bold">({lora.strength})</span>
+            </span>
+           ))}
+          </div>
+         )}
+
+         {/* Positive Prompt */}
+         <div>
+          <div className="mb-1.5 flex items-center justify-between">
+           <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+            Positive Prompt
+           </span>
+           <button
+            type="button"
+            onClick={() => copyPromptText(meta?.prompt ?? "", "positive-prompt")}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
+           >
+            {copiedKey === "positive-prompt" ? (
+             <>
+              <Check className="h-3 w-3" />
+              <span>Copied!</span>
+             </>
+            ) : (
+             <>
+              <Copy className="h-3 w-3" />
+              <span>Copy</span>
+             </>
+            )}
+           </button>
+          </div>
+          <div className="workspace-scroll max-h-32 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs leading-relaxed text-[var(--ink)] select-text">
+           {meta?.prompt ? (
+            meta.prompt
+           ) : (
+            <span className="text-[var(--ink-faint)] italic">No prompt recorded</span>
+           )}
+          </div>
+         </div>
+
+         {/* Negative Prompt */}
+         <div>
+          <div className="mb-1.5 flex items-center justify-between">
+           <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+            Negative Prompt
+           </span>
+           {meta?.negative_prompt && (
+            <button
+             type="button"
+             onClick={() => copyPromptText(meta.negative_prompt ?? "", "negative-prompt")}
+             className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
+            >
+             {copiedKey === "negative-prompt" ? (
+              <>
+               <Check className="h-3 w-3" />
+               <span>Copied!</span>
+              </>
+             ) : (
+              <>
+               <Copy className="h-3 w-3" />
+               <span>Copy</span>
+              </>
+             )}
+            </button>
+           )}
+          </div>
+          <div className="workspace-scroll max-h-20 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs leading-relaxed text-[var(--ink)] select-text">
+           {meta?.negative_prompt ? (
+            meta.negative_prompt
+           ) : (
+            <span className="text-[var(--ink-faint)] italic">None</span>
+           )}
+          </div>
+         </div>
+
+         {/* 2x3 Specs Matrix */}
+         <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+          {/* Seed with click-to-copy */}
+          <div
+           onClick={() => meta?.seed !== undefined && meta.seed !== null && copyPromptText(String(meta.seed), "seed")}
+           className="group cursor-pointer rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)]"
+           title="Click to copy seed"
+          >
+           <div className="flex items-center justify-between">
+            <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">Seed</span>
+            {copiedKey === "seed" ? (
+             <Check className="h-3 w-3 text-[var(--accent)]" />
+            ) : (
+             <Copy className="h-3 w-3 text-[var(--ink-faint)] opacity-0 transition group-hover:opacity-100" />
+            )}
+           </div>
+           <span className="mt-1 block truncate font-bold text-[var(--ink)]">
+            {meta?.seed ?? "N/A"}
+           </span>
+          </div>
+
+          {/* Steps */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+           <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">Steps</span>
+           <span className="mt-1 block font-bold text-[var(--ink)]">
+            {meta?.steps ?? "25"}
+           </span>
+          </div>
+
+          {/* CFG */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+           <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">CFG Scale</span>
+           <span className="mt-1 block font-bold text-[var(--ink)]">
+            {meta?.cfg ?? "7.0"}
+           </span>
+          </div>
+
+          {/* Dimensions */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+           <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">Dimensions</span>
+           <span className="mt-1 block font-bold text-[var(--ink)] truncate">
+            {meta?.width && meta?.height ? `${meta.width} × ${meta.height}` : meta?.format_name ?? "1024 × 1024"}
+           </span>
+          </div>
+
+          {/* Denoise or Duration */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+           <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
+            {meta?.denoise !== undefined ? "Denoise" : "Duration"}
+           </span>
+           <span className="mt-1 block font-bold text-[var(--ink)]">
+            {meta?.denoise !== undefined
+             ? meta.denoise
+             : meta?.elapsed_ms
+             ? `~${(meta.elapsed_ms / 1000).toFixed(1)}s`
+             : "1.0"}
+           </span>
+          </div>
+
+          {/* Size & Format */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+           <span className="block text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">Size / Format</span>
+           <span className="mt-1 block font-bold text-[var(--ink)] truncate">
+            {selectedAsset.size ? formatBytes(selectedAsset.size) : "PNG"} · {meta?.format_name ?? "1:1"}
+           </span>
+          </div>
+         </div>
+        </div>
+
+        {/* Action Buttons Footer */}
+        <div className="mt-4 space-y-2 pt-3.5 border-t border-[var(--line)]">
+         {/* Dominant Primary Remix CTA */}
+         <button
+          type="button"
+          onClick={() => {
+           if (meta && onRemix) {
+            onRemix(meta);
+            setSelectedAsset(null);
+           }
+          }}
+          className="workspace-action-primary flex w-full items-center justify-center gap-2 rounded-xl py-3 px-4 text-xs font-bold text-[var(--accent-ink)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] transition shadow-lg active:scale-[0.99]"
+         >
+          <Sparkles className="h-4 w-4" />
+          <span>Remix</span>
+         </button>
+
+         {/* Secondary Action Row */}
+         <div className="flex items-center gap-2">
+          {/* Use as Reference button */}
+          {onSetReferenceImage && (
+           <button
+            type="button"
+            onClick={() => {
+             onSetReferenceImage(mediaUrl);
+             setSelectedAsset(null);
+            }}
+            className="workspace-action-secondary flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 px-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-raised)] transition"
+            title="Set as reference image for comparison / Img2Img"
+           >
+            <Layers className="h-3.5 w-3.5 text-[var(--accent)]" />
+            <span>Reference</span>
+           </button>
+          )}
+
+          {/* Copy Prompt */}
+          <button
+           type="button"
+           onClick={() => copyPromptText(meta?.prompt ?? "", "footer-prompt")}
+           className="workspace-action-secondary flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 px-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-raised)] transition"
+           title="Copy prompt"
+          >
+           {copiedKey === "footer-prompt" ? (
+            <>
+             <Check className="h-3.5 w-3.5 text-[var(--accent)]" />
+             <span>Copied</span>
+            </>
+           ) : (
+            <>
+             <Copy className="h-3.5 w-3.5" />
+             <span>Prompt</span>
+            </>
+           )}
+          </button>
+
+          {/* Download Output */}
+          <a
+           href={mediaUrl}
+           download
+           className="workspace-action-secondary flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 px-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-raised)] transition text-center"
+           title="Download image"
+          >
+           <Download className="h-3.5 w-3.5" />
+           <span>Save</span>
+          </a>
+
+          {/* Delete Output with Safe Inline Confirm */}
+          {onDeleteOutput && (
+           <button
+            type="button"
+            onClick={() => {
+             if (confirmDelete) {
+              onDeleteOutput(selectedAsset.key);
+              setSelectedAsset(null);
+             } else {
+              setConfirmDelete(true);
+              setTimeout(() => setConfirmDelete(false), 3500);
+             }
+            }}
+            className={`flex h-9 items-center justify-center rounded-xl border transition px-2.5 text-xs font-medium ${
+             confirmDelete
+              ? "border-[var(--danger)] bg-[var(--danger)] text-white shadow-md animate-pulse"
+              : "border-[var(--danger-line)] bg-[var(--danger-surface)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white"
+            }`}
+            title={confirmDelete ? "Click again to confirm delete" : "Delete output"}
+            aria-label="Delete output"
+           >
+            <Trash2 className="h-3.5 w-3.5" />
+            {confirmDelete && <span className="ml-1 font-bold">Confirm</span>}
+           </button>
+          )}
+         </div>
+        </div>
        </div>
       </div>
-     </div>
-    )}
+     );
+    })()}
    </WorkspaceModal>
   </main>
  );

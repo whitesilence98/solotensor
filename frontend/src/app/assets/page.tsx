@@ -29,7 +29,32 @@ function formatCount(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-/* ------------------------------------------------------------------ */
+function AssetCardSkeleton({ index }: { index: number }) {
+  const height = 280 + ((index * 40) % 140);
+  return (
+    <div
+      style={{ height, animationDelay: `${index * 30}ms` }}
+      className="relative mb-4 flex w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+    >
+      {/* Background base shimmer */}
+      <div className="absolute inset-0 shimmer opacity-60" />
+
+      {/* Floating Top Badge Mirror */}
+      <div className="absolute left-3.5 top-3.5 z-10 pointer-events-none">
+        <div className="h-5 w-16 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+      </div>
+
+      {/* Atmospheric Bottom Gradient Scrim */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 via-50% to-transparent" />
+
+      {/* Bottom Typography Overlay Mirror */}
+      <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 space-y-2 pointer-events-none">
+        <div className="h-5 w-3/4 rounded-lg bg-white/20 shimmer" />
+        <div className="h-3.5 w-1/2 rounded-md bg-white/10 shimmer mt-1.5" />
+      </div>
+    </div>
+  );
+}
 
 export default function AssetsPage() {
   const router = useRouter();
@@ -204,11 +229,7 @@ export default function AssetsPage() {
         {loading ? (
           <div className="masonry" aria-label="Loading assets" aria-busy="true">
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
-              <div
-                key={i}
-                className="shimmer workspace-skeleton"
-                style={{ height: 280 + ((i * 40) % 120) }}
-              />
+              <AssetCardSkeleton key={i} index={i} />
             ))}
           </div>
         ) : error ? (
@@ -225,7 +246,7 @@ export default function AssetsPage() {
           )
         ) : (
           <>
-            <div className="masonry">
+            <div className="masonry animate-in fade-in duration-300 ease-out">
               {shown.map((asset) => (
                 <AssetCard
                   key={asset.key}

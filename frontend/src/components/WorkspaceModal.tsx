@@ -13,15 +13,17 @@ export default function WorkspaceModal({
   destructive = false,
   size = "default",
   eyebrow,
+  headless = false,
 }: {
   open: boolean;
-  title: string;
+  title?: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   destructive?: boolean;
   size?: "default" | "wide" | "media";
   eyebrow?: string;
+  headless?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -50,24 +52,30 @@ export default function WorkspaceModal({
   return (
     <dialog
       ref={dialogRef}
-      aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
+      aria-labelledby={!headless && title ? titleId : undefined}
+      aria-label={headless ? (title ?? "Modal view") : undefined}
+      aria-describedby={!headless && description ? descriptionId : undefined}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       className={`workspace-modal ${size === "wide" ? "!max-w-4xl" : size === "media" ? "!max-w-6xl" : ""} ${destructive ? "workspace-modal-danger" : ""}`}
     >
-      <div className="workspace-modal-card">
-        <div className="flex items-start justify-between gap-5">
-          <div className="min-w-0">
-            <div className="workspace-kicker mb-3">{eyebrow ?? (destructive ? "Confirm action" : "Workspace")}</div>
-            <h2 id={titleId} className="workspace-heading text-xl font-semibold text-[var(--ink)]">{title}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="workspace-action-quiet workspace-action-icon -mr-1 -mt-1 shrink-0" aria-label="Close dialog">
-            <X className="h-4.5 w-4.5" strokeWidth={1.5} />
-          </button>
-        </div>
-        {description && <p id={descriptionId} className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">{description}</p>}
-        <div className="workspace-modal-content mt-6">{children}</div>
+      <div className={`workspace-modal-card ${headless ? "!p-0 !border-0 bg-transparent overflow-hidden relative shadow-[0_32px_96px_rgba(0,0,0,0.9)]" : ""}`}>
+        {!headless && (
+          <>
+            <div className="flex items-start justify-between gap-5">
+              <div className="min-w-0">
+                <div className="workspace-kicker mb-3">{eyebrow ?? (destructive ? "Confirm action" : "Workspace")}</div>
+                <h2 id={titleId} className="workspace-heading text-xl font-semibold text-[var(--ink)]">{title}</h2>
+              </div>
+              <button type="button" onClick={onClose} className="workspace-action-quiet workspace-action-icon -mr-1 -mt-1 shrink-0" aria-label="Close dialog">
+                <X className="h-4.5 w-4.5" strokeWidth={1.5} />
+              </button>
+            </div>
+            {description && <p id={descriptionId} className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">{description}</p>}
+            <div className="workspace-modal-content mt-6">{children}</div>
+          </>
+        )}
+        {headless && children}
       </div>
     </dialog>
   );

@@ -111,6 +111,7 @@ function ImageCard({
   onOpen: () => void;
   onDelete?: () => void;
 }) {
+  const [isLoaded, setIsLoaded] = useState(false);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
   const download = useCallback(() => {
     const a = document.createElement("a");
@@ -127,9 +128,24 @@ function ImageCard({
   return (
     <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open ${asset.key}`} className="block w-full cursor-zoom-in text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-        {/* Full-Bleed Media */}
+        {/* Underlying Shimmer Placeholder */}
+        <div
+          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        />
+
+        {/* Full-Bleed Media with smooth progressive hydration */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mediaUrl} alt={asset.key} loading="lazy" className="w-full object-cover" />
+        <img
+          src={mediaUrl}
+          alt={asset.key}
+          loading="lazy"
+          onLoad={() => setIsLoaded(true)}
+          className={`w-full object-cover transition-opacity duration-300 ease-out ${
+            isLoaded ? "opacity-100" : "opacity-0"
+          }`}
+        />
 
         {/* Atmospheric Bottom Gradient Scrim */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
@@ -166,6 +182,7 @@ function VideoCard({
   onOpen: () => void;
   onDelete?: () => void;
 }) {
+  const [isLoaded, setIsLoaded] = useState(false);
   const { w, h } = aspectFromKey(asset.key);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
   const download = useCallback(() => {
@@ -194,6 +211,12 @@ function VideoCard({
     <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open video ${asset.key}`} className="block w-full cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
         <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
+          {/* Underlying Shimmer Placeholder */}
+          <div
+            className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+              isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          />
           <video
             src={mediaUrl}
             aria-label={asset.key}
@@ -202,7 +225,10 @@ function VideoCard({
             loop
             playsInline
             preload="metadata"
-            className="h-full w-full object-cover"
+            onLoadedData={() => setIsLoaded(true)}
+            className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
+              isLoaded ? "opacity-100" : "opacity-0"
+            }`}
           />
         </div>
 
@@ -237,6 +263,7 @@ function VideoCard({
 /* ------------------------------------------------------------------ */
 
 function ModelCard({ asset, onOpen }: { asset: AssetRecord; onOpen: () => void }) {
+  const [isLoaded, setIsLoaded] = useState(false);
   const { w, h } = aspectFromKey(asset.key);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
   const filename = asset.key.split("/").pop() ?? asset.key;
@@ -245,8 +272,22 @@ function ModelCard({ asset, onOpen }: { asset: AssetRecord; onOpen: () => void }
     <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
       <button type="button" onClick={onOpen} aria-label={`Open 3D asset ${asset.key}`} className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
         <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
+          {/* Underlying Shimmer Placeholder */}
+          <div
+            className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+              isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl} alt={asset.key} loading="lazy" className="h-full w-full object-cover" />
+          <img
+            src={mediaUrl}
+            alt={asset.key}
+            loading="lazy"
+            onLoad={() => setIsLoaded(true)}
+            className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
+              isLoaded ? "opacity-100" : "opacity-0"
+            }`}
+          />
         </div>
 
         {/* Top-left 3D Tag */}
