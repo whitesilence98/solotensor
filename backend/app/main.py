@@ -446,11 +446,21 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         active_loras: list[dict[str, Any]] = []
         if is_lora:
             resolved_primary_lora = await comfy.resolve_model_name("loras", selected_model["filename"])
-            active_loras.append({"lora": resolved_primary_lora, "strength": 1.0, "on": True})
+            active_loras.append({
+                "lora": resolved_primary_lora,
+                "strength": 1.0,
+                "on": True,
+                "model_id": selected_model.get("model_id"),
+                "version_id": selected_model.get("version_id"),
+                "file_id": selected_model.get("file_id"),
+            })
 
         for adapter in req.lora_adapters:
             if not adapter.on:
                 continue
+            adapter_model_id = adapter.model_id
+            adapter_version_id = adapter.version_id
+            adapter_file_id = adapter.file_id
             if adapter.model_id and adapter.version_id and adapter.file_id:
                 adapter_model = model_storage.resolve_installed_gallery_file(
                     adapter.model_id, adapter.version_id, adapter.file_id
@@ -468,11 +478,18 @@ async def generate(req: GenerateRequest) -> GenerationResult:
             if existing is not None:
                 existing["strength"] = adapter.strength
                 existing["on"] = adapter.on
+                if adapter_model_id:
+                    existing["model_id"] = adapter_model_id
+                    existing["version_id"] = adapter_version_id
+                    existing["file_id"] = adapter_file_id
             else:
                 active_loras.append({
                     "lora": resolved_adapter_lora,
                     "strength": adapter.strength,
                     "on": adapter.on,
+                    "model_id": adapter_model_id,
+                    "version_id": adapter_version_id,
+                    "file_id": adapter_file_id,
                 })
 
         resolved_base = await comfy.resolve_model_name(base_model["category"], base_model["filename"])

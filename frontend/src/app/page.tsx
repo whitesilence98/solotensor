@@ -376,6 +376,75 @@ export default function StudioPage() {
     refreshGallery,
   ]);
 
+  // Handle incoming query params (e.g. from gallery "Install and use")
+  useEffect(() => {
+    if (!modelOptions.length) return;
+    try {
+      const search = new URLSearchParams(window.location.search);
+      const urlModelId = search.get("model_id");
+      const urlVersionId = search.get("version_id");
+      const urlFileId = search.get("file_id");
+      const urlBaseModelId = search.get("base_model_id");
+      const urlBaseFileId = search.get("base_file_id");
+
+      if (urlModelId) {
+        const target =
+          modelOptions.find(
+            (m) =>
+              m.model_id === urlModelId &&
+              (!urlFileId || m.file_id === urlFileId) &&
+              (!urlVersionId || m.version_id === urlVersionId)
+          ) || modelOptions.find((m) => m.model_id === urlModelId);
+
+        if (target) {
+          if (target.model_type === "LoRA" || target.model_type === "LyCORIS") {
+            setLoras((prev) => {
+              const alreadyExists = prev.some(
+                (l) => l.modelId === target.model_id && (!target.file_id || l.fileId === target.file_id)
+              );
+              if (alreadyExists) return prev;
+              const newLora: ActiveLora = {
+                id: `${target.model_id}:${target.file_id}`,
+                title: target.title,
+                baseModel: target.version_name || "SDXL",
+                weight: 0.8,
+                enabled: true,
+                modelId: target.model_id,
+                versionId: target.version_id,
+                fileId: target.file_id,
+              };
+              return [...prev, newLora];
+            });
+
+            if (urlBaseModelId) {
+              const baseMatch =
+                modelOptions.find(
+                  (m) =>
+                    m.model_id === urlBaseModelId &&
+                    (!urlBaseFileId || m.file_id === urlBaseFileId)
+                ) || modelOptions.find((m) => m.model_id === urlBaseModelId);
+              if (baseMatch) {
+                setBaseSelection({
+                  modelId: baseMatch.model_id,
+                  versionId: baseMatch.version_id,
+                  fileId: baseMatch.file_id,
+                });
+              }
+            }
+          } else {
+            setSelection({
+              modelId: target.model_id,
+              versionId: target.version_id,
+              fileId: target.file_id,
+            });
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [modelOptions]);
+
   const handleRemix = useCallback((meta: GalleryMetadata) => {
     if (meta.prompt) setPrompt(meta.prompt);
     if (typeof meta.negative_prompt === "string") setNegativePrompt(meta.negative_prompt);
@@ -398,16 +467,29 @@ export default function StudioPage() {
       });
     }
     if (Array.isArray(meta.loras) && meta.loras.length > 0) {
-      const activeLoras: ActiveLora[] = meta.loras.map((l, index) => ({
-        id: `remix-${index}-${l.lora}`,
-        title: l.lora,
-        baseModel: "SDXL",
-        weight: l.strength,
-        enabled: l.on,
-      }));
+      const activeLoras: ActiveLora[] = meta.loras.map((l, index) => {
+        const matched = modelOptions.find(
+          (m) =>
+            (l.model_id && m.model_id === l.model_id) ||
+            m.filename === l.lora ||
+            m.title === l.lora ||
+            l.lora.includes(m.filename) ||
+            m.filename.includes(l.lora)
+        );
+        return {
+          id: `remix-${index}-${l.lora}`,
+          title: matched?.title || l.lora,
+          baseModel: matched?.version_name || "SDXL",
+          weight: l.strength,
+          enabled: l.on,
+          modelId: l.model_id || matched?.model_id,
+          versionId: l.version_id || matched?.version_id,
+          fileId: l.file_id || matched?.file_id,
+        };
+      });
       setLoras(activeLoras);
     }
-  }, []);
+  }, [modelOptions]);
 
   const handleDeleteOutput = useCallback(async (key: string) => {
     try {
@@ -499,6 +581,7 @@ export default function StudioPage() {
         onRemix={handleRemix}
         onSetReferenceImage={setReferenceImage}
         onDeleteOutput={handleDeleteOutput}
+        modelOptions={modelOptions}
       />
     </div>
   );

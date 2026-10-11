@@ -10,6 +10,7 @@ import {
  ChevronRight,
  Eye,
  EyeOff,
+ ExternalLink,
  Filter,
  HelpCircle,
  Info,
@@ -34,6 +35,7 @@ import {
  type InstalledGalleryModel,
  type PublicModelSummary,
 } from "@/lib/api";
+import { resolveModelGalleryUrl } from "@/lib/models";
 import WorkspaceModal from "@/components/WorkspaceModal";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
@@ -613,15 +615,42 @@ export default function ControlPanel(props: Props) {
       </div>
       </button>
       {selectedModel && (
-       <button
-        type="button"
-        aria-label="Model details"
-        title="Model Details"
-        onClick={() => setInfoTooltip(`${selectedModel.title} • ${selectedModel.model_type} • File: ${selectedModel.filename}`)}
-        className="rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
-       >
-        <Info className="h-3.5 w-3.5" />
-       </button>
+       <div className="flex items-stretch gap-1 shrink-0">
+        {(() => {
+         const modelUrl = resolveModelGalleryUrl(
+          {
+           modelId: selectedModel.model_id,
+           title: selectedModel.title,
+           filename: selectedModel.filename,
+           fileId: selectedModel.file_id,
+          },
+          modelOptions,
+          publicModels
+         );
+         if (!modelUrl) return null;
+         return (
+          <a
+           href={modelUrl}
+           target="_blank"
+           rel="noopener noreferrer"
+           aria-label="View model in gallery"
+           title="View in Model Gallery"
+           className="flex items-center justify-center rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
+          >
+           <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+         );
+        })()}
+        <button
+         type="button"
+         aria-label="Model details"
+         title="Model Details"
+         onClick={() => setInfoTooltip(`${selectedModel.title} • ${selectedModel.model_type} • File: ${selectedModel.filename}`)}
+         className="rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
+        >
+         <Info className="h-3.5 w-3.5" />
+        </button>
+       </div>
       )}
      </div>
     </div>
@@ -702,8 +731,34 @@ export default function ControlPanel(props: Props) {
               )}
              </div>
 
-             {/* Quick Action Icons: Mute/Power & Remove */}
+             {/* Quick Action Icons: Gallery Link, Mute/Power & Remove */}
              <div className="flex items-center gap-1 shrink-0">
+              {(() => {
+               const loraUrl = resolveModelGalleryUrl(
+                {
+                 modelId: lora.modelId,
+                 fileId: lora.fileId,
+                 title: lora.title,
+                },
+                modelOptions,
+                publicModels
+               );
+
+               if (!loraUrl) return null;
+
+               return (
+                <a
+                 href={loraUrl}
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 title="View in Model Gallery"
+                 aria-label={`View ${lora.title} in gallery`}
+                 className="p-1 rounded-xl text-[var(--ink-faint)] hover:text-[var(--accent)] focus-visible:text-[var(--accent)] transition"
+                >
+                 <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+               );
+              })()}
               <button
                type="button"
                onClick={() => toggleLora(lora.id)}

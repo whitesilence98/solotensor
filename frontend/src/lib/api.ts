@@ -72,6 +72,9 @@ export interface LoraSelection {
   lora: string;
   on: boolean;
   strength: number;
+  model_id?: string;
+  version_id?: string;
+  file_id?: string;
 }
 
 export interface LoraAdapterPayload {

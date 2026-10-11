@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { formatBytes } from "@/components/AssetCard";
-import { resolveMediaUrl, type GalleryItem, type GalleryMetadata } from "@/lib/api";
+import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
+import { resolveModelGalleryUrl } from "@/lib/models";
 
 export type MediaFilter = "all" | "video" | "image" | "audio";
 export type ViewMode = "grid" | "list";
@@ -50,6 +51,7 @@ interface Props {
  onRemix?: (meta: GalleryMetadata) => void;
  onSetReferenceImage?: (url: string) => void;
  onDeleteOutput?: (key: string) => void;
+ modelOptions?: InstalledGalleryModel[];
 }
 
 function ComparisonSlider({ before, after }: { before: string; after: string }) {
@@ -740,17 +742,53 @@ export default function CanvasPreview(props: Props) {
         <div className="space-y-4">
          {/* Streamlined Header & Model Strip */}
          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
-          <div className="min-w-0 flex items-center gap-2">
-           <span className="rounded-md bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
-            {meta?.model_category ? meta.model_category.toUpperCase() : "SDXL"}
-           </span>
-           <h3
-            className="text-xs font-bold text-[var(--ink)] truncate"
-            title={meta?.model_title ?? "Standard Model"}
-           >
-            {meta?.model_title ?? "Standard Model"}
-           </h3>
-          </div>
+          {(() => {
+           const modelUrl = resolveModelGalleryUrl(
+            {
+             modelId: meta?.model_id,
+             title: meta?.model_title,
+             filename: meta?.model_filename,
+             fileId: meta?.file_id,
+            },
+            props.modelOptions
+           );
+
+           if (modelUrl) {
+            return (
+             <a
+              href={modelUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-w-0 flex items-center gap-2 group cursor-pointer hover:opacity-85 transition"
+              title={`View ${meta?.model_title ?? "model"} in gallery`}
+             >
+              <span className="rounded-md bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
+               {meta?.model_category ? meta.model_category.toUpperCase() : "SDXL"}
+              </span>
+              <h3
+               className="text-xs font-bold text-[var(--ink)] truncate group-hover:text-[var(--accent)] transition"
+               title={meta?.model_title ?? "Standard Model"}
+              >
+               {meta?.model_title ?? "Standard Model"}
+              </h3>
+             </a>
+            );
+           }
+
+           return (
+            <div className="min-w-0 flex items-center gap-2">
+             <span className="rounded-md bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)]/30 shrink-0">
+              {meta?.model_category ? meta.model_category.toUpperCase() : "SDXL"}
+             </span>
+             <h3
+              className="text-xs font-bold text-[var(--ink)] truncate"
+              title={meta?.model_title ?? "Standard Model"}
+             >
+              {meta?.model_title ?? "Standard Model"}
+             </h3>
+            </div>
+           );
+          })()}
 
           <button
            type="button"
@@ -770,16 +808,58 @@ export default function CanvasPreview(props: Props) {
          {/* Applied LoRA Stack if present */}
          {Array.isArray(meta?.loras) && meta.loras.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-           {meta.loras.map((lora, idx) => (
-            <span
-             key={idx}
-             className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)]"
-            >
-             <span className="text-[var(--accent)]">#</span>
-             <span className="truncate max-w-[120px]">{lora.lora}</span>
-             <span className="text-[var(--ink-faint)] font-bold">({lora.strength})</span>
-            </span>
-           ))}
+           {meta.loras.map((lora, idx) => {
+            const loraUrl = resolveModelGalleryUrl(
+             {
+              modelId: (lora as any).model_id || (lora as any).modelId,
+              fileId: (lora as any).file_id || (lora as any).fileId,
+              filename: lora.lora,
+              title: lora.lora,
+             },
+             props.modelOptions
+            );
+
+            const displayTitle = (() => {
+             const matched = props.modelOptions?.find(
+              (m) =>
+               m.filename === lora.lora ||
+               m.title === lora.lora ||
+               lora.lora.includes(m.filename) ||
+               m.filename.includes(lora.lora)
+             );
+             if (matched?.title) return matched.title;
+             const base = lora.lora.split(/[/\\]/).pop() || lora.lora;
+             return base.replace(/\.(safetensors|ckpt|pt|pth|bin|gguf)$/i, "");
+            })();
+
+            if (loraUrl) {
+             return (
+              <a
+               key={idx}
+               href={loraUrl}
+               target="_blank"
+               rel="noopener noreferrer"
+               title={`View ${displayTitle} in gallery`}
+               className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] cursor-pointer hover:border-[var(--line-strong)] hover:text-[var(--accent)] transition"
+              >
+               <span className="text-[var(--accent)]">#</span>
+               <span className="truncate max-w-[140px]">{displayTitle}</span>
+               <span className="text-[var(--ink-faint)] font-bold">({lora.strength})</span>
+              </a>
+             );
+            }
+
+            return (
+             <span
+              key={idx}
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)]"
+             >
+              <span className="text-[var(--accent)]">#</span>
+              <span className="truncate max-w-[140px]">{displayTitle}</span>
+              <span className="text-[var(--ink-faint)] font-bold">({lora.strength})</span>
+             </span>
+            );
+           })}
           </div>
          )}
 

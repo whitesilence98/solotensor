@@ -213,7 +213,15 @@ export default function ModelGalleryPage() {
   };
 
   useEffect(() => {
-    load("");
+    let initialQuery = "";
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      initialQuery = search.get("q") || "";
+      if (initialQuery) {
+        setQuery(initialQuery);
+      }
+    }
+    load(initialQuery);
   }, []);
 
   // Filtered & sorted models

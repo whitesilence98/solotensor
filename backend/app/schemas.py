@@ -57,6 +57,9 @@ class LoraSelection(BaseModel):
     lora: str = Field(..., min_length=1, max_length=255)
     on: bool = True
     strength: float = Field(1.0, ge=-10.0, le=10.0)
+    model_id: Optional[str] = None
+    version_id: Optional[str] = None
+    file_id: Optional[str] = None
 
     @field_validator("lora")
     @classmethod
