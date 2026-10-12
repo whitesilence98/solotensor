@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import CreditPill from "@/components/CreditPill";
 
 export default function WorkspacePageHeader({
   eyebrow,
@@ -6,12 +7,14 @@ export default function WorkspacePageHeader({
   description,
   actions,
   children,
+  showCreditPill = true,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  showCreditPill?: boolean;
 }) {
   return (
     <header className="workspace-header">
@@ -21,7 +24,10 @@ export default function WorkspacePageHeader({
           <h1 className="workspace-title">{title}</h1>
           {description && <p className="workspace-copy mt-4">{description}</p>}
         </div>
-        {actions && <div className="workspace-header-actions shrink-0">{actions}</div>}
+        <div className="workspace-header-actions shrink-0 flex items-center gap-2.5">
+          {showCreditPill && <CreditPill />}
+          {actions}
+        </div>
       </div>
       {children && <div className="workspace-header-content">{children}</div>}
     </header>

@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import SidebarNav from "@/components/SidebarNav";
+import { AuthProvider } from "@/lib/auth-context";
+import AuthModal from "@/components/AuthModal";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
@@ -29,10 +31,13 @@ export default function RootLayout({
     <html lang="en" className={`${geist.variable} ${geistMono.variable} ${jakarta.variable}`}>
       <body className="font-sans antialiased text-ink bg-ground">
         <a href="#main-content" className="skip-link">Skip to content</a>
-        <div className="app-shell">
-          <SidebarNav />
-          <div className="app-content">{children}</div>
-        </div>
+        <AuthProvider>
+          <div className="app-shell">
+            <SidebarNav />
+            <div className="app-content">{children}</div>
+          </div>
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );

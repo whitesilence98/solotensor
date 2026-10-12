@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Box, FolderOpen, ImageIcon, Layers3, MessageSquareCode, MoreHorizontal, Settings, Sparkles, Wrench } from "lucide-react";
+import UserNavProfile from "./UserNavProfile";
+import BrandLogo, { TensorPrismEmblem } from "./BrandLogo";
 
 const NAV_ITEMS = [
   { id: "assets", icon: FolderOpen, label: "Library", href: "/assets", primary: true },
@@ -88,13 +90,18 @@ export default function SidebarNav() {
   return (
     <nav aria-label="Primary navigation" className="workspace-bezel fixed bottom-[max(.75rem,env(safe-area-inset-bottom,0px))] left-3 right-3 z-40 h-[4.5rem] w-auto md:relative md:bottom-auto md:left-auto md:right-auto md:my-4 md:ml-4 md:h-[calc(100%-2rem)] md:w-[4.5rem] md:shrink-0">
       <div className="workspace-core flex h-full items-center justify-between px-2 md:flex-col md:justify-start md:px-0 md:py-3 relative">
-        <Link href="/" className="group relative z-10 hidden h-11 w-11 items-center justify-center rounded-lg bg-[var(--accent)] text-[var(--accent-ink)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_6px_22px_rgba(255,255,255,0.15)] transition-transform duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-105 active:scale-95 md:mb-6 md:flex" aria-label="SoloTensor home">
-          <svg aria-hidden="true" viewBox="0 0 32 32" className="h-5 w-5 fill-none" stroke="currentColor" strokeWidth="2">
-            <path d="m16 3 10 5.8v14.4L16 29 6 23.2V8.8L16 3Z" />
-            <path d="m6 8.8 10 5.8 10-5.8M16 14.6V29" />
-            <path d="m11 11.7 10 5.8" opacity=".55" />
-          </svg>
-        </Link>
+        <div className="group relative z-10 hidden md:mb-5 md:flex">
+          <Link
+            href="/"
+            className="flex h-11 w-11 items-center justify-center rounded-xl transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-105 active:scale-95"
+            aria-label="SoloTensor Studio Home"
+          >
+            <TensorPrismEmblem className="h-11 w-11 border-[var(--line-strong)] group-hover:border-[var(--accent)] transition-colors" />
+            <span className="pointer-events-none absolute left-[calc(100%+.85rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 font-heading text-xs font-bold tracking-tight text-[var(--ink)] opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
+              SOLOTENSOR<span className="text-[var(--accent)] font-extrabold">.</span>
+            </span>
+          </Link>
+        </div>
 
         <div className="flex flex-1 items-center justify-between gap-1 md:w-full md:flex-none md:flex-col md:gap-1.5">
           {NAV_ITEMS.map(item)}
@@ -119,6 +126,16 @@ export default function SidebarNav() {
             <MoreHorizontal className="relative z-10 h-5 w-5" strokeWidth={1.5} />
             {secondaryActive && <span aria-hidden className="absolute bottom-2 right-2 z-20 h-1.5 w-1.5 rounded-full bg-[var(--ground)] border-[0.5px] border-[var(--accent)]" />}
           </button>
+
+          <div className="md:hidden">
+            <UserNavProfile />
+          </div>
+        </div>
+
+        {/* Desktop Rail Bottom User Profile */}
+        <div className="hidden md:flex md:flex-col md:items-center md:mt-auto md:w-full md:pt-2">
+          <div className="w-6 h-px bg-[var(--line-strong)] mb-2.5 rounded-full" />
+          <UserNavProfile />
         </div>
       </div>
 
@@ -134,7 +151,9 @@ export default function SidebarNav() {
             className="workspace-bezel absolute bottom-[calc(max(.75rem,env(safe-area-inset-bottom,0px))+5.25rem)] left-3 right-3 shadow-[0_32px_96px_rgba(0,0,0,0.8)]"
           >
             <div className="workspace-core p-2">
-              <div className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--ink-faint)]">More</div>
+              <div className="px-3 pb-2.5 pt-2 border-b border-[var(--line)] mb-2">
+                <BrandLogo size="sm" subtitle="AI CREATION STUDIO" />
+              </div>
               {NAV_ITEMS.filter(({ primary }) => !primary).map(({ id, icon: Icon, label, href }) => {
                 const active = isActive(pathname, href);
                 return (

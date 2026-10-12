@@ -715,3 +715,192 @@ class TagInterrogateResponse(BaseModel):
     tags: list[str]
     elapsed_ms: int
 
+
+# ---------------------------------------------------------------------------
+# Authentication & Credits
+# ---------------------------------------------------------------------------
+
+
+class UserRegisterRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    email: str = Field(..., min_length=3, max_length=255)
+    username: str = Field(..., min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_\-\.]+$")
+    password: str = Field(..., min_length=6, max_length=128)
+    display_name: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email format")
+        return v
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        return v.strip()
+
+
+class UserLoginRequest(BaseModel):
+    model_config = {"extra": "allow"}
+
+    username: Optional[str] = None
+    email: Optional[str] = None
+    email_or_username: Optional[str] = None
+    password: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "UserLoginRequest":
+        identifier = self.email_or_username or self.username or self.email
+        if not identifier or not identifier.strip():
+            raise ValueError("Email or username is required to log in")
+        return self
+
+    @property
+    def identifier(self) -> str:
+        val = self.email_or_username or self.username or self.email or ""
+        return val.strip()
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    username: str
+    display_name: Optional[str] = None
+    role: str = "creator"
+    is_verified: bool = False
+    created_at: str
+
+
+class UserCreditsResponse(BaseModel):
+    user_id: str
+    balance: int = 100
+    daily_allowance: int = 100
+    last_claimed_at: Optional[str] = None
+    last_daily_claim_at: Optional[str] = None
+    seconds_until_next_reset: int = 0
+    can_claim_daily: bool = False
+
+    @model_validator(mode="after")
+    def sync_aliases(self) -> "UserCreditsResponse":
+        if self.last_claimed_at and not self.last_daily_claim_at:
+            self.last_daily_claim_at = self.last_claimed_at
+        elif self.last_daily_claim_at and not self.last_claimed_at:
+            self.last_claimed_at = self.last_daily_claim_at
+        return self
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+    credits: Optional[UserCreditsResponse] = None
+
+
+class UserMeResponse(BaseModel):
+    id: str
+    email: str
+    username: str
+    display_name: Optional[str] = None
+    role: str = "creator"
+    is_verified: bool = False
+    created_at: str
+    credits: UserCreditsResponse
+    user: Optional[UserResponse] = None
+
+
+class ApiKeyCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class ApiKeyResponse(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    created_at: str
+    api_key: Optional[str] = None
+
+
+class ApiKeyListItem(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    created_at: str
+    masked_key: Optional[str] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email format")
+        return v
+
+
+class ResetPasswordRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    token: Optional[str] = None
+    otp_code: Optional[str] = None
+    email: Optional[str] = None
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip().lower() if v else None
+
+    @model_validator(mode="after")
+    def validate_token_or_otp(self) -> "ResetPasswordRequest":
+        if not self.token and not (self.otp_code and self.email):
+            raise ValueError("Either reset token or email + otp_code is required")
+        return self
+
+
+class VerifyEmailRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    token: Optional[str] = None
+    otp_code: Optional[str] = None
+    email: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip().lower() if v else None
+
+    @model_validator(mode="after")
+    def validate_token_or_otp(self) -> "VerifyEmailRequest":
+        if not self.token and not (self.otp_code and self.email):
+            raise ValueError("Either verification token or email + otp_code is required")
+        return self
+
+
+class ResendVerificationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email format")
+        return v
+
+
+class EmailActionResponse(BaseModel):
+    success: bool = True
+    message: str
+

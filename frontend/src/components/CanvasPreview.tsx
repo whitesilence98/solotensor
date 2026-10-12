@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
+import CreditPill from "@/components/CreditPill";
 import { formatBytes } from "@/components/AssetCard";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
@@ -416,6 +417,8 @@ export default function CanvasPreview(props: Props) {
 
     {/* Right Group */}
     <div className="flex items-center gap-2 shrink-0">
+     <CreditPill />
+
      <span className="hidden md:inline-block font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
       {filteredGallery.length} {filteredGallery.length === 1 ? "Output" : "Outputs"}
      </span>

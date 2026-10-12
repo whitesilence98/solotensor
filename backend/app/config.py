@@ -53,6 +53,24 @@ class Settings(BaseSettings):
     )
     UPLOAD_MAX_BYTES: int = 10 * 1024 * 1024
 
+    # --- Database & Authentication ---------------------------------------
+    DB_PATH: str = "solotensor.db"
+    AUTH_PROVIDER: str = "local"
+    JWT_SECRET: str = "solotensor-jwt-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_DAYS: int = 7
+    DEFAULT_DAILY_CREDITS: int = 100
+    DEFAULT_GENERATION_COST: int = 2
+
+    # --- Email & Verification --------------------------------------------
+    FRONTEND_URL: str = "http://localhost:3000"
+    RESEND_API_KEY: str | None = None
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    EMAIL_FROM: str = "SoloTensor Studio <noreply@solotensor.ai>"
+
     @property
     def comfy_http(self) -> str:
         return f"http://{self.COMFY_HOST}"

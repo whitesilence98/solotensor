@@ -102,6 +102,7 @@ class StorageService:
         tag: str | None = None,
         tags: list[str] | None = None,
         tag_mode: str = "all",
+        user_id: str | None = None,
     ) -> list[GalleryItem]:
         self.ensure_root()
         files = [p for p in self.root.rglob("*") if p.suffix.lower() in ASSET_EXTENSIONS and p.is_file()]
@@ -111,6 +112,8 @@ class StorageService:
             item = self._gallery_item(path)
             metadata = item.metadata or {}
             if metadata.get("gallery_saved", True) is False:
+                continue
+            if user_id and metadata.get("user_id") != user_id:
                 continue
             item_origin = metadata.get("origin", metadata.get("source"))
             if origin and item_origin != origin:

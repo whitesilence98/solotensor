@@ -13,14 +13,16 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
+from .db import get_db
+from .routers.auth import router as auth_router, get_current_user, get_optional_user
 from .schemas import (
     AssistantRequest,
     AssistantResponse,
@@ -62,6 +64,7 @@ from .schemas import (
     ToolExecuteRequest,
     ToolParseResponse,
     UploadedAsset,
+    UserResponse,
 )
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.code_assistant import (
@@ -71,6 +74,7 @@ from .services.code_assistant import (
     get_code_assistant_service,
 )
 from .services.comfy_client import ComfyClientError, get_comfy_client
+from .services.credit_service import get_credit_service
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.storage import StorageError, StorageService, get_storage
 from .services.tagger import TaggerError, get_tagger_service
@@ -85,6 +89,10 @@ model_storage = get_model_service()
 model_storage.ensure_root()
 code_assistant = get_code_assistant_service(settings)
 
+# Auto-initialize database on application startup
+db = get_db()
+db.init_db()
+
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 
 app.add_middleware(
@@ -95,6 +103,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router, prefix="/api/auth")
+app.include_router(auth_router, prefix="/api/v1/auth")
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    db.init_db()
 
 
 @app.on_event("shutdown")
@@ -403,13 +419,29 @@ async def clip_options() -> dict[str, list[str]]:
 
 
 @app.post("/api/v1/generate", response_model=GenerationResult)
-async def generate(req: GenerateRequest) -> GenerationResult:
+@app.post("/api/generate", response_model=GenerationResult)
+async def generate(
+    req: GenerateRequest,
+    user: Annotated[Optional[UserResponse], Depends(get_optional_user)] = None,
+) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
     if req.mode != "text-to-image":
         raise HTTPException(
             status.HTTP_501_NOT_IMPLEMENTED,
             detail="Image-to-Image generation is not implemented yet",
         )
+
+    # Deduction for authenticated creators (TensorArt quota model)
+    credit_service = get_credit_service()
+    cost = settings.DEFAULT_GENERATION_COST
+    credits_deducted = False
+    if user:
+        if not credit_service.deduct_credits(user.id, amount=cost):
+            raise HTTPException(
+                status.HTTP_402_PAYMENT_REQUIRED,
+                detail="INSUFFICIENT_CREDITS",
+            )
+        credits_deducted = True
 
     try:
         selected_model = model_storage.resolve_installed_gallery_file(req.model_id, req.version_id, req.file_id)
@@ -551,17 +583,33 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
+        if credits_deducted and user:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+            )
         raise _model_http_error(exc) from exc
     except ComfyClientError as exc:
+        if credits_deducted and user:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+            )
         logger.error("ComfyUI error: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     if final_status != "completed":
+        if credits_deducted and user:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+            )
         return GenerationResult(
             prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms
         )
 
+    user_id = user.id if user else None
     assets: list[UploadedAsset] = []
     metadata = {
         "prompt_id": prompt_id,
@@ -593,6 +641,7 @@ async def generate(req: GenerateRequest) -> GenerationResult:
         "loras": active_loras,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_ms": elapsed_ms,
+        "user_id": user_id,
     }
     try:
         for image in await comfy.list_images(prompt_id):
@@ -601,7 +650,8 @@ async def generate(req: GenerateRequest) -> GenerationResult:
                 blob,
                 prompt_id,
                 image["filename"],
-                metadata={**metadata, "source_filename": image["filename"]},
+                metadata={**metadata, "source_filename": image["filename"], "user_id": user_id},
+                namespace=user_id,
             )
             assets.append(UploadedAsset(filename=image["filename"], url=url))
     except (ComfyClientError, StorageError) as exc:
@@ -898,6 +948,7 @@ async def gallery(
     tag: str | None = None,
     tags: str | None = None,
     tag_mode: str = "all",
+    user_id: str | None = None,
 ) -> GalleryResponse:
     if limit < 1 or limit > settings.GALLERY_LIMIT:
         limit = settings.GALLERY_LIMIT
@@ -915,6 +966,7 @@ async def gallery(
                 tag=tag,
                 tags=parsed_tags,
                 tag_mode=tag_mode,
+                user_id=user_id,
             ),
         )
     except StorageError as exc:

@@ -11,6 +11,7 @@ import {
   type StudioSettings,
 } from "@/lib/settings";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
+import CreditPill from "@/components/CreditPill";
 
 const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "1:1": "Square · 1024 × 1024",
@@ -90,18 +91,21 @@ export default function SettingsPage() {
                 generation session. Changes stay in this browser.
               </p>
             </div>
-            <div
-              className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-xs text-[var(--ink-soft)]"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              <Check
-                className="h-3.5 w-3.5 text-[var(--accent)]"
-                strokeWidth={2}
-                aria-hidden="true"
-              />
-              <span>{status}</span>
+            <div className="flex shrink-0 items-center gap-2.5">
+              <CreditPill />
+              <div
+                className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-xs text-[var(--ink-soft)]"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <Check
+                  className="h-3.5 w-3.5 text-[var(--accent)]"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+                <span>{status}</span>
+              </div>
             </div>
           </div>
         </header>
