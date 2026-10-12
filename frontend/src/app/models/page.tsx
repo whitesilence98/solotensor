@@ -73,10 +73,10 @@ const baseModels = [
 ];
 
 const inputClass =
-  "workspace-field h-10 w-full px-3 text-xs font-mono outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors";
-const selectClass = `${inputClass} appearance-none pr-8 cursor-pointer`;
+  "workspace-field h-7.5 w-full px-2.5 text-[11px] font-mono outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors";
+const selectClass = `${inputClass} appearance-none pr-7 cursor-pointer`;
 const labelClass =
-  "mb-1.5 block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase";
+  "mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase";
 
 function SectionCardHeader({
   number,
@@ -92,30 +92,30 @@ function SectionCardHeader({
   badge?: string | number;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--accent)] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
-          <Icon className="h-4 w-4" strokeWidth={1.75} />
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-2">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--accent)] shadow-sm">
+          <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
         </div>
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase">
               {number}
             </span>
-            <span className="font-mono text-[10px] text-[var(--line-strong)]">
+            <span className="font-mono text-[9px] text-[var(--line-strong)]">
               /
             </span>
-            <h2 className="font-mono text-xs font-bold tracking-wider text-[var(--ink)] uppercase">
+            <h2 className="font-mono text-[11px] font-bold tracking-wider text-[var(--ink)] uppercase">
               {title}
             </h2>
             {badge !== undefined && (
-              <span className="ml-1 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+              <span className="ml-1 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[8px] text-[var(--ink-faint)]">
                 {badge}
               </span>
             )}
           </div>
           {subtitle && (
-            <p className="mt-0.5 text-xs text-[var(--ink-faint)]">
+            <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
               {subtitle}
             </p>
           )}
@@ -135,11 +135,11 @@ function Field({
   helper?: string;
 }) {
   return (
-    <label className="block space-y-1">
+    <label className="block space-y-0.5">
       <span className={labelClass}>{label}</span>
       {children}
       {helper && (
-        <span className="block text-[11px] leading-4 text-[var(--ink-faint)]">
+        <span className="block text-[10px] leading-3.5 text-[var(--ink-faint)]">
           {helper}
         </span>
       )}
@@ -166,13 +166,13 @@ function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={onChange}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+      className={`relative h-4 w-7.5 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
         checked ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
       }`}
     >
       <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-[var(--accent-ink)] transition-transform ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`absolute top-0.5 h-3 w-3 rounded-full bg-[var(--accent-ink)] transition-transform ${
+          checked ? "translate-x-[14px]" : "translate-x-0.5"
         }`}
       />
     </button>
@@ -195,11 +195,11 @@ function TagEditor({
     setDraft("");
   };
   return (
-    <div className="workspace-field flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 focus-within:border-[var(--accent)] transition-colors">
+    <div className="workspace-field flex min-h-7.5 flex-wrap items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 focus-within:border-[var(--accent)] transition-colors">
       {tags.map((tag) => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[11px] font-medium text-[var(--accent)]"
+          className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-1.5 py-0.2 font-mono text-[10px] font-medium text-[var(--accent)]"
         >
           {tag}
           <button
@@ -208,7 +208,7 @@ function TagEditor({
             onClick={() => onChange(tags.filter((item) => item !== tag))}
             className="hover:text-white"
           >
-            <X className="h-3 w-3" />
+            <X className="h-2.5 w-2.5" />
           </button>
         </span>
       ))}
@@ -223,7 +223,7 @@ function TagEditor({
         }}
         onBlur={add}
         placeholder={tags.length ? "Add another…" : placeholder}
-        className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 font-mono text-xs text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
+        className="min-w-[7rem] flex-1 bg-transparent px-1 py-0.5 font-mono text-[11px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
       />
     </div>
   );
@@ -258,7 +258,7 @@ function MediaDropzone({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={drop}
-      className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center transition ${
+      className={`flex min-h-[72px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-2 text-center transition ${
         dragging
           ? "border-[var(--accent)] bg-[var(--accent)]/10"
           : "border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
@@ -271,13 +271,13 @@ function MediaDropzone({
         className="sr-only"
         onChange={input}
       />
-      <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-[var(--accent)] border border-[var(--line)]">
-        <UploadCloud className="h-4.5 w-4.5" />
+      <span className="mb-1 flex h-6 w-6 items-center justify-center rounded-md bg-[var(--surface-soft)] text-[var(--accent)] border border-[var(--line)]">
+        <UploadCloud className="h-3.5 w-3.5" />
       </span>
-      <span className="font-mono text-xs font-semibold text-[var(--ink)]">
+      <span className="font-mono text-[11px] font-semibold text-[var(--ink)]">
         {label}
       </span>
-      <span className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+      <span className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
         Drop files or browse local disk
       </span>
     </label>
@@ -474,16 +474,16 @@ function CompatibilityFields({
     });
 
   return (
-    <div className="space-y-4 pt-4 border-t border-[var(--line)]">
+    <div className="space-y-2.5 pt-3 border-t border-[var(--line)]">
       <div className="flex items-center gap-2">
-        <Settings2 className="h-4 w-4 text-[var(--accent)]" />
-        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+        <Settings2 className="h-3.5 w-3.5 text-[var(--accent)]" />
+        <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--ink)]">
           COMPATIBILITY MATRIX
         </span>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-2.5 md:grid-cols-2">
         {isAdapter && (
-          <div className="md:col-span-2 space-y-1.5">
+          <div className="md:col-span-2 space-y-1">
             <label htmlFor="lora-base-model" className={labelClass}>
               Exact installed base model
             </label>
@@ -517,14 +517,14 @@ function CompatibilityFields({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
             </div>
             {baseError && (
-              <p role="alert" className="text-[11px] text-[var(--danger)]">
+              <p role="alert" className="text-[10px] text-[var(--danger)]">
                 {baseError}
               </p>
             )}
-            <p className="text-[11px] text-[var(--ink-faint)]">
+            <p className="text-[10px] text-[var(--ink-faint)]">
               This adapter can only be used with the selected base file.
             </p>
           </div>
@@ -548,12 +548,12 @@ function CompatibilityFields({
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
           </div>
         </Field>
         {!isAdapter && (
           <>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label htmlFor="recommended-vae" className={labelClass}>
                 Recommended VAE
               </label>
@@ -578,20 +578,20 @@ function CompatibilityFields({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
               </div>
               {vaeLoading && (
-                <p className="text-[11px] text-[var(--ink-faint)]">
+                <p className="text-[10px] text-[var(--ink-faint)]">
                   Scanning local VAE files…
                 </p>
               )}
               {vaeError && (
-                <div role="alert" className="text-[11px] text-[var(--danger)]">
+                <div role="alert" className="text-[10px] text-[var(--danger)]">
                   {vaeError}
                 </div>
               )}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label htmlFor="text-encoder" className={labelClass}>
                 Text encoder
               </label>
@@ -611,20 +611,20 @@ function CompatibilityFields({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
               </div>
               {encoderLoading && (
-                <p className="text-[11px] text-[var(--ink-faint)]">
+                <p className="text-[10px] text-[var(--ink-faint)]">
                   Scanning local text encoders…
                 </p>
               )}
               {encoderError && (
-                <div role="alert" className="text-[11px] text-[var(--danger)]">
+                <div role="alert" className="text-[10px] text-[var(--danger)]">
                   {encoderError}
                 </div>
               )}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label htmlFor="clip-type" className={labelClass}>
                 CLIP type
               </label>
@@ -646,15 +646,15 @@ function CompatibilityFields({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
               </div>
               {clipTypesLoading && (
-                <p className="text-[11px] text-[var(--ink-faint)]">
+                <p className="text-[10px] text-[var(--ink-faint)]">
                   Loading CLIP types…
                 </p>
               )}
               {clipTypesError && (
-                <div role="alert" className="text-[11px] text-[var(--danger)]">
+                <div role="alert" className="text-[10px] text-[var(--danger)]">
                   {clipTypesError}
                 </div>
               )}
@@ -764,13 +764,13 @@ function LocalModelPicker({
   }, [category, debouncedQuery, open, version]);
 
   return (
-    <section className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="font-mono text-xs font-semibold text-[var(--ink)]">
+          <p className="font-mono text-[11px] font-semibold text-[var(--ink)]">
             IMPORT FROM LOCAL COMFYUI
           </p>
-          <p className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+          <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
             Select files directly from the configured <span className="font-mono text-[var(--accent)]">{category}</span> enclave.
           </p>
         </div>
@@ -778,32 +778,32 @@ function LocalModelPicker({
           type="button"
           onClick={() => setOpen((value) => !value)}
           disabled={busy || !version}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
         >
-          <Search className="h-3.5 w-3.5" />
+          <Search className="h-3 w-3" />
           {open ? "Close browser" : "Browse ComfyUI"}
         </button>
       </div>
       {open && (
-        <div className="mt-4 space-y-3">
+        <div className="mt-3 space-y-2.5">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
             <input
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Filter ${category} by filename…`}
-              className={`${inputClass} pl-9`}
+              className={`${inputClass} pl-8`}
             />
           </div>
-          <div className="flex items-center justify-between font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+          <div className="flex items-center justify-between font-mono text-[9px] text-[var(--ink-faint)] uppercase">
             <span>{query ? "Search results" : "Available files"}</span>
             <span>{loading ? "Scanning…" : `${items.length} discovered`}</span>
           </div>
           {error ? (
             <div
               role="alert"
-              className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]"
+              className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-2.5 py-1.5 text-[11px] text-[var(--danger)]"
             >
               {error}. Ensure COMFY_MODEL_ROOT is configured, then retry.
             </div>
@@ -811,12 +811,12 @@ function LocalModelPicker({
             <div
               role="listbox"
               aria-label="ComfyUI model files"
-              className="max-h-56 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface)]"
+              className="max-h-44 overflow-y-auto rounded-md border border-[var(--line)] bg-[var(--surface)]"
             >
               {loading && !items.length ? (
-                <div className="space-y-2 p-3">
-                  <div className="h-9 animate-pulse rounded bg-[var(--surface-soft)]" />
-                  <div className="h-9 animate-pulse rounded bg-[var(--surface-soft)]" />
+                <div className="space-y-1.5 p-2">
+                  <div className="h-7 animate-pulse rounded bg-[var(--surface-soft)]" />
+                  <div className="h-7 animate-pulse rounded bg-[var(--surface-soft)]" />
                 </div>
               ) : items.length ? (
                 items.map((item) => {
@@ -831,34 +831,34 @@ function LocalModelPicker({
                       aria-selected={active}
                       onClick={() => setSelected(item)}
                       disabled={busy}
-                      className={`flex min-h-10 w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 text-left transition last:border-b-0 ${
+                      className={`flex min-h-7.5 w-full items-center justify-between gap-2.5 border-b border-[var(--line)] px-2.5 py-1.5 text-left transition last:border-b-0 ${
                         active
                           ? "bg-[var(--accent)]/10 text-[var(--accent)]"
                           : "hover:bg-[var(--surface-soft)] text-[var(--ink)]"
                       }`}
                     >
-                      <span className="flex min-w-0 items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
                         <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                             active
                               ? "bg-[var(--accent)]"
                               : "border border-[var(--line-strong)]"
                           }`}
                         />
-                        <span className="min-w-0 truncate font-mono text-[11px]">
+                        <span className="min-w-0 truncate font-mono text-[10px]">
                           {item.filename}
                         </span>
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-[var(--ink-faint)]">
+                      <span className="shrink-0 font-mono text-[9px] text-[var(--ink-faint)]">
                         {formatBytes(item.size)}
                       </span>
                     </button>
                   );
                 })
               ) : (
-                <div className="px-4 py-8 text-center">
-                  <FileArchive className="mx-auto h-5 w-5 text-[var(--ink-faint)]" />
-                  <p className="mt-2 text-xs text-[var(--ink-soft)]">
+                <div className="px-3 py-6 text-center">
+                  <FileArchive className="mx-auto h-4 w-4 text-[var(--ink-faint)]" />
+                  <p className="mt-1 text-[11px] text-[var(--ink-soft)]">
                     No matching {category} files found
                   </p>
                 </div>
@@ -866,15 +866,15 @@ function LocalModelPicker({
             </div>
           )}
           {selected && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-2.5 py-2">
               <div className="min-w-0">
-                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                <p className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)]">
                   Selected model file
                 </p>
-                <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink)]">
+                <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--ink)]">
                   {selected.filename}
                 </p>
-                <p className="text-[10px] text-[var(--ink-faint)]">
+                <p className="text-[9px] text-[var(--ink-faint)]">
                   {selected.category} · {formatBytes(selected.size)}
                 </p>
               </div>
@@ -882,9 +882,9 @@ function LocalModelPicker({
                 type="button"
                 onClick={() => onImport(selected)}
                 disabled={busy}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
+                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-[var(--accent)] px-2.5 font-mono text-[11px] font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
               >
-                <Check className="h-3.5 w-3.5" />
+                <Check className="h-3 w-3" />
                 {busy ? "Importing…" : "Import to Version"}
               </button>
             </div>
@@ -933,21 +933,21 @@ function PreviewCard({
   const coverUrl = samples[0]?.url;
 
   return (
-    <aside className="w-full space-y-3">
+    <aside className="w-full space-y-2">
       {/* Top Status Header */}
-      <div className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
-          <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-faint)] uppercase">
-            GALLERY PREVIEW // LIVE 1:1 RENDERING
+      <div className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-1.5 shadow-sm">
+        <div className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+          <span className="font-mono text-[9px] font-bold tracking-widest text-[var(--ink-faint)] uppercase">
+            GALLERY PREVIEW // 1:1
           </span>
         </div>
-        <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+        <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)]">
           {visibility}
         </span>
       </div>
 
-      {/* 1:1 Canonical Aspect-[3/4] Gallery Card */}
+      {/* 1:1 Canonical Aspect-[3/4] Gallery Card (Proportionally scaled to ~373px height) */}
       <TensorModelCard
         item={{
           model_id: modelId,
@@ -959,19 +959,19 @@ function PreviewCard({
           sample_count: samples.length,
         }}
         isLink={false}
-        className="shadow-[0_20px_50px_rgba(0,0,0,0.65)]"
+        className="shadow-[0_12px_36px_rgba(0,0,0,0.65)]"
       />
 
       {/* Adjacent Technical Metadata Card Below the 3:4 Card */}
-      <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-4 shadow-lg space-y-3.5">
+      <div className="rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2.5 shadow-md space-y-2">
         {/* Active Trigger Words Cloud */}
         {triggerWords.length > 0 && (
-          <div className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-2.5">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--accent)]">
+          <div className="rounded-md border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-1.5">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-mono text-[8px] font-bold uppercase tracking-widest text-[var(--accent)]">
                 ACTIVE TRIGGER WORDS
               </span>
-              <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+              <span className="font-mono text-[8px] text-[var(--ink-faint)]">
                 Click to copy
               </span>
             </div>
@@ -981,12 +981,12 @@ function PreviewCard({
                   key={word}
                   type="button"
                   onClick={() => copyTrigger(word)}
-                  className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-colors"
+                  className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[9px] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-colors"
                 >
-                  <Tag className="h-2.5 w-2.5" />
+                  <Tag className="h-2 w-2" />
                   <span>{word}</span>
                   {copiedTrigger === word && (
-                    <Check className="h-2.5 w-2.5 text-[var(--accent)]" />
+                    <Check className="h-2 w-2 text-[var(--accent)]" />
                   )}
                 </button>
               ))}
@@ -995,28 +995,28 @@ function PreviewCard({
         )}
 
         {/* Technical Specs Readout */}
-        <div className="grid grid-cols-3 gap-2 border-y border-[var(--line)] py-2.5 text-center">
+        <div className="grid grid-cols-3 gap-1 border-y border-[var(--line)] py-1.5 text-center">
           <div>
-            <div className="font-mono text-xs font-bold text-[var(--ink)]">
+            <div className="font-mono text-[11px] font-bold text-[var(--ink)]">
               {version || "v1.0"}
             </div>
-            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+            <div className="mt-0.2 font-mono text-[8px] tracking-wider text-[var(--ink-faint)] uppercase">
               VERSION
             </div>
           </div>
           <div>
-            <div className="font-mono text-xs font-bold text-[var(--ink)]">
+            <div className="font-mono text-[11px] font-bold text-[var(--ink)]">
               {fileCount}
             </div>
-            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+            <div className="mt-0.2 font-mono text-[8px] tracking-wider text-[var(--ink-faint)] uppercase">
               FILES
             </div>
           </div>
           <div>
-            <div className="font-mono text-xs font-bold text-[var(--ink)]">
+            <div className="font-mono text-[11px] font-bold text-[var(--ink)]">
               {samples.length}
             </div>
-            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+            <div className="mt-0.2 font-mono text-[8px] tracking-wider text-[var(--ink-faint)] uppercase">
               SAMPLES
             </div>
           </div>
@@ -1028,7 +1028,7 @@ function PreviewCard({
             {tags.slice(0, 5).map((tag) => (
               <span
                 key={tag}
-                className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)]"
+                className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[9px] text-[var(--ink-soft)]"
               >
                 #{tag}
               </span>
@@ -1038,18 +1038,18 @@ function PreviewCard({
 
         {/* Rights Readout */}
         {permissions && (
-          <div className="flex flex-wrap gap-1.5 pt-0.5">
+          <div className="flex flex-wrap gap-1 pt-0.5">
             <span
-              className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${
+              className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-semibold uppercase ${
                 permissions.commercial
                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                   : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
               }`}
             >
-              {permissions.commercial ? "COMMERCIAL ALLOWED" : "NON-COMMERCIAL"}
+              {permissions.commercial ? "COMMERCIAL" : "NON-COMMERCIAL"}
             </span>
             <span
-              className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${
+              className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-semibold uppercase ${
                 permissions.remix
                   ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                   : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
@@ -1058,7 +1058,7 @@ function PreviewCard({
               {permissions.remix ? "REMIX OK" : "NO REMIX"}
             </span>
             {permissions.credit_required && (
-              <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--ink-soft)]">
+              <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.2 font-mono text-[8px] font-semibold text-[var(--ink-soft)]">
                 CREDIT REQ.
               </span>
             )}
@@ -1532,17 +1532,17 @@ export default function ModelsPage() {
     return (
       <main
         id="main-content"
-        className="workspace-scroll h-full p-5 sm:p-7"
+        className="workspace-scroll h-full px-3.5 sm:px-4 py-3.5"
         aria-busy="true"
         aria-label="Loading Model Studio"
       >
-        <div className="mx-auto max-w-[1720px]">
-          <div className="h-14 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
-          <div className="mt-6 flex flex-col lg:flex-row gap-6">
-            <div className="w-full lg:w-[40%] h-[500px] animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
-            <div className="w-full lg:w-[60%] space-y-5">
-              <div className="h-64 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
-              <div className="h-64 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
+        <div className="mx-auto max-w-[1240px]">
+          <div className="h-10 animate-pulse rounded-md border border-[var(--line)] bg-[var(--surface-raised)]" />
+          <div className="mt-4 flex flex-col lg:flex-row gap-4">
+            <div className="w-full lg:w-[280px] h-[520px] shrink-0 animate-pulse rounded-lg border border-[var(--line)] bg-[var(--surface-raised)]" />
+            <div className="w-full lg:flex-1 space-y-3">
+              <div className="h-44 animate-pulse rounded-lg border border-[var(--line)] bg-[var(--surface-raised)]" />
+              <div className="h-44 animate-pulse rounded-lg border border-[var(--line)] bg-[var(--surface-raised)]" />
             </div>
           </div>
         </div>
@@ -1564,18 +1564,18 @@ export default function ModelsPage() {
       )}
 
       {/* 1. Header & Model Switcher Bar */}
-      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/90 backdrop-blur-md px-4 sm:px-6 py-3">
-        <div className="mx-auto flex max-w-[1720px] items-center justify-between gap-4">
+      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/90 backdrop-blur-md px-3.5 sm:px-4 py-2">
+        <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-3">
           {/* Left: Brand Identity & Model Switcher */}
-          <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <BrandLogo
               size="sm"
               subtitle="MODEL STUDIO // WORKSTATION"
               href="/models"
             />
-            <div className="hidden h-5 w-px bg-[var(--line-strong)] sm:block" />
+            <div className="hidden h-4 w-px bg-[var(--line-strong)] sm:block" />
 
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
               {models.length > 0 ? (
                 <div className="relative min-w-0">
                   <select
@@ -1583,7 +1583,7 @@ export default function ModelsPage() {
                     value={model?.model_id ?? ""}
                     onChange={(event) => void switchModel(event.target.value)}
                     disabled={saving}
-                    className="workspace-field h-8 max-w-[18rem] appearance-none pr-8 pl-3 font-mono text-xs outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] cursor-pointer"
+                    className="workspace-field h-7 max-w-[15rem] appearance-none pr-7 pl-2.5 font-mono text-[11px] outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] cursor-pointer"
                   >
                     {models.map((item) => (
                       <option key={item.model_id} value={item.model_id}>
@@ -1591,10 +1591,10 @@ export default function ModelsPage() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
+                  <ChevronDown className="pointer-events-none absolute right-2 top-2 h-3 w-3 text-[var(--ink-faint)]" />
                 </div>
               ) : (
-                <span className="font-mono text-[11px] text-[var(--ink-faint)]">
+                <span className="font-mono text-[10px] text-[var(--ink-faint)]">
                   No saved models
                 </span>
               )}
@@ -1603,17 +1603,17 @@ export default function ModelsPage() {
                 type="button"
                 onClick={createNewModel}
                 disabled={saving}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3 w-3" />
                 <span>New Model</span>
               </button>
             </div>
           </div>
 
           {/* Right: Server Persistence Status & Action Buttons */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="hidden items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider md:flex">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="hidden items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[9px] text-[var(--ink-faint)] uppercase tracking-wider md:flex">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
                   saving
@@ -1627,8 +1627,8 @@ export default function ModelsPage() {
                 {saving
                   ? "SYNCING…"
                   : dirty
-                    ? "UNSAVED CHANGES"
-                    : "SERVER PERSISTENCE"}
+                    ? "UNSAVED"
+                    : "PERSISTED"}
               </span>
             </div>
 
@@ -1636,9 +1636,9 @@ export default function ModelsPage() {
               type="button"
               onClick={() => void saveModel(false)}
               disabled={!dirty || saving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
             >
-              <Save className="h-3.5 w-3.5" />
+              <Save className="h-3 w-3" />
               <span className="hidden sm:inline">
                 {saving ? "Saving…" : "Save Draft"}
               </span>
@@ -1648,9 +1648,9 @@ export default function ModelsPage() {
               type="button"
               onClick={() => void saveModel(true)}
               disabled={saving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_16px_rgba(213,240,111,0.2)] disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)] disabled:opacity-40"
             >
-              <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+              <Check className="h-3 w-3 stroke-[2.5]" />
               <span>Publish ⚡</span>
             </button>
           </div>
@@ -1658,10 +1658,10 @@ export default function ModelsPage() {
       </header>
 
       {/* 2. Dual-Column Studio Workstation Geometry */}
-      <div className="mx-auto max-w-[1720px] px-4 sm:px-6 py-6 pb-28">
-        <div className="flex flex-col lg:flex-row items-start gap-6">
-          {/* LEFT COLUMN: 40% Width Sticky Preview Card */}
-          <div className="w-full lg:w-[40%] lg:max-w-[420px] xl:max-w-[440px] shrink-0 lg:sticky lg:top-20 z-20">
+      <div className="mx-auto max-w-[1240px] px-3.5 sm:px-4 py-3.5 pb-20">
+        <div className="flex flex-col lg:flex-row items-start gap-4">
+          {/* LEFT COLUMN: Compact 280px Sticky Preview Card */}
+          <div className="w-full lg:w-[280px] shrink-0 lg:sticky lg:top-14 z-20">
             <PreviewCard
               title={title}
               type={type}
@@ -1678,19 +1678,19 @@ export default function ModelsPage() {
             />
           </div>
 
-          {/* RIGHT COLUMN: 60% Width Structured Form Panels */}
+          {/* RIGHT COLUMN: Structured Form Panels */}
           <div className="w-full lg:flex-1 min-w-0">
             {/* Quick Navigation Jump Bar */}
             <nav
               aria-label="Studio section quick jump"
-              className="sticky top-16 z-10 mb-5 flex flex-wrap gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)]/95 p-1.5 backdrop-blur-md shadow-lg"
+              className="sticky top-14 z-10 mb-3 flex flex-wrap gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)]/95 p-1 backdrop-blur-md shadow-sm"
             >
               {navSections.map(({ id, num, label }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => scrollToSection(id)}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] hover:text-[var(--accent)] transition-colors"
+                  className="flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider uppercase text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] hover:text-[var(--accent)] transition-colors"
                 >
                   <span className="text-[var(--accent)]">{num}</span>
                   <span>{label}</span>
@@ -1701,7 +1701,7 @@ export default function ModelsPage() {
             {/* 01 // BASIC IDENTITY & BASE MODEL */}
             <section
               id="sec-identity"
-              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-lg p-3.5 mb-3 shadow-sm"
             >
               <SectionCardHeader
                 number="01"
@@ -1710,8 +1710,8 @@ export default function ModelsPage() {
                 icon={Sparkles}
               />
 
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <div className="grid gap-2.5 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <Field label="Model title">
                       <input
@@ -1747,7 +1747,7 @@ export default function ModelsPage() {
                           <option key={item}>{item}</option>
                         ))}
                       </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
                     </div>
                   </Field>
 
@@ -1790,7 +1790,7 @@ export default function ModelsPage() {
                           <option key={item}>{item}</option>
                         ))}
                       </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
                     </div>
                   </Field>
 
@@ -1812,7 +1812,7 @@ export default function ModelsPage() {
                   modelType={type}
                 />
 
-                <div className="pt-4 border-t border-[var(--line)]">
+                <div className="pt-2.5 border-t border-[var(--line)]">
                   <Field label="Cover media upload">
                     <MediaDropzone
                       accept="image/*,video/*,.gif"
@@ -1828,7 +1828,7 @@ export default function ModelsPage() {
             {/* 02 // INFERENCE PRESETS & TRIGGERS */}
             <section
               id="sec-generation"
-              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-lg p-3.5 mb-3 shadow-sm"
             >
               <SectionCardHeader
                 number="02"
@@ -1837,9 +1837,9 @@ export default function ModelsPage() {
                 icon={Zap}
               />
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {type === "LoRA" && (
-                  <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4 space-y-2">
+                  <div className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-2.5 space-y-1.5">
                     <Field
                       label="LoRA Trigger Words"
                       helper="Activation keywords that prompt the neural net to manifest the trained concepts."
@@ -1852,8 +1852,8 @@ export default function ModelsPage() {
                         placeholder="Add activation token (e.g. cbrpnk_style)"
                       />
                     </Field>
-                    <div className="flex items-center gap-2 pt-1 font-mono text-[10px] text-[var(--accent)]">
-                      <GripVertical className="h-3.5 w-3.5 shrink-0" />
+                    <div className="flex items-center gap-1.5 pt-0.5 font-mono text-[9px] text-[var(--accent)]">
+                      <GripVertical className="h-3 w-3 shrink-0" />
                       <span>
                         Ordering guideline: Place the primary subject trigger token first.
                       </span>
@@ -1861,7 +1861,7 @@ export default function ModelsPage() {
                   </div>
                 )}
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2.5 md:grid-cols-2">
                   <Field label="Preferred sampler">
                     <input
                       className={inputClass}
@@ -1888,12 +1888,12 @@ export default function ModelsPage() {
                         <option value={1}>1 (Standard)</option>
                         <option value={2}>2 (Anime / NovelAI layer)</option>
                       </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                      <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
                     </div>
                   </Field>
 
                   <Field label="Recommended steps range">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <input
                         type="number"
                         className={inputClass}
@@ -1905,7 +1905,7 @@ export default function ModelsPage() {
                         }
                         disabled={saving}
                       />
-                      <span className="font-mono text-xs text-[var(--ink-faint)]">
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
                         to
                       </span>
                       <input
@@ -1923,7 +1923,7 @@ export default function ModelsPage() {
                   </Field>
 
                   <Field label="CFG scale range">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <input
                         type="number"
                         step="0.1"
@@ -1936,7 +1936,7 @@ export default function ModelsPage() {
                         }
                         disabled={saving}
                       />
-                      <span className="font-mono text-xs text-[var(--ink-faint)]">
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
                         to
                       </span>
                       <input
@@ -1955,10 +1955,10 @@ export default function ModelsPage() {
                   </Field>
                 </div>
 
-                <div className="pt-4 border-t border-[var(--line)] space-y-4">
+                <div className="pt-2.5 border-t border-[var(--line)] space-y-2.5">
                   <Field label="Default recommended prompt template">
                     <textarea
-                      className="workspace-field min-h-[96px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
+                      className="workspace-field min-h-[56px] w-full resize-y p-2 font-mono text-[11px] leading-relaxed outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
                       value={generation.prompt}
                       onChange={(event) =>
                         updateGeneration({ prompt: event.target.value })
@@ -1970,7 +1970,7 @@ export default function ModelsPage() {
 
                   <Field label="Default negative prompt template">
                     <textarea
-                      className="workspace-field min-h-[80px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
+                      className="workspace-field min-h-[52px] w-full resize-y p-2 font-mono text-[11px] leading-relaxed outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
                       value={generation.negative_prompt}
                       onChange={(event) =>
                         updateGeneration({
@@ -1988,7 +1988,7 @@ export default function ModelsPage() {
             {/* 03 // MODEL FILES & VERSIONS */}
             <section
               id="sec-files"
-              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-lg p-3.5 mb-3 shadow-sm"
             >
               <SectionCardHeader
                 number="03"
@@ -1999,9 +1999,9 @@ export default function ModelsPage() {
               />
 
               {/* Version Selector Tabs & Add Version Action */}
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--line)] bg-[var(--surface)] p-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
                     RELEASES:
                   </span>
                   {versions.length ? (
@@ -2010,7 +2010,7 @@ export default function ModelsPage() {
                         key={item.version_id}
                         type="button"
                         onClick={() => setSelectedVersionId(item.version_id)}
-                        className={`rounded-lg border px-3 py-1 font-mono text-xs font-semibold transition-colors ${
+                        className={`rounded-md border px-2.5 py-0.5 font-mono text-[11px] font-semibold transition-colors ${
                           selectedVersion?.version_id === item.version_id
                             ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
                             : "border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
@@ -2020,24 +2020,24 @@ export default function ModelsPage() {
                       </button>
                     ))
                   ) : (
-                    <span className="font-mono text-xs text-[var(--ink-faint)]">
+                    <span className="font-mono text-[11px] text-[var(--ink-faint)]">
                       Save model to create first version
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={createVersion}
                     disabled={saving}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-xs font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-3 w-3" />
                     <span>Add Version</span>
                   </button>
 
-                  <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors">
+                  <label className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-[var(--accent)] px-2.5 font-mono text-[10px] font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors">
                     <input
                       type="file"
                       accept=".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
@@ -2049,7 +2049,7 @@ export default function ModelsPage() {
                         event.target.value = "";
                       }}
                     />
-                    <CloudUpload className="h-3.5 w-3.5" />
+                    <CloudUpload className="h-3 w-3" />
                     <span>Upload Binary</span>
                   </label>
                 </div>
@@ -2064,22 +2064,22 @@ export default function ModelsPage() {
               />
 
               {/* Model Files Table */}
-              <div className="mt-5 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)]">
+              <div className="mt-3 overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface-sunken)]">
                 {!selectedVersion?.files.length ? (
-                  <div className="px-5 py-8 text-center font-mono text-xs text-[var(--ink-faint)]">
+                  <div className="px-4 py-5 text-center font-mono text-[11px] text-[var(--ink-faint)]">
                     No binaries uploaded for {selectedVersion?.name ?? "this version"}. Upload safetensors or import from ComfyUI above.
                   </div>
                 ) : (
                   <>
                     <div className="hidden overflow-x-auto md:block">
-                      <table className="w-full min-w-[640px] text-left text-xs">
-                        <thead className="border-b border-[var(--line)] bg-[var(--surface)] font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
+                      <table className="w-full min-w-[560px] text-left text-[11px]">
+                        <thead className="border-b border-[var(--line)] bg-[var(--surface)] font-mono text-[9px] text-[var(--ink-faint)] uppercase tracking-wider">
                           <tr>
-                            <th className="px-4 py-2.5">FILE NAME</th>
-                            <th className="px-3 py-2.5">SIZE</th>
-                            <th className="px-3 py-2.5">SHA256 HASH</th>
-                            <th className="px-3 py-2.5">PRECISION</th>
-                            <th className="px-4 py-2.5 text-right">VISIBILITY</th>
+                            <th className="px-3 py-1.5">FILE NAME</th>
+                            <th className="px-2.5 py-1.5">SIZE</th>
+                            <th className="px-2.5 py-1.5">SHA256 HASH</th>
+                            <th className="px-2.5 py-1.5">PRECISION</th>
+                            <th className="px-3 py-1.5 text-right">VISIBILITY</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--line)]">
@@ -2088,28 +2088,28 @@ export default function ModelsPage() {
                               key={file.file_id}
                               className="hover:bg-[var(--surface-soft)] transition-colors"
                             >
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2.5">
-                                  <FileArchive className="h-4 w-4 text-[var(--accent)] shrink-0" />
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <FileArchive className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
                                   <div className="min-w-0">
-                                    <div className="font-mono font-semibold text-[var(--ink)] truncate max-w-[200px]">
+                                    <div className="font-mono font-semibold text-[var(--ink)] truncate max-w-[180px]">
                                       {file.filename}
                                     </div>
                                     <a
                                       href={file.download_url}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="font-mono text-[10px] text-[var(--accent)] hover:underline"
+                                      className="font-mono text-[9px] text-[var(--accent)] hover:underline"
                                     >
                                       Download
                                     </a>
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-3 py-3 font-mono text-xs tabular-nums text-[var(--ink-soft)]">
+                              <td className="px-2.5 py-2 font-mono text-[11px] tabular-nums text-[var(--ink-soft)]">
                                 {formatBytes(file.size)}
                               </td>
-                              <td className="px-3 py-3 font-mono text-[11px] text-[var(--ink-faint)]">
+                              <td className="px-2.5 py-2 font-mono text-[10px] text-[var(--ink-faint)]">
                                 {file.sha256.slice(0, 10)}…
                                 <button
                                   type="button"
@@ -2119,18 +2119,18 @@ export default function ModelsPage() {
                                       file.sha256,
                                     )
                                   }
-                                  className="ml-1.5 hover:text-[var(--accent)]"
+                                  className="ml-1 hover:text-[var(--accent)]"
                                 >
-                                  <Copy className="inline h-3 w-3" />
+                                  <Copy className="inline h-2.5 w-2.5" />
                                 </button>
                               </td>
-                              <td className="px-3 py-3 font-mono text-[11px]">
-                                <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 text-[var(--ink-soft)]">
+                              <td className="px-2.5 py-2 font-mono text-[10px]">
+                                <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 text-[var(--ink-soft)]">
                                   {file.precision}
                                 </span>
                               </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center justify-end gap-3">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center justify-end gap-2.5">
                                   <Toggle
                                     label={`Toggle visibility for ${file.filename}`}
                                     checked={file.visible}
@@ -2144,7 +2144,7 @@ export default function ModelsPage() {
                                     disabled={saving}
                                     className="text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors disabled:opacity-40"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
                               </td>
@@ -2157,9 +2157,9 @@ export default function ModelsPage() {
                     {/* Mobile File View */}
                     <div className="divide-y divide-[var(--line)] md:hidden">
                       {selectedVersion.files.map((file) => (
-                        <div key={file.file_id} className="p-3 space-y-2">
+                        <div key={file.file_id} className="p-2.5 space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="font-mono text-xs font-semibold text-[var(--ink)] truncate">
+                            <span className="font-mono text-[11px] font-semibold text-[var(--ink)] truncate">
                               {file.filename}
                             </span>
                             <button
@@ -2169,14 +2169,14 @@ export default function ModelsPage() {
                               disabled={saving}
                               className="text-[var(--ink-faint)] hover:text-[var(--danger)]"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <div className="flex items-center justify-between text-[11px] text-[var(--ink-faint)] font-mono">
+                          <div className="flex items-center justify-between text-[10px] text-[var(--ink-faint)] font-mono">
                             <span>
                               {formatBytes(file.size)} · {file.precision}
                             </span>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                               <span>Visible</span>
                               <Toggle
                                 label={`Toggle visibility for ${file.filename}`}
@@ -2197,7 +2197,7 @@ export default function ModelsPage() {
             {/* 04 // SHOWCASE SAMPLES & PROMPT METADATA */}
             <section
               id="sec-samples"
-              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-lg p-3.5 mb-3 shadow-sm"
             >
               <SectionCardHeader
                 number="04"
@@ -2207,13 +2207,13 @@ export default function ModelsPage() {
                 badge={samples.length}
               />
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {samples.length ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                     {samples.map((item) => (
                       <div
                         key={item.sample_id}
-                        className="group relative aspect-[4/5] overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)]"
+                        className="group relative aspect-[4/5] overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface-sunken)]"
                       >
                         {item.kind === "video" ? (
                           <video
@@ -2228,8 +2228,8 @@ export default function ModelsPage() {
                             className="h-full w-full object-cover"
                           />
                         )}
-                        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-[var(--ground)]/90 backdrop-blur-sm px-2.5 py-1.5 border-t border-[var(--line)]">
-                          <span className="truncate font-mono text-[10px] text-[var(--ink)]">
+                        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-[var(--ground)]/90 backdrop-blur-sm px-2 py-1 border-t border-[var(--line)]">
+                          <span className="truncate font-mono text-[9px] text-[var(--ink)]">
                             {item.filename}
                           </span>
                           <button
@@ -2239,14 +2239,14 @@ export default function ModelsPage() {
                             disabled={saving}
                             className="text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors ml-1"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-[var(--line-strong)] p-6 text-center font-mono text-xs text-[var(--ink-faint)]">
+                  <div className="rounded-md border border-dashed border-[var(--line-strong)] p-4 text-center font-mono text-[11px] text-[var(--ink-faint)]">
                     No showcase samples uploaded yet. Upload sample renders below.
                   </div>
                 )}
@@ -2258,27 +2258,27 @@ export default function ModelsPage() {
                   disabled={saving}
                 />
 
-                <div className="pt-4 border-t border-[var(--line)]">
-                  <div className="flex items-center gap-2 mb-3">
-                    <FileImage className="h-4 w-4 text-[var(--accent)]" />
-                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+                <div className="pt-2.5 border-t border-[var(--line)]">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <FileImage className="h-3.5 w-3.5 text-[var(--accent)]" />
+                    <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--ink)]">
                       PNG INFO METADATA
                     </span>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-                      <div className="font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                      <div className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
                         Active Sampler Profile
                       </div>
-                      <div className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
+                      <div className="mt-0.5 font-mono text-[11px] font-semibold text-[var(--ink)]">
                         {generation.sampler} · {generation.steps_min}-{generation.steps_max} steps
                       </div>
                     </div>
-                    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-                      <div className="font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+                    <div className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                      <div className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
                         Showcase Renders Count
                       </div>
-                      <div className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
+                      <div className="mt-0.5 font-mono text-[11px] font-semibold text-[var(--ink)]">
                         {samples.length} sample media items linked
                       </div>
                     </div>
@@ -2290,7 +2290,7 @@ export default function ModelsPage() {
             {/* 05 // ACCESS RIGHTS & DISTRIBUTION */}
             <section
               id="sec-access"
-              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-lg p-3.5 mb-3 shadow-sm"
             >
               <SectionCardHeader
                 number="05"
@@ -2299,10 +2299,10 @@ export default function ModelsPage() {
                 icon={ShieldCheck}
               />
 
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div>
                   <label className={labelClass}>Publishing Visibility</label>
-                  <div className="grid gap-3 sm:grid-cols-3 mt-2">
+                  <div className="grid gap-2 sm:grid-cols-3 mt-1.5">
                     {(["Public", "Unlisted", "Private"] as const).map(
                       (item) => (
                         <button
@@ -2310,14 +2310,14 @@ export default function ModelsPage() {
                           key={item}
                           onClick={() => changed(setVisibility)(item)}
                           disabled={saving}
-                          className={`rounded-lg border p-3.5 text-left transition disabled:opacity-40 ${
+                          className={`rounded-md border p-2.5 text-left transition disabled:opacity-40 ${
                             visibility === item
                               ? "border-[var(--accent)] bg-[var(--accent)]/10"
                               : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)]"
                           }`}
                         >
                           <div
-                            className={`font-mono text-xs font-bold uppercase tracking-wider ${
+                            className={`font-mono text-[11px] font-bold uppercase tracking-wider ${
                               visibility === item
                                 ? "text-[var(--accent)]"
                                 : "text-[var(--ink)]"
@@ -2325,7 +2325,7 @@ export default function ModelsPage() {
                           >
                             {item}
                           </div>
-                          <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-faint)]">
+                          <div className="mt-0.5 text-[10px] leading-relaxed text-[var(--ink-faint)]">
                             {item === "Public"
                               ? "Visible in discovery and model feed"
                               : item === "Unlisted"
@@ -2338,11 +2338,11 @@ export default function ModelsPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-[var(--line)]">
+                <div className="pt-2.5 border-t border-[var(--line)]">
                   <label className={labelClass}>
                     Commercial & Usage Permissions
                   </label>
-                  <div className="divide-y divide-[var(--line)] mt-2">
+                  <div className="divide-y divide-[var(--line)] mt-1.5">
                     {[
                       {
                         key: "commercial" as const,
@@ -2367,13 +2367,13 @@ export default function ModelsPage() {
                     ].map(({ key, label, desc }) => (
                       <div
                         key={key}
-                        className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0"
+                        className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
                       >
                         <div>
-                          <div className="font-mono text-xs font-semibold text-[var(--ink)]">
+                          <div className="font-mono text-[11px] font-semibold text-[var(--ink)]">
                             {label}
                           </div>
-                          <div className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+                          <div className="mt-0.2 text-[10px] text-[var(--ink-faint)]">
                             {desc}
                           </div>
                         </div>
@@ -2401,19 +2401,19 @@ export default function ModelsPage() {
       {/* Floating Action Bar for Unsaved Changes */}
       {dirty && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="pointer-events-auto flex w-full max-w-lg items-center justify-between gap-4 rounded-xl border border-[var(--accent)]/40 bg-[var(--surface-raised)]/95 px-4 py-3 shadow-[0_16px_48px_rgba(0,0,0,0.8)] backdrop-blur-md">
-            <div className="flex items-center gap-2.5">
-              <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-ping" />
-              <div className="font-mono text-xs font-bold text-[var(--ink)] uppercase">
-                UNSAVED WORKSTATION EDITS
+          <div className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-lg border border-[var(--accent)]/40 bg-[var(--surface-raised)]/95 px-3.5 py-2 shadow-[0_12px_40px_rgba(0,0,0,0.8)] backdrop-blur-md">
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-ping" />
+              <div className="font-mono text-[11px] font-bold text-[var(--ink)] uppercase">
+                UNSAVED EDITS
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => void saveModel(false)}
                 disabled={saving}
-                className="rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 py-1.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                className="rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
               >
                 Save Draft
               </button>
@@ -2421,7 +2421,7 @@ export default function ModelsPage() {
                 type="button"
                 onClick={() => void saveModel(true)}
                 disabled={saving}
-                className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+                className="rounded-md bg-[var(--accent)] px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
               >
                 Publish ⚡
               </button>
