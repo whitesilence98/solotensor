@@ -21,7 +21,6 @@ import {
   type CreatorModelPayload,
   type CreatorModelCategory,
   type CreatorModelType,
-  type ModelPrecision,
   type ModelVisibility,
   type LocalModelSummary,
   type InstalledGalleryModel,
@@ -41,7 +40,6 @@ import {
   ImagePlus,
   Info,
   Layers3,
-  MoreHorizontal,
   Plus,
   Save,
   Search,
@@ -52,17 +50,10 @@ import {
   Trash2,
   UploadCloud,
   X,
+  Zap,
 } from "lucide-react";
-
-type TabId = "identity" | "generation" | "files" | "samples" | "access";
-
-const tabs: { id: TabId; label: string; hint: string }[] = [
-  { id: "identity", label: "Identity", hint: "Branding and compatibility" },
-  { id: "generation", label: "Generation", hint: "Triggers and defaults" },
-  { id: "files", label: "Model files", hint: "Versions and downloads" },
-  { id: "samples", label: "Showcase", hint: "Samples and PNG info" },
-  { id: "access", label: "Access", hint: "Rights and visibility" },
-];
+import BrandLogo from "@/components/BrandLogo";
+import TensorModelCard from "@/components/TensorModelCard";
 
 const baseModels = [
   "FLUX.1",
@@ -81,32 +72,54 @@ const baseModels = [
   "Realistic Vision",
 ];
 
-const inputClass = "workspace-field h-10 w-full px-3 text-sm outline-none";
-const selectClass = `${inputClass} appearance-none pr-8`;
+const inputClass =
+  "workspace-field h-10 w-full px-3 text-xs font-mono outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors";
+const selectClass = `${inputClass} appearance-none pr-8 cursor-pointer`;
 const labelClass =
-  "mb-2 block text-[11px] font-semibold text-[var(--ink-soft)]";
+  "mb-1.5 block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase";
 
-function SectionHeading({
+function SectionCardHeader({
+  number,
   title,
-  description,
+  subtitle,
   icon: Icon,
+  badge,
 }: {
+  number: string;
   title: string;
-  description: string;
+  subtitle?: string;
   icon: typeof Info;
+  badge?: string | number;
 }) {
   return (
-    <div className="mb-5 flex items-start gap-3">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-[var(--accent)]/10 text-[var(--accent)]">
-        <Icon className="h-4 w-4" strokeWidth={1.8} />
-      </div>
-      <div>
-        <h2 className="text-[15px] font-semibold tracking-[-.02em] text-[var(--ink)]">
-          {title}
-        </h2>
-        <p className="mt-1 text-xs leading-5 text-[var(--ink-faint)]">
-          {description}
-        </p>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--accent)] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+          <Icon className="h-4 w-4" strokeWidth={1.75} />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase">
+              {number}
+            </span>
+            <span className="font-mono text-[10px] text-[var(--line-strong)]">
+              /
+            </span>
+            <h2 className="font-mono text-xs font-bold tracking-wider text-[var(--ink)] uppercase">
+              {title}
+            </h2>
+            {badge !== undefined && (
+              <span className="ml-1 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && (
+            <p className="mt-0.5 text-xs text-[var(--ink-faint)]">
+              {subtitle}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -122,7 +135,7 @@ function Field({
   helper?: string;
 }) {
   return (
-    <label className="block space-y-2">
+    <label className="block space-y-1">
       <span className={labelClass}>{label}</span>
       {children}
       {helper && (
@@ -153,10 +166,14 @@ function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={onChange}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${checked ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"}`}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+        checked ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
+      }`}
     >
       <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-[var(--accent-ink)] transition-transform ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`}
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-[var(--accent-ink)] transition-transform ${
+          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        }`}
       />
     </button>
   );
@@ -178,17 +195,18 @@ function TagEditor({
     setDraft("");
   };
   return (
-    <div className="workspace-field flex min-h-10 flex-wrap items-center gap-1.5 px-2 py-1.5">
+    <div className="workspace-field flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 focus-within:border-[var(--accent)] transition-colors">
       {tags.map((tag) => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-[var(--accent)]/10 px-2 py-1 text-xs font-medium text-[var(--accent)]"
+          className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[11px] font-medium text-[var(--accent)]"
         >
           {tag}
           <button
             type="button"
             aria-label={`Remove ${tag}`}
             onClick={() => onChange(tags.filter((item) => item !== tag))}
+            className="hover:text-white"
           >
             <X className="h-3 w-3" />
           </button>
@@ -204,8 +222,8 @@ function TagEditor({
           }
         }}
         onBlur={add}
-        placeholder={tags.length ? "Add another" : placeholder}
-        className="min-w-[9rem] flex-1 bg-transparent px-1 py-1 text-xs text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
+        placeholder={tags.length ? "Add another…" : placeholder}
+        className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 font-mono text-xs text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
       />
     </div>
   );
@@ -240,7 +258,11 @@ function MediaDropzone({
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={drop}
-      className={`flex min-h-[130px] cursor-pointer flex-col items-center justify-center rounded-[var(--radius-control)] border border-dashed px-6 text-center transition ${dragging ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--line-strong)] bg-[var(--surface-sunken)]/40 hover:border-[var(--accent)]"} ${disabled ? "pointer-events-none opacity-50" : ""}`}
+      className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center transition ${
+        dragging
+          ? "border-[var(--accent)] bg-[var(--accent)]/10"
+          : "border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
+      } ${disabled ? "pointer-events-none opacity-50" : ""}`}
     >
       <input
         type="file"
@@ -249,12 +271,14 @@ function MediaDropzone({
         className="sr-only"
         onChange={input}
       />
-      <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-soft)] text-[var(--accent)]">
-        <UploadCloud className="h-5 w-5" />
+      <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--surface-soft)] text-[var(--accent)] border border-[var(--line)]">
+        <UploadCloud className="h-4.5 w-4.5" />
       </span>
-      <span className="text-sm font-medium text-[var(--ink)]">{label}</span>
-      <span className="mt-1 text-xs text-[var(--ink-faint)]">
-        Choose files or drop them here
+      <span className="font-mono text-xs font-semibold text-[var(--ink)]">
+        {label}
+      </span>
+      <span className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+        Drop files or browse local disk
       </span>
     </label>
   );
@@ -293,7 +317,7 @@ function ConfirmationDialog({
   };
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-backdrop)] p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
       }}
@@ -304,34 +328,34 @@ function ConfirmationDialog({
         aria-labelledby="confirmation-title"
         aria-describedby="confirmation-description"
         onKeyDown={trapFocus}
-        className="w-full max-w-md rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] p-5 "
+        className="w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-[0_32px_96px_rgba(0,0,0,0.85)]"
       >
         <h2
           id="confirmation-title"
-          className="text-base font-semibold text-[var(--ink)]"
+          className="font-mono text-sm font-bold uppercase tracking-wider text-[var(--ink)]"
         >
           {title}
         </h2>
         <p
           id="confirmation-description"
-          className="mt-2 text-sm leading-6 text-[var(--ink-soft)]"
+          className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]"
         >
           This action affects{" "}
-          <span className="font-medium text-[var(--ink)]">{item}</span>.
+          <span className="font-semibold text-[var(--ink)]">{item}</span>.
         </p>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-6 flex justify-end gap-2.5">
           <button
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            className="workspace-action-secondary h-9 px-3 text-xs"
+            className="h-8 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-xs text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="inline-flex h-9 items-center justify-center rounded-[var(--radius-control)] bg-[var(--danger)] px-3 text-xs font-bold text-[var(--ground)]"
+            className="inline-flex h-8 items-center justify-center rounded-lg bg-[var(--danger)] px-3.5 font-mono text-xs font-bold text-white transition-opacity hover:opacity-90"
           >
             {title}
           </button>
@@ -450,21 +474,18 @@ function CompatibilityFields({
     });
 
   return (
-    <section className="workspace-panel p-5">
-      <SectionHeading
-        title="Compatibility"
-        description={
-          isAdapter
-            ? "Attach this adapter to one exact installed base model."
-            : "Save the text encoder and CLIP type as one model-owned conditioning stack."
-        }
-        icon={Settings2}
-      />
+    <div className="space-y-4 pt-4 border-t border-[var(--line)]">
+      <div className="flex items-center gap-2">
+        <Settings2 className="h-4 w-4 text-[var(--accent)]" />
+        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+          COMPATIBILITY MATRIX
+        </span>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         {isAdapter && (
-          <div className="md:col-span-2 space-y-2">
+          <div className="md:col-span-2 space-y-1.5">
             <label htmlFor="lora-base-model" className={labelClass}>
-              Base model
+              Exact installed base model
             </label>
             <div className="relative">
               <select
@@ -532,7 +553,7 @@ function CompatibilityFields({
         </Field>
         {!isAdapter && (
           <>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label htmlFor="recommended-vae" className={labelClass}>
                 Recommended VAE
               </label>
@@ -561,7 +582,7 @@ function CompatibilityFields({
               </div>
               {vaeLoading && (
                 <p className="text-[11px] text-[var(--ink-faint)]">
-                  Scanning local VAE files...
+                  Scanning local VAE files…
                 </p>
               )}
               {vaeError && (
@@ -570,7 +591,7 @@ function CompatibilityFields({
                 </div>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label htmlFor="text-encoder" className={labelClass}>
                 Text encoder
               </label>
@@ -594,7 +615,7 @@ function CompatibilityFields({
               </div>
               {encoderLoading && (
                 <p className="text-[11px] text-[var(--ink-faint)]">
-                  Scanning local text encoders...
+                  Scanning local text encoders…
                 </p>
               )}
               {encoderError && (
@@ -603,7 +624,7 @@ function CompatibilityFields({
                 </div>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label htmlFor="clip-type" className={labelClass}>
                 CLIP type
               </label>
@@ -629,7 +650,7 @@ function CompatibilityFields({
               </div>
               {clipTypesLoading && (
                 <p className="text-[11px] text-[var(--ink-faint)]">
-                  Loading CLIP types...
+                  Loading CLIP types…
                 </p>
               )}
               {clipTypesError && (
@@ -637,13 +658,10 @@ function CompatibilityFields({
                   {clipTypesError}
                 </div>
               )}
-              <p className="text-[11px] text-[var(--ink-faint)]">
-                Saved together with the selected text encoder.
-              </p>
             </div>
           </>
         )}
-        <Field label="Parent model">
+        <Field label="Parent model linkage">
           <input
             className={inputClass}
             value={compatibility.parent_model ?? ""}
@@ -654,282 +672,10 @@ function CompatibilityFields({
               })
             }
             disabled={disabled || isAdapter}
-            placeholder="No parent linked"
+            placeholder="No parent model linked"
           />
         </Field>
       </div>
-    </section>
-  );
-}
-
-function IdentityTab({
-  title,
-  setTitle,
-  tags,
-  setTags,
-  category,
-  setCategory,
-  type,
-  setType,
-  compatibility,
-  setCompatibility,
-  onMediaFiles,
-  disabled,
-}: {
-  title: string;
-  setTitle: (value: string) => void;
-  tags: string[];
-  setTags: (value: string[]) => void;
-  category: CreatorModelCategory;
-  setCategory: (value: CreatorModelCategory) => void;
-  type: CreatorModelType;
-  setType: (value: CreatorModelType) => void;
-  compatibility: CreatorModelCompatibility;
-  setCompatibility: (value: CreatorModelCompatibility) => void;
-  onMediaFiles: (files: File[]) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="space-y-6">
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Model identity"
-          description="Make the model easy to find, understand, and remember."
-          icon={Sparkles}
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <Field label="Model title">
-              <input
-                className={inputClass}
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                disabled={disabled}
-              />
-            </Field>
-          </div>
-          <Field label="Category">
-            <div className="relative">
-              <select
-                className={selectClass}
-                value={category}
-                onChange={(event) =>
-                  setCategory(event.target.value as CreatorModelCategory)
-                }
-                disabled={disabled}
-              >
-                {[
-                  "Character",
-                  "Style",
-                  "Concept",
-                  "Pose",
-                  "Clothing",
-                  "General",
-                ].map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
-            </div>
-          </Field>
-          <Field label="Model type">
-            <div className="relative">
-              <select
-                className={selectClass}
-                value={type}
-                onChange={(event) =>
-                  setType(event.target.value as CreatorModelType)
-                }
-                disabled={disabled}
-              >
-                {[
-                  "Checkpoint",
-                  "Diffusion Model",
-                  "LoRA",
-                  "LyCORIS",
-                  "VAE",
-                  "Embedding",
-                ].map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
-            </div>
-          </Field>
-          <div className="md:col-span-2">
-            <Field label="Search tags">
-              <TagEditor
-                tags={tags}
-                onChange={setTags}
-                placeholder="portrait, cinematic, fashion"
-              />
-            </Field>
-          </div>
-        </div>
-      </section>
-      <CompatibilityFields
-        compatibility={compatibility}
-        setCompatibility={setCompatibility}
-        disabled={disabled}
-        modelType={type}
-      />
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Cover media"
-          description="Upload showcase media. Mark a sample as cover in the metadata convention."
-          icon={ImagePlus}
-        />
-        <MediaDropzone
-          accept="image/*,video/*,.gif"
-          label="Drop a cover image or short video"
-          onFiles={onMediaFiles}
-          disabled={disabled}
-        />
-      </section>
-    </div>
-  );
-}
-
-function GenerationTab({
-  generation,
-  setGeneration,
-  type,
-  disabled,
-}: {
-  generation: CreatorModelGeneration;
-  setGeneration: (value: CreatorModelGeneration) => void;
-  type: CreatorModelType;
-  disabled: boolean;
-}) {
-  const update = (patch: Partial<CreatorModelGeneration>) =>
-    setGeneration({ ...generation, ...patch });
-  return (
-    <div className="space-y-6">
-      {type === "LoRA" && (
-        <section className="workspace-panel p-5">
-          <SectionHeading
-            title="Trigger words"
-            description="Optional terms creators can include when using this LoRA."
-            icon={Tag}
-          />
-          <Field label="Optional trigger words">
-            <TagEditor
-              tags={generation.trigger_words}
-              onChange={(trigger_words) => update({ trigger_words })}
-              placeholder="Add a trigger word"
-            />
-          </Field>
-          <div className="mt-4 flex items-center gap-3 rounded-[var(--radius-control)] border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-3 text-xs text-[var(--accent)]">
-            <GripVertical className="h-4 w-4 shrink-0" /> Put the most important
-            trigger first.
-          </div>
-        </section>
-      )}
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Recommended parameters"
-          description="Give creators a useful first render without hiding the controls."
-          icon={Settings2}
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Preferred sampler">
-            <input
-              className={inputClass}
-              value={generation.sampler}
-              onChange={(event) => update({ sampler: event.target.value })}
-              disabled={disabled}
-            />
-          </Field>
-          <Field label="Clip skip">
-            <select
-              className={selectClass}
-              value={generation.clip_skip}
-              onChange={(event) =>
-                update({ clip_skip: Number(event.target.value) })
-              }
-              disabled={disabled}
-            >
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-            </select>
-          </Field>
-          <Field label="Steps range">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                className={inputClass}
-                value={generation.steps_min}
-                onChange={(event) =>
-                  update({ steps_min: Number(event.target.value) })
-                }
-                disabled={disabled}
-              />
-              <span className="text-xs text-[var(--ink-faint)]">to</span>
-              <input
-                type="number"
-                className={inputClass}
-                value={generation.steps_max}
-                onChange={(event) =>
-                  update({ steps_max: Number(event.target.value) })
-                }
-                disabled={disabled}
-              />
-            </div>
-          </Field>
-          <Field label="CFG scale">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="0.1"
-                className={inputClass}
-                value={generation.cfg_min}
-                onChange={(event) =>
-                  update({ cfg_min: Number(event.target.value) })
-                }
-                disabled={disabled}
-              />
-              <span className="text-xs text-[var(--ink-faint)]">to</span>
-              <input
-                type="number"
-                step="0.1"
-                className={inputClass}
-                value={generation.cfg_max}
-                onChange={(event) =>
-                  update({ cfg_max: Number(event.target.value) })
-                }
-                disabled={disabled}
-              />
-            </div>
-          </Field>
-        </div>
-      </section>
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Prompt templates"
-          description="Optional starting points shown alongside the model in the feed."
-          icon={FileCode2}
-        />
-        <div className="space-y-4">
-          <Field label="Recommended prompt">
-            <textarea
-              className="workspace-field min-h-[118px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none"
-              value={generation.prompt}
-              onChange={(event) => update({ prompt: event.target.value })}
-              disabled={disabled}
-            />
-          </Field>
-          <Field label="Negative prompt">
-            <textarea
-              className="workspace-field min-h-[94px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none"
-              value={generation.negative_prompt}
-              onChange={(event) =>
-                update({ negative_prompt: event.target.value })
-              }
-              disabled={disabled}
-            />
-          </Field>
-        </div>
-      </section>
     </div>
   );
 }
@@ -1018,24 +764,24 @@ function LocalModelPicker({
   }, [category, debouncedQuery, open, version]);
 
   return (
-    <section className="mt-4 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-sunken)]/70 p-3">
+    <section className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold text-[var(--ink)]">
-            Use an existing ComfyUI model
+          <p className="font-mono text-xs font-semibold text-[var(--ink)]">
+            IMPORT FROM LOCAL COMFYUI
           </p>
-          <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-            Browse files from the configured {category} folder.
+          <p className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+            Select files directly from the configured <span className="font-mono text-[var(--accent)]">{category}</span> enclave.
           </p>
         </div>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           disabled={busy || !version}
-          className="inline-flex h-8 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-2.5 text-[11px] font-semibold text-[var(--ink)] transition hover:border-[var(--accent)]/60 hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/70 disabled:opacity-40"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
         >
-          <Search className="h-3.5 w-3.5" />{" "}
-          {open ? "Close browser" : "Choose from ComfyUI"}
+          <Search className="h-3.5 w-3.5" />
+          {open ? "Close browser" : "Browse ComfyUI"}
         </button>
       </div>
       {open && (
@@ -1046,30 +792,29 @@ function LocalModelPicker({
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={`Filter ${category} by filename`}
+              placeholder={`Filter ${category} by filename…`}
               className={`${inputClass} pl-9`}
             />
           </div>
-          <div className="flex items-center justify-between text-[10px] text-[var(--ink-faint)]">
-            <span>{query ? "Search results" : "Suggested files"}</span>
-            <span>{loading ? "Scanning…" : `${items.length} found`}</span>
+          <div className="flex items-center justify-between font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+            <span>{query ? "Search results" : "Available files"}</span>
+            <span>{loading ? "Scanning…" : `${items.length} discovered`}</span>
           </div>
           {error ? (
             <div
               role="alert"
-              className="rounded-[var(--radius-control)] border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-3 text-[11px] leading-5 text-[var(--danger)]"
+              className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]"
             >
-              {error}. Set COMFY_MODEL_ROOT to your ComfyUI folder, then retry.
+              {error}. Ensure COMFY_MODEL_ROOT is configured, then retry.
             </div>
           ) : (
             <div
               role="listbox"
               aria-label="ComfyUI model files"
-              className="max-h-56 overflow-y-auto rounded-[var(--radius-control)] border border-[var(--line)]"
+              className="max-h-56 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface)]"
             >
               {loading && !items.length ? (
                 <div className="space-y-2 p-3">
-                  <div className="h-9 animate-pulse rounded bg-[var(--surface-soft)]" />
                   <div className="h-9 animate-pulse rounded bg-[var(--surface-soft)]" />
                   <div className="h-9 animate-pulse rounded bg-[var(--surface-soft)]" />
                 </div>
@@ -1086,17 +831,25 @@ function LocalModelPicker({
                       aria-selected={active}
                       onClick={() => setSelected(item)}
                       disabled={busy}
-                      className={`flex min-h-11 w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left transition last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/70 disabled:opacity-40 ${active ? "bg-[var(--accent)]/10 text-[var(--accent)]" : "hover:bg-[var(--surface-soft)]"}`}
+                      className={`flex min-h-10 w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 text-left transition last:border-b-0 ${
+                        active
+                          ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                          : "hover:bg-[var(--surface-soft)] text-[var(--ink)]"
+                      }`}
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${active ? "bg-[var(--accent)]" : "border border-[var(--line-strong)]"}`}
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            active
+                              ? "bg-[var(--accent)]"
+                              : "border border-[var(--line-strong)]"
+                          }`}
                         />
                         <span className="min-w-0 truncate font-mono text-[11px]">
                           {item.filename}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--ink-faint)]">
+                      <span className="shrink-0 font-mono text-[10px] text-[var(--ink-faint)]">
                         {formatBytes(item.size)}
                       </span>
                     </button>
@@ -1106,25 +859,22 @@ function LocalModelPicker({
                 <div className="px-4 py-8 text-center">
                   <FileArchive className="mx-auto h-5 w-5 text-[var(--ink-faint)]" />
                   <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                    No matching {category} files
-                  </p>
-                  <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                    Try another filename or check the ComfyUI folder.
+                    No matching {category} files found
                   </p>
                 </div>
               )}
             </div>
           )}
           {selected && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--accent)]/25 bg-[var(--accent)]/5 px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-[10px] text-[var(--accent)]/70">
-                  Selected file
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                  Selected model file
                 </p>
-                <p className="mt-1 truncate font-mono text-xs text-[var(--ink)]">
+                <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink)]">
                   {selected.filename}
                 </p>
-                <p className="mt-1 text-[10px] text-[var(--ink-faint)]">
+                <p className="text-[10px] text-[var(--ink-faint)]">
                   {selected.category} · {formatBytes(selected.size)}
                 </p>
               </div>
@@ -1132,10 +882,10 @@ function LocalModelPicker({
                 type="button"
                 onClick={() => onImport(selected)}
                 disabled={busy}
-                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-3 text-xs font-bold text-[var(--accent-ink)] transition active:scale-[.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/70 disabled:opacity-40"
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
               >
-                <Check className="h-4 w-4" />{" "}
-                {busy ? "Importing…" : "Import selected"}
+                <Check className="h-3.5 w-3.5" />
+                {busy ? "Importing…" : "Import to Version"}
               </button>
             </div>
           )}
@@ -1145,559 +895,175 @@ function LocalModelPicker({
   );
 }
 
-function FilesTab({
-  versions,
-  selectedVersionId,
-  onSelectVersion,
-  onCreateVersion,
-  onUpload,
-  onImport,
-  onPatch,
-  onDelete,
-  modelType,
-  busy,
-}: {
-  versions: CreatorModelVersion[];
-  selectedVersionId: string | null;
-  onSelectVersion: (id: string) => void;
-  onCreateVersion: () => void;
-  onUpload: (file: File) => void;
-  onImport: (item: LocalModelSummary) => void;
-  onPatch: (file: CreatorModelFile) => void;
-  onDelete: (file: CreatorModelFile) => void;
-  modelType: CreatorModelType;
-  busy: boolean;
-}) {
-  const version =
-    versions.find((item) => item.version_id === selectedVersionId) ??
-    versions[0];
-  return (
-    <div className="space-y-6">
-      <section className="workspace-panel p-5">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <SectionHeading
-            title="Version control"
-            description="Ship stable releases without losing previous files."
-            icon={Archive}
-          />
-          <button
-            type="button"
-            onClick={onCreateVersion}
-            disabled={busy}
-            className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink)] disabled:opacity-40"
-          >
-            <Plus className="h-4 w-4" /> Add version
-          </button>
-        </div>
-        {versions.length ? (
-          <div className="flex flex-wrap gap-2">
-            {versions.map((item) => (
-              <button
-                key={item.version_id}
-                type="button"
-                onClick={() => onSelectVersion(item.version_id)}
-                className={`rounded-[var(--radius-control)] border px-3 py-2 text-xs font-semibold ${version?.version_id === item.version_id ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]" : "border-[var(--line)] text-[var(--ink-faint)]"}`}
-              >
-                {item.name}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-[var(--ink-faint)]">
-            Save the model to create its first version.
-          </p>
-        )}
-      </section>
-      <section className="workspace-panel overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
-          <div>
-            <h2 className="text-[15px] font-semibold text-[var(--ink)]">
-              File slots
-            </h2>
-            <p className="mt-1 text-xs text-[var(--ink-faint)]">
-              {version?.name ?? "No version"} accepts safetensors and GGUF
-              variants.
-            </p>
-          </div>
-          <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-3 text-xs font-bold text-[var(--accent-ink)]">
-            <input
-              type="file"
-              accept=".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
-              className="sr-only"
-              disabled={busy || !version}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onUpload(file);
-                event.target.value = "";
-              }}
-            />
-            <CloudUpload className="h-4 w-4" /> Upload file
-          </label>
-        </div>
-        <div className="px-5">
-          <LocalModelPicker
-            modelType={modelType}
-            version={version}
-            onImport={onImport}
-            busy={busy}
-          />
-        </div>
-        {!version?.files.length ? (
-          <div className="px-5 py-10 text-center text-xs text-[var(--ink-faint)]">
-            No model files yet. Upload a checkpoint, adapter, or compatible
-            weights file.
-          </div>
-        ) : (
-          <>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[680px] text-left text-xs">
-                <thead className="bg-[var(--surface-sunken)] text-[10px] text-[var(--ink-faint)]">
-                  <tr>
-                    <th className="px-5 py-3">File</th>
-                    <th className="px-3 py-3">Size</th>
-                    <th className="px-3 py-3">SHA256</th>
-                    <th className="px-3 py-3">Precision</th>
-                    <th className="px-5 py-3 text-right">Visible</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--line)]">
-                  {version.files.map((file) => (
-                    <tr
-                      key={file.file_id}
-                      className="group hover:bg-[var(--surface-soft)]"
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-soft)] text-[var(--accent)]">
-                            <FileArchive className="h-4 w-4" />
-                          </span>
-                          <div>
-                            <div className="font-medium text-[var(--ink)]">
-                              {file.filename}
-                            </div>
-                            <a
-                              href={file.download_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-0.5 block text-[11px] text-[var(--ink-faint)] hover:text-[var(--accent)]"
-                            >
-                              Download
-                            </a>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-4 tabular-nums text-[var(--ink-soft)]">
-                        {formatBytes(file.size)}
-                      </td>
-                      <td className="px-3 py-4 font-mono text-[11px] text-[var(--ink-faint)]">
-                        {file.sha256.slice(0, 12)}…
-                        <button
-                          type="button"
-                          aria-label={`Copy hash for ${file.filename}`}
-                          onClick={() =>
-                            void navigator.clipboard?.writeText(file.sha256)
-                          }
-                          className="ml-2"
-                        >
-                          <Copy className="inline h-3 w-3" />
-                        </button>
-                      </td>
-                      <td className="px-3 py-4">
-                        <span className="rounded bg-[var(--surface-soft)] px-2 py-1 text-[11px] text-[var(--ink-soft)]">
-                          {file.precision}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-end gap-3">
-                          <Toggle
-                            label={`Toggle visibility for ${file.filename}`}
-                            checked={file.visible}
-                            onChange={() => onPatch(file)}
-                            disabled={busy}
-                          />
-                          <button
-                            type="button"
-                            aria-label={`Delete ${file.filename}`}
-                            onClick={() => onDelete(file)}
-                            disabled={busy}
-                            className="text-[var(--ink-faint)] transition hover:text-[var(--danger)] disabled:opacity-40"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="space-y-3 p-4 md:hidden">
-              {version.files.map((file) => (
-                <article
-                  key={file.file_id}
-                  className="rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-sunken)] p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-[var(--ink)]">
-                        {file.filename}
-                      </p>
-                      <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                        {formatBytes(file.size)} · {file.precision}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`Delete ${file.filename}`}
-                      onClick={() => onDelete(file)}
-                      disabled={busy}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--ink-faint)] hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] disabled:opacity-40"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-[10px] text-[var(--ink-faint)]">
-                        {file.sha256.slice(0, 12)}…
-                      </p>
-                      <div className="mt-2 flex gap-3">
-                        <a
-                          href={file.download_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-medium text-[var(--accent)]"
-                        >
-                          Download
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void navigator.clipboard?.writeText(file.sha256)
-                          }
-                          className="text-[11px] text-[var(--ink-soft)]"
-                        >
-                          Copy hash
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-[10px] text-[var(--ink-faint)]">
-                        Visible
-                      </span>
-                      <Toggle
-                        label={`Toggle visibility for ${file.filename}`}
-                        checked={file.visible}
-                        onChange={() => onPatch(file)}
-                        disabled={busy}
-                      />
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function SamplesTab({
-  samples,
-  onUpload,
-  onDelete,
-  busy,
-}: {
-  samples: CreatorModelSample[];
-  onUpload: (file: File) => void;
-  onDelete: (sample: CreatorModelSample) => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="space-y-6">
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Showcase gallery"
-          description="Select the images that best explain what this model can make."
-          icon={ImagePlus}
-        />
-        {samples.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {samples.map((item) => (
-              <div
-                key={item.sample_id}
-                className="group relative aspect-[4/5] overflow-hidden rounded-[var(--radius-control)] bg-[var(--surface-soft)]"
-              >
-                {item.kind === "video" ? (
-                  <video
-                    src={item.url}
-                    controls
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <img
-                    src={item.url}
-                    alt={item.filename}
-                    className="h-full w-full object-cover"
-                  />
-                )}
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-[var(--media-scrim)] px-3 py-3">
-                  <span className="truncate text-xs text-[var(--ink)]">
-                    {item.filename}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${item.filename}`}
-                    onClick={() => onDelete(item)}
-                    disabled={busy}
-                    className="text-[var(--ink)]/70 hover:text-[var(--danger)]"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="border border-dashed border-[var(--line-strong)] px-5 py-10 text-center text-xs text-[var(--ink-faint)]">
-            No showcase samples uploaded yet.
-          </div>
-        )}
-        <div className="mt-4">
-          <MediaDropzone
-            accept="image/*,video/*,.gif"
-            label="Add showcase samples"
-            onFiles={(files) => files.forEach(onUpload)}
-            disabled={busy}
-          />
-        </div>
-      </section>
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="PNG info"
-          description="Metadata supplied with each sample is preserved by the backend."
-          icon={FileImage}
-        />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-            <div className="text-[10px] text-[var(--ink-faint)]">Sampler</div>
-            <div className="mt-2 text-sm text-[var(--ink)]">
-              Stored per model generation settings
-            </div>
-          </div>
-          <div className="rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-            <div className="text-[10px] text-[var(--ink-faint)]">Samples</div>
-            <div className="mt-2 text-sm text-[var(--ink)]">
-              {samples.length} uploaded
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AccessTab({
-  visibility,
-  setVisibility,
-  permissions,
-  setPermissions,
-  disabled,
-}: {
-  visibility: ModelVisibility;
-  setVisibility: (value: ModelVisibility) => void;
-  permissions: CreatorModelPermissions;
-  setPermissions: (value: CreatorModelPermissions) => void;
-  disabled: boolean;
-}) {
-  const rights: Array<[keyof CreatorModelPermissions, string, string]> = [
-    ["commercial", "Commercial use", "Allow outputs to be used in paid work."],
-    [
-      "remix",
-      "Re-upload and remix",
-      "Allow modified versions to be published.",
-    ],
-    [
-      "generation_services",
-      "Generation services",
-      "Allow hosted generation services to use this model.",
-    ],
-    [
-      "credit_required",
-      "Credit required",
-      "Ask creators to credit your profile.",
-    ],
-  ];
-  return (
-    <div className="space-y-6">
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Publishing status"
-          description="Control who can find and download this model."
-          icon={Eye}
-        />
-        <div className="grid gap-3 sm:grid-cols-3">
-          {(["Public", "Unlisted", "Private"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              onClick={() => setVisibility(item)}
-              disabled={disabled}
-              className={`rounded-[var(--radius-control)] border p-4 text-left transition disabled:opacity-40 ${visibility === item ? "border-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--line)] bg-[var(--surface-sunken)]"}`}
-            >
-              <div
-                className={`text-sm font-semibold ${visibility === item ? "text-[var(--accent)]" : "text-[var(--ink)]"}`}
-              >
-                {item}
-              </div>
-              <div className="mt-1 text-[11px] leading-4 text-[var(--ink-faint)]">
-                {item === "Public"
-                  ? "Visible in discovery"
-                  : item === "Unlisted"
-                    ? "Only shared links"
-                    : "Draft workspace only"}
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="workspace-panel p-5">
-        <SectionHeading
-          title="Usage permissions"
-          description="State the rules clearly before someone downloads."
-          icon={ShieldCheck}
-        />
-        <div className="divide-y divide-[var(--line)]">
-          {rights.map(([key, label, helper]) => (
-            <div
-              key={key}
-              className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
-            >
-              <div>
-                <div className="text-sm font-medium text-[var(--ink)]">
-                  {label}
-                </div>
-                <div className="mt-1 text-xs text-[var(--ink-faint)]">
-                  {helper}
-                </div>
-              </div>
-              <Toggle
-                label={label}
-                checked={permissions[key]}
-                disabled={disabled}
-                onChange={() =>
-                  setPermissions({ ...permissions, [key]: !permissions[key] })
-                }
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function PreviewCard({
   title,
   type,
+  category,
   base,
   tags,
   samples,
   version,
   visibility,
+  triggerWords = [],
+  fileCount = 0,
+  permissions,
+  modelId,
 }: {
   title: string;
   type: string;
+  category: string;
   base: string;
   tags: string[];
   samples: CreatorModelSample[];
   version: string;
   visibility: string;
+  triggerWords?: string[];
+  fileCount?: number;
+  permissions?: CreatorModelPermissions;
+  modelId?: string;
 }) {
-  const cover = samples[0];
+  const [copiedTrigger, setCopiedTrigger] = useState<string | null>(null);
+
+  const copyTrigger = (word: string) => {
+    void navigator.clipboard?.writeText(word);
+    setCopiedTrigger(word);
+    setTimeout(() => setCopiedTrigger(null), 1500);
+  };
+
+  const coverUrl = samples[0]?.url;
+
   return (
-    <aside className="workspace-panel sticky top-5 overflow-hidden">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+    <aside className="w-full space-y-3">
+      {/* Top Status Header */}
+      <div className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-3.5 py-2.5 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
-          <span className="text-[11px] font-semibold text-[var(--ink-faint)]">
-            Discovery preview
+          <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+          <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-faint)] uppercase">
+            GALLERY PREVIEW // LIVE 1:1 RENDERING
           </span>
         </div>
-        <span className="text-[11px] text-[var(--ink-faint)]">
+        <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
           {visibility}
         </span>
       </div>
-      <div className="aspect-[4/3] overflow-hidden bg-[var(--surface-soft)]">
-        {cover ? (
-          cover.kind === "video" ? (
-            <video
-              src={cover.url}
-              muted
-              autoPlay
-              loop
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <img
-              src={cover.url}
-              alt="Model cover preview"
-              className="h-full w-full object-cover"
-            />
-          )
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-[var(--ink-faint)]">
-            Add cover media
+
+      {/* 1:1 Canonical Aspect-[3/4] Gallery Card */}
+      <TensorModelCard
+        item={{
+          model_id: modelId,
+          title: title || "Untitled model",
+          model_type: type,
+          category: category,
+          base_model: base,
+          cover_url: coverUrl,
+          sample_count: samples.length,
+        }}
+        isLink={false}
+        className="shadow-[0_20px_50px_rgba(0,0,0,0.65)]"
+      />
+
+      {/* Adjacent Technical Metadata Card Below the 3:4 Card */}
+      <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-4 shadow-lg space-y-3.5">
+        {/* Active Trigger Words Cloud */}
+        {triggerWords.length > 0 && (
+          <div className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--accent)]">
+                ACTIVE TRIGGER WORDS
+              </span>
+              <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                Click to copy
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {triggerWords.map((word) => (
+                <button
+                  key={word}
+                  type="button"
+                  onClick={() => copyTrigger(word)}
+                  className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-colors"
+                >
+                  <Tag className="h-2.5 w-2.5" />
+                  <span>{word}</span>
+                  {copiedTrigger === word && (
+                    <Check className="h-2.5 w-2.5 text-[var(--accent)]" />
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-      </div>
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-4">
+
+        {/* Technical Specs Readout */}
+        <div className="grid grid-cols-3 gap-2 border-y border-[var(--line)] py-2.5 text-center">
           <div>
-            <h2 className="text-lg font-semibold tracking-[-.03em] text-[var(--ink)]">
-              {title || "Untitled model"}
-            </h2>
-            <p className="mt-1 text-xs text-[var(--ink-faint)]">
-              by you · {type} · {base}
-            </p>
-          </div>
-          <MoreHorizontal className="h-5 w-5 text-[var(--ink-faint)]" />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {tags.slice(0, 4).map((tag) => (
-            <span
-              key={tag}
-              className="rounded bg-[var(--surface-soft)] px-2 py-1 text-[11px] text-[var(--ink-soft)]"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-        <div className="mt-5 grid grid-cols-3 gap-2 border-y border-[var(--line)] py-3 text-center">
-          <div>
-            <div className="text-sm font-semibold text-[var(--ink)]">
-              {version || "—"}
+            <div className="font-mono text-xs font-bold text-[var(--ink)]">
+              {version || "v1.0"}
             </div>
-            <div className="mt-1 text-[10px] text-[var(--ink-faint)]">
-              version
+            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+              VERSION
             </div>
           </div>
           <div>
-            <div className="text-sm font-semibold text-[var(--ink)]">
+            <div className="font-mono text-xs font-bold text-[var(--ink)]">
+              {fileCount}
+            </div>
+            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+              FILES
+            </div>
+          </div>
+          <div>
+            <div className="font-mono text-xs font-bold text-[var(--ink)]">
               {samples.length}
             </div>
-            <div className="mt-1 text-[10px] text-[var(--ink-faint)]">
-              samples
+            <div className="mt-0.5 font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
+              SAMPLES
             </div>
-          </div>
-          <div>
-            <div className="truncate text-sm font-semibold text-[var(--ink)]">
-              {base}
-            </div>
-            <div className="mt-1 text-[10px] text-[var(--ink-faint)]">base</div>
           </div>
         </div>
+
+        {/* Search tags if any */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {tags.slice(0, 5).map((tag) => (
+              <span
+                key={tag}
+                className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)]"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Rights Readout */}
+        {permissions && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            <span
+              className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${
+                permissions.commercial
+                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+              }`}
+            >
+              {permissions.commercial ? "COMMERCIAL ALLOWED" : "NON-COMMERCIAL"}
+            </span>
+            <span
+              className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${
+                permissions.remix
+                  ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                  : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+              }`}
+            >
+              {permissions.remix ? "REMIX OK" : "NO REMIX"}
+            </span>
+            {permissions.credit_required && (
+              <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--ink-soft)]">
+                CREDIT REQ.
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -1731,8 +1097,15 @@ const initialPermissions: CreatorModelPermissions = {
   credit_required: true,
 };
 
+const navSections = [
+  { id: "sec-identity", num: "01", label: "IDENTITY & BASE" },
+  { id: "sec-generation", num: "02", label: "PRESETS & TRIGGERS" },
+  { id: "sec-files", num: "03", label: "FILES & VERSIONS" },
+  { id: "sec-samples", num: "04", label: "SHOWCASE SAMPLES" },
+  { id: "sec-access", num: "05", label: "ACCESS & RIGHTS" },
+];
+
 export default function ModelsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("identity");
   const [title, setTitle] = useState("Untitled model");
   const [category, setCategory] = useState<CreatorModelCategory>("General");
   const [type, setType] = useState<CreatorModelType>("Checkpoint");
@@ -1756,7 +1129,6 @@ export default function ModelsPage() {
     item: string;
     confirm: () => void;
   } | null>(null);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const cancelConfirmationRef = useRef<HTMLButtonElement>(null);
   const confirmationTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -1768,7 +1140,7 @@ export default function ModelsPage() {
   );
   const samples = selectedVersion?.samples ?? [];
   const versions = model?.versions ?? [];
-  const currentTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
+
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 2400);
@@ -1852,7 +1224,6 @@ export default function ModelsPage() {
     setVisibility("Private");
     setSelectedVersionId(null);
     setDirty(true);
-    setActiveTab("identity");
     setBackendError(null);
   };
 
@@ -1951,6 +1322,7 @@ export default function ModelsPage() {
     permissions,
     visibility,
   });
+
   const saveModel = async (publish = false): Promise<CreatorModel | null> => {
     setSaving(true);
     setBackendError(null);
@@ -1984,6 +1356,7 @@ export default function ModelsPage() {
 
   const ensureModel = async (): Promise<CreatorModel | null> =>
     model && !dirty ? model : saveModel(false);
+
   const runMutation = async (
     action: () => Promise<CreatorModel>,
     message: string,
@@ -2023,6 +1396,7 @@ export default function ModelsPage() {
       setSaving(false);
     }
   };
+
   const uploadFile = async (file: File) => {
     const saved = await ensureModel();
     const versionId = selectedVersionId ?? saved?.versions[0]?.version_id;
@@ -2041,6 +1415,7 @@ export default function ModelsPage() {
       setSaving(false);
     }
   };
+
   const uploadSample = async (file: File) => {
     const saved = await ensureModel();
     const versionId = selectedVersionId ?? saved?.versions[0]?.version_id;
@@ -2064,6 +1439,7 @@ export default function ModelsPage() {
       setSaving(false);
     }
   };
+
   const patchFile = async (file: CreatorModelFile) => {
     const saved = await ensureModel();
     if (!saved || !selectedVersionId) return;
@@ -2075,6 +1451,7 @@ export default function ModelsPage() {
       "File visibility updated",
     );
   };
+
   const deleteFile = (file: CreatorModelFile) => {
     if (!model || !selectedVersion) return;
     requestConfirmation(
@@ -2106,6 +1483,7 @@ export default function ModelsPage() {
         })(),
     );
   };
+
   const deleteSample = (sample: CreatorModelSample) => {
     if (!model || !selectedVersion) return;
     requestConfirmation(
@@ -2137,22 +1515,17 @@ export default function ModelsPage() {
         })(),
     );
   };
-  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const index = tabs.findIndex((tab) => tab.id === activeTab);
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? tabs.length - 1
-          : event.key === "ArrowRight" || event.key === "ArrowDown"
-            ? (index + 1) % tabs.length
-            : event.key === "ArrowLeft" || event.key === "ArrowUp"
-              ? (index - 1 + tabs.length) % tabs.length
-              : null;
-    if (next === null) return;
-    event.preventDefault();
-    setActiveTab(tabs[next].id);
-    tabRefs.current[next]?.focus();
+
+  const scrollToSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const updateGeneration = (patch: Partial<CreatorModelGeneration>) => {
+    setGeneration({ ...generation, ...patch });
+    setDirty(true);
   };
 
   if (loading)
@@ -2163,14 +1536,14 @@ export default function ModelsPage() {
         aria-busy="true"
         aria-label="Loading Model Studio"
       >
-        <div className="mx-auto max-w-[1700px]">
-          <div className="shimmer h-16 rounded-[var(--radius-control)]" />
-          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
-            <div className="space-y-4">
-              <div className="shimmer h-56 rounded-[var(--radius-control)]" />
-              <div className="shimmer h-72 rounded-[var(--radius-control)]" />
+        <div className="mx-auto max-w-[1720px]">
+          <div className="h-14 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
+          <div className="mt-6 flex flex-col lg:flex-row gap-6">
+            <div className="w-full lg:w-[40%] h-[500px] animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
+            <div className="w-full lg:w-[60%] space-y-5">
+              <div className="h-64 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
+              <div className="h-64 animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]" />
             </div>
-            <div className="shimmer h-96 rounded-[var(--radius-control)]" />
           </div>
         </div>
       </main>
@@ -2179,239 +1552,885 @@ export default function ModelsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 bg-transparent"
+      className="workspace-scroll h-full min-h-0 bg-[var(--ground)]"
     >
       {backendError && (
         <div
           role="alert"
-          className="mx-auto max-w-[1700px] border-b border-[var(--danger-line)] bg-[var(--danger-surface)] px-5 py-2 text-xs text-[var(--danger)] sm:px-7"
+          className="border-b border-[var(--danger)]/30 bg-[var(--danger)]/10 px-5 py-2.5 font-mono text-xs text-[var(--danger)]"
         >
           {backendError}
         </div>
       )}
-      <header className="workspace-command top-0 z-30 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4 ">
-        <div className="mx-auto flex max-w-[1700px] items-center justify-between gap-4 px-5 py-4 sm:px-7">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-soft)] text-[var(--accent)]">
-              <Layers3 className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-3xl font-semibold tracking-tighter text-[var(--ink)] sm:text-4xl">
-                Model studio
-              </h1>
-            </div>
-          </div>
-          <div className="hidden items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-[11px] text-[var(--ink-faint)] sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />{" "}
-            {saving ? "Syncing" : "Server persistence"}
-          </div>
-        </div>
-        <div className="mx-auto flex max-w-[1700px] items-center gap-2 px-5 pb-3 sm:px-7">
-          {models.length > 0 ? (
-            <select
-              aria-label="Select creator model"
-              value={model?.model_id ?? ""}
-              onChange={(event) => void switchModel(event.target.value)}
-              disabled={saving}
-              className="workspace-field h-9 max-w-[22rem] px-3 text-xs outline-none"
-            >
-              {models.map((item) => (
-                <option key={item.model_id} value={item.model_id}>
-                  {item.title} · {item.model_type}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-[11px] text-[var(--ink-faint)]">
-              No saved models yet. Start a new model.
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={createNewModel}
-            disabled={saving}
-            className="inline-flex h-8 items-center gap-1 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-2.5 text-[11px] font-semibold text-[var(--ink)]"
-          >
-            <Plus className="h-3.5 w-3.5" /> New model
-          </button>
-        </div>
-        <div className="workspace-scroll-x mx-auto max-w-[1700px] overflow-x-auto px-5 sm:px-7">
-          <nav
-            role="tablist"
-            aria-label="Model editor sections"
-            className="flex min-w-max gap-5"
-          >
-            {tabs.map((tab, index) => (
-              <button
-                ref={(element) => {
-                  tabRefs.current[index] = element;
-                }}
-                key={tab.id}
-                id={`model-tab-${tab.id}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                aria-controls={`model-panel-${tab.id}`}
-                tabIndex={activeTab === tab.id ? 0 : -1}
-                onKeyDown={onTabKeyDown}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-2 pb-3 pt-1 text-xs font-semibold ${activeTab === tab.id ? "text-[var(--ink)]" : "text-[var(--ink-faint)]"}`}
-              >
-                <span>{tab.label}</span>
-                {tab.id === "files" && (
-                  <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 text-[10px] text-[var(--ink-faint)]">
-                    {selectedVersion?.files.length ?? 0}
-                  </span>
-                )}
-                <span
-                  className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--accent)] ${activeTab === tab.id ? "opacity-100" : "opacity-0"}`}
-                />
-              </button>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <section className="workspace-bezel mx-auto mt-4 grid max-w-[1700px] gap-6 px-5 pb-28 pt-6 mobile-content-clearance sm:px-7 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_390px]">
-        <div className="min-w-0">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs text-[var(--ink-faint)]">
-                {loading ? "Loading saved model…" : currentTab.hint}
-              </p>
-              <h2 className="mt-1 text-sm font-medium text-[var(--ink-soft)]">
-                {currentTab.label}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] text-[var(--ink-faint)]">
-              <CircleHelp className="h-4 w-4" /> Changes save to local backend
-            </div>
-          </div>
-          <div
-            id={`model-panel-${activeTab}`}
-            role="tabpanel"
-            aria-labelledby={`model-tab-${activeTab}`}
-          >
-            {activeTab === "identity" && (
-              <IdentityTab
-                title={title}
-                setTitle={changed(setTitle)}
-                tags={tags}
-                setTags={changed(setTags)}
-                category={category}
-                setCategory={changed(setCategory)}
-                type={type}
-                setType={(nextType) => {
-                  setType(nextType);
-                  setCompatibility((current) => ({
-                    ...current,
-                    base_model_id:
-                      nextType === "LoRA" || nextType === "LyCORIS"
-                        ? current.base_model_id
-                        : null,
-                    base_version_id:
-                      nextType === "LoRA" || nextType === "LyCORIS"
-                        ? current.base_version_id
-                        : null,
-                    base_file_id:
-                      nextType === "LoRA" || nextType === "LyCORIS"
-                        ? current.base_file_id
-                        : null,
-                  }));
-                }}
-                compatibility={compatibility}
-                setCompatibility={changed(setCompatibility)}
-                onMediaFiles={(files) => files.forEach(uploadSample)}
-                disabled={saving}
-              />
-            )}
-            {activeTab === "generation" && (
-              <GenerationTab
-                generation={generation}
-                setGeneration={changed(setGeneration)}
-                type={type}
-                disabled={saving}
-              />
-            )}
-            {activeTab === "files" && (
-              <FilesTab
-                versions={versions}
-                selectedVersionId={selectedVersionId}
-                onSelectVersion={setSelectedVersionId}
-                onCreateVersion={createVersion}
-                onUpload={uploadFile}
-                onImport={importLocalFile}
-                onPatch={patchFile}
-                onDelete={deleteFile}
-                modelType={type}
-                busy={saving}
-              />
-            )}
-            {activeTab === "samples" && (
-              <SamplesTab
-                samples={samples}
-                onUpload={uploadSample}
-                onDelete={deleteSample}
-                busy={saving}
-              />
-            )}
-            {activeTab === "access" && (
-              <AccessTab
-                visibility={visibility}
-                setVisibility={changed(setVisibility)}
-                permissions={permissions}
-                setPermissions={changed(setPermissions)}
-                disabled={saving}
-              />
-            )}
-          </div>
-        </div>
-        <PreviewCard
-          title={title}
-          type={type}
-          base={compatibility.base_model}
-          tags={tags}
-          samples={samples}
-          version={selectedVersion?.name ?? ""}
-          visibility={visibility}
-        />
-      </section>
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 mobile-nav-clearance flex justify-center px-4 pb-4">
-        <div className="pointer-events-auto flex w-full max-w-[760px] items-center justify-between gap-4 rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 px-4 py-3 ">
-          <div className="flex min-w-0 items-center gap-3">
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${dirty ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"}`}
+
+      {/* 1. Header & Model Switcher Bar */}
+      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/90 backdrop-blur-md px-4 sm:px-6 py-3">
+        <div className="mx-auto flex max-w-[1720px] items-center justify-between gap-4">
+          {/* Left: Brand Identity & Model Switcher */}
+          <div className="flex items-center gap-4 min-w-0">
+            <BrandLogo
+              size="sm"
+              subtitle="MODEL STUDIO // WORKSTATION"
+              href="/models"
             />
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-[var(--ink)]">
-                {dirty ? "Unsaved changes" : "All changes saved"}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] text-[var(--ink-faint)]">
-                {model
-                  ? "Saved on this backend"
-                  : "Save to create a model record"}
-              </p>
+            <div className="hidden h-5 w-px bg-[var(--line-strong)] sm:block" />
+
+            <div className="flex items-center gap-2 min-w-0">
+              {models.length > 0 ? (
+                <div className="relative min-w-0">
+                  <select
+                    aria-label="Select creator model"
+                    value={model?.model_id ?? ""}
+                    onChange={(event) => void switchModel(event.target.value)}
+                    disabled={saving}
+                    className="workspace-field h-8 max-w-[18rem] appearance-none pr-8 pl-3 font-mono text-xs outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] cursor-pointer"
+                  >
+                    {models.map((item) => (
+                      <option key={item.model_id} value={item.model_id}>
+                        {item.title} [{item.model_type}]
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-[var(--ink-faint)]" />
+                </div>
+              ) : (
+                <span className="font-mono text-[11px] text-[var(--ink-faint)]">
+                  No saved models
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={createNewModel}
+                disabled={saving}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New Model</span>
+              </button>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+
+          {/* Right: Server Persistence Status & Action Buttons */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <div className="hidden items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider md:flex">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  saving
+                    ? "bg-[var(--accent)] animate-ping"
+                    : dirty
+                      ? "bg-amber-400"
+                      : "bg-[var(--accent)]"
+                }`}
+              />
+              <span>
+                {saving
+                  ? "SYNCING…"
+                  : dirty
+                    ? "UNSAVED CHANGES"
+                    : "SERVER PERSISTENCE"}
+              </span>
+            </div>
+
             <button
               type="button"
               onClick={() => void saveModel(false)}
               disabled={!dirty || saving}
-              className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] bg-[var(--accent)] px-3 text-xs font-bold text-[var(--accent-ink)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
             >
-              <Save className="h-4 w-4" /> {saving ? "Saving" : "Save draft"}
+              <Save className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">
+                {saving ? "Saving…" : "Save Draft"}
+              </span>
             </button>
+
             <button
               type="button"
               onClick={() => void saveModel(true)}
               disabled={saving}
-              className="inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line-strong)] px-3 text-xs font-semibold text-[var(--ink)] disabled:opacity-40"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_16px_rgba(213,240,111,0.2)] disabled:opacity-40"
             >
-              <Check className="h-4 w-4" /> Publish
+              <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+              <span>Publish ⚡</span>
             </button>
           </div>
         </div>
+      </header>
+
+      {/* 2. Dual-Column Studio Workstation Geometry */}
+      <div className="mx-auto max-w-[1720px] px-4 sm:px-6 py-6 pb-28">
+        <div className="flex flex-col lg:flex-row items-start gap-6">
+          {/* LEFT COLUMN: 40% Width Sticky Preview Card */}
+          <div className="w-full lg:w-[40%] lg:max-w-[420px] xl:max-w-[440px] shrink-0 lg:sticky lg:top-20 z-20">
+            <PreviewCard
+              title={title}
+              type={type}
+              category={category}
+              base={compatibility.base_model}
+              tags={tags}
+              samples={samples}
+              version={selectedVersion?.name ?? "v1.0"}
+              visibility={visibility}
+              triggerWords={generation.trigger_words}
+              fileCount={selectedVersion?.files.length ?? 0}
+              permissions={permissions}
+              modelId={model?.model_id}
+            />
+          </div>
+
+          {/* RIGHT COLUMN: 60% Width Structured Form Panels */}
+          <div className="w-full lg:flex-1 min-w-0">
+            {/* Quick Navigation Jump Bar */}
+            <nav
+              aria-label="Studio section quick jump"
+              className="sticky top-16 z-10 mb-5 flex flex-wrap gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)]/95 p-1.5 backdrop-blur-md shadow-lg"
+            >
+              {navSections.map(({ id, num, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => scrollToSection(id)}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] hover:text-[var(--accent)] transition-colors"
+                >
+                  <span className="text-[var(--accent)]">{num}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+
+            {/* 01 // BASIC IDENTITY & BASE MODEL */}
+            <section
+              id="sec-identity"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            >
+              <SectionCardHeader
+                number="01"
+                title="BASIC IDENTITY & BASE MODEL"
+                subtitle="Core nomenclature, category classification, and architecture matrix."
+                icon={Sparkles}
+              />
+
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <Field label="Model title">
+                      <input
+                        className={inputClass}
+                        value={title}
+                        onChange={(event) => changed(setTitle)(event.target.value)}
+                        disabled={saving}
+                        placeholder="e.g. Cyberpunk Cinematic LoRA v1.0"
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Category">
+                    <div className="relative">
+                      <select
+                        className={selectClass}
+                        value={category}
+                        onChange={(event) =>
+                          changed(setCategory)(
+                            event.target.value as CreatorModelCategory,
+                          )
+                        }
+                        disabled={saving}
+                      >
+                        {[
+                          "Character",
+                          "Style",
+                          "Concept",
+                          "Pose",
+                          "Clothing",
+                          "General",
+                        ].map((item) => (
+                          <option key={item}>{item}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                    </div>
+                  </Field>
+
+                  <Field label="Model type">
+                    <div className="relative">
+                      <select
+                        className={selectClass}
+                        value={type}
+                        onChange={(event) => {
+                          const nextType = event.target
+                            .value as CreatorModelType;
+                          setType(nextType);
+                          setCompatibility((current) => ({
+                            ...current,
+                            base_model_id:
+                              nextType === "LoRA" || nextType === "LyCORIS"
+                                ? current.base_model_id
+                                : null,
+                            base_version_id:
+                              nextType === "LoRA" || nextType === "LyCORIS"
+                                ? current.base_version_id
+                                : null,
+                            base_file_id:
+                              nextType === "LoRA" || nextType === "LyCORIS"
+                                ? current.base_file_id
+                                : null,
+                          }));
+                          setDirty(true);
+                        }}
+                        disabled={saving}
+                      >
+                        {[
+                          "Checkpoint",
+                          "Diffusion Model",
+                          "LoRA",
+                          "LyCORIS",
+                          "VAE",
+                          "Embedding",
+                        ].map((item) => (
+                          <option key={item}>{item}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                    </div>
+                  </Field>
+
+                  <div className="md:col-span-2">
+                    <Field label="Search tags">
+                      <TagEditor
+                        tags={tags}
+                        onChange={changed(setTags)}
+                        placeholder="portrait, cinematic, 8k, cyberpunk"
+                      />
+                    </Field>
+                  </div>
+                </div>
+
+                <CompatibilityFields
+                  compatibility={compatibility}
+                  setCompatibility={changed(setCompatibility)}
+                  disabled={saving}
+                  modelType={type}
+                />
+
+                <div className="pt-4 border-t border-[var(--line)]">
+                  <Field label="Cover media upload">
+                    <MediaDropzone
+                      accept="image/*,video/*,.gif"
+                      label="Drop primary showcase cover image or short video"
+                      onFiles={(files) => files.forEach(uploadSample)}
+                      disabled={saving}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </section>
+
+            {/* 02 // INFERENCE PRESETS & TRIGGERS */}
+            <section
+              id="sec-generation"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            >
+              <SectionCardHeader
+                number="02"
+                title="INFERENCE PRESETS & TRIGGERS"
+                subtitle="Recommended hyperparameters, activation keywords, and prompt defaults."
+                icon={Zap}
+              />
+
+              <div className="space-y-4">
+                {type === "LoRA" && (
+                  <div className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-4 space-y-2">
+                    <Field
+                      label="LoRA Trigger Words"
+                      helper="Activation keywords that prompt the neural net to manifest the trained concepts."
+                    >
+                      <TagEditor
+                        tags={generation.trigger_words}
+                        onChange={(trigger_words) =>
+                          updateGeneration({ trigger_words })
+                        }
+                        placeholder="Add activation token (e.g. cbrpnk_style)"
+                      />
+                    </Field>
+                    <div className="flex items-center gap-2 pt-1 font-mono text-[10px] text-[var(--accent)]">
+                      <GripVertical className="h-3.5 w-3.5 shrink-0" />
+                      <span>
+                        Ordering guideline: Place the primary subject trigger token first.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Preferred sampler">
+                    <input
+                      className={inputClass}
+                      value={generation.sampler}
+                      onChange={(event) =>
+                        updateGeneration({ sampler: event.target.value })
+                      }
+                      disabled={saving}
+                    />
+                  </Field>
+
+                  <Field label="Clip skip">
+                    <div className="relative">
+                      <select
+                        className={selectClass}
+                        value={generation.clip_skip}
+                        onChange={(event) =>
+                          updateGeneration({
+                            clip_skip: Number(event.target.value),
+                          })
+                        }
+                        disabled={saving}
+                      >
+                        <option value={1}>1 (Standard)</option>
+                        <option value={2}>2 (Anime / NovelAI layer)</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[var(--ink-faint)]" />
+                    </div>
+                  </Field>
+
+                  <Field label="Recommended steps range">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={generation.steps_min}
+                        onChange={(event) =>
+                          updateGeneration({
+                            steps_min: Number(event.target.value),
+                          })
+                        }
+                        disabled={saving}
+                      />
+                      <span className="font-mono text-xs text-[var(--ink-faint)]">
+                        to
+                      </span>
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={generation.steps_max}
+                        onChange={(event) =>
+                          updateGeneration({
+                            steps_max: Number(event.target.value),
+                          })
+                        }
+                        disabled={saving}
+                      />
+                    </div>
+                  </Field>
+
+                  <Field label="CFG scale range">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        className={inputClass}
+                        value={generation.cfg_min}
+                        onChange={(event) =>
+                          updateGeneration({
+                            cfg_min: Number(event.target.value),
+                          })
+                        }
+                        disabled={saving}
+                      />
+                      <span className="font-mono text-xs text-[var(--ink-faint)]">
+                        to
+                      </span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        className={inputClass}
+                        value={generation.cfg_max}
+                        onChange={(event) =>
+                          updateGeneration({
+                            cfg_max: Number(event.target.value),
+                          })
+                        }
+                        disabled={saving}
+                      />
+                    </div>
+                  </Field>
+                </div>
+
+                <div className="pt-4 border-t border-[var(--line)] space-y-4">
+                  <Field label="Default recommended prompt template">
+                    <textarea
+                      className="workspace-field min-h-[96px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
+                      value={generation.prompt}
+                      onChange={(event) =>
+                        updateGeneration({ prompt: event.target.value })
+                      }
+                      disabled={saving}
+                      placeholder="e.g. masterpiece, cinematic portrait, detailed lighting..."
+                    />
+                  </Field>
+
+                  <Field label="Default negative prompt template">
+                    <textarea
+                      className="workspace-field min-h-[80px] w-full resize-y p-3 font-mono text-xs leading-5 outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-lg text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors"
+                      value={generation.negative_prompt}
+                      onChange={(event) =>
+                        updateGeneration({
+                          negative_prompt: event.target.value,
+                        })
+                      }
+                      disabled={saving}
+                      placeholder="e.g. lowres, bad anatomy, blur, watermark..."
+                    />
+                  </Field>
+                </div>
+              </div>
+            </section>
+
+            {/* 03 // MODEL FILES & VERSIONS */}
+            <section
+              id="sec-files"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            >
+              <SectionCardHeader
+                number="03"
+                title="MODEL FILES & VERSIONS"
+                subtitle="Weight binaries (.safetensors, .gguf), version branching, and ComfyUI imports."
+                icon={Archive}
+                badge={selectedVersion?.files.length ?? 0}
+              />
+
+              {/* Version Selector Tabs & Add Version Action */}
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                    RELEASES:
+                  </span>
+                  {versions.length ? (
+                    versions.map((item) => (
+                      <button
+                        key={item.version_id}
+                        type="button"
+                        onClick={() => setSelectedVersionId(item.version_id)}
+                        className={`rounded-lg border px-3 py-1 font-mono text-xs font-semibold transition-colors ${
+                          selectedVersion?.version_id === item.version_id
+                            ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
+                            : "border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {item.name}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="font-mono text-xs text-[var(--ink-faint)]">
+                      Save model to create first version
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={createVersion}
+                    disabled={saving}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-xs font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Version</span>
+                  </button>
+
+                  <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors">
+                    <input
+                      type="file"
+                      accept=".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
+                      className="sr-only"
+                      disabled={saving || !selectedVersion}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) uploadFile(file);
+                        event.target.value = "";
+                      }}
+                    />
+                    <CloudUpload className="h-3.5 w-3.5" />
+                    <span>Upload Binary</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Local ComfyUI Import Dialog Trigger */}
+              <LocalModelPicker
+                modelType={type}
+                version={selectedVersion}
+                onImport={importLocalFile}
+                busy={saving}
+              />
+
+              {/* Model Files Table */}
+              <div className="mt-5 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)]">
+                {!selectedVersion?.files.length ? (
+                  <div className="px-5 py-8 text-center font-mono text-xs text-[var(--ink-faint)]">
+                    No binaries uploaded for {selectedVersion?.name ?? "this version"}. Upload safetensors or import from ComfyUI above.
+                  </div>
+                ) : (
+                  <>
+                    <div className="hidden overflow-x-auto md:block">
+                      <table className="w-full min-w-[640px] text-left text-xs">
+                        <thead className="border-b border-[var(--line)] bg-[var(--surface)] font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
+                          <tr>
+                            <th className="px-4 py-2.5">FILE NAME</th>
+                            <th className="px-3 py-2.5">SIZE</th>
+                            <th className="px-3 py-2.5">SHA256 HASH</th>
+                            <th className="px-3 py-2.5">PRECISION</th>
+                            <th className="px-4 py-2.5 text-right">VISIBILITY</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--line)]">
+                          {selectedVersion.files.map((file) => (
+                            <tr
+                              key={file.file_id}
+                              className="hover:bg-[var(--surface-soft)] transition-colors"
+                            >
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2.5">
+                                  <FileArchive className="h-4 w-4 text-[var(--accent)] shrink-0" />
+                                  <div className="min-w-0">
+                                    <div className="font-mono font-semibold text-[var(--ink)] truncate max-w-[200px]">
+                                      {file.filename}
+                                    </div>
+                                    <a
+                                      href={file.download_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-mono text-[10px] text-[var(--accent)] hover:underline"
+                                    >
+                                      Download
+                                    </a>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 font-mono text-xs tabular-nums text-[var(--ink-soft)]">
+                                {formatBytes(file.size)}
+                              </td>
+                              <td className="px-3 py-3 font-mono text-[11px] text-[var(--ink-faint)]">
+                                {file.sha256.slice(0, 10)}…
+                                <button
+                                  type="button"
+                                  aria-label={`Copy hash for ${file.filename}`}
+                                  onClick={() =>
+                                    void navigator.clipboard?.writeText(
+                                      file.sha256,
+                                    )
+                                  }
+                                  className="ml-1.5 hover:text-[var(--accent)]"
+                                >
+                                  <Copy className="inline h-3 w-3" />
+                                </button>
+                              </td>
+                              <td className="px-3 py-3 font-mono text-[11px]">
+                                <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 text-[var(--ink-soft)]">
+                                  {file.precision}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-3">
+                                  <Toggle
+                                    label={`Toggle visibility for ${file.filename}`}
+                                    checked={file.visible}
+                                    onChange={() => patchFile(file)}
+                                    disabled={saving}
+                                  />
+                                  <button
+                                    type="button"
+                                    aria-label={`Delete ${file.filename}`}
+                                    onClick={() => deleteFile(file)}
+                                    disabled={saving}
+                                    className="text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors disabled:opacity-40"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile File View */}
+                    <div className="divide-y divide-[var(--line)] md:hidden">
+                      {selectedVersion.files.map((file) => (
+                        <div key={file.file_id} className="p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-xs font-semibold text-[var(--ink)] truncate">
+                              {file.filename}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Delete ${file.filename}`}
+                              onClick={() => deleteFile(file)}
+                              disabled={saving}
+                              className="text-[var(--ink-faint)] hover:text-[var(--danger)]"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-[var(--ink-faint)] font-mono">
+                            <span>
+                              {formatBytes(file.size)} · {file.precision}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span>Visible</span>
+                              <Toggle
+                                label={`Toggle visibility for ${file.filename}`}
+                                checked={file.visible}
+                                onChange={() => patchFile(file)}
+                                disabled={saving}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+
+            {/* 04 // SHOWCASE SAMPLES & PROMPT METADATA */}
+            <section
+              id="sec-samples"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            >
+              <SectionCardHeader
+                number="04"
+                title="SHOWCASE SAMPLES & PROMPT METADATA"
+                subtitle="Visual output gallery and embedded PNG generation parameters."
+                icon={ImagePlus}
+                badge={samples.length}
+              />
+
+              <div className="space-y-4">
+                {samples.length ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {samples.map((item) => (
+                      <div
+                        key={item.sample_id}
+                        className="group relative aspect-[4/5] overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)]"
+                      >
+                        {item.kind === "video" ? (
+                          <video
+                            src={item.url}
+                            controls
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <img
+                            src={item.url}
+                            alt={item.filename}
+                            className="h-full w-full object-cover"
+                          />
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-[var(--ground)]/90 backdrop-blur-sm px-2.5 py-1.5 border-t border-[var(--line)]">
+                          <span className="truncate font-mono text-[10px] text-[var(--ink)]">
+                            {item.filename}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${item.filename}`}
+                            onClick={() => deleteSample(item)}
+                            disabled={saving}
+                            className="text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors ml-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-[var(--line-strong)] p-6 text-center font-mono text-xs text-[var(--ink-faint)]">
+                    No showcase samples uploaded yet. Upload sample renders below.
+                  </div>
+                )}
+
+                <MediaDropzone
+                  accept="image/*,video/*,.gif"
+                  label="Add showcase render images or generation videos"
+                  onFiles={(files) => files.forEach(uploadSample)}
+                  disabled={saving}
+                />
+
+                <div className="pt-4 border-t border-[var(--line)]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileImage className="h-4 w-4 text-[var(--accent)]" />
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+                      PNG INFO METADATA
+                    </span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+                        Active Sampler Profile
+                      </div>
+                      <div className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
+                        {generation.sampler} · {generation.steps_min}-{generation.steps_max} steps
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+                      <div className="font-mono text-[10px] text-[var(--ink-faint)] uppercase">
+                        Showcase Renders Count
+                      </div>
+                      <div className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
+                        {samples.length} sample media items linked
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* 05 // ACCESS RIGHTS & DISTRIBUTION */}
+            <section
+              id="sec-access"
+              className="border border-[var(--line)] bg-[var(--surface-raised)] rounded-xl p-5 mb-5 shadow-[0_4px_24px_rgba(0,0,0,0.3)]"
+            >
+              <SectionCardHeader
+                number="05"
+                title="ACCESS RIGHTS & DISTRIBUTION"
+                subtitle="Model discovery visibility, commercial licensing, and redistribution rules."
+                icon={ShieldCheck}
+              />
+
+              <div className="space-y-6">
+                <div>
+                  <label className={labelClass}>Publishing Visibility</label>
+                  <div className="grid gap-3 sm:grid-cols-3 mt-2">
+                    {(["Public", "Unlisted", "Private"] as const).map(
+                      (item) => (
+                        <button
+                          type="button"
+                          key={item}
+                          onClick={() => changed(setVisibility)(item)}
+                          disabled={saving}
+                          className={`rounded-lg border p-3.5 text-left transition disabled:opacity-40 ${
+                            visibility === item
+                              ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                              : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)]"
+                          }`}
+                        >
+                          <div
+                            className={`font-mono text-xs font-bold uppercase tracking-wider ${
+                              visibility === item
+                                ? "text-[var(--accent)]"
+                                : "text-[var(--ink)]"
+                            }`}
+                          >
+                            {item}
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-[var(--ink-faint)]">
+                            {item === "Public"
+                              ? "Visible in discovery and model feed"
+                              : item === "Unlisted"
+                                ? "Only creators with direct URL access"
+                                : "Private workspace enclave only"}
+                          </div>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-[var(--line)]">
+                  <label className={labelClass}>
+                    Commercial & Usage Permissions
+                  </label>
+                  <div className="divide-y divide-[var(--line)] mt-2">
+                    {[
+                      {
+                        key: "commercial" as const,
+                        label: "Commercial use outputs",
+                        desc: "Permit creators to use model outputs in paid commercial work.",
+                      },
+                      {
+                        key: "remix" as const,
+                        label: "Re-upload & Remix",
+                        desc: "Allow modified weights, fine-tunes, or merges to be published.",
+                      },
+                      {
+                        key: "generation_services" as const,
+                        label: "Hosted Generation Services",
+                        desc: "Permit hosted generation SaaS APIs to run this model.",
+                      },
+                      {
+                        key: "credit_required" as const,
+                        label: "Creator Profile Attribution",
+                        desc: "Require creators to attribute your SoloTensor handle.",
+                      },
+                    ].map(({ key, label, desc }) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0"
+                      >
+                        <div>
+                          <div className="font-mono text-xs font-semibold text-[var(--ink)]">
+                            {label}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-[var(--ink-faint)]">
+                            {desc}
+                          </div>
+                        </div>
+                        <Toggle
+                          label={label}
+                          checked={permissions[key]}
+                          disabled={saving}
+                          onChange={() =>
+                            changed(setPermissions)({
+                              ...permissions,
+                              [key]: !permissions[key],
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
+
+      {/* Floating Action Bar for Unsaved Changes */}
+      {dirty && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="pointer-events-auto flex w-full max-w-lg items-center justify-between gap-4 rounded-xl border border-[var(--accent)]/40 bg-[var(--surface-raised)]/95 px-4 py-3 shadow-[0_16px_48px_rgba(0,0,0,0.8)] backdrop-blur-md">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-ping" />
+              <div className="font-mono text-xs font-bold text-[var(--ink)] uppercase">
+                UNSAVED WORKSTATION EDITS
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void saveModel(false)}
+                disabled={saving}
+                className="rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 py-1.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+              >
+                Save Draft
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveModel(true)}
+                disabled={saving}
+                className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors shadow-sm"
+              >
+                Publish ⚡
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog Modal */}
       {confirmation && (
         <ConfirmationDialog
           title={confirmation.title}
@@ -2425,12 +2444,15 @@ export default function ModelsPage() {
           }}
         />
       )}
+
+      {/* Toast Notification */}
       {toast && (
         <div
           role="status"
-          className="fixed right-5 top-20 z-50 flex items-center gap-2 rounded-[var(--radius-control)] border border-[var(--accent)]/30 bg-[var(--surface-soft)] px-4 py-3 text-xs font-medium text-[var(--accent)]"
+          className="fixed right-5 top-20 z-50 flex items-center gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--surface-raised)] px-4 py-3 font-mono text-xs font-bold text-[var(--accent)] shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-md animate-in fade-in zoom-in-95"
         >
-          <Check className="h-4 w-4" /> {toast}
+          <Check className="h-4 w-4" />
+          <span>{toast}</span>
         </div>
       )}
     </main>
