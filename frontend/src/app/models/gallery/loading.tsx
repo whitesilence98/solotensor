@@ -45,7 +45,7 @@ export default function ModelGalleryLoading() {
 
         {/* 1:1 Matching Poster Cards Grid */}
         <div
-          className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4"
+          className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4"
           aria-label="Loading models"
         >
           {Array.from({ length: 12 }).map((_, idx) => (

@@ -310,7 +310,7 @@ export default function ModelGalleryPage() {
         {/* Loading Shimmer State (1:1 Layout Parity) */}
         {loading && (
           <div
-            className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4"
+            className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4"
             aria-label="Loading models"
           >
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i, idx) => (
@@ -374,7 +374,7 @@ export default function ModelGalleryPage() {
 
         {/* Tensor.art Card Grid with smooth cross-fade */}
         {!loading && !error && filteredItems.length > 0 && (
-          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 sm:gap-4 animate-in fade-in duration-300 ease-out">
+          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4 animate-in fade-in duration-300 ease-out">
             {filteredItems.map((item, idx) => (
               <TensorModelCard key={item.model_id} item={item} index={idx} />
             ))}

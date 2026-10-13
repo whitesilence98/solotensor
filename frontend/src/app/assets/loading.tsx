@@ -32,14 +32,14 @@ export default function AssetsLoading() {
           <div className="h-3.5 w-32 rounded bg-white/10 shimmer" />
         </div>
 
-        <div className="masonry" aria-label="Loading assets" aria-busy="true">
-          {Array.from({ length: 16 }).map((_, idx) => {
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" aria-label="Loading assets" aria-busy="true">
+          {Array.from({ length: 18 }).map((_, idx) => {
             const height = 280 + ((idx * 40) % 140);
             return (
               <div
                 key={idx}
                 style={{ height, animationDelay: `${idx * 30}ms` }}
-                className="relative mb-4 flex w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+                className="relative flex w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
               >
                 {/* Background base shimmer */}
                 <div className="absolute inset-0 shimmer opacity-60" />

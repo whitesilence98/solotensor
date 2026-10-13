@@ -553,7 +553,7 @@ export default function CanvasPreview(props: Props) {
      <div
       className={
        viewMode === "grid"
-        ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 animate-in fade-in duration-300 ease-out"
+        ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 animate-in fade-in duration-300 ease-out"
         : "space-y-3 animate-in fade-in duration-300 ease-out"
       }
      >

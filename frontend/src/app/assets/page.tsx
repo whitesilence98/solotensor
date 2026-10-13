@@ -44,7 +44,7 @@ function AssetCardSkeleton({ index }: { index: number }) {
   return (
     <div
       style={{ height, animationDelay: `${index * 30}ms` }}
-      className="relative mb-4 flex w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+      className="relative flex w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
     >
       {/* Background base shimmer */}
       <div className="absolute inset-0 shimmer opacity-60" />
@@ -520,7 +520,7 @@ export default function AssetsPage() {
           </div>
         </div>
         {loading ? (
-          <div className="masonry" aria-label="Loading assets" aria-busy="true">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" aria-label="Loading assets" aria-busy="true">
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
               <AssetCardSkeleton key={i} index={i} />
             ))}
@@ -539,7 +539,7 @@ export default function AssetsPage() {
           )
         ) : (
           <>
-            <div className="masonry animate-in fade-in duration-300 ease-out">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 animate-in fade-in duration-300 ease-out">
               {shown.map((asset) => (
                 <AssetCard
                   key={asset.key}
