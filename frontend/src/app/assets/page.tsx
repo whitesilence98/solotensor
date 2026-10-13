@@ -26,6 +26,7 @@ import {
   type InstalledGalleryModel,
   type TagSummary,
 } from "@/lib/api";
+import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
 const PAGE_SIZE = 24;
 
@@ -71,12 +72,19 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<AssetType>("image");
-  const [origin, setOrigin] = useState<"all" | "workspace" | "ai_tool_studio">("all");
+  const [tab, setTab] = usePersistentState<AssetType>(STORAGE_KEYS.ASSETS_TAB, "image");
+  const [origin, setOrigin] = usePersistentState<"all" | "workspace" | "ai_tool_studio">(
+    STORAGE_KEYS.ASSETS_SOURCE,
+    "all"
+  );
   const [query, setQuery] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [visible, setVisible] = useState(PAGE_SIZE);
-  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [savedKeyList, setSavedKeyList] = usePersistentState<string[]>(
+    STORAGE_KEYS.ASSETS_BOOKMARKS,
+    []
+  );
+  const savedKeys = useMemo(() => new Set(savedKeyList), [savedKeyList]);
   const [retryKey, setRetryKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -89,7 +97,10 @@ export default function AssetsPage() {
 
   // Tags Filter State
   const [popularTags, setPopularTags] = useState<TagSummary[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = usePersistentState<string[]>(
+    STORAGE_KEYS.ASSETS_TAGS,
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -297,13 +308,10 @@ export default function AssetsPage() {
   }, []);
 
   const toggleSaved = useCallback((key: string) => {
-    setSavedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+    setSavedKeyList((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }, [setSavedKeyList]);
 
   const counts: Record<AssetType, number> = {
     image: byType.image.length,
@@ -313,20 +321,15 @@ export default function AssetsPage() {
 
   return (
     <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
-      {/* ---------------- Header ---------------- */}
-      <header className="workspace-command top-0 z-30 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4">
-        {/* Row 1: Brand / Title + Segmented Type Switcher + New Render CTA */}
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="min-w-0">
-            <p className="workspace-kicker text-[10px]">Personal catalog</p>
-            <h1 className="workspace-heading mt-0.5 text-2xl font-bold tracking-tight text-[var(--ink)]">Asset library</h1>
-          </div>
-
+      {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
+      <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
+        {/* Top Control Bar: Type Switcher + Search + Source Selector + New Render */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
           {/* Segmented Type Switcher (Images / Videos / 3D) */}
           <div
             role="tablist"
             aria-label="Asset type"
-            className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1"
+            className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 gap-0.5 shrink-0"
           >
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = tab === id;
@@ -340,16 +343,16 @@ export default function AssetsPage() {
                     setTab(id);
                     setVisible(PAGE_SIZE);
                   }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
                     active
                       ? "bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm border border-[var(--line-strong)]"
                       : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
                   }`}
                 >
-                  <Icon className={`h-3.5 w-3.5 ${active ? "text-[var(--accent)]" : ""}`} />
+                  <Icon className={`h-3 w-3 ${active ? "text-[var(--accent)]" : ""}`} />
                   <span>{label}</span>
                   <span
-                    className={`font-mono text-[10px] tabular-nums rounded px-1 py-0.2 ${
+                    className={`font-mono text-[9px] tabular-nums rounded px-1 py-0.2 ${
                       active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-bold" : "text-[var(--ink-faint)]"
                     }`}
                   >
@@ -360,126 +363,124 @@ export default function AssetsPage() {
             })}
           </div>
 
-          <Link
-            href="/"
-            className="workspace-action-primary inline-flex h-9 shrink-0 items-center gap-1.5 px-3.5 text-xs font-bold"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New render</span>
-          </Link>
-        </div>
-
-        {/* Row 2: Unified Command Bar (Search + Source Selector) */}
-        <div className="mx-auto flex max-w-[1600px] flex-col sm:flex-row items-stretch sm:items-center gap-2.5 px-4 pb-2.5 sm:px-6">
-          {/* Search Field */}
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
-            <input
-              ref={searchRef}
-              type="search"
-              value={searchDraft}
-              onChange={(e) => setSearchDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitSearch();
-              }}
-              onBlur={commitSearch}
-              placeholder="Search local filenames…"
-              aria-label="Search local filenames"
-              className="workspace-field h-9 w-full pl-9 pr-16 text-xs placeholder:text-[var(--ink-faint)]"
-            />
-            <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--ink-faint)] sm:block">
-              /
-            </kbd>
-            {searchDraft && (
-              <button
-                type="button"
-                onClick={clearSearch}
-                aria-label="Clear asset search"
-                className="workspace-action-quiet absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center sm:right-10 text-xs"
-              >
-                <span aria-hidden>×</span>
-              </button>
-            )}
-          </div>
-
-          {/* Source Filter Group */}
-          <div
-            className="flex items-center shrink-0 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1"
-            aria-label="Asset source"
-          >
-            {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
-              <button
-                key={source}
-                type="button"
-                aria-pressed={origin === source}
-                onClick={() => {
-                  setOrigin(source);
-                  setVisible(PAGE_SIZE);
-                  setLoading(true);
-                  setError(null);
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
+            {/* Search Field */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+              <input
+                ref={searchRef}
+                type="search"
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitSearch();
                 }}
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1 font-mono text-[10px] uppercase font-semibold transition ${
-                  origin === source
-                    ? "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm"
-                    : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                }`}
-              >
-                {source === "all" ? "All Sources" : source === "workspace" ? "Workspace" : "AI Tools"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Row 3: Compact Tags & Filter Rail */}
-        {popularTags.length > 0 && (
-          <div className="mx-auto max-w-[1600px] px-4 pb-2 sm:px-6">
-            <div
-              className="flex items-center gap-1.5 overflow-x-auto border-t border-[var(--line)] pt-2 no-scrollbar"
-              aria-label="Tag filters"
-            >
-              <button
-                type="button"
-                onClick={clearTags}
-                className={`min-h-6 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px] font-semibold transition ${
-                  selectedTags.length === 0
-                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
-                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                }`}
-              >
-                All tags
-              </button>
-              {popularTags.map(({ name, count }) => {
-                const active = selectedTags.includes(name.toLowerCase());
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => toggleTag(name)}
-                    className={`min-h-6 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[10px] transition ${
-                      active
-                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
-                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    <span className={active ? "text-[var(--accent-ink)]" : "text-[var(--accent)]"}>#</span>
-                    <span>{name}</span>
-                    <span className="ml-1 opacity-60">({count})</span>
-                  </button>
-                );
-              })}
-              {selectedTags.length > 0 && (
+                onBlur={commitSearch}
+                placeholder="Search local filenames…"
+                aria-label="Search local filenames"
+                className="workspace-field h-7.5 w-full pl-8 pr-14 text-xs placeholder:text-[var(--ink-faint)]"
+              />
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1 py-0.5 text-[9px] font-mono text-[var(--ink-faint)] sm:block">
+                /
+              </kbd>
+              {searchDraft && (
                 <button
                   type="button"
-                  onClick={clearTags}
-                  className="workspace-action-quiet min-h-6 shrink-0 whitespace-nowrap px-1.5 text-[10px] font-mono text-[var(--danger)] hover:underline"
+                  onClick={clearSearch}
+                  aria-label="Clear asset search"
+                  className="workspace-action-quiet absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center sm:right-8 text-xs"
                 >
-                  Clear tags ({selectedTags.length})
+                  <span aria-hidden>×</span>
                 </button>
               )}
             </div>
+
+            {/* Source Filter Group */}
+            <div
+              className="flex items-center shrink-0 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 gap-0.5"
+              aria-label="Asset source"
+            >
+              {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
+                <button
+                  key={source}
+                  type="button"
+                  aria-pressed={origin === source}
+                  onClick={() => {
+                    setOrigin(source);
+                    setVisible(PAGE_SIZE);
+                    setLoading(true);
+                    setError(null);
+                  }}
+                  className={`whitespace-nowrap rounded-md px-2 py-0.5 font-mono text-[9px] uppercase font-semibold transition ${
+                    origin === source
+                      ? "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm"
+                      : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {source === "all" ? "All Sources" : source === "workspace" ? "Studio" : "Tools"}
+                </button>
+              ))}
+            </div>
+
+            {/* New Render CTA */}
+            <Link
+              href="/"
+              className="inline-flex h-7.5 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
+            >
+              <Sparkles className="h-3 w-3" />
+              <span>New Render ⚡</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Popular Tags Rail (if available) */}
+        {popularTags.length > 0 && (
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto w-full pt-2.5 no-scrollbar"
+            aria-label="Tag filters"
+          >
+            <button
+              type="button"
+              onClick={clearTags}
+              className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold transition ${
+                selectedTags.length === 0
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                  : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+              }`}
+            >
+              All tags
+            </button>
+            {popularTags.map(({ name, count }) => {
+              const active = selectedTags.includes(name.toLowerCase());
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggleTag(name)}
+                  className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] transition ${
+                    active
+                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  <span className={active ? "text-[var(--accent-ink)]" : "text-[var(--accent)]"}>#</span>
+                  <span>{name}</span>
+                  <span className="ml-1 opacity-60">({count})</span>
+                </button>
+              );
+            })}
+            {selectedTags.length > 0 && (
+              <button
+                type="button"
+                onClick={clearTags}
+                className="workspace-action-quiet min-h-5 shrink-0 whitespace-nowrap px-1.5 text-[9px] font-mono text-[var(--danger)] hover:underline"
+              >
+                Clear tags ({selectedTags.length})
+              </button>
+            )}
           </div>
         )}
-      </header>
+      </div>
 
       {/* ---------------- Grid ---------------- */}
       <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-[calc(var(--mobile-nav-height)+2rem)] pt-6 sm:px-6 sm:pb-8" aria-label="Asset results">

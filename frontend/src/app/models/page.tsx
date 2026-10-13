@@ -41,6 +41,7 @@ import {
   Info,
   Layers3,
   Plus,
+  RotateCcw,
   Save,
   Search,
   Settings2,
@@ -54,6 +55,13 @@ import {
 } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 import TensorModelCard from "@/components/TensorModelCard";
+import WorkspaceNavbar from "@/components/WorkspaceNavbar";
+import {
+  STORAGE_KEYS,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+} from "@/lib/storage";
 
 const baseModels = [
   "FLUX.1",
@@ -1179,7 +1187,23 @@ export default function ModelsPage() {
         );
         if (!cancelled) {
           setModels(values);
-          if (values[0]) {
+          const savedDraft = getStorageItem<CreatorModelPayload | null>(
+            STORAGE_KEYS.MODEL_CREATOR_DRAFT,
+            null,
+          );
+          if (savedDraft) {
+            setModel(null);
+            setTitle(savedDraft.title ?? "Untitled model");
+            setCategory(savedDraft.category ?? "General");
+            setType(savedDraft.model_type ?? "Checkpoint");
+            setTags(savedDraft.tags ?? []);
+            setCompatibility(savedDraft.compatibility ?? initialCompatibility);
+            setGeneration(savedDraft.generation ?? initialGeneration);
+            setPermissions(savedDraft.permissions ?? initialPermissions);
+            setVisibility(savedDraft.visibility ?? "Private");
+            setSelectedVersionId(null);
+            setDirty(true);
+          } else if (values[0]) {
             applyModel(values[0]);
             setDirty(false);
           }
@@ -1202,6 +1226,38 @@ export default function ModelsPage() {
   }, []);
 
   useEffect(() => {
+    if (loading || model !== null) return;
+    const timeout = window.setTimeout(() => {
+      const draft: CreatorModelPayload = {
+        title,
+        category,
+        model_type: type,
+        tags,
+        compatibility,
+        generation: {
+          ...generation,
+          trigger_words: type === "LoRA" ? generation.trigger_words : [],
+        },
+        permissions,
+        visibility,
+      };
+      setStorageItem(STORAGE_KEYS.MODEL_CREATOR_DRAFT, draft);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [
+    loading,
+    model,
+    title,
+    category,
+    type,
+    tags,
+    compatibility,
+    generation,
+    permissions,
+    visibility,
+  ]);
+
+  useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty || saving) {
         event.preventDefault();
@@ -1213,6 +1269,7 @@ export default function ModelsPage() {
   }, [dirty, saving]);
 
   const createNewModel = () => {
+    removeStorageItem(STORAGE_KEYS.MODEL_CREATOR_DRAFT);
     setModel(null);
     setTitle("Untitled model");
     setCategory("General");
@@ -1225,6 +1282,21 @@ export default function ModelsPage() {
     setSelectedVersionId(null);
     setDirty(true);
     setBackendError(null);
+  };
+
+  const resetDraft = () => {
+    removeStorageItem(STORAGE_KEYS.MODEL_CREATOR_DRAFT);
+    setTitle("Untitled model");
+    setCategory("General");
+    setType("Checkpoint");
+    setTags([]);
+    setCompatibility(initialCompatibility);
+    setGeneration(initialGeneration);
+    setPermissions(initialPermissions);
+    setVisibility("Private");
+    setSelectedVersionId(null);
+    setDirty(false);
+    notify("Draft reset to defaults");
   };
 
   const importLocalFile = async (item: LocalModelSummary) => {
@@ -1302,7 +1374,12 @@ export default function ModelsPage() {
       requestConfirmation(
         "Discard changes",
         models.find((item) => item.model_id === modelId)?.title ?? "this model",
-        () => void loadModel(modelId),
+        () => {
+          if (model === null) {
+            removeStorageItem(STORAGE_KEYS.MODEL_CREATOR_DRAFT);
+          }
+          void loadModel(modelId);
+        },
       );
       return;
     }
@@ -1327,12 +1404,16 @@ export default function ModelsPage() {
     setSaving(true);
     setBackendError(null);
     try {
+      const isNew = !model;
       const saved = model
         ? await api.updateCreatorModel(model.model_id, payload())
         : await api.createCreatorModel(payload());
       const published = publish
         ? await api.publishCreatorModel(saved.model_id, visibility)
         : saved;
+      if (isNew || publish) {
+        removeStorageItem(STORAGE_KEYS.MODEL_CREATOR_DRAFT);
+      }
       setModels((current) =>
         current.some((item) => item.model_id === published.model_id)
           ? current.map((item) =>
@@ -1564,73 +1645,62 @@ export default function ModelsPage() {
       )}
 
       {/* 1. Header & Model Switcher Bar */}
-      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/90 backdrop-blur-md px-3.5 sm:px-4 py-2">
-        <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-3">
-          {/* Left: Brand Identity & Model Switcher */}
-          <div className="flex items-center gap-3 min-w-0">
-            <BrandLogo
-              size="sm"
-              subtitle="MODEL STUDIO // WORKSTATION"
-              href="/models"
-            />
-            <div className="hidden h-4 w-px bg-[var(--line-strong)] sm:block" />
+      <WorkspaceNavbar
+        subtitle="MODEL STUDIO // WORKSTATION"
+        href="/models"
+        maxWidth="max-w-[1240px]"
+        badge={
+          <div className="flex items-center gap-1.5 min-w-0">
+            {models.length > 0 ? (
+              <div className="relative min-w-0">
+                <select
+                  aria-label="Select creator model"
+                  value={model?.model_id ?? ""}
+                  onChange={(event) => void switchModel(event.target.value)}
+                  disabled={saving}
+                  className="workspace-field h-7 max-w-[15rem] appearance-none pr-7 pl-2.5 font-mono text-[11px] outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] cursor-pointer"
+                >
+                  {models.map((item) => (
+                    <option key={item.model_id} value={item.model_id}>
+                      {item.title} [{item.model_type}]
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-2 h-3 w-3 text-[var(--ink-faint)]" />
+              </div>
+            ) : (
+              <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                No saved models
+              </span>
+            )}
 
-            <div className="flex items-center gap-1.5 min-w-0">
-              {models.length > 0 ? (
-                <div className="relative min-w-0">
-                  <select
-                    aria-label="Select creator model"
-                    value={model?.model_id ?? ""}
-                    onChange={(event) => void switchModel(event.target.value)}
-                    disabled={saving}
-                    className="workspace-field h-7 max-w-[15rem] appearance-none pr-7 pl-2.5 font-mono text-[11px] outline-none bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] cursor-pointer"
-                  >
-                    {models.map((item) => (
-                      <option key={item.model_id} value={item.model_id}>
-                        {item.title} [{item.model_type}]
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2 top-2 h-3 w-3 text-[var(--ink-faint)]" />
-                </div>
-              ) : (
-                <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                  No saved models
-                </span>
-              )}
-
+            <button
+              type="button"
+              onClick={createNewModel}
+              disabled={saving}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+            >
+              <Plus className="h-3 w-3" />
+              <span>New Model</span>
+            </button>
+          </div>
+        }
+        statusText={saving ? "SYNCING…" : dirty ? "UNSAVED" : "PERSISTED"}
+        statusVariant={saving ? "accent" : dirty ? "warning" : "accent"}
+        actions={
+          <>
+            {model === null && (
               <button
                 type="button"
-                onClick={createNewModel}
+                onClick={resetDraft}
                 disabled={saving}
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
+                title="Reset draft to defaults"
               >
-                <Plus className="h-3 w-3" />
-                <span>New Model</span>
+                <RotateCcw className="h-3 w-3" />
+                <span className="hidden sm:inline">Reset</span>
               </button>
-            </div>
-          </div>
-
-          {/* Right: Server Persistence Status & Action Buttons */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[9px] text-[var(--ink-faint)] uppercase tracking-wider md:flex">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  saving
-                    ? "bg-[var(--accent)] animate-ping"
-                    : dirty
-                      ? "bg-amber-400"
-                      : "bg-[var(--accent)]"
-                }`}
-              />
-              <span>
-                {saving
-                  ? "SYNCING…"
-                  : dirty
-                    ? "UNSAVED"
-                    : "PERSISTED"}
-              </span>
-            </div>
+            )}
 
             <button
               type="button"
@@ -1653,9 +1723,9 @@ export default function ModelsPage() {
               <Check className="h-3 w-3 stroke-[2.5]" />
               <span>Publish ⚡</span>
             </button>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {/* 2. Dual-Column Studio Workstation Geometry */}
       <div className="mx-auto max-w-[1240px] px-3.5 sm:px-4 py-3.5 pb-20">

@@ -28,6 +28,7 @@ import CreditPill from "@/components/CreditPill";
 import { formatBytes } from "@/components/AssetCard";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
+import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
 export type MediaFilter = "all" | "video" | "image" | "audio";
 export type ViewMode = "grid" | "list";
@@ -296,7 +297,10 @@ export default function CanvasPreview(props: Props) {
  } = props;
 
  const [activeTab, setActiveTab] = useState<MediaFilter>("all");
- const [viewMode, setViewMode] = useState<ViewMode>("grid");
+ const [viewMode, setViewMode] = usePersistentState<ViewMode>(
+  STORAGE_KEYS.STUDIO_CANVAS_VIEW,
+  "grid"
+ );
  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 

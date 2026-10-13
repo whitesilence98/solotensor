@@ -12,6 +12,7 @@ import {
 } from "@/lib/settings";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import CreditPill from "@/components/CreditPill";
+import WorkspaceNavbar from "@/components/WorkspaceNavbar";
 
 const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "1:1": "Square · 1024 × 1024",
@@ -70,43 +71,34 @@ export default function SettingsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 bg-[var(--ground)] px-4 py-6 pb-28 md:px-8 md:py-10 md:pb-10"
+      className="workspace-scroll h-full min-h-0 bg-[var(--ground)] pb-28 md:pb-10 antialiased"
     >
-      <div className="mx-auto max-w-4xl">
-        <header className="border-b border-[var(--line)] pb-7 md:pb-9">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-[var(--radius-control)] border border-[var(--accent-ambient)] bg-[var(--surface-soft)] text-[var(--accent)] shadow-ambient-glow">
-                <Settings2
-                  className="h-6 w-6"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-              </div>
-              <h1 className="workspace-title mt-2">
-                Settings
-              </h1>
-              <p className="workspace-copy mt-3">
-                Set the defaults SoloTensor uses when you start a fresh
-                generation session. Changes stay in this browser.
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2.5">
-              <CreditPill />
-              <div
-                className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-xs text-[var(--ink-soft)]"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-              >
-                <Check
-                  className="h-3.5 w-3.5 text-[var(--accent)]"
-                  strokeWidth={2}
-                  aria-hidden="true"
-                />
-                <span>{status}</span>
-              </div>
-            </div>
+      <WorkspaceNavbar
+        subtitle="SYSTEM SETTINGS // CONFIGURATION"
+        href="/settings"
+        maxWidth="max-w-4xl"
+        statusText={status}
+        actions={
+          <button
+            type="button"
+            onClick={previousSettings ? undoReset : handleReset}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+          >
+            <RotateCcw className="h-3 w-3" />
+            <span>{previousSettings ? "Undo Reset" : "Reset Defaults"}</span>
+          </button>
+        }
+      />
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
+        <header className="border-b border-[var(--line)] pb-5 md:pb-6">
+          <div className="flex flex-col gap-2">
+            <h1 className="workspace-title">
+              Settings &amp; Defaults
+            </h1>
+            <p className="workspace-copy">
+              Set the defaults SoloTensor uses when you start a fresh
+              generation session. Changes stay in this browser.
+            </p>
           </div>
         </header>
 

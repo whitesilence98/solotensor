@@ -11,8 +11,10 @@ import {
   ExternalLink,
   ImagePlus,
   RefreshCw,
+  RotateCcw,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import WorkspaceModal from "@/components/WorkspaceModal";
@@ -25,6 +27,12 @@ import {
   type ToolDetail,
   type ToolRunResult,
 } from "@/lib/api";
+import {
+  STORAGE_KEYS,
+  getStorageItem,
+  setStorageItem,
+  removeStorageItem,
+} from "@/lib/storage";
 
 const RATIOS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
 const MODE_LABELS = {
@@ -34,7 +42,7 @@ const MODE_LABELS = {
   "image-to-video": "Image → Video",
 } as const;
 const FIELD =
-  "workspace-field w-full px-3.5 py-3 text-sm outline-none transition placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--accent)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-50";
+  "workspace-field w-full px-2.5 py-2 text-xs font-mono outline-none rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -224,7 +232,7 @@ function DynamicControl({
   const label = (
     <label
       htmlFor={id}
-      className="mb-2 block text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)]"
+      className="mb-1 block font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]"
     >
       {display}
     </label>
@@ -246,10 +254,10 @@ function DynamicControl({
     return (
       <label
         htmlFor={id}
-        className="flex cursor-pointer items-center justify-between gap-4 border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-3.5 text-sm text-[var(--ink)] transition hover:border-[var(--line-strong)]"
+        className="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono text-[var(--ink)] transition hover:border-[var(--line-strong)]"
       >
-        <span>{display}</span>
-        <span className="relative inline-flex h-6 w-10 shrink-0 items-center bg-[var(--line-strong)] transition has-[:checked]:bg-[var(--accent)]">
+        <span className="font-mono text-[11px] font-semibold">{display}</span>
+        <span className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-[var(--line-strong)] transition has-[:checked]:bg-[var(--accent)]">
           <input
             id={id}
             type="checkbox"
@@ -258,7 +266,7 @@ function DynamicControl({
             onChange={(event) => onChange(event.target.checked)}
             className="peer sr-only"
           />
-          <span className="ml-1 h-4 w-4 bg-[var(--ink-soft)] transition peer-checked:translate-x-4 peer-checked:bg-[var(--accent-ink)]" />
+          <span className="ml-0.5 h-4 w-4 rounded-full bg-[var(--ink-soft)] transition peer-checked:translate-x-4 peer-checked:bg-[var(--accent-ink)]" />
         </span>
       </label>
     );
@@ -274,7 +282,7 @@ function DynamicControl({
             value={String(value ?? control.value ?? "")}
             disabled={busy}
             onChange={(event) => onChange(event.target.value)}
-            className={`${FIELD} appearance-none pr-10`}
+            className={`${FIELD} h-7.5 appearance-none pr-8 cursor-pointer`}
           >
             {control.options.map((option) => (
               <option key={String(option)} value={String(option)}>
@@ -282,7 +290,7 @@ function DynamicControl({
               </option>
             ))}
           </select>
-          <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 rotate-90 text-[var(--ink-faint)]" />
+          <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rotate-90 text-[var(--ink-faint)]" />
         </div>
       </div>
     );
@@ -298,10 +306,10 @@ function DynamicControl({
           value={String(value ?? control.value ?? "")}
           disabled={busy}
           onChange={(event) => onChange(event.target.value)}
-          rows={6}
+          rows={5}
           placeholder={
             control.kind === "prompt"
-              ? "Describe the result you want…"
+              ? "Describe the generation prompt…"
               : undefined
           }
           className={`${FIELD} resize-y leading-relaxed`}
@@ -334,11 +342,11 @@ function DynamicControl({
                 onChange(event.target.value);
               }
             }}
-            className={`${FIELD} ${numeric ? "font-mono tabular-nums" : ""}`}
+            className={`${FIELD} h-7.5 ${numeric ? "tabular-nums" : ""}`}
           />
           {control.kind === "seed" && (
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
-              -1 = Random
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
+              -1 = RANDOM
             </span>
           )}
         </div>
@@ -392,13 +400,16 @@ export default function ToolDetailPage() {
       .then((nextTool) => {
         setTool(nextTool);
         setRatio(nextTool.default_aspect_ratio);
-        setValues(
-          Object.fromEntries(
-            nextTool.controls
-              .filter((item) => item.kind !== "image")
-              .map((item) => [item.id, item.value as Scalar]),
-          ),
+        const defaultVals = Object.fromEntries(
+          nextTool.controls
+            .filter((item) => item.kind !== "image")
+            .map((item) => [item.id, item.value as Scalar]),
         );
+        const savedVals = getStorageItem<Record<string, Scalar> | null>(
+          STORAGE_KEYS.TOOL_VALUES(params.tool_id),
+          null,
+        );
+        setValues(savedVals ? { ...defaultVals, ...savedVals } : defaultVals);
         setFiles({});
         setResult(null);
       })
@@ -408,6 +419,31 @@ export default function ToolDetailPage() {
         ),
       );
   }, [params.tool_id]);
+
+  const handleValueChange = useCallback(
+    (controlId: string, value: Scalar) => {
+      setValues((current) => {
+        const next = { ...current, [controlId]: value };
+        setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
+        return next;
+      });
+    },
+    [params.tool_id],
+  );
+
+  const handleResetInputs = useCallback(() => {
+    if (!tool) return;
+    removeStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id));
+    setValues(
+      Object.fromEntries(
+        tool.controls
+          .filter((item) => item.kind !== "image")
+          .map((item) => [item.id, item.value as Scalar]),
+      ),
+    );
+    setFiles({});
+    setRatio(tool.default_aspect_ratio);
+  }, [tool, params.tool_id]);
 
   useEffect(() => {
     load();
@@ -538,31 +574,38 @@ export default function ToolDetailPage() {
       id="main-content"
       className="workspace-scroll flex h-full min-h-0 w-full flex-col overflow-x-hidden bg-[var(--ground)] lg:flex-row lg:overflow-hidden"
     >
-      <aside className="workspace-bezel workspace-scroll flex w-full shrink-0 flex-col border-b border-r-0 p-0 lg:w-[350px] lg:border-b-0 lg:border-r">
-        <header className="border-b border-[var(--line)] px-5 py-5 sm:px-6 sm:py-6">
-          <nav aria-label="Breadcrumb" className="mb-5 flex items-center justify-between">
+      <aside className="workspace-bezel workspace-scroll flex w-full shrink-0 flex-col border-b border-r-0 p-0 lg:w-[360px] lg:border-b-0 lg:border-r">
+        <header className="border-b border-[var(--line)] px-4 py-4 sm:px-5 sm:py-5">
+          <nav aria-label="Breadcrumb" className="mb-3.5 flex items-center justify-between">
             <Link
               href="/tools"
-              className="workspace-action-quiet gap-2 px-0 py-1 text-xs"
+              className="inline-flex items-center gap-1.5 font-mono text-[10px] text-[var(--ink-soft)] hover:text-[var(--ink)] transition-colors"
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to tools
+              <ArrowLeft className="h-3 w-3" aria-hidden="true" />
+              <span>Back to tools</span>
             </Link>
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}
-              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--ink-soft)] transition hover:text-[var(--danger)]"
+              className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors"
               title="Delete tool"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
               <span>Delete</span>
             </button>
           </nav>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="workspace-kicker truncate">{MODE_LABELS[tool!.mode]}</p>
-            <span className="shrink-0 border border-[var(--line-strong)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--ink-faint)]">LOCAL</span>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <p className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase truncate">
+              {MODE_LABELS[tool!.mode]}
+            </p>
+            <span className="rounded border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-1.5 py-0.2 font-mono text-[8px] font-bold text-[var(--ink-faint)] uppercase">
+              LOCAL
+            </span>
           </div>
-          <h1 className="workspace-heading text-[1.75rem]">{tool!.name}</h1>
-          <p className="mt-2 text-xs leading-5 text-[var(--ink-faint)]">Configure inputs, then generate in this local workspace.</p>
+          <h1 className="font-sans text-xl font-bold tracking-tight text-[var(--ink)]">{tool!.name}</h1>
+          <p className="mt-1 font-mono text-[10px] leading-4 text-[var(--ink-faint)]">
+            Configure pipeline parameters, then generate locally.
+          </p>
         </header>
 
         <form
@@ -570,8 +613,21 @@ export default function ToolDetailPage() {
           onSubmit={(event) => { event.preventDefault(); run(); }}
           aria-busy={busy}
         >
-          <fieldset className="flex-1 space-y-7 px-5 py-6 sm:px-6">
-            <legend className="workspace-kicker mb-5">Generation controls</legend>
+          <fieldset className="flex-1 space-y-5 px-4 py-5 sm:px-5">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-soft)]">
+                Generation controls
+              </span>
+              <button
+                type="button"
+                onClick={handleResetInputs}
+                className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] transition hover:text-[var(--ink)]"
+                title="Reset inputs to defaults"
+              >
+                <RotateCcw className="h-2.5 w-2.5" />
+                <span>Reset inputs</span>
+              </button>
+            </div>
             {tool!.controls.length ? (
               tool!.controls.map((control) => (
                 <DynamicControl
@@ -581,9 +637,7 @@ export default function ToolDetailPage() {
                   busy={busy}
                   required={control.kind === "image" && tool!.requires_image}
                   file={files[control.id]}
-                  onChange={(value) =>
-                    setValues((current) => ({ ...current, [control.id]: value }))
-                  }
+                  onChange={(value) => handleValueChange(control.id, value)}
                   onFile={(file) =>
                     setFiles((current) => {
                       const next = { ...current };
@@ -595,12 +649,14 @@ export default function ToolDetailPage() {
                 />
               ))
             ) : (
-              <p className="text-sm text-[var(--ink-faint)]">No editable controls.</p>
+              <p className="font-mono text-xs text-[var(--ink-faint)]">No editable controls.</p>
             )}
 
             {!dimensionControls && (
               <fieldset>
-                <legend className="mb-2 block text-[11px] font-medium text-[var(--ink-faint)]">Format</legend>
+                <legend className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                  Format
+                </legend>
                 <div className="grid grid-cols-5 gap-1.5">
                   {tool!.supported_aspect_ratios
                     .filter((item) => RATIOS.includes(item))
@@ -611,10 +667,10 @@ export default function ToolDetailPage() {
                         disabled={busy}
                         aria-pressed={ratio === item}
                         onClick={() => setRatio(item)}
-                        className={`border px-1 py-2 text-[10px] font-medium transition duration-200 disabled:opacity-40 ${
+                        className={`rounded-md border py-1.5 text-center font-mono text-[10px] font-bold transition duration-200 disabled:opacity-40 ${
                           ratio === item
-                            ? "border-[var(--accent)] text-[var(--accent)]"
-                            : "border-[var(--line-strong)] text-[var(--ink-faint)] hover:border-[var(--accent)]"
+                            ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
+                            : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
                         }`}
                       >
                         {item}
@@ -625,9 +681,9 @@ export default function ToolDetailPage() {
             )}
           </fieldset>
 
-          <div className="border-t border-[var(--line)] p-5">
+          <div className="border-t border-[var(--line)] p-4 sm:p-5">
             {tool!.requires_image && missingImages.length > 0 && (
-              <p id="required-images-note" className="mb-3 text-xs leading-5 text-[var(--danger)]">
+              <p id="required-images-note" className="mb-2.5 font-mono text-[10px] leading-4 text-[var(--danger)]">
                 Add all required reference images before generating.
               </p>
             )}
@@ -636,9 +692,13 @@ export default function ToolDetailPage() {
               disabled={!canRun}
               aria-busy={busy}
               aria-describedby={tool!.requires_image && missingImages.length > 0 ? "required-images-note" : undefined}
-              className="workspace-action-primary flex w-full items-center justify-center px-4 py-4 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-between rounded-lg bg-[var(--accent)] px-4 py-3 text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? "Generating…" : "Generate image"}
+              <span className="flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 fill-current" />
+                <span>{busy ? "Generating…" : "Generate image"}</span>
+              </span>
+              <span className="font-mono text-[10px] opacity-80">⚡ LOCAL</span>
             </button>
           </div>
         </form>
@@ -646,15 +706,16 @@ export default function ToolDetailPage() {
 
       <section className="relative z-0 flex min-h-[28rem] flex-1 flex-col lg:min-h-0" aria-labelledby="output-heading">
         <header className="flex h-[3.5rem] shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--ground)] px-4 sm:px-6">
-          <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--ink-faint)]">
-            <span className="h-1.5 w-1.5 bg-[var(--ink-faint)]" aria-hidden="true" /> Canvas
+          <div className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+            <span>Canvas ready</span>
           </div>
           {result?.images.length && inputImageUrl ? (
-            <div className="flex items-center gap-1 border border-[var(--line)] bg-[var(--surface)] p-0.5">
+            <div className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5">
               <button
                 type="button"
                 onClick={() => setPreviewTab("comparison")}
-                className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
+                className={`rounded px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
                   previewTab === "comparison"
                     ? "bg-[var(--accent)] text-[var(--accent-ink)]"
                     : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
@@ -665,7 +726,7 @@ export default function ToolDetailPage() {
               <button
                 type="button"
                 onClick={() => setPreviewTab("result")}
-                className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
+                className={`rounded px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
                   previewTab === "result"
                     ? "bg-[var(--accent)] text-[var(--accent-ink)]"
                     : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
@@ -675,7 +736,7 @@ export default function ToolDetailPage() {
               </button>
             </div>
           ) : null}
-          <div className="text-[10px] font-medium tracking-wide text-[var(--ink-faint)]">
+          <div className="font-mono text-[10px] font-bold tracking-wider text-[var(--ink-faint)] uppercase">
             {String(result?.images.length ?? 0).padStart(2, "0")} OUTPUTS
           </div>
         </header>

@@ -20,6 +20,7 @@ import {
  Minus,
  Plus,
  RefreshCw,
+ RotateCcw,
  Search,
  SlidersHorizontal,
  Sparkles,
@@ -158,6 +159,7 @@ interface Props {
  onImageCountChange?: (v: string) => void;
  modelsLoading?: boolean;
  modelsError?: string | null;
+ onResetDefaults?: () => void;
 }
 
 export default function ControlPanel(props: Props) {
@@ -196,6 +198,7 @@ export default function ControlPanel(props: Props) {
   onImageCountChange,
   modelsLoading,
   modelsError,
+  onResetDefaults,
  } = props;
 
  const [activeMode, setActiveMode] = useState<TensorMode>("Text2Img");
@@ -520,9 +523,22 @@ export default function ControlPanel(props: Props) {
     {/* Section Title: Models */}
     <div className="flex items-center justify-between">
      <h2 className="text-[14px] font-bold text-[var(--ink)] tracking-tight">Models</h2>
-     {modelsLoading && (
-      <span className="text-[11px] text-[var(--ink-faint)]">Loading models…</span>
-     )}
+     <div className="flex items-center gap-2">
+      {modelsLoading && (
+       <span className="text-[11px] text-[var(--ink-faint)]">Loading models…</span>
+      )}
+      {onResetDefaults && (
+       <button
+        type="button"
+        onClick={onResetDefaults}
+        title="Reset studio parameters to defaults"
+        className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] transition hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+       >
+        <RotateCcw className="h-2.5 w-2.5" />
+        <span>Reset defaults</span>
+       </button>
+      )}
+     </div>
     </div>
 
     {modelsError && (

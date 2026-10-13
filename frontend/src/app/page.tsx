@@ -20,8 +20,9 @@ import {
   type ProgressEvent,
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
+import { STORAGE_KEYS } from "@/lib/storage";
 
-const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v4";
+const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
 
 const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> = {
   "1:1": [1024, 1024],
@@ -136,7 +137,12 @@ export default function StudioPage() {
   // Hydrate settings
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(SAVED_INPUTS_KEY) ?? "null");
+      const raw =
+        localStorage.getItem(SAVED_INPUTS_KEY) ??
+        localStorage.getItem("solotensor:last-successful-inputs:v4") ??
+        localStorage.getItem("comfy_studio_saved_inputs") ??
+        "null";
+      const saved = JSON.parse(raw);
       if (saved && typeof saved === "object") {
         if (typeof saved.prompt === "string" && saved.prompt) setPrompt(saved.prompt);
         if (typeof saved.negativePrompt === "string") setNegativePrompt(saved.negativePrompt);
@@ -161,6 +167,27 @@ export default function StudioPage() {
       /* ignore */
     }
     setHydrated(true);
+  }, []);
+
+  const resetStudioDefaults = useCallback(() => {
+    setPrompt(DEFAULT_SAMPLE_PROMPT);
+    setNegativePrompt("");
+    setSeed("");
+    const settings = loadSettings();
+    setSteps(String(settings.defaultSteps));
+    setImageCount("1");
+    setCfg("7.0");
+    setDenoise("1");
+    setFormat(settings.defaultFormat);
+    setLoras([]);
+    setSelection(null);
+    try {
+      localStorage.removeItem(SAVED_INPUTS_KEY);
+      localStorage.removeItem("solotensor:last-successful-inputs:v4");
+      localStorage.removeItem("comfy_studio_saved_inputs");
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Persist settings
@@ -560,6 +587,7 @@ export default function StudioPage() {
           onImageCountChange={setImageCount}
           modelsLoading={modelsLoading}
           modelsError={modelsError}
+          onResetDefaults={resetStudioDefaults}
         />
       </div>
 

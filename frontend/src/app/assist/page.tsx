@@ -7,14 +7,30 @@ import {
   Clipboard,
   Code2,
   LoaderCircle,
+  RotateCcw,
   Send,
   Server,
   Sparkles,
 } from "lucide-react";
 import { api, ApiError, type AssistantPersona } from "@/lib/api";
-import WorkspacePage from "@/components/WorkspacePage";
+import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 import WorkspacePageHeader from "@/components/WorkspacePageHeader";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
+import WorkspaceNavbar from "@/components/WorkspaceNavbar";
+
+interface AssistState {
+  persona: AssistantPersona;
+  message: string;
+  answer: string;
+  answerPersona: AssistantPersona | null;
+}
+
+const DEFAULT_ASSIST_STATE: AssistState = {
+  persona: "backend",
+  message: "",
+  answer: "",
+  answerPersona: null,
+};
 
 const PERSONAS: Array<{
   id: AssistantPersona;
@@ -37,12 +53,18 @@ const PERSONAS: Array<{
 ];
 
 export default function AssistPage() {
-  const [persona, setPersona] = useState<AssistantPersona>("backend");
-  const [message, setMessage] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [answerPersona, setAnswerPersona] = useState<AssistantPersona | null>(
-    null,
+  const [state, setState] = usePersistentState<AssistState>(
+    STORAGE_KEYS.ASSIST_STATE,
+    DEFAULT_ASSIST_STATE,
   );
+  const { persona, message, answer, answerPersona } = state;
+
+  const setPersona = (p: AssistantPersona) =>
+    setState((prev) => ({ ...prev, persona: p }));
+
+  const setMessage = (m: string) =>
+    setState((prev) => ({ ...prev, message: m }));
+
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -58,8 +80,11 @@ export default function AssistPage() {
     setCopyError(null);
     try {
       const response = await api.askAssistant(persona, question);
-      setAnswer(response.answer);
-      setAnswerPersona(response.persona);
+      setState((prev) => ({
+        ...prev,
+        answer: response.answer,
+        answerPersona: response.persona,
+      }));
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 503) {
         setError(
@@ -88,21 +113,61 @@ export default function AssistPage() {
   };
 
   return (
-    <WorkspacePage className="bg-[var(--ground)]">
-      <WorkspacePageHeader
-        eyebrow={
-          <>
-            <Sparkles className="inline h-3.5 w-3.5" /> Local code guidance
-          </>
+    <main id="main-content" className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
+      <WorkspaceNavbar
+        subtitle="CODE ASSIST // LOCAL GUIDANCE"
+        href="/assist"
+        maxWidth="max-w-4xl"
+        statusText="LOCAL LLM ENGINE"
+        actions={
+          Boolean(message || answer) ? (
+            <button
+              type="button"
+              onClick={() => {
+                setState(DEFAULT_ASSIST_STATE);
+                setError(null);
+              }}
+              disabled={pending}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
+              title="Reset conversation"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Reset</span>
+            </button>
+          ) : undefined
         }
-        title="Code Assist"
-        description="Ask for implementation guidance. Answers use the selected SoloTensor persona; no files, images, secrets, or workspace history are sent."
       />
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+        <WorkspacePageHeader
+          eyebrow={
+            <>
+              <Sparkles className="inline h-3.5 w-3.5" /> Local code guidance
+            </>
+          }
+          title="Code Assist"
+          description="Ask for implementation guidance. Answers use the selected SoloTensor persona; no files, images, secrets, or workspace history are sent."
+          showCreditPill={false}
+        />
 
       <form onSubmit={submit} className="workspace-bezel mt-6 grid gap-5 p-4 sm:p-5">
         <fieldset>
-          <legend className="mb-3 text-xs font-semibold text-[var(--ink-soft)]">
-            Focus
+          <legend className="mb-3 flex w-full items-center justify-between text-xs font-semibold text-[var(--ink-soft)]">
+            <span>Focus</span>
+            {Boolean(message || answer) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setState(DEFAULT_ASSIST_STATE);
+                  setError(null);
+                }}
+                disabled={pending}
+                className="inline-flex items-center gap-1 font-mono text-[10px] font-normal text-[var(--ink-faint)] transition hover:text-[var(--ink)] disabled:opacity-40"
+                title="Reset conversation"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>Reset</span>
+              </button>
+            )}
           </legend>
           <div className="grid gap-3 sm:grid-cols-2">
             {PERSONAS.map(({ id, title, description, icon: Icon }) => {
@@ -221,6 +286,7 @@ export default function AssistPage() {
         </section>
       )}
       <WorkspaceFooter />
-    </WorkspacePage>
+      </div>
+    </main>
   );
 }

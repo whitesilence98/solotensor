@@ -35,7 +35,7 @@ function ToolCardSkeleton({ index }: { index: number }) {
   return (
     <div
       style={{ animationDelay: `${index * 40}ms` }}
-      className="relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)]"
+      className="relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)]"
     >
       {/* Background base shimmer */}
       <div className="absolute inset-0 shimmer opacity-60" />
@@ -46,7 +46,7 @@ function ToolCardSkeleton({ index }: { index: number }) {
           <div className="h-5 w-16 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
           <div className="h-5 w-10 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
         </div>
-        <div className="h-7 w-7 rounded-lg border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
+        <div className="h-7 w-7 rounded-md border border-white/10 bg-white/10 shimmer backdrop-blur-md" />
       </div>
 
       {/* Atmospheric Bottom Gradient Scrim */}
@@ -79,7 +79,7 @@ function TensorToolCard({
     <Link
       href={`/tools/${tool.tool_id}`}
       style={{ animationDelay: `${index * 30}ms` }}
-      className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out"
+      className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] transition-all duration-300 ease-out hover:border-[var(--line-strong)] hover:shadow-lg"
     >
       {/* Background Shimmer Placeholder while media decodes */}
       {thumbUrl && !imgError && (
@@ -108,22 +108,22 @@ function TensorToolCard({
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
               {isVideo ? <Film className="h-6 w-6 opacity-80" /> : <Sparkles className="h-6 w-6 opacity-80" />}
             </div>
-            <span className="line-clamp-2 text-xs font-semibold text-[var(--ink-faint)]">{tool.name}</span>
+            <span className="line-clamp-2 font-mono text-xs font-semibold text-[var(--ink-faint)]">{tool.name}</span>
           </div>
         </div>
       )}
 
       {/* Atmospheric Bottom Gradient Scrim */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-60" />
 
       {/* Floating Top Metadata & Actions */}
       <div className="absolute inset-x-3.5 top-3.5 z-10 flex items-center justify-between">
         <div className="pointer-events-none flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white/90 backdrop-blur-md">
+          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/50 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-white/90 backdrop-blur-md">
             {isVideo ? <Film className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
             {isVideo ? "Motion" : "Visual"}
           </span>
-          <span className="rounded-md border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[10px] font-bold text-white/80 backdrop-blur-md">
+          <span className="rounded-md border border-white/15 bg-black/50 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white/80 backdrop-blur-md">
             {tool.default_aspect_ratio}
           </span>
         </div>
@@ -136,19 +136,19 @@ function TensorToolCard({
             onDelete(tool);
           }}
           aria-label={`Delete ${tool.name}`}
-          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/70 opacity-0 backdrop-blur-md transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)] hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-black/50 text-white/70 opacity-0 backdrop-blur-md transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)] hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* Bottom Typography Overlay */}
-      <div className="absolute inset-x-0 bottom-0 z-10 p-5">
-        <h3 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-sm transition-colors group-hover:text-[var(--accent)]">
+      <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5">
+        <h3 className="truncate font-sans text-lg sm:text-xl font-bold tracking-tight text-white drop-shadow-sm transition-colors group-hover:text-[var(--accent)]">
           {tool.name}
         </h3>
-        <p className="mt-0.5 truncate text-xs sm:text-sm font-medium text-white/75 drop-shadow-sm">
-          {MODE_LABELS[tool.mode]} {tool.requires_image ? "• Image Input" : "• Prompt Driven"}
+        <p className="mt-0.5 truncate font-mono text-[10px] tracking-wide text-white/75 drop-shadow-sm uppercase">
+          {MODE_LABELS[tool.mode]} {tool.requires_image ? "• IMAGE INPUT" : "• PROMPT DRIVEN"}
         </p>
       </div>
     </Link>
@@ -196,31 +196,83 @@ export default function ToolStudioPage() {
 
   return (
     <main id="main-content" className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]">
-      <header className="workspace-command top-0 z-20 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="workspace-kicker">Tool catalog</p>
-              <h1 className="workspace-heading mt-1 text-3xl font-semibold tracking-tighter sm:text-4xl">Workflow shelf</h1>
-              <p className="mt-1 text-xs text-[var(--ink-faint)]">Reusable generation workflows, ready to run.</p>
-            </div>
-            <Link href="/tools/create" className="inline-flex items-center gap-2 bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-[var(--accent-ink)] transition duration-200 hover:bg-[var(--accent-hover)] active:scale-95"><Plus className="h-4 w-4" />Create New Tool</Link>
+      <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        {/* Integrated In-Grid Toolbar: Mode Filters + Search + Create Tool CTA */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
+          {/* Workflow Mode Filter Chips */}
+          <div className="flex items-center overflow-x-auto pb-0.5 sm:pb-0 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 shrink-0 no-scrollbar">
+            {MODE_FILTERS.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                aria-pressed={mode === filter.value}
+                onClick={() => setMode(filter.value)}
+                className={`rounded-md px-2.5 py-1 font-mono text-[10px] whitespace-nowrap transition-colors ${
+                  mode === filter.value
+                    ? "border border-[var(--accent)] bg-[var(--accent)]/10 font-bold text-[var(--accent)]"
+                    : "text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]"
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="ml-1 px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] hover:underline"
+              >
+                Reset
+              </button>
+            )}
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)]" />
-              <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search tools, workflow types, output models…" aria-label="Search tools" className="workspace-field h-11 w-full pl-10 pr-10 text-sm placeholder:text-[var(--ink-faint)]" />
-              {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-faint)] hover:text-[var(--ink)]"><X className="h-3.5 w-3.5" /></button>}
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search workflows by name or mode…"
+                aria-label="Search tools"
+                className="workspace-field h-7.5 w-full pl-8 pr-7 font-mono text-[11px] bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors outline-none"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
-            <div className="workspace-scroll-x flex items-center gap-1.5 pb-1 sm:pb-0">
-              {MODE_FILTERS.map((filter) => <button key={filter.value} type="button" aria-pressed={mode === filter.value} onClick={() => setMode(filter.value)} className={`workspace-chip min-h-10 whitespace-nowrap px-3 text-xs ${mode === filter.value ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface-raised)] hover:text-[var(--ink)]"}`}>{filter.label}</button>)}
-              {hasActiveFilters && <button type="button" onClick={clearFilters} className="ml-1 whitespace-nowrap text-xs font-semibold text-[var(--accent)] hover:underline">Reset</button>}
-            </div>
+
+            {/* Create New Tool CTA */}
+            <Link
+              href="/tools/create"
+              className="inline-flex h-7.5 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
+            >
+              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+              <span>Create New Tool ⚡</span>
+            </Link>
           </div>
         </div>
-      </header>
-      <section className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]"><p aria-live="polite">{loading ? "Loading tools…" : `Showing ${filteredTools.length} of ${tools.length} workflow${tools.length === 1 ? "" : "s"}`}</p>{hasActiveFilters && <button type="button" onClick={clearFilters} className="workspace-action-quiet min-h-9 px-2 text-xs">Clear filters</button>}</div>
+
+        {/* Count Bar */}
+        <div className="mb-4 mt-3 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
+          <p aria-live="polite">
+            {loading ? "Loading tools…" : `Showing ${filteredTools.length} of ${tools.length} workflow${tools.length === 1 ? "" : "s"}`}
+          </p>
+          {hasActiveFilters && (
+            <button type="button" onClick={clearFilters} className="workspace-action-quiet min-h-6 px-1.5 font-mono text-[10px] text-[var(--accent)] hover:underline">
+              Clear filters
+            </button>
+          )}
+        </div>
         {loading && (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="Loading tools">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((item, idx) => (
@@ -228,8 +280,53 @@ export default function ToolStudioPage() {
             ))}
           </div>
         )}
-        {!loading && error && <div role="alert" className="border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center text-sm text-[var(--danger)]"><p className="font-semibold">{error}</p><button type="button" onClick={load} className="mt-3 inline-flex items-center gap-1.5 border border-[var(--danger-line)] px-4 py-2 text-xs font-bold transition hover:bg-[var(--danger-line)]/50"><RefreshCw className="h-3.5 w-3.5" />Retry</button></div>}
-        {!loading && !error && filteredTools.length === 0 && <div className="border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] p-12 text-center"><div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]"><Wrench className="h-7 w-7 opacity-70" /></div><h3 className="text-base font-bold text-[var(--ink)]">{hasActiveFilters ? "No matching workflows" : "Your workflow shelf is empty"}</h3><p className="mx-auto mt-1 max-w-sm text-xs text-[var(--ink-faint)]">{hasActiveFilters ? "Try searching with a different keyword or resetting the workflow mode filter." : "Create your first AI Tool by importing a ComfyUI workflow_api.json file."}</p>{hasActiveFilters ? <button type="button" onClick={clearFilters} className="mt-4 bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Clear all filters</button> : <Link href="/tools/create" className="mt-4 inline-block bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]">Create your first tool</Link>}</div>}
+        {!loading && error && (
+          <div
+            role="alert"
+            className="rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center text-sm text-[var(--danger)]"
+          >
+            <p className="font-semibold">{error}</p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-[var(--danger-line)] px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider transition hover:bg-[var(--danger-line)]/50"
+            >
+              <RefreshCw className="h-3 w-3" />
+              <span>Retry</span>
+            </button>
+          </div>
+        )}
+        {!loading && !error && filteredTools.length === 0 && (
+          <div className="rounded-xl border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] p-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--accent)]">
+              <Wrench className="h-6 w-6 stroke-[1.75]" />
+            </div>
+            <h3 className="font-sans text-base font-bold text-[var(--ink)]">
+              {hasActiveFilters ? "No matching workflows" : "Your workflow shelf is empty"}
+            </h3>
+            <p className="mx-auto mt-1 max-w-sm font-mono text-[11px] text-[var(--ink-faint)]">
+              {hasActiveFilters
+                ? "Try searching with a different keyword or resetting the workflow mode filter."
+                : "Create your first AI Tool by importing a ComfyUI workflow_api.json file."}
+            </p>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="mt-4 rounded-md bg-[var(--accent)] px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
+              >
+                Clear all filters
+              </button>
+            ) : (
+              <Link
+                href="/tools/create"
+                className="mt-4 inline-block rounded-md bg-[var(--accent)] px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
+              >
+                Create your first tool
+              </Link>
+            )}
+          </div>
+        )}
         {!loading && !error && filteredTools.length > 0 && (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in duration-300 ease-out">
             {filteredTools.map((tool, idx) => (

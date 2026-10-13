@@ -160,142 +160,122 @@ export default function ModelGalleryPage() {
       id="main-content"
       className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]"
     >
-      {/* 1. Page Header (Tensor.art Marketplace Style) */}
-      <header className="workspace-command top-0 z-20 mx-2 mt-2 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,transparent)] backdrop-blur-xl sm:mx-4">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="workspace-kicker">Community catalog</p>
-              <h1 className="workspace-heading mt-1 text-3xl font-semibold tracking-tighter sm:text-4xl">
-                Explore creator models
-              </h1>
-              <p className="mt-1 text-xs text-[var(--ink-faint)]">Discover checkpoints and LoRAs for your next render.</p>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2.5">
-              <Link
-                href="/models"
-                className="inline-flex items-center gap-2 rounded-[var(--radius-panel)] bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-[var(--accent-ink)] transition duration-200 hover:bg-[var(--accent-hover)] active:scale-95"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Publish Model</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* Search Bar + Controls */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)]" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search models, tags, trigger words, architectures…"
-                aria-label="Search creator models"
-                className="workspace-field h-11 w-full pl-10 pr-10 text-sm placeholder:text-[var(--ink-faint)]"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear model search"
-                  className="workspace-action-quiet absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Base Model Dropdown */}
-            <div className="flex items-center gap-2">
-              <select
-                value={baseModelFilter}
-                onChange={(e) => setBaseModelFilter(e.target.value)}
-                aria-label="Filter by Base Model"
-                className="h-10 rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
-              >
-                {BASE_MODEL_FILTERS.map((bf) => (
-                  <option key={bf.value} value={bf.value}>
-                    {bf.label}
-                  </option>
-                ))}
-              </select>
-
-              {/* Sort By Dropdown */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortOption)}
-                aria-label="Sort models"
-                className="h-10 rounded-[var(--radius-panel)] border border-[var(--line)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
-              >
-                <option value="latest">Recently Published</option>
-                <option value="samples">Most Showcase Samples</option>
-                <option value="title">Name (A–Z)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Type Filter Pills Row */}
-          <div className="flex items-center justify-between gap-3 overflow-x-auto workspace-scroll-x pt-1">
-            <div className="flex items-center gap-1.5">
-              {TYPE_FILTERS.map((tf) => {
-                const active = typeFilter === tf.value;
-                return (
-                  <button
-                    key={tf.value}
-                    type="button"
-                    onClick={() => setTypeFilter(tf.value)}
-                    className={`whitespace-nowrap rounded-[var(--radius-control)] px-3 py-1.5 text-xs font-bold transition ${
-                      active
-                        ? "bg-[var(--accent)] text-[var(--accent-ink)] "
-                        : "bg-[var(--surface-soft)] text-[var(--ink-soft)] hover:bg-[var(--surface-raised)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    {tf.label}
-                  </button>
-                );
-              })}
-
-              <span className="mx-1 h-4 w-px bg-[var(--line)]" />
-
-              {/* Category Pills */}
-              {CATEGORY_FILTERS.map((cat) => {
-                const active = categoryFilter === cat;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategoryFilter(cat)}
-                    className={`capitalize whitespace-nowrap rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] font-semibold transition ${
-                      active
-                        ? "bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--accent)] border border-[var(--accent)]/30 font-bold"
-                        : "text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]"
-                    }`}
-                  >
-                    {cat === "all" ? "All Categories" : cat}
-                  </button>
-                );
-              })}
-            </div>
-
-            {hasActiveFilters && (
+      {/* 1. Main Content Grid & Integrated Controls */}
+      <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        {/* Integrated In-Grid Toolbar: Search + Base Model + Sort + Publish CTA */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
+          {/* Search Input */}
+          <div className="relative flex-1 max-w-lg">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search models, tags, trigger words, architectures…"
+              aria-label="Search creator models"
+              className="workspace-field h-7.5 w-full pl-8 pr-14 text-xs placeholder:text-[var(--ink-faint)]"
+            />
+            {query && (
               <button
                 type="button"
-                onClick={clearAllFilters}
-                className="whitespace-nowrap text-xs font-semibold text-[var(--accent)] hover:underline"
+                onClick={() => setQuery("")}
+                aria-label="Clear model search"
+                className="workspace-action-quiet absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center text-xs"
               >
-                Reset filters
+                <X className="h-3 w-3" />
               </button>
             )}
           </div>
-        </div>
-      </header>
 
-      {/* 2. Main Content Grid */}
-      <section className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
+          {/* Selects & Actions */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              value={baseModelFilter}
+              onChange={(e) => setBaseModelFilter(e.target.value)}
+              aria-label="Filter by Base Model"
+              className="h-7.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
+            >
+              {BASE_MODEL_FILTERS.map((bf) => (
+                <option key={bf.value} value={bf.value}>
+                  {bf.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              aria-label="Sort models"
+              className="h-7.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
+            >
+              <option value="latest">Recently Published</option>
+              <option value="samples">Most Showcase Samples</option>
+              <option value="title">Name (A–Z)</option>
+            </select>
+
+            <Link
+              href="/models"
+              className="inline-flex h-7.5 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Publish Model ⚡</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Filter Pills Sub-Row: Types + Categories + Reset */}
+        <div className="flex items-center justify-between gap-3 overflow-x-auto w-full py-2.5 no-scrollbar">
+          <div className="flex items-center gap-1.5">
+            {TYPE_FILTERS.map((tf) => {
+              const active = typeFilter === tf.value;
+              return (
+                <button
+                  key={tf.value}
+                  type="button"
+                  onClick={() => setTypeFilter(tf.value)}
+                  className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] uppercase font-semibold transition ${
+                    active
+                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              );
+            })}
+
+            <span className="mx-1 h-3.5 w-px bg-[var(--line)]" />
+
+            {/* Category Pills */}
+            {CATEGORY_FILTERS.map((cat) => {
+              const active = categoryFilter === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`capitalize min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] transition ${
+                    active
+                      ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-bold shadow-sm"
+                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {cat === "all" ? "All Categories" : cat}
+                </button>
+              );
+            })}
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="workspace-action-quiet min-h-5 shrink-0 whitespace-nowrap px-1.5 text-[9px] font-mono text-[var(--danger)] hover:underline"
+            >
+              Reset filters
+            </button>
+          )}
+        </div>
         {/* Count Bar */}
         <div className="mb-4 flex items-center justify-between text-xs text-[var(--ink-faint)]">
           <p>
