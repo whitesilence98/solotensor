@@ -19,6 +19,7 @@ import {
 import { api, resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
+import CreateModelDrawer from "@/components/CreateModelDrawer";
 
 type ModelTypeFilter = "all" | "Checkpoint" | "LoRA" | "Diffusion Model";
 type SortOption = "latest" | "samples" | "title";
@@ -59,6 +60,7 @@ export default function ModelGalleryPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [baseModelFilter, setBaseModelFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
+  const [studioOpen, setStudioOpen] = useState(false);
 
   const load = (searchVal = query) => {
     setLoading(true);
@@ -81,6 +83,9 @@ export default function ModelGalleryPage() {
       initialQuery = search.get("q") || "";
       if (initialQuery) {
         setQuery(initialQuery);
+      }
+      if (search.get("create") === "true") {
+        setStudioOpen(true);
       }
     }
     load(initialQuery);
@@ -213,13 +218,14 @@ export default function ModelGalleryPage() {
               <option value="title">Name (A–Z)</option>
             </select>
 
-            <Link
-              href="/models"
+            <button
+              type="button"
+              onClick={() => setStudioOpen(true)}
               className="inline-flex h-7.5 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Publish Model ⚡</span>
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -342,12 +348,13 @@ export default function ModelGalleryPage() {
                 Clear all filters
               </button>
             ) : (
-              <Link
-                href="/models"
+              <button
+                type="button"
+                onClick={() => setStudioOpen(true)}
                 className="mt-4 inline-block rounded-[var(--radius-panel)] bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition"
               >
-                Go to Creator Studio
-              </Link>
+                Publish First Model
+              </button>
             )}
           </div>
         )}
@@ -365,6 +372,14 @@ export default function ModelGalleryPage() {
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
         <WorkspaceFooter />
       </div>
+
+      <CreateModelDrawer
+        open={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        onCreated={() => {
+          load();
+        }}
+      />
     </main>
   );
 }

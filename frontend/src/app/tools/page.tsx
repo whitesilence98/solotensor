@@ -6,6 +6,7 @@ import { ArrowRight, Clock3, Film, ImageIcon, Plus, RefreshCw, Search, Sparkles,
 import { api, resolveMediaUrl, type ToolMode, type ToolSummary } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import WorkspaceModal from "@/components/WorkspaceModal";
+import CreateToolDrawer from "@/components/CreateToolDrawer";
 
 const MODE_LABELS: Record<ToolMode, string> = {
   "text-to-image": "Text to Image",
@@ -164,6 +165,16 @@ export default function ToolStudioPage() {
   const [toolToDelete, setToolToDelete] = useState<ToolSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("create") === "true") {
+        setIsCreateOpen(true);
+      }
+    }
+  }, []);
 
   const confirmDelete = async () => {
     if (!toolToDelete) return;
@@ -252,13 +263,14 @@ export default function ToolStudioPage() {
             </div>
 
             {/* Create New Tool CTA */}
-            <Link
-              href="/tools/create"
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
               className="inline-flex h-7.5 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
             >
               <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
               <span>Create New Tool ⚡</span>
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -318,12 +330,13 @@ export default function ToolStudioPage() {
                 Clear all filters
               </button>
             ) : (
-              <Link
-                href="/tools/create"
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(true)}
                 className="mt-4 inline-block rounded-md bg-[var(--accent)] px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
               >
                 Create your first tool
-              </Link>
+              </button>
             )}
           </div>
         )}
@@ -379,6 +392,14 @@ export default function ToolStudioPage() {
           </div>
         </div>
       </WorkspaceModal>
+
+      <CreateToolDrawer
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreated={() => {
+          load();
+        }}
+      />
     </main>
   );
 }

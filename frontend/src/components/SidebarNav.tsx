@@ -11,15 +11,14 @@ const NAV_ITEMS = [
   { id: "assets", icon: FolderOpen, label: "Library", href: "/assets", primary: true },
   { id: "generate", icon: ImageIcon, label: "Generate", href: "/", primary: true },
   { id: "tools", icon: Wrench, label: "Tool studio", href: "/tools", primary: true },
-  { id: "models", icon: Box, label: "Model studio", href: "/models", primary: true },
-  { id: "model-gallery", icon: Sparkles, label: "Model gallery", href: "/models/gallery", primary: false },
+  { id: "models", icon: Box, label: "Models", href: "/models/gallery", primary: true },
   { id: "assist", icon: MessageSquareCode, label: "Code Assist", href: "/assist", primary: false },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings", primary: false },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/models") return pathname === "/models";
+  if (href === "/models/gallery") return pathname.startsWith("/models");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
