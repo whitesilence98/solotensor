@@ -8,6 +8,25 @@ const backendBase =
 const nextConfig: NextConfig = {
   /* ComfyUI/MinIO images are plain <img> tags, so no remotePatterns needed. */
   allowedDevOrigins: ["192.168.1.70", "localhost", "127.0.0.1"],
+  async redirects() {
+    return [
+      {
+        source: "/models/gallery",
+        destination: "/models",
+        permanent: true,
+      },
+      {
+        source: "/models/gallery/:model_id",
+        destination: "/models/:model_id",
+        permanent: true,
+      },
+      {
+        source: "/tools/create",
+        destination: "/tools?create=true",
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

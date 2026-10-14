@@ -13,7 +13,6 @@ export default function PublicModelDetailPage({
 }) {
   const router = useRouter();
   const [model, setModel] = useState<CreatorModel | null>(null);
-  console.log("PublicModelDetailPage params:", model);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState<string | null>(null);
