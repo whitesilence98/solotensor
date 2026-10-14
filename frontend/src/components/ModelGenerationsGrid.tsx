@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -11,12 +11,49 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { api, type GenerationRecord } from "@/lib/api";
-import GenerationDetailModal from "./GenerationDetailModal";
+import { api, type GalleryItem, type GenerationRecord } from "@/lib/api";
+import WorkspaceModal from "@/components/WorkspaceModal";
+import AssetInspectionStage from "@/components/AssetInspectionStage";
 
 export interface ModelGenerationsGridProps {
   modelId: string;
   modelTitle?: string;
+}
+
+export function generationRecordToGalleryItem(record: GenerationRecord): GalleryItem {
+  return {
+    key: record.key || record.url || record.id,
+    url: record.url,
+    size: 0,
+    last_modified: record.created_at,
+    metadata: {
+      prompt_id: record.prompt_id,
+      prompt: record.prompt || "",
+      negative_prompt: record.negative_prompt || undefined,
+      seed: record.seed,
+      steps: record.steps,
+      cfg: record.cfg,
+      denoise: record.denoise,
+      width: record.width,
+      height: record.height,
+      format_name: (record.format_name as any) || "1:1",
+      model_id: record.model_id || undefined,
+      version_id: record.version_id || undefined,
+      file_id: record.file_id || undefined,
+      model_title: record.model_title || undefined,
+      created_at: record.created_at,
+      elapsed_ms: record.elapsed_ms || 0,
+      source_filename: record.filename,
+      loras: (record.loras || []).map((l) => ({
+        lora: l.lora_name,
+        on: true,
+        model_id: l.lora_model_id || undefined,
+        version_id: l.lora_version_id || undefined,
+        strength: l.strength,
+      })),
+      tags: Array.isArray((record.metadata as any)?.tags) ? (record.metadata as any).tags : [],
+    },
+  };
 }
 
 export default function ModelGenerationsGrid({
@@ -30,7 +67,43 @@ export default function ModelGenerationsGrid({
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGen, setSelectedGen] = useState<GenerationRecord | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
+
+  const galleryItems = useMemo(() => items.map(generationRecordToGalleryItem), [items]);
+
+  const openAsset = useCallback((asset: GalleryItem) => {
+    setSelectedAsset(asset);
+    if (typeof window !== "undefined") {
+      const encodedKey = asset.key.split("/").map(encodeURIComponent).join("/");
+      window.history.pushState({ assetKey: asset.key }, "", `/assets/${encodedKey}`);
+    }
+  }, []);
+
+  const selectAssetInCarousel = useCallback((asset: GalleryItem) => {
+    setSelectedAsset(asset);
+    if (typeof window !== "undefined") {
+      const encodedKey = asset.key.split("/").map(encodeURIComponent).join("/");
+      window.history.replaceState({ assetKey: asset.key }, "", `/assets/${encodedKey}`);
+    }
+  }, []);
+
+  const closeAsset = useCallback(() => {
+    setSelectedAsset(null);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `/models/${encodeURIComponent(modelId)}`);
+    }
+  }, [modelId]);
+
+  // Listen for browser Back button to dismiss modal smoothly
+  useEffect(() => {
+    const onPopState = () => {
+      if (selectedAsset) {
+        setSelectedAsset(null);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [selectedAsset]);
 
   const fetchGenerations = async (pageNum: number, isInitial = false) => {
     if (isInitial) {
@@ -176,10 +249,10 @@ export default function ModelGenerationsGrid({
       {!loading && items.length > 0 && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <div
                 key={item.id}
-                onClick={() => setSelectedGen(item)}
+                onClick={() => openAsset(galleryItems[index])}
                 className="group relative aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
               >
                 {/* Image Media with zero CLS */}
@@ -265,11 +338,22 @@ export default function ModelGenerationsGrid({
       )}
 
       {/* Lightbox Inspector Modal */}
-      <GenerationDetailModal
-        generation={selectedGen}
-        modelId={modelId}
-        onClose={() => setSelectedGen(null)}
-      />
+      <WorkspaceModal
+        open={Boolean(selectedAsset)}
+        onClose={closeAsset}
+        headless
+        size="media"
+      >
+        {selectedAsset && (
+          <AssetInspectionStage
+            mode="modal"
+            asset={selectedAsset}
+            items={galleryItems}
+            onSelectAsset={selectAssetInCarousel}
+            onClose={closeAsset}
+          />
+        )}
+      </WorkspaceModal>
     </section>
   );
 }
