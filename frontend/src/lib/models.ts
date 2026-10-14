@@ -12,7 +12,7 @@ function cleanIdentifier(value: string): string {
 }
 
 /**
- * Resolves a direct URL to a Model / LoRA detail page in `/models/gallery/[model_id]`.
+ * Resolves a direct URL to a Model / LoRA detail page in `/models/[model_id]`.
  * Matches direct modelId, fileId, or matches filename/title against installed and public models.
  */
 export function resolveModelGalleryUrl(
@@ -27,14 +27,14 @@ export function resolveModelGalleryUrl(
 ): string | null {
   // 1. Direct valid 32-character hexadecimal model_id
   if (params.modelId && /^[0-9a-f]{32}$/i.test(params.modelId.trim())) {
-    return `/models/gallery/${params.modelId.trim()}`;
+    return `/models/${params.modelId.trim()}`;
   }
 
   // 2. Direct file_id match in installed models
   if (params.fileId && modelOptions && modelOptions.length > 0) {
     const matched = modelOptions.find((m) => m.file_id === params.fileId);
     if (matched?.model_id) {
-      return `/models/gallery/${matched.model_id}`;
+      return `/models/${matched.model_id}`;
     }
   }
 
@@ -57,7 +57,7 @@ export function resolveModelGalleryUrl(
           cleanIdentifier(m.title) === cleanedRaw
       );
       if (exact?.model_id) {
-        return `/models/gallery/${exact.model_id}`;
+        return `/models/${exact.model_id}`;
       }
 
       // Substring match
@@ -70,7 +70,7 @@ export function resolveModelGalleryUrl(
         );
       });
       if (sub?.model_id) {
-        return `/models/gallery/${sub.model_id}`;
+        return `/models/${sub.model_id}`;
       }
     }
   }
@@ -87,7 +87,7 @@ export function resolveModelGalleryUrl(
           cleanIdentifier(p.title) === cleanedRaw
       );
       if (exact?.model_id) {
-        return `/models/gallery/${exact.model_id}`;
+        return `/models/${exact.model_id}`;
       }
 
       const sub = publicModels.find((p) => {
@@ -95,7 +95,7 @@ export function resolveModelGalleryUrl(
         return cleanedRaw && pClean && (pClean.includes(cleanedRaw) || cleanedRaw.includes(pClean));
       });
       if (sub?.model_id) {
-        return `/models/gallery/${sub.model_id}`;
+        return `/models/${sub.model_id}`;
       }
     }
   }
@@ -108,7 +108,7 @@ export function resolveModelGalleryUrl(
     fallbackQuery !== "ComfyUI" &&
     !fallbackQuery.startsWith("custom")
   ) {
-    return `/models/gallery?q=${encodeURIComponent(fallbackQuery)}`;
+    return `/models?q=${encodeURIComponent(fallbackQuery)}`;
   }
 
   return null;

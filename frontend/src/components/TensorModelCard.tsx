@@ -190,7 +190,7 @@ export function TensorModelCard({
   if (isLink && item.model_id) {
     return (
       <Link
-        href={`/models/gallery/${item.model_id}`}
+        href={`/models/${item.model_id}`}
         style={{ animationDelay: `${index * 30}ms` }}
         className={containerClasses}
       >

@@ -76,7 +76,7 @@ export default function NotFound() {
             </Link>
 
             <Link
-              href="/models/gallery"
+              href="/models"
               className="group flex flex-col justify-between rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-left transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-soft)]"
             >
               <div className="flex items-center justify-between text-[var(--accent)]">

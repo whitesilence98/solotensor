@@ -1,7 +1,7 @@
 """Pydantic request/response schemas for the Comfy Studio API."""
 
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -903,4 +903,80 @@ class ResendVerificationRequest(BaseModel):
 class EmailActionResponse(BaseModel):
     success: bool = True
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Relational models & Paginated Responses
+# ---------------------------------------------------------------------------
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    has_more: bool
+
+    @classmethod
+    def create(cls, items: list[T], total: int, page: int, limit: int) -> "PaginatedResponse[T]":
+        limit = max(1, limit)
+        total_pages = (total + limit - 1) // limit if total > 0 else 0
+        has_more = (page * limit) < total
+        return cls(
+            items=items,
+            total=total,
+            page=page,
+            limit=limit,
+            total_pages=total_pages,
+            has_more=has_more,
+        )
+
+
+class GenerationLoraResponse(BaseModel):
+    id: str
+    lora_name: str
+    lora_model_id: Optional[str] = None
+    lora_version_id: Optional[str] = None
+    strength: float = 1.0
+
+
+class GenerationRecordResponse(BaseModel):
+    id: str
+    prompt_id: str
+    user_id: Optional[str] = None
+    model_id: Optional[str] = None
+    version_id: Optional[str] = None
+    file_id: Optional[str] = None
+    filename: str
+    url: str
+    key: str
+    prompt: Optional[str] = None
+    negative_prompt: Optional[str] = None
+    seed: Optional[int] = None
+    steps: Optional[int] = None
+    cfg: Optional[float] = None
+    denoise: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    format_name: Optional[str] = None
+    status: str = "completed"
+    elapsed_ms: Optional[int] = None
+    origin: str = "generation"
+    gallery_saved: bool = True
+    created_at: str
+    metadata: Optional[dict[str, Any]] = None
+    model_title: Optional[str] = None
+    loras: list[GenerationLoraResponse] = Field(default_factory=list)
+
+
+class PaginatedGenerationsResponse(PaginatedResponse[GenerationRecordResponse]):
+    pass
+
+
+class PaginatedSamplesResponse(PaginatedResponse[ModelSampleResponse]):
+    pass
+
 

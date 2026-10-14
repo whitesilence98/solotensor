@@ -9,10 +9,12 @@ import re
 import shutil
 import uuid
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 from typing import Any
 
 from ..config import Settings, get_settings
+from ..db import get_db
 from ..schemas import (
     ModelCreateRequest,
     ModelFilePatchRequest,
@@ -60,6 +62,9 @@ class ModelConflict(ModelError):
     pass
 
 
+logger = logging.getLogger("solotensor.models")
+
+
 class ModelService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -67,6 +72,18 @@ class ModelService:
         self.root.mkdir(parents=True, exist_ok=True)
         self.definitions = self.root / "definitions"
         self.definitions.mkdir(parents=True, exist_ok=True)
+
+    def _sync_to_db(self, record: dict[str, Any]) -> None:
+        try:
+            get_db().upsert_model(record)
+        except Exception as exc:
+            logger.warning("Could not sync model to database: %s", exc)
+
+    def _delete_from_db(self, model_id: str) -> None:
+        try:
+            get_db().delete_model(model_id)
+        except Exception as exc:
+            logger.warning("Could not delete model from database: %s", exc)
 
     def ensure_root(self) -> None:
         self.definitions.mkdir(parents=True, exist_ok=True)
@@ -278,6 +295,7 @@ class ModelService:
             parents=True, exist_ok=True
         )
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def get(self, model_id: str, *, public: bool = False) -> ModelResponse:
@@ -324,6 +342,7 @@ class ModelService:
         self._validate_base_association(record.get("model_type", ""), record.get("compatibility", {}))
         record["updated_at"] = self._now()
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def public_response(self, model_id: str) -> ModelResponse:
@@ -596,6 +615,7 @@ class ModelService:
         )
         record["updated_at"] = self._now()
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def install_file(
@@ -710,6 +730,7 @@ class ModelService:
 
         shutil.rmtree(self.root / model_id, ignore_errors=True)
         self._path(model_id).unlink(missing_ok=True)
+        self._delete_from_db(model_id)
 
     def create_version(
         self, model_id: str, payload: ModelVersionCreateRequest
@@ -733,6 +754,7 @@ class ModelService:
             parents=True, exist_ok=True
         )
         self._write(record)
+        self._sync_to_db(record)
         return ModelVersionResponse(
             version_id=version_id, name=payload.name, created_at=now
         )
@@ -772,6 +794,7 @@ class ModelService:
         )
         record["updated_at"] = self._now()
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def patch_file(
@@ -788,6 +811,7 @@ class ModelService:
                 item.update(payload.model_dump(exclude_unset=True))
                 record["updated_at"] = self._now()
                 self._write(record)
+                self._sync_to_db(record)
                 return self._response(record)
         raise ModelNotFound("Model file not found")
 
@@ -806,6 +830,7 @@ class ModelService:
                 version["files"].pop(index)
                 record["updated_at"] = self._now()
                 self._write(record)
+                self._sync_to_db(record)
                 return
         raise ModelNotFound("Model file not found")
 
@@ -841,6 +866,7 @@ class ModelService:
         )
         record["updated_at"] = self._now()
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def remove_sample(self, model_id: str, version_id: str, sample_id: str) -> None:
@@ -854,6 +880,7 @@ class ModelService:
                 version["samples"].pop(index)
                 record["updated_at"] = self._now()
                 self._write(record)
+                self._sync_to_db(record)
                 return
         raise ModelNotFound("Model sample not found")
 
@@ -876,6 +903,7 @@ class ModelService:
         record["visibility"] = payload.visibility.value
         record["updated_at"] = self._now()
         self._write(record)
+        self._sync_to_db(record)
         return self._response(record)
 
     def public_file_path(self, model_id: str, version_id: str, file_id: str) -> Path:

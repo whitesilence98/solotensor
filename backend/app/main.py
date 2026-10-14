@@ -65,6 +65,9 @@ from .schemas import (
     ToolParseResponse,
     UploadedAsset,
     UserResponse,
+    GenerationRecordResponse,
+    PaginatedGenerationsResponse,
+    PaginatedSamplesResponse,
 )
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.code_assistant import (
@@ -92,6 +95,10 @@ code_assistant = get_code_assistant_service(settings)
 # Auto-initialize database on application startup
 db = get_db()
 db.init_db()
+try:
+    db.sync_filesystem_to_db(models_dir=model_storage.definitions, storage_dir=storage.root)
+except Exception as exc:
+    logger.warning("Could not sync filesystem to SQLite on startup: %s", exc)
 
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 
@@ -394,6 +401,52 @@ async def download_model_sample(model_id: str, version_id: str, sample_id: str) 
         raise _model_http_error(exc) from exc
 
 
+@app.get("/api/v1/models/id/{model_id}/images", response_model=PaginatedGenerationsResponse)
+@app.get("/api/v1/models/public/{model_id}/images", response_model=PaginatedGenerationsResponse)
+async def list_model_generations(
+    model_id: str,
+    page: int = 1,
+    limit: int = 20,
+    version_id: str | None = None,
+) -> PaginatedGenerationsResponse:
+    """Return paginated list of all images created with this model (as base model or LoRA adapter)."""
+    try:
+        model_storage.get(model_id)
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+    items, total = get_db().get_model_generations(model_id, version_id=version_id, page=page, limit=limit)
+    return PaginatedGenerationsResponse.create(
+        items=[GenerationRecordResponse(**item) for item in items],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
+@app.get("/api/v1/models/id/{model_id}/samples-paginated", response_model=PaginatedSamplesResponse)
+@app.get("/api/v1/models/public/{model_id}/samples-paginated", response_model=PaginatedSamplesResponse)
+async def list_model_samples_paginated(
+    model_id: str,
+    page: int = 1,
+    limit: int = 20,
+    version_id: str | None = None,
+) -> PaginatedSamplesResponse:
+    """Return paginated list of showcase samples associated with this model."""
+    try:
+        model_storage.get(model_id)
+    except (ModelError, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+    items, total = get_db().get_model_samples(model_id, version_id=version_id, page=page, limit=limit)
+    return PaginatedSamplesResponse.create(
+        items=[ModelSampleResponse(**item) for item in items],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
 @app.get("/api/v1/models/{category}", response_model=list[str])
 async def models(category: str) -> list[str]:
     if category not in MODEL_CATEGORIES:
@@ -654,6 +707,51 @@ async def generate(
                 namespace=user_id,
             )
             assets.append(UploadedAsset(filename=image["filename"], url=url))
+
+            # Extract key from url
+            rel_key = url.split("/files/")[-1] if "/files/" in url else image["filename"]
+
+            # Prepare LoRAs list for relational DB
+            loras_list = []
+            for item in active_loras:
+                loras_list.append({
+                    "lora_name": item.get("lora", ""),
+                    "lora_model_id": item.get("model_id"),
+                    "lora_version_id": item.get("version_id"),
+                    "strength": float(item.get("strength", 1.0)),
+                })
+
+            try:
+                get_db().insert_generation(
+                    {
+                        "prompt_id": prompt_id,
+                        "user_id": user_id,
+                        "model_id": selected_model.get("model_id"),
+                        "version_id": selected_model.get("version_id"),
+                        "file_id": selected_model.get("file_id"),
+                        "filename": image["filename"],
+                        "url": url,
+                        "key": rel_key,
+                        "prompt": req.prompt,
+                        "negative_prompt": req.negative_prompt,
+                        "seed": resolved_seed,
+                        "steps": req.steps,
+                        "cfg": req.cfg,
+                        "denoise": req.denoise,
+                        "width": req.width,
+                        "height": req.height,
+                        "format_name": req.format_name,
+                        "status": "completed",
+                        "elapsed_ms": elapsed_ms,
+                        "origin": "generation",
+                        "gallery_saved": 1,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "metadata_json": json.dumps({**metadata, "source_filename": image["filename"], "user_id": user_id}),
+                    },
+                    loras_list=loras_list,
+                )
+            except Exception as exc:
+                logger.warning("Failed to record generation in relational DB: %s", exc)
     except (ComfyClientError, StorageError) as exc:
         logger.error("Post-processing error: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
@@ -972,6 +1070,23 @@ async def gallery(
     except StorageError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return GalleryResponse(items=items)
+
+
+@app.get("/api/v1/gallery/paginated", response_model=PaginatedGenerationsResponse)
+async def paginated_gallery(
+    page: int = 1,
+    limit: int = 20,
+    model_id: str | None = None,
+    user_id: str | None = None,
+) -> PaginatedGenerationsResponse:
+    """Return paginated gallery with relational filtering by model and user."""
+    items, total = get_db().get_paginated_generations(user_id=user_id, model_id=model_id, page=page, limit=limit)
+    return PaginatedGenerationsResponse.create(
+        items=[GenerationRecordResponse(**item) for item in items],
+        total=total,
+        page=page,
+        limit=limit,
+    )
 
 
 @app.get("/api/v1/tags", response_model=TagSummaryList)

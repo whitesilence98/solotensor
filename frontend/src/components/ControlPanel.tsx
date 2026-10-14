@@ -1536,10 +1536,10 @@ export default function ControlPanel(props: Props) {
         <div className="py-12 text-center text-xs text-[var(--ink-faint)]">
          <p>No installed basic models found in local gallery.</p>
          <Link
-          href="/models/gallery"
+          href="/models"
           className="mt-2 inline-block font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
          >
-          Explore Public Model Gallery
+          Explore Public Models
          </Link>
         </div>
        )}
@@ -1549,11 +1549,11 @@ export default function ControlPanel(props: Props) {
       <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-faint)]">
        <span>Looking for more checkpoints?</span>
        <Link
-        href="/models/gallery"
+        href="/models"
         onClick={() => setModelPickerOpen(false)}
         className="font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
        >
-        Browse Model Gallery →
+        Browse Models →
        </Link>
       </div>
      </div>
@@ -1760,7 +1760,7 @@ export default function ControlPanel(props: Props) {
           <div>
            <p>No LoRA adapters installed in your local ComfyUI gallery.</p>
            <Link
-            href="/models/gallery"
+            href="/models"
             onClick={() => setLoraPickerOpen(false)}
             className="mt-2 inline-block font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
            >
@@ -1798,7 +1798,7 @@ export default function ControlPanel(props: Props) {
       <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-faint)]">
        <span>Looking for more LoRA models?</span>
        <Link
-        href="/models/gallery"
+        href="/models"
         onClick={() => setLoraPickerOpen(false)}
         className="font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
        >
