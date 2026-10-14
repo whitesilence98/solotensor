@@ -556,6 +556,52 @@ export interface LocalModelSummary {
 
 export interface LocalModelListResponse { items: LocalModelSummary[]; }
 
+export interface GenerationLoraItem {
+  id: string;
+  lora_name: string;
+  lora_model_id?: string | null;
+  lora_version_id?: string | null;
+  strength: number;
+}
+
+export interface GenerationRecord {
+  id: string;
+  prompt_id: string;
+  user_id?: string | null;
+  model_id?: string | null;
+  version_id?: string | null;
+  file_id?: string | null;
+  filename: string;
+  url: string;
+  key: string;
+  prompt?: string | null;
+  negative_prompt?: string | null;
+  seed?: number | null;
+  steps?: number | null;
+  cfg?: number | null;
+  denoise?: number | null;
+  width?: number | null;
+  height?: number | null;
+  format_name?: string | null;
+  status: string;
+  elapsed_ms?: number | null;
+  origin: string;
+  gallery_saved: boolean;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+  model_title?: string | null;
+  loras: GenerationLoraItem[];
+}
+
+export interface PaginatedGenerations {
+  items: GenerationRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  has_more: boolean;
+}
+
 export const api = {
   async askAssistant(persona: AssistantPersona, message: string): Promise<AssistantResponse> {
     return request<AssistantResponse>("/api/v1/assist", {
@@ -600,6 +646,29 @@ export const api = {
       }));
     }
     return model;
+  },
+
+  async getModelGenerations(
+    modelId: string,
+    page = 1,
+    limit = 20,
+    versionId?: string,
+  ): Promise<PaginatedGenerations> {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (versionId) params.append("version_id", versionId);
+    const data = await request<PaginatedGenerations>(
+      `/api/v1/models/public/${encodeURIComponent(modelId)}/images?${params.toString()}`,
+    );
+    return {
+      ...data,
+      items: (data.items || []).map((item) => ({
+        ...item,
+        url: resolveMediaUrl(item.url) || item.url,
+      })),
+    };
   },
 
   async installModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
