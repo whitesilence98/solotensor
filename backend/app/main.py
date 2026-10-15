@@ -81,6 +81,7 @@ from .services.code_assistant import (
 from .services.comfy_client import ComfyClientError, get_comfy_client
 from .services.credit_service import get_credit_service
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
+from .services.redis_service import get_redis_service
 from .services.storage import StorageError, StorageService, get_storage
 from .services.tagger import TaggerError, get_tagger_service
 
@@ -93,6 +94,7 @@ storage.ensure_root()
 model_storage = get_model_service()
 model_storage.ensure_root()
 code_assistant = get_code_assistant_service(settings)
+redis_service = get_redis_service(settings)
 
 # Auto-initialize database on application startup
 db = get_db()
@@ -219,10 +221,18 @@ async def health() -> HealthResponse:
         storage_ok = True
     except StorageError:
         storage_ok = False
+
+    db_driver = "postgresql" if db.is_postgres else "sqlite"
+    redis_status = "up" if redis_service.ping() else ("disabled" if not redis_service.is_enabled else "down")
+    s3_status = "enabled" if storage.is_s3_enabled else "disabled"
+
     return HealthResponse(
         status="ok" if (comfy_ok and storage_ok) else "degraded",
         comfy="up" if comfy_ok else "down",
         storage="up" if storage_ok else "down",
+        database=db_driver,
+        redis=redis_status,
+        s3=s3_status,
     )
 
 

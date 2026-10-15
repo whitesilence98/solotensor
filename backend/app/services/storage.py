@@ -25,6 +25,31 @@ class StorageService:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
         self.root = Path(self.settings.STORAGE_DIR).resolve()
+        self.is_s3_enabled = bool(
+            self.settings.S3_ENABLED or (self.settings.S3_BUCKET and self.settings.S3_ACCESS_KEY_ID)
+        )
+        self._s3_client: Any = None
+
+    @property
+    def s3_client(self) -> Any:
+        if self._s3_client is None and self.is_s3_enabled:
+            try:
+                import boto3
+                from botocore.config import Config
+
+                self._s3_client = boto3.client(
+                    "s3",
+                    endpoint_url=self.settings.S3_ENDPOINT_URL,
+                    aws_access_key_id=self.settings.S3_ACCESS_KEY_ID,
+                    aws_secret_access_key=self.settings.S3_SECRET_ACCESS_KEY,
+                    region_name=self.settings.S3_REGION or "auto",
+                    config=Config(signature_version="s3v4"),
+                )
+                logger.info("Initialized S3/R2 client for bucket %s", self.settings.S3_BUCKET)
+            except Exception as exc:
+                logger.warning("Could not initialize S3 client: %s", exc)
+                self._s3_client = None
+        return self._s3_client
 
     def ensure_root(self) -> Path:
         try:
@@ -34,6 +59,12 @@ class StorageService:
         return self.root
 
     def _file_url(self, key: str) -> str:
+        if self.is_s3_enabled:
+            if self.settings.S3_PUBLIC_BASE_URL:
+                return f"{self.settings.S3_PUBLIC_BASE_URL.rstrip('/')}/{key}"
+            if self.settings.S3_ENDPOINT_URL:
+                return f"{self.settings.S3_ENDPOINT_URL.rstrip('/')}/{self.settings.S3_BUCKET}/{key}"
+            return f"https://{self.settings.S3_BUCKET}.s3.amazonaws.com/{key}"
         return f"{self.settings.FILES_PUBLIC_BASE}/files/{key}"
 
     @staticmethod
@@ -86,6 +117,26 @@ class StorageService:
         except (OSError, ValueError) as exc:
             raise StorageError(f"Write failed for {dest}: {exc}") from exc
         logger.info("Saved %s (%d bytes, %s)", dest, len(data), content_type)
+
+        if self.is_s3_enabled and self.s3_client:
+            try:
+                self.s3_client.put_object(
+                    Bucket=self.settings.S3_BUCKET,
+                    Key=key,
+                    Body=data,
+                    ContentType=content_type,
+                )
+                if metadata is not None:
+                    self.s3_client.put_object(
+                        Bucket=self.settings.S3_BUCKET,
+                        Key=f"{key}.json",
+                        Body=json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8"),
+                        ContentType="application/json",
+                    )
+                logger.info("Uploaded %s to S3 bucket %s", key, self.settings.S3_BUCKET)
+            except Exception as exc:
+                logger.error("Failed to upload to S3 (%s): %s", key, exc)
+
         return self._file_url(key)
 
     async def upload_image(self, data: bytes, prompt_id: str, filename: str = "image.png", content_type: str = "image/png", metadata: Optional[dict] = None, namespace: str | None = None) -> str:
@@ -239,6 +290,14 @@ class StorageService:
             pass
 
         logger.info("Deleted asset %s", key)
+
+        if self.is_s3_enabled and self.s3_client:
+            try:
+                self.s3_client.delete_object(Bucket=self.settings.S3_BUCKET, Key=key)
+                self.s3_client.delete_object(Bucket=self.settings.S3_BUCKET, Key=f"{key}.json")
+            except Exception as exc:
+                logger.warning("Could not delete %s from S3: %s", key, exc)
+
         return True
 
     def purge_prompt(self, prompt_id: str) -> int:

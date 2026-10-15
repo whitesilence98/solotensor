@@ -240,6 +240,9 @@ class HealthResponse(BaseModel):
     status: str
     comfy: str
     storage: str
+    database: Optional[str] = "sqlite"
+    redis: Optional[str] = "disabled"
+    s3: Optional[str] = "disabled"
 
 
 class ToolMode(str, Enum):

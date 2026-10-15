@@ -1,20 +1,72 @@
+# Python & Bytecode
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Virtual Environments
 .venv/
 venv/
+ENV/
+env/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# SQLite Databases & WAL files
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Node & Next.js
 node_modules/
 .next/
+out/
+build/
 dist/
 *.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-.claude/
-.agent/
+# AI Models & Large Weights
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.gguf
 
-# Generated assets and creator uploads
+# Generated Assets & Creator Uploads
 backend/generated/
+generated/
 backend/models/
+models/
 backend/tool_data/
 tool_data/
 *.zip
-*.db
+*.tar.gz
+
+# IDE & OS Metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# Agent & Skill Metadata
+.claude/
+.agent/
+.gemini/
+.impeccable/

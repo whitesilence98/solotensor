@@ -54,13 +54,26 @@ class Settings(BaseSettings):
     UPLOAD_MAX_BYTES: int = 10 * 1024 * 1024
 
     # --- Database & Authentication ---------------------------------------
-    DB_PATH: str = "solotensor.db"
+    DATABASE_URL: str | None = None       # e.g. postgresql://user:pass@host:5432/dbname (Supabase/Neon)
+    DB_PATH: str = "solotensor.db"        # SQLite fallback if DATABASE_URL is not set
     AUTH_PROVIDER: str = "local"
     JWT_SECRET: str = "solotensor-jwt-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
     DEFAULT_DAILY_CREDITS: int = 100
     DEFAULT_GENERATION_COST: int = 2
+
+    # --- Redis & Task Queue (Phase 2) -----------------------------------
+    REDIS_URL: str | None = None          # e.g. rediss://default:...@...upstash.io:6379
+
+    # --- Hybrid S3 / Cloudflare R2 Storage (Phase 2) -------------------
+    S3_ENABLED: bool = False
+    S3_BUCKET: str | None = None
+    S3_ENDPOINT_URL: str | None = None    # e.g. https://<account_id>.r2.cloudflarestorage.com
+    S3_ACCESS_KEY_ID: str | None = None
+    S3_SECRET_ACCESS_KEY: str | None = None
+    S3_REGION: str = "auto"
+    S3_PUBLIC_BASE_URL: str | None = None # e.g. https://pub-<hash>.r2.dev or custom CDN domain
 
     # --- Email & Verification --------------------------------------------
     FRONTEND_URL: str = "http://localhost:3000"
@@ -91,6 +104,14 @@ class Settings(BaseSettings):
     def origin_regex(self) -> str | None:
         regex = self.ALLOWED_ORIGIN_REGEX.strip()
         return regex or None
+
+    @property
+    def effective_database_url(self) -> str | None:
+        import sys
+
+        if "unittest" in sys.modules or "pytest" in sys.modules:
+            return None
+        return self.DATABASE_URL
 
 
 @lru_cache

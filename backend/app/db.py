@@ -16,28 +16,88 @@ from fastapi import Depends
 logger = logging.getLogger("solotensor.db")
 
 
+class PostgresConnectionWrapper:
+    """Wraps a psycopg Connection to provide a sqlite3-compatible execute API."""
+
+    def __init__(self, pg_conn: Any) -> None:
+        self.conn = pg_conn
+
+    def execute(self, sql: str, params: tuple | list = ()) -> Any:
+        clean_sql = sql.strip()
+        if clean_sql.upper().startswith("BEGIN IMMEDIATE"):
+            sql = "BEGIN;"
+        pg_sql = sql.replace("?", "%s")
+        cursor = self.conn.cursor()
+        cursor.execute(pg_sql, params)
+        return cursor
+
+    def commit(self) -> None:
+        if not getattr(self.conn, "autocommit", False):
+            self.conn.commit()
+
+    def rollback(self) -> None:
+        if not getattr(self.conn, "autocommit", False):
+            self.conn.rollback()
+
+    def close(self) -> None:
+        self.conn.close()
+
+
 class Database:
-    """SQLite Database manager for SoloTensor local-first storage."""
+    """Unified Database manager for SoloTensor local SQLite and cloud PostgreSQL storage."""
 
     def __init__(self, db_path: Optional[str | Path] = None, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
+        self.explicit_db_path = db_path is not None
         raw_path = db_path or self.settings.DB_PATH
         path = Path(raw_path)
         if not path.is_absolute():
-            # Resolve relative to backend root directory
             backend_root = Path(__file__).parent.parent.resolve()
             path = (backend_root / path).resolve()
         self.db_path = path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def is_postgres(self) -> bool:
+        if self.explicit_db_path:
+            return False
+        db_url = getattr(self.settings, "effective_database_url", self.settings.DATABASE_URL)
+        return bool(
+            db_url
+            and (
+                db_url.startswith("postgres://")
+                or db_url.startswith("postgresql://")
+            )
+        )
+
     @contextmanager
-    def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
-        """Provide a SQLite connection configured with Row factory and WAL mode."""
+    def get_connection(self) -> Generator[Any, None, None]:
+        """Provide a connection configured with Row/dict factory and autocommit."""
+        if self.is_postgres:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+
+                conn_url = getattr(self.settings, "effective_database_url", self.settings.DATABASE_URL)
+                pg_conn = psycopg.connect(conn_url, row_factory=dict_row, autocommit=True, connect_timeout=4)
+                wrapped = PostgresConnectionWrapper(pg_conn)
+                try:
+                    yield wrapped
+                finally:
+                    wrapped.close()
+                return
+            except Exception as exc:
+                logger.warning(
+                    "PostgreSQL connection failed (%s). Falling back to local SQLite (%s).",
+                    exc,
+                    self.db_path,
+                )
+
         conn = sqlite3.connect(
             str(self.db_path),
             check_same_thread=False,
             timeout=30.0,
-            isolation_level=None,  # Autocommit mode; transactions managed via BEGIN/COMMIT
+            isolation_level=None,
         )
         conn.row_factory = sqlite3.Row
         try:
@@ -60,19 +120,26 @@ class Database:
                     hashed_password TEXT NOT NULL,
                     role TEXT DEFAULT 'creator',
                     is_verified INTEGER DEFAULT 0,
+                    avatar_url TEXT,
+                    bio TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
-            # Auto-migrate columns if users table already existed
-            cursor = conn.execute("PRAGMA table_info(users);")
-            cols = [r["name"] for r in cursor.fetchall()]
-            if "is_verified" not in cols:
-                conn.execute("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0;")
-            if "avatar_url" not in cols:
-                conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
-            if "bio" not in cols:
-                conn.execute("ALTER TABLE users ADD COLUMN bio TEXT;")
+            is_pg = isinstance(conn, PostgresConnectionWrapper)
+            if is_pg:
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified INTEGER DEFAULT 0;")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
+            else:
+                cursor = conn.execute("PRAGMA table_info(users);")
+                cols = [r["name"] for r in cursor.fetchall()]
+                if "is_verified" not in cols:
+                    conn.execute("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0;")
+                if "avatar_url" not in cols:
+                    conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
+                if "bio" not in cols:
+                    conn.execute("ALTER TABLE users ADD COLUMN bio TEXT;")
 
             conn.execute(
                 """
@@ -188,7 +255,7 @@ class Database:
                     model_id TEXT NOT NULL,
                     version_id TEXT NOT NULL,
                     filename TEXT NOT NULL,
-                    size INTEGER NOT NULL,
+                    size BIGINT NOT NULL,
                     sha256 TEXT,
                     precision TEXT,
                     visible INTEGER DEFAULT 1,
@@ -212,7 +279,7 @@ class Database:
                     key TEXT NOT NULL UNIQUE,
                     prompt TEXT,
                     negative_prompt TEXT,
-                    seed INTEGER,
+                    seed BIGINT,
                     steps INTEGER,
                     cfg REAL,
                     denoise REAL,
@@ -259,7 +326,10 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_generations_key ON generations(key);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_loras_generation_id ON generation_loras(generation_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_loras_model_id ON generation_loras(lora_model_id);")
-            logger.info("Initialized SoloTensor SQLite schema at %s", self.db_path)
+            if is_pg:
+                logger.info("Initialized SoloTensor PostgreSQL schema from DATABASE_URL")
+            else:
+                logger.info("Initialized SoloTensor SQLite schema at %s", self.db_path)
 
     # --- User operations ----------------------------------------------------
 
