@@ -14,6 +14,7 @@ import {
 import { api, type GalleryItem, type GenerationRecord } from "@/lib/api";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetCard from "@/components/AssetCard";
 
 export interface ModelGenerationsGridProps {
   modelId: string;
@@ -250,64 +251,13 @@ export default function ModelGenerationsGrid({
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
             {items.map((item, index) => (
-              <div
-                key={item.id}
-                onClick={() => openAsset(galleryItems[index])}
-                className="group relative aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
-              >
-                {/* Image Media with zero CLS */}
-                <img
-                  src={item.url}
-                  alt={item.prompt || item.filename}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-
-                {/* Bottom Scrim */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 via-55% to-transparent opacity-80 group-hover:opacity-95 transition-opacity duration-300" />
-
-                {/* Floating Top Seed / Specs Badge */}
-                <div className="absolute top-2.5 left-2.5 z-10 flex flex-wrap gap-1">
-                  {item.seed !== undefined && item.seed !== null && (
-                    <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90">
-                      #{String(item.seed).slice(0, 6)}
-                    </span>
-                  )}
-                  {item.steps && (
-                    <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--accent)]">
-                      {item.steps}st
-                    </span>
-                  )}
-                </div>
-
-                {/* Hover / Overlay Details Bottom */}
-                <div className="absolute inset-x-0 bottom-0 z-10 p-3 space-y-1.5">
-                  <p className="font-mono text-[11px] font-medium text-white/90 line-clamp-2 leading-snug drop-shadow-sm">
-                    {item.prompt || item.filename}
-                  </p>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="font-mono text-[9px] text-white/60">
-                      {item.width && item.height ? `${item.width}×${item.height}` : "View specs"}
-                    </span>
-
-                    <Link
-                      href={`/?model_id=${encodeURIComponent(
-                        item.model_id || modelId,
-                      )}${item.prompt ? `&prompt=${encodeURIComponent(item.prompt)}` : ""}${
-                        item.seed !== undefined && item.seed !== null
-                          ? `&seed=${item.seed}`
-                          : ""
-                      }`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 rounded bg-[var(--accent)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-sm"
-                    >
-                      <Zap className="h-2.5 w-2.5 fill-current" />
-                      <span>Remix</span>
-                    </Link>
-                  </div>
-                </div>
-              </div>
+              <AssetCard
+                key={item.id || galleryItems[index].key}
+                asset={galleryItems[index]}
+                aspectRatio="3/4"
+                remixModelId={modelId}
+                onOpen={() => openAsset(galleryItems[index])}
+              />
             ))}
           </div>
 

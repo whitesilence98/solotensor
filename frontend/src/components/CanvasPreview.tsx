@@ -25,7 +25,7 @@ import {
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import CreditPill from "@/components/CreditPill";
-import { formatBytes } from "@/components/AssetCard";
+import AssetCard, { formatBytes } from "@/components/AssetCard";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
@@ -144,52 +144,6 @@ function ComparisonSlider({ before, after }: { before: string; after: string }) 
  );
 }
 
-function CanvasGridCard({
- item,
- promptText,
- onClick,
-}: {
- item: GalleryItem;
- promptText: string;
- onClick: () => void;
-}) {
- const [isLoaded, setIsLoaded] = useState(false);
- const mediaUrl = resolveMediaUrl(item.url) || item.url;
-
- return (
-  <div
-   onClick={onClick}
-   onKeyDown={(event) => {
-    if (event.key === "Enter" || event.key === " ") {
-     event.preventDefault();
-     onClick();
-    }
-   }}
-   role="button"
-   tabIndex={0}
-   className="media-frame group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-[var(--overlay)] shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] focus-visible:-translate-y-0.5 hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)]"
-   style={{ aspectRatio: "1 / 1" }}
-  >
-   {/* Underlying Shimmer Placeholder */}
-   <div
-    className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-     isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-    }`}
-   />
-   {/* Full-Bleed Media with smooth progressive hydration */}
-   {/* eslint-disable-next-line @next/next/no-img-element */}
-   <img
-    src={mediaUrl}
-    alt={promptText}
-    loading="lazy"
-    onLoad={() => setIsLoaded(true)}
-    className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
-     isLoaded ? "opacity-100" : "opacity-0"
-    }`}
-   />
-  </div>
- );
-}
 
 function CanvasListCard({
  item,
@@ -580,11 +534,12 @@ export default function CanvasPreview(props: Props) {
        }
 
        return (
-        <CanvasGridCard
+        <AssetCard
          key={item.key}
-         item={item}
-         promptText={promptText}
-         onClick={() => openAsset(item)}
+         asset={item}
+         aspectRatio="1/1"
+         onOpen={() => openAsset(item)}
+         onDelete={onDeleteOutput ? () => onDeleteOutput(item.key) : undefined}
         />
        );
       })}

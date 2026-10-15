@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -24,8 +24,10 @@ import {
   XCircle,
   Play,
 } from "lucide-react";
-import { api, type CreatorModel, type CreatorModelFile } from "@/lib/api";
+import { api, type CreatorModel, type CreatorModelFile, type GalleryItem } from "@/lib/api";
 import ModelGenerationsGrid from "@/components/ModelGenerationsGrid";
+import WorkspaceModal from "@/components/WorkspaceModal";
+import AssetInspectionStage from "@/components/AssetInspectionStage";
 
 interface CommentItem {
   id: string;
@@ -88,6 +90,7 @@ export default function PublicModelDetailPage({
       likes: 9,
     },
   ]);
+  const [selectedSample, setSelectedSample] = useState<GalleryItem | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -153,6 +156,53 @@ export default function PublicModelDetailPage({
   const activeFiles =
     activeVersion?.files.filter((f) => f.visible) || [];
   const primaryFile = activeFiles[0] || activeVersion?.files[0];
+
+  const sampleItems: GalleryItem[] = useMemo(() => {
+    if (!model) return [];
+    return model.versions.flatMap((version) =>
+      version.samples.map((sample) => ({
+        key: sample.filename || sample.sample_id,
+        url: sample.url,
+        size: 0,
+        last_modified: version.created_at || "",
+        metadata: {
+          prompt_id: sample.sample_id,
+          created_at: version.created_at || "",
+          elapsed_ms: 0,
+          prompt:
+            typeof sample.metadata?.prompt === "string"
+              ? sample.metadata.prompt
+              : sample.filename,
+          negative_prompt:
+            typeof sample.metadata?.negative_prompt === "string"
+              ? sample.metadata.negative_prompt
+              : undefined,
+          seed:
+            typeof sample.metadata?.seed === "number"
+              ? sample.metadata.seed
+              : undefined,
+          steps:
+            typeof sample.metadata?.steps === "number"
+              ? sample.metadata.steps
+              : undefined,
+          cfg:
+            typeof sample.metadata?.cfg === "number"
+              ? sample.metadata.cfg
+              : undefined,
+          width:
+            typeof sample.metadata?.width === "number"
+              ? sample.metadata.width
+              : undefined,
+          height:
+            typeof sample.metadata?.height === "number"
+              ? sample.metadata.height
+              : undefined,
+          model_id: model.model_id,
+          model_title: model.title,
+        },
+      }))
+    );
+  }, [model]);
 
   const install = async (
     file: CreatorModelFile,
@@ -532,15 +582,42 @@ export default function PublicModelDetailPage({
                 </div>
 
                 {/* Inspect Action */}
-                <a
-                  href={activeSample.url}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    const found = sampleItems.find(
+                      (s) =>
+                        s.url === activeSample.url ||
+                        s.key === activeSample.filename ||
+                        s.key === activeSample.sample_id,
+                    );
+                    if (found) {
+                      setSelectedSample(found);
+                    } else {
+                      setSelectedSample({
+                        key: activeSample.filename || activeSample.sample_id,
+                        url: activeSample.url,
+                        size: 0,
+                        last_modified: "",
+                        metadata: {
+                          prompt_id: activeSample.sample_id,
+                          created_at: "",
+                          elapsed_ms: 0,
+                          prompt:
+                            typeof activeSample.metadata?.prompt === "string"
+                              ? activeSample.metadata.prompt
+                              : activeSample.filename,
+                          model_id: model.model_id,
+                          model_title: model.title,
+                        },
+                      });
+                    }
+                  }}
                   className="absolute bottom-3 right-3 rounded-md border border-[var(--line)] bg-black/70 p-2 text-[var(--ink)] backdrop-blur-md transition hover:bg-black/90 hover:text-[var(--accent)]"
-                  title="View full resolution"
+                  title="Inspect sample"
                 >
                   <Maximize2 className="h-4 w-4" />
-                </a>
+                </button>
               </div>
 
               {/* Next Slide (Peeking Right) */}
@@ -1104,6 +1181,24 @@ export default function PublicModelDetailPage({
           </aside>
         </div>
       </div>
+
+      <WorkspaceModal
+        open={Boolean(selectedSample)}
+        onClose={() => setSelectedSample(null)}
+        headless
+        size="media"
+      >
+        {selectedSample && (
+          <AssetInspectionStage
+            mode="modal"
+            asset={selectedSample}
+            items={sampleItems}
+            currentIndex={sampleItems.findIndex((a) => a.key === selectedSample.key)}
+            onSelectAsset={(asset) => setSelectedSample(asset)}
+            onClose={() => setSelectedSample(null)}
+          />
+        )}
+      </WorkspaceModal>
     </main>
   );
 }

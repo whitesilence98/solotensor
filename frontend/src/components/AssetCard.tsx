@@ -1,16 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Bookmark,
   Box,
   Download,
   Play,
   Trash2,
+  Zap,
 } from "lucide-react";
-import { resolveMediaUrl, type AssetRecord } from "@/lib/api";
+import {
+  resolveMediaUrl,
+  type AssetRecord,
+  type GalleryItem,
+} from "@/lib/api";
+import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
-/* Deterministic pseudo-aspect from the key so demo/3D cards vary naturally. */
+/* Deterministic pseudo-aspect from key so unspecified items vary naturally with zero CLS */
 function aspectFromKey(key: string): { w: number; h: number } {
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
@@ -27,174 +34,73 @@ export function formatBytes(size: number): string {
   return `${size} B`;
 }
 
-/* ------------------------------------------------------------------ */
-/* Shared bits                                                         */
-/* ------------------------------------------------------------------ */
+function getAssetType(asset: AssetRecord | GalleryItem): "image" | "video" | "3d" {
+  if ("type" in asset && asset.type) {
+    return asset.type;
+  }
+  const key = (asset.key || "").toLowerCase();
+  if (key.endsWith(".mp4") || key.endsWith(".webm") || key.endsWith(".mov")) {
+    return "video";
+  }
+  if (key.endsWith(".glb") || key.endsWith(".gltf") || key.endsWith(".obj")) {
+    return "3d";
+  }
+  return "image";
+}
 
 const QUICK_BTN =
-  "flex h-8 w-8 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/80 " +
-  "backdrop-blur-md transition hover:border-white/40 hover:bg-black/70 hover:text-white active:scale-95 " +
+  "flex h-7 w-7 items-center justify-center rounded-lg border border-white/20 bg-black/50 text-white/80 " +
+  "backdrop-blur-md transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
 
 const DANGER_BTN =
-  "flex h-8 w-8 items-center justify-center rounded-lg border border-white/20 bg-black/40 text-white/70 " +
-  "backdrop-blur-md transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)] hover:text-white active:scale-95 " +
+  "flex h-7 w-7 items-center justify-center rounded-lg border border-white/20 bg-black/50 text-white/70 " +
+  "backdrop-blur-md transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-[var(--danger)] hover:bg-[var(--danger)] hover:text-white active:scale-95 " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--danger)]";
 
-interface QuickActionsProps {
-  saved: boolean;
-  onBookmark: () => void;
-  onDownload: () => void;
+export interface AssetCardProps {
+  asset: AssetRecord | GalleryItem;
+  saved?: boolean;
+  onBookmark?: () => void;
+  onOpen: () => void;
   onDelete?: () => void;
+  aspectRatio?: string; // e.g. "3/4", "1/1", or "natural"
+  showRemix?: boolean; // default: true
+  remixModelId?: string; // optional override for model context
 }
 
-function QuickActions({ saved, onBookmark, onDownload, onDelete }: QuickActionsProps) {
-  return (
-    <div className="absolute right-3 top-3 z-20 flex gap-1.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-      <button
-        type="button"
-        aria-label={saved ? "Remove bookmark" : "Bookmark asset"}
-        aria-pressed={saved}
-        onClick={(e) => {
-          e.stopPropagation();
-          onBookmark();
-        }}
-        className={QUICK_BTN}
-      >
-        <Bookmark
-          className="h-3.5 w-3.5"
-          fill={saved ? "currentColor" : "none"}
-        />
-      </button>
-      <button
-        type="button"
-        aria-label="Download asset"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDownload();
-        }}
-        className={QUICK_BTN}
-      >
-        <Download className="h-3.5 w-3.5" />
-      </button>
-      {onDelete && (
-        <button
-          type="button"
-          aria-label="Delete asset"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className={DANGER_BTN}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Image card                                                          */
-/* ------------------------------------------------------------------ */
-
-function ImageCard({
+export default function AssetCard({
   asset,
-  saved,
+  saved = false,
   onBookmark,
   onOpen,
   onDelete,
-}: {
-  asset: AssetRecord;
-  saved: boolean;
-  onBookmark: () => void;
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
+  aspectRatio,
+  showRemix = true,
+  remixModelId,
+}: AssetCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
-  const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
-  const download = useCallback(() => {
-    const a = document.createElement("a");
-    a.href = mediaUrl;
-    a.download = asset.key.split("/").pop() ?? "asset.png";
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.click();
-  }, [mediaUrl, asset.key]);
-
-  const filename = asset.key.split("/").pop() ?? asset.key;
-  const title = asset.metadata?.prompt || filename;
-
-  return (
-    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
-      <button type="button" onClick={onOpen} aria-label={`Open ${asset.key}`} className="block w-full cursor-zoom-in text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-        {/* Underlying Shimmer Placeholder */}
-        <div
-          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-          }`}
-        />
-
-        {/* Full-Bleed Media with smooth progressive hydration */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={mediaUrl}
-          alt={asset.key}
-          loading="lazy"
-          onLoad={() => setIsLoaded(true)}
-          className={`w-full object-cover transition-opacity duration-300 ease-out ${
-            isLoaded ? "opacity-100" : "opacity-0"
-          }`}
-        />
-
-        {/* Atmospheric Bottom Gradient Scrim */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
-
-        {/* Bottom Typography Overlay */}
-        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
-          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
-            {title}
-          </h3>
-          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
-            {asset.metadata?.model_title || "Visual output"}
-          </p>
-        </div>
-      </button>
-      <QuickActions saved={saved} onBookmark={onBookmark} onDownload={download} onDelete={onDelete} />
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Video card                                                          */
-/* ------------------------------------------------------------------ */
-
-function VideoCard({
-  asset,
-  saved,
-  onBookmark,
-  onOpen,
-  onDelete,
-}: {
-  asset: AssetRecord;
-  saved: boolean;
-  onBookmark: () => void;
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const { w, h } = aspectFromKey(asset.key);
-  const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
-  const download = useCallback(() => {
-    const a = document.createElement("a");
-    a.href = mediaUrl;
-    a.download = asset.key.split("/").pop() ?? "asset.mp4";
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.click();
-  }, [mediaUrl, asset.key]);
-
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  const [persistedBookmarks, setPersistedBookmarks] = usePersistentState<string[]>(
+    STORAGE_KEYS.ASSETS_BOOKMARKS,
+    []
+  );
+
+  const isControlledBookmark = onBookmark !== undefined;
+  const isSaved = isControlledBookmark
+    ? Boolean(saved)
+    : persistedBookmarks.includes(asset.key);
+
+  const handleBookmarkToggle = useCallback(() => {
+    if (isControlledBookmark) {
+      onBookmark();
+    } else {
+      setPersistedBookmarks((prev) =>
+        prev.includes(asset.key) ? prev.filter((k) => k !== asset.key) : [...prev, asset.key]
+      );
+    }
+  }, [isControlledBookmark, onBookmark, setPersistedBookmarks, asset.key]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -204,134 +110,208 @@ function VideoCard({
     return () => media.removeEventListener("change", update);
   }, []);
 
-  const filename = asset.key.split("/").pop() ?? asset.key;
-  const title = asset.metadata?.prompt || filename;
-
-  return (
-    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
-      <button type="button" onClick={onOpen} aria-label={`Open video ${asset.key}`} className="block w-full cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-        <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
-          {/* Underlying Shimmer Placeholder */}
-          <div
-            className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-              isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-            }`}
-          />
-          <video
-            src={mediaUrl}
-            aria-label={asset.key}
-            autoPlay={!reduceMotion}
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            onLoadedData={() => setIsLoaded(true)}
-            className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        </div>
-
-        {/* Top-left Video Tag */}
-        <div className="absolute left-3 top-3 z-10 pointer-events-none">
-          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur-md">
-            <Play className="h-2.5 w-2.5 text-[var(--accent)]" fill="currentColor" />
-            <span>Motion</span>
-          </span>
-        </div>
-
-        {/* Atmospheric Bottom Gradient Scrim */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
-
-        {/* Bottom Typography Overlay */}
-        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
-          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
-            {title}
-          </h3>
-          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
-            {asset.metadata?.model_title || "Video animation"}
-          </p>
-        </div>
-      </button>
-      <QuickActions saved={saved} onBookmark={onBookmark} onDownload={download} onDelete={onDelete} />
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 3D card                                                             */
-/* ------------------------------------------------------------------ */
-
-function ModelCard({ asset, onOpen }: { asset: AssetRecord; onOpen: () => void }) {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const { w, h } = aspectFromKey(asset.key);
+  const type = getAssetType(asset);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
-  const filename = asset.key.split("/").pop() ?? asset.key;
+
+  // Resolve aspect ratio deterministically to prevent CLS
+  const computedAspect = useMemo(() => {
+    if (aspectRatio && aspectRatio !== "natural") {
+      return aspectRatio.includes("/") ? aspectRatio : aspectRatio.replace(":", " / ");
+    }
+    const width = asset.metadata?.width;
+    const height = asset.metadata?.height;
+    if (width && height && width > 0 && height > 0) {
+      return `${width} / ${height}`;
+    }
+    const { w, h } = aspectFromKey(asset.key || "");
+    return `${w} / ${h}`;
+  }, [aspectRatio, asset.metadata?.width, asset.metadata?.height, asset.key]);
+
+  const download = useCallback(() => {
+    const a = document.createElement("a");
+    a.href = mediaUrl;
+    a.download = (asset.key || "").split("/").pop() ?? (type === "video" ? "asset.mp4" : "asset.png");
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.click();
+  }, [mediaUrl, asset.key, type]);
+
+  const filename = (asset.key || "").split("/").pop() ?? asset.key;
+  const promptText = asset.metadata?.prompt || filename;
+
+  // Metadata specs chips
+  const seed = asset.metadata?.seed;
+  const steps = asset.metadata?.steps;
+  const width = asset.metadata?.width;
+  const height = asset.metadata?.height;
+  const modelTitle = asset.metadata?.model_title;
+
+  const resolution = width && height ? `${width}×${height}` : asset.metadata?.format_name || "";
+  const specsSubtitle = modelTitle
+    ? resolution
+      ? `${modelTitle} • ${resolution}`
+      : modelTitle
+    : resolution || "Visual output";
+
+  // Build Remix Studio link
+  const effectiveModelId = remixModelId || asset.metadata?.model_id;
+  const canRemix = showRemix && (Boolean(asset.metadata?.prompt) || Boolean(effectiveModelId));
+
+  const remixHref = useMemo(() => {
+    if (!canRemix) return "/";
+    const params = new URLSearchParams();
+    if (effectiveModelId) params.set("model_id", effectiveModelId);
+    if (asset.metadata?.prompt) params.set("prompt", asset.metadata.prompt);
+    if (asset.metadata?.seed !== undefined && asset.metadata?.seed !== null) {
+      params.set("seed", String(asset.metadata.seed));
+    }
+    return `/?${params.toString()}`;
+  }, [canRemix, effectiveModelId, asset.metadata?.prompt, asset.metadata?.seed]);
 
   return (
-    <article className="group relative overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out">
-      <button type="button" onClick={onOpen} aria-label={`Open 3D asset ${asset.key}`} className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
-        <div style={{ aspectRatio: `${w} / ${h}` }} className="relative w-full">
-          {/* Underlying Shimmer Placeholder */}
+    <article className="group relative overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+      {/* Click target wrapper for stage modal */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open asset ${asset.key}`}
+        className="block w-full cursor-zoom-in text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      >
+        <div style={{ aspectRatio: computedAspect }} className="relative w-full overflow-hidden">
+          {/* Shimmer Placeholder with zero CLS */}
           <div
             className={`absolute inset-0 shimmer transition-opacity duration-300 ${
               isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
             }`}
           />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={mediaUrl}
-            alt={asset.key}
-            loading="lazy"
-            onLoad={() => setIsLoaded(true)}
-            className={`h-full w-full object-cover transition-opacity duration-300 ease-out ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        </div>
 
-        {/* Top-left 3D Tag */}
-        <div className="absolute left-3 top-3 z-10 pointer-events-none">
-          <span className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90 backdrop-blur-md">
-            <Box className="h-3 w-3" /> 3D
-          </span>
-        </div>
+          {/* Full-Bleed Media: 100% Solid Artwork at Rest */}
+          {type === "video" ? (
+            <video
+              src={mediaUrl}
+              aria-label={asset.key}
+              autoPlay={!reduceMotion}
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              onLoadedData={() => setIsLoaded(true)}
+              className={`asset-zoom-media h-full w-full object-cover ${
+                isLoaded ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={mediaUrl}
+              alt={promptText}
+              loading="lazy"
+              onLoad={() => setIsLoaded(true)}
+              className={`asset-zoom-media h-full w-full object-cover ${
+                isLoaded ? "opacity-100" : "opacity-0"
+              }`}
+            />
+          )}
 
-        {/* Atmospheric Bottom Gradient Scrim */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
-
-        {/* Bottom Typography Overlay */}
-        <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-5 pointer-events-none">
-          <h3 className="truncate text-base sm:text-lg font-bold tracking-tight text-white drop-shadow-sm">
-            {filename}
-          </h3>
-          <p className="mt-0.5 truncate text-[11px] sm:text-xs font-medium text-white/70 drop-shadow-sm">
-            3D Spatial Model
-          </p>
+          {/* Atmospheric Bottom Gradient Scrim (Smooth fade-in on hover/focus) */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 via-55% to-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 ease-out" />
         </div>
       </button>
+
+      {/* Floating Top Header Bar (Smooth fade and slide-down on hover) */}
+      <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between p-2.5 opacity-0 -translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
+        {/* Top-left Specs / Type Chips */}
+        <div className="flex flex-wrap items-center gap-1 pointer-events-auto">
+          {type === "video" && (
+            <span className="inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90">
+              <Play className="h-2.5 w-2.5 text-[var(--accent)] fill-current" />
+              <span>Motion</span>
+            </span>
+          )}
+          {type === "3d" && (
+            <span className="inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90">
+              <Box className="h-2.5 w-2.5 text-[var(--accent)]" />
+              <span>3D</span>
+            </span>
+          )}
+          {seed !== undefined && seed !== null && (
+            <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90">
+              #{String(seed).slice(0, 6)}
+            </span>
+          )}
+          {steps && (
+            <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--accent)]">
+              {steps}st
+            </span>
+          )}
+        </div>
+
+        {/* Top-right Quick Actions */}
+        <div className="flex items-center gap-1 pointer-events-auto">
+          <button
+            type="button"
+            aria-label={isSaved ? "Remove bookmark" : "Bookmark asset"}
+            aria-pressed={isSaved}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleBookmarkToggle();
+            }}
+            className={QUICK_BTN}
+          >
+            <Bookmark className="h-3 w-3" fill={isSaved ? "currentColor" : "none"} />
+          </button>
+          <button
+            type="button"
+            aria-label="Download asset"
+            onClick={(e) => {
+              e.stopPropagation();
+              download();
+            }}
+            className={QUICK_BTN}
+          >
+            <Download className="h-3 w-3" />
+          </button>
+          {onDelete && (
+            <button
+              type="button"
+              aria-label="Delete asset"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className={DANGER_BTN}
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Floating Bottom Metadata & Remix Bar (Smooth fade and float-up on hover) */}
+      <div className="absolute inset-x-0 bottom-0 z-20 p-3 space-y-1.5 opacity-0 translate-y-1.5 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
+        {/* Monospace Prompt Preview */}
+        <p className="font-mono text-[11px] font-medium text-white/95 line-clamp-2 leading-snug drop-shadow-sm pointer-events-auto">
+          {promptText}
+        </p>
+
+        {/* Footer Row: Specs & Remix CTA */}
+        <div className="flex items-center justify-between pt-0.5 pointer-events-auto">
+          <span className="font-mono text-[9px] text-white/70 truncate mr-2" title={specsSubtitle}>
+            {specsSubtitle}
+          </span>
+
+          {canRemix && (
+            <Link
+              href={remixHref}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex shrink-0 items-center gap-1 rounded bg-[var(--accent)] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-95 transition-[background-color,transform,box-shadow] duration-200 ease-out shadow-sm"
+            >
+              <Zap className="h-2.5 w-2.5 fill-current" />
+              <span>Remix</span>
+            </Link>
+          )}
+        </div>
+      </div>
     </article>
   );
-}
-
-/* ------------------------------------------------------------------ */
-/* Dispatcher                                                          */
-/* ------------------------------------------------------------------ */
-
-export default function AssetCard({
-  asset,
-  saved,
-  onBookmark,
-  onOpen,
-  onDelete,
-}: {
-  asset: AssetRecord;
-  saved: boolean;
-  onBookmark: () => void;
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
-  if (asset.type === "video") return <VideoCard asset={asset} saved={saved} onBookmark={onBookmark} onOpen={onOpen} onDelete={onDelete} />;
-  if (asset.type === "3d") return <ModelCard asset={asset} onOpen={onOpen} />;
-  return <ImageCard asset={asset} saved={saved} onBookmark={onBookmark} onOpen={onOpen} onDelete={onDelete} />;
 }

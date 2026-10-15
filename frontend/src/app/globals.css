@@ -486,6 +486,18 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .asset-card:hover .asset-veil, .asset-card:focus-within .asset-veil { opacity: 1; }
 .asset-card:hover .asset-creator, .asset-card:focus-within .asset-creator, .asset-card:hover .asset-quick, .asset-card:focus-within .asset-quick { opacity: 1; transform: translateY(0); }
 
+/* Universal Asset Card Smooth Media Zoom (1s duration) */
+.asset-zoom-media {
+  transform: scale(1) translateZ(0);
+  transition: transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  will-change: transform;
+}
+
+.group:hover .asset-zoom-media,
+.group:focus-within .asset-zoom-media {
+  transform: scale(1.06) translateZ(0);
+}
+
 @media (hover: none) {
   .asset-card .asset-quick { opacity: 1; transform: none; }
   .asset-card .asset-creator { opacity: 1; transform: none; }
