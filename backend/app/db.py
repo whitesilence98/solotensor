@@ -64,11 +64,15 @@ class Database:
                 );
                 """
             )
-            # Auto-migrate is_verified if users table already existed
+            # Auto-migrate columns if users table already existed
             cursor = conn.execute("PRAGMA table_info(users);")
             cols = [r["name"] for r in cursor.fetchall()]
             if "is_verified" not in cols:
                 conn.execute("ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0;")
+            if "avatar_url" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
+            if "bio" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN bio TEXT;")
 
             conn.execute(
                 """
@@ -109,6 +113,18 @@ class Database:
                 );
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_followers (
+                    follower_id TEXT NOT NULL,
+                    following_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (follower_id, following_id),
+                    FOREIGN KEY(follower_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(following_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                """
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);")
@@ -116,6 +132,8 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_token ON auth_tokens(token);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_otp ON auth_tokens(user_id, otp_code, token_type);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_followers_follower ON user_followers(follower_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_followers_following ON user_followers(following_id);")
 
             # --- Creator models & generations relational schema -----------------
             conn.execute(
@@ -255,15 +273,17 @@ class Database:
         role: str = "creator",
         is_verified: int = 0,
         created_at: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        bio: Optional[str] = None,
     ) -> dict[str, Any]:
         ts = created_at or datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO users (id, email, username, display_name, hashed_password, role, is_verified, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user_id, email.lower(), username, display_name, hashed_password, role, int(is_verified), ts),
+                (user_id, email.lower(), username, display_name, hashed_password, role, int(is_verified), avatar_url, bio, ts),
             )
         return {
             "id": user_id,
@@ -272,13 +292,15 @@ class Database:
             "display_name": display_name,
             "role": role,
             "is_verified": bool(is_verified),
+            "avatar_url": avatar_url,
+            "bio": bio,
             "created_at": ts,
         }
 
     def get_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, created_at FROM users WHERE id = ?",
+                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
             row = cursor.fetchone()
@@ -291,7 +313,7 @@ class Database:
     def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, created_at FROM users WHERE lower(email) = lower(?)",
+                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(email) = lower(?)",
                 (email,),
             )
             row = cursor.fetchone()
@@ -304,7 +326,7 @@ class Database:
     def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, created_at FROM users WHERE lower(username) = lower(?)",
+                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(username) = lower(?)",
                 (username,),
             )
             row = cursor.fetchone()
@@ -318,7 +340,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, email, username, display_name, hashed_password, role, is_verified, created_at
+                SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at
                 FROM users
                 WHERE lower(email) = lower(?) OR lower(username) = lower(?)
                 """,
@@ -342,6 +364,182 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed_password, user_id))
             return cursor.rowcount > 0
+
+    def update_user_profile(
+        self,
+        user_id: str,
+        display_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        bio: Optional[str] = None,
+    ) -> bool:
+        """Update display_name, avatar_url, or bio for a user."""
+        updates: list[str] = []
+        params: list[Any] = []
+        if display_name is not None:
+            updates.append("display_name = ?")
+            params.append(display_name)
+        if avatar_url is not None:
+            updates.append("avatar_url = ?")
+            params.append(avatar_url)
+        if bio is not None:
+            updates.append("bio = ?")
+            params.append(bio)
+        if not updates:
+            return False
+        params.append(user_id)
+        with self.get_connection() as conn:
+            cursor = conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", tuple(params))
+            return cursor.rowcount > 0
+
+    # --- User Social & Followers --------------------------------------------
+
+    def toggle_follow_user(self, follower_id: str, following_id: str) -> bool:
+        """Toggle follow state between follower and target user.
+
+        If record exists in user_followers, deletes it and returns False (unfollowed).
+        Else, inserts it and returns True (followed).
+        """
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            row = conn.execute(
+                "SELECT 1 FROM user_followers WHERE follower_id = ? AND following_id = ?",
+                (follower_id, following_id),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "DELETE FROM user_followers WHERE follower_id = ? AND following_id = ?",
+                    (follower_id, following_id),
+                )
+                conn.execute("COMMIT;")
+                return False
+            else:
+                conn.execute(
+                    "INSERT INTO user_followers (follower_id, following_id, created_at) VALUES (?, ?, ?)",
+                    (follower_id, following_id, datetime.now(timezone.utc).isoformat()),
+                )
+                conn.execute("COMMIT;")
+                return True
+
+    def is_following(self, follower_id: str, following_id: str) -> bool:
+        """Return True if follower_id is following following_id, False otherwise."""
+        if not follower_id or not following_id:
+            return False
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM user_followers WHERE follower_id = ? AND following_id = ?",
+                (follower_id, following_id),
+            ).fetchone()
+            return row is not None
+
+    def get_followers_count(self, user_id: str) -> int:
+        """Get total number of followers for a user."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM user_followers WHERE following_id = ?",
+                (user_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+    def get_following_count(self, user_id: str) -> int:
+        """Get total number of users followed by a user."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM user_followers WHERE follower_id = ?",
+                (user_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+    def get_user_public_profile(
+        self, username_or_id: str, viewer_id: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
+        """Fetch public profile and aggregate statistics for a creator by username or id."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, email, username, display_name, role, is_verified, avatar_url, bio, created_at
+                FROM users
+                WHERE lower(username) = lower(?) OR id = ?
+                """,
+                (username_or_id, username_or_id),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            user_data = dict(row)
+            user_id = user_data["id"]
+            username = user_data["username"]
+
+            # Aggregate statistics
+            models_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM models WHERE user_id = ? AND (visibility = 'Public' OR lower(visibility) = 'public')",
+                (user_id,),
+            ).fetchone()
+            models_count = models_row["cnt"] if models_row else 0
+
+            posts_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM generations WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            posts_count = posts_row["cnt"] if posts_row else 0
+
+            followers_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM user_followers WHERE following_id = ?",
+                (user_id,),
+            ).fetchone()
+            followers_count = followers_row["cnt"] if followers_row else 0
+
+            following_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM user_followers WHERE follower_id = ?",
+                (user_id,),
+            ).fetchone()
+            following_count = following_row["cnt"] if following_row else 0
+
+        # Tools count: scan tools definitions authored by this user
+        tools_count = 0
+        try:
+            tools_dir = Path(self.settings.TOOLS_DIR)
+            if not tools_dir.is_absolute():
+                backend_root = Path(__file__).parent.parent.resolve()
+                tools_dir = (backend_root / tools_dir).resolve()
+            definitions_dir = tools_dir / "definitions"
+            if definitions_dir.is_dir():
+                for p in definitions_dir.glob("*.json"):
+                    try:
+                        tool_data = json.loads(p.read_text(encoding="utf-8"))
+                        if isinstance(tool_data, dict):
+                            t_user = tool_data.get("user_id")
+                            t_author = tool_data.get("author_username")
+                            if (t_user and t_user == user_id) or (t_author and t_author.lower() == username.lower()):
+                                tools_count += 1
+                    except Exception:
+                        continue
+        except Exception:
+            tools_count = 0
+
+        is_following_val = False
+        if viewer_id:
+            is_following_val = self.is_following(viewer_id, user_id)
+
+        return {
+            "id": user_id,
+            "username": username,
+            "display_name": user_data.get("display_name") or username,
+            "avatar_url": user_data.get("avatar_url"),
+            "role": user_data.get("role") or "creator",
+            "bio": user_data.get("bio"),
+            "created_at": str(user_data["created_at"]),
+            "is_following": is_following_val,
+            "followers_count": followers_count,
+            "following_count": following_count,
+            "runs_count": posts_count,
+            "downloads_count": 0,
+            "likes_count": 0,
+            "stars_count": 0,
+            "tools_count": tools_count,
+            "models_count": models_count,
+            "posts_count": posts_count,
+            "workflows_count": tools_count,
+        }
 
     # --- Auth Tokens (Verification & Password Reset) ------------------------
 

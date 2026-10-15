@@ -253,6 +253,15 @@ export default function UserNavProfile() {
           {/* Navigation Links */}
           <div className="space-y-1">
             <Link
+              href={`/user/${user?.username || "riiwa"}`}
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
+            >
+              <User className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span>Public Profile</span>
+            </Link>
+
+            <Link
               href="/settings"
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"

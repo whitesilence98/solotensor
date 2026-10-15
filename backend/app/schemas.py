@@ -312,6 +312,8 @@ class CreateToolRequest(BaseModel):
     aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE
     controls: list[ToolControl] | None = None
     thumbnail_base64: str | None = None
+    user_id: str | None = None
+    author_username: str | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -332,6 +334,8 @@ class ToolSummary(BaseModel):
     has_prompt: bool
     created_at: str
     thumbnail_url: str | None = None
+    user_id: str | None = None
+    author_username: str | None = None
 
 
 class ToolDetail(ToolSummary):
@@ -503,6 +507,7 @@ class ModelCreateRequest(BaseModel):
     generation: ModelGenerationSettings = Field(default_factory=ModelGenerationSettings)
     permissions: ModelPermissions = Field(default_factory=ModelPermissions)
     visibility: ModelVisibility = ModelVisibility.PRIVATE
+    user_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -769,6 +774,8 @@ class UserResponse(BaseModel):
     email: str
     username: str
     display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
     role: str = "creator"
     is_verified: bool = False
     created_at: str
@@ -804,11 +811,41 @@ class UserMeResponse(BaseModel):
     email: str
     username: str
     display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
     role: str = "creator"
     is_verified: bool = False
     created_at: str
     credits: UserCreditsResponse
     user: Optional[UserResponse] = None
+
+
+class UserPublicProfileResponse(BaseModel):
+    id: str
+    username: str
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    role: str = "creator"
+    bio: Optional[str] = None
+    created_at: str
+    is_following: bool = False
+    followers_count: int = 0
+    following_count: int = 0
+    runs_count: int = 0
+    downloads_count: int = 0
+    likes_count: int = 0
+    stars_count: int = 0
+    tools_count: int = 0
+    models_count: int = 0
+    posts_count: int = 0
+    workflows_count: int = 0
+
+
+class UserFollowResponse(BaseModel):
+    following: bool
+    is_following: bool
+    followers_count: int
+    target_user_id: str
 
 
 class ApiKeyCreateRequest(BaseModel):

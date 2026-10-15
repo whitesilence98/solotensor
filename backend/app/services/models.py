@@ -232,6 +232,7 @@ class ModelService:
             )
         return ModelResponse(
             model_id=record["model_id"],
+            user_id=record.get("user_id"),
             title=record["title"],
             category=record["category"],
             model_type=record["model_type"],
@@ -270,10 +271,11 @@ class ModelService:
         if require_public:
             self.resolve_installed_gallery_file(*base_ids)
 
-    def create(self, payload: ModelCreateRequest) -> ModelResponse:
+    def create(self, payload: ModelCreateRequest, user_id: str | None = None) -> ModelResponse:
         model_id = uuid.uuid4().hex
         now = self._now()
         version_id = uuid.uuid4().hex
+        effective_user_id = user_id or getattr(payload, "user_id", None)
         record = {
             **payload.model_dump(mode="json"),
             "model_id": model_id,
@@ -290,6 +292,8 @@ class ModelService:
                 }
             ],
         }
+        if effective_user_id:
+            record["user_id"] = effective_user_id
         (self.root / model_id / version_id / "files").mkdir(parents=True, exist_ok=True)
         (self.root / model_id / version_id / "samples").mkdir(
             parents=True, exist_ok=True
@@ -310,12 +314,15 @@ class ModelService:
         visibility: str | None = None,
         query: str | None = None,
         public: bool = False,
+        user_id: str | None = None,
     ) -> list[ModelResponse]:
         items: list[ModelResponse] = []
         for path in self.definitions.glob("*.json"):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(record, dict):
+                    continue
+                if user_id and record.get("user_id") != user_id:
                     continue
                 if public and (
                     record.get("visibility") != "Public"
@@ -358,8 +365,8 @@ class ModelService:
         ]
         return response
 
-    def public_list(self, query: str | None = None) -> list[ModelResponse]:
-        return self.list(query=query, public=True)
+    def public_list(self, query: str | None = None, user_id: str | None = None) -> list[ModelResponse]:
+        return self.list(query=query, public=True, user_id=user_id)
 
     def resolve_installed_gallery_file(
         self,
@@ -972,3 +979,6 @@ class ModelService:
 
 def get_model_service() -> ModelService:
     return ModelService()
+
+
+ModelStorage = ModelService

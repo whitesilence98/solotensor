@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
-from .db import get_db
+from .db import Database, get_db
 from .routers.auth import router as auth_router, get_current_user, get_optional_user
 from .schemas import (
     AssistantRequest,
@@ -65,6 +65,8 @@ from .schemas import (
     ToolParseResponse,
     UploadedAsset,
     UserResponse,
+    UserPublicProfileResponse,
+    UserFollowResponse,
     GenerationRecordResponse,
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
@@ -113,6 +115,55 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(auth_router, prefix="/api/v1/auth")
+
+
+# --- Creator Profiles & Social Endpoints ------------------------------------
+
+
+@app.get("/api/v1/users/{username_or_id}", response_model=UserPublicProfileResponse)
+@app.get("/api/users/{username_or_id}", response_model=UserPublicProfileResponse)
+async def get_user_public_profile(
+    username_or_id: str,
+    viewer: Optional[UserResponse] = Depends(get_optional_user),
+    db: Database = Depends(get_db),
+) -> UserPublicProfileResponse:
+    viewer_id = viewer.id if viewer else None
+    profile = db.get_user_public_profile(username_or_id, viewer_id=viewer_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username_or_id}' not found",
+        )
+    return UserPublicProfileResponse(**profile)
+
+
+@app.post("/api/v1/users/{username_or_id}/follow", response_model=UserFollowResponse)
+@app.post("/api/users/{username_or_id}/follow", response_model=UserFollowResponse)
+async def follow_user(
+    username_or_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> UserFollowResponse:
+    target = db.get_user_by_id(username_or_id) or db.get_user_by_username(username_or_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username_or_id}' not found",
+        )
+    target_id = target["id"]
+    if target_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot follow yourself",
+        )
+    is_following = db.toggle_follow_user(follower_id=current_user.id, following_id=target_id)
+    followers_count = db.get_followers_count(target_id)
+    return UserFollowResponse(
+        following=is_following,
+        is_following=is_following,
+        followers_count=followers_count,
+        target_user_id=target_id,
+    )
 
 
 @app.on_event("startup")
@@ -230,9 +281,9 @@ async def import_local_model_file(model_id: str, version_id: str, req: LocalMode
 
 
 @app.get("/api/v1/models/public", response_model=PublicModelListResponse)
-async def list_public_models(q: str | None = None) -> PublicModelListResponse:
+async def list_public_models(q: str | None = None, user_id: str | None = None) -> PublicModelListResponse:
     items = []
-    for model in model_storage.public_list(query=q):
+    for model in model_storage.public_list(query=q, user_id=user_id):
         public_files = sum(1 for version in model.versions for item in version.files if item.visible)
         public_samples = sum(len(version.samples) for version in model.versions)
         cover = next((sample.url for version in model.versions for sample in version.samples), None)
@@ -282,14 +333,18 @@ async def install_public_model_file(model_id: str, version_id: str, file_id: str
 
 
 @app.get("/api/v1/models", response_model=ModelListResponse)
-async def list_creator_models(visibility: str | None = None, q: str | None = None) -> ModelListResponse:
-    return ModelListResponse(items=model_storage.list(visibility=visibility, query=q))
+async def list_creator_models(visibility: str | None = None, q: str | None = None, user_id: str | None = None) -> ModelListResponse:
+    return ModelListResponse(items=model_storage.list(visibility=visibility, query=q, user_id=user_id))
 
 
 @app.post("/api/v1/models", response_model=ModelResponse, status_code=status.HTTP_201_CREATED)
-async def create_creator_model(req: ModelCreateRequest) -> ModelResponse:
+async def create_creator_model(
+    req: ModelCreateRequest,
+    current_user: Optional[UserResponse] = Depends(get_optional_user),
+) -> ModelResponse:
     try:
-        return model_storage.create(req)
+        user_id = current_user.id if current_user else None
+        return model_storage.create(req, user_id=user_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -791,6 +846,9 @@ async def create_tool(
     aspect_ratio: ToolAspectRatio = Form(...),
     thumbnail: UploadFile | None = File(None),
     controls: str | None = Form(None),
+    user_id: str | None = Form(None),
+    author_username: str | None = Form(None),
+    current_user: Optional[UserResponse] = Depends(get_optional_user),
 ) -> ToolDetail:
     if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
@@ -815,6 +873,8 @@ async def create_tool(
             custom_controls = [ToolControl.model_validate(c) for c in parsed]
         except (json.JSONDecodeError, ValueError) as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid controls JSON: {exc}") from exc
+    effective_user_id = user_id or (current_user.id if current_user else None)
+    effective_author = author_username or (current_user.username if current_user else None)
     try:
         summary = get_ai_tool_service().create(
             payload,
@@ -824,6 +884,8 @@ async def create_tool(
             thumbnail_data,
             thumbnail_ext,
             custom_controls=custom_controls,
+            user_id=effective_user_id,
+            author_username=effective_author,
         )
         return get_ai_tool_service().detail(summary.tool_id)
     except AIToolError as exc:
@@ -831,7 +893,10 @@ async def create_tool(
 
 
 @app.post("/api/tools", response_model=ToolDetail)
-async def create_tool_json(req: CreateToolRequest) -> ToolDetail:
+async def create_tool_json(
+    req: CreateToolRequest,
+    current_user: Optional[UserResponse] = Depends(get_optional_user),
+) -> ToolDetail:
     """Create a tool with optional user-customized controls via JSON payload."""
     raw_workflow = req.workflow_api
     if isinstance(raw_workflow, dict):
@@ -840,6 +905,8 @@ async def create_tool_json(req: CreateToolRequest) -> ToolDetail:
         payload = raw_workflow.encode("utf-8")
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid workflow_api format")
+    effective_user_id = req.user_id or (current_user.id if current_user else None)
+    effective_author = req.author_username or (current_user.username if current_user else None)
     try:
         summary = get_ai_tool_service().create(
             payload,
@@ -847,6 +914,8 @@ async def create_tool_json(req: CreateToolRequest) -> ToolDetail:
             req.mode,
             req.aspect_ratio,
             custom_controls=req.controls,
+            user_id=effective_user_id,
+            author_username=effective_author,
         )
         return get_ai_tool_service().detail(summary.tool_id)
     except AIToolError as exc:
@@ -854,8 +923,8 @@ async def create_tool_json(req: CreateToolRequest) -> ToolDetail:
 
 
 @app.get("/api/tools", response_model=ToolCatalogResponse)
-async def list_tools() -> ToolCatalogResponse:
-    return ToolCatalogResponse(items=get_ai_tool_service().list_public())
+async def list_tools(user_id: str | None = None) -> ToolCatalogResponse:
+    return ToolCatalogResponse(items=get_ai_tool_service().list_public(user_id=user_id))
 
 
 @app.get("/api/tools/{tool_id}", response_model=ToolDetail)

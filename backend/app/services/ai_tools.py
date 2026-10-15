@@ -1071,6 +1071,8 @@ class AIToolService:
         thumbnail_data: bytes | None = None,
         thumbnail_ext: str | None = None,
         custom_controls: list[ToolControl | dict[str, Any]] | None = None,
+        user_id: str | None = None,
+        author_username: str | None = None,
     ) -> ToolSummary:
         parsed = self.parse(payload, name, require_controls=(custom_controls is None))
         record = self.get(parsed.tool_id)
@@ -1174,6 +1176,10 @@ class AIToolService:
                 "thumbnail": thumbnail_name,
             }
         )
+        if user_id is not None:
+            record["user_id"] = user_id
+        if author_username is not None:
+            record["author_username"] = author_username
         self._write_record(record)
         return self._summary(record)
 
@@ -1262,13 +1268,17 @@ class AIToolService:
             has_prompt=record.get("prompt_binding") is not None,
             created_at=record["created_at"],
             thumbnail_url=self.thumbnail_url(record["tool_id"], record),
+            user_id=record.get("user_id"),
+            author_username=record.get("author_username"),
         )
 
-    def list_public(self) -> list[ToolSummary]:
+    def list_public(self, user_id: str | None = None) -> list[ToolSummary]:
         items: list[ToolSummary] = []
         for path in self.definitions.glob("*.json"):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
+                if user_id and record.get("user_id") != user_id:
+                    continue
                 if record.get("mode") and record.get("default_aspect_ratio"):
                     items.append(self._summary(record))
             except (OSError, json.JSONDecodeError, KeyError, ValueError):
@@ -1431,11 +1441,14 @@ def get_ai_tool_service() -> AIToolService:
     return AIToolService()
 
 
+AIToolStorage = AIToolService
+
 __all__ = [
     "ASPECT_DIMENSIONS",
     "AIToolError",
     "AIToolNotFound",
     "AIToolService",
+    "AIToolStorage",
     "extract_controls",
     "get_ai_tool_service",
 ]
