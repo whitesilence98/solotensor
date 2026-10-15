@@ -196,19 +196,6 @@ export default function AssetInspectionStage({
     }
   };
 
-  const handleAppendTagToPrompt = (tagToAppend: string) => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SAVED_INPUTS_KEY) ?? "{}");
-      const currentPrompt = typeof saved.prompt === "string" ? saved.prompt : "";
-      const updatedPrompt = currentPrompt ? `${currentPrompt}, ${tagToAppend}` : tagToAppend;
-      saved.prompt = updatedPrompt;
-      localStorage.setItem(SAVED_INPUTS_KEY, JSON.stringify(saved));
-      setTagToast(`Added #${tagToAppend} to prompt`);
-      setTimeout(() => setTagToast(null), 2500);
-    } catch {
-      // ignore
-    }
-  };
 
   const meta = asset.metadata;
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
@@ -751,14 +738,6 @@ export default function AssetInspectionStage({
                       <span className="text-[var(--accent)]">#</span>
                       <span>{tag}</span>
                     </a>
-                    <button
-                      type="button"
-                      onClick={() => handleAppendTagToPrompt(tag)}
-                      title="Append to Studio prompt"
-                      className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--accent)] transition px-0.5 font-bold"
-                    >
-                      +
-                    </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(tag)}

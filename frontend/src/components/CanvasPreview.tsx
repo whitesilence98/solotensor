@@ -25,7 +25,7 @@ import {
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import CreditPill from "@/components/CreditPill";
-import AssetCard, { formatBytes } from "@/components/AssetCard";
+import AssetCardList from "@/components/AssetCardList";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
@@ -506,20 +506,19 @@ export default function CanvasPreview(props: Props) {
        Generate image
       </button>
      </section>
+    ) : viewMode === "grid" ? (
+      <AssetCardList
+       items={filteredGallery}
+       aspectRatio="natural"
+       onOpen={(item) => openAsset(item as GalleryItem)}
+       onDelete={onDeleteOutput}
+      />
     ) : (
-     /* Render Gallery Outputs with smooth cross-fade and progressive hydration */
-     <div
-      className={
-       viewMode === "grid"
-        ? "grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 animate-in fade-in duration-300 ease-out"
-        : "space-y-3 animate-in fade-in duration-300 ease-out"
-      }
-     >
-      {filteredGallery.map((item) => {
-       const meta = item.metadata;
-       const promptText = meta?.prompt ?? "Generated artwork";
+      <div className="space-y-3 animate-in fade-in duration-300 ease-out">
+       {filteredGallery.map((item) => {
+        const meta = item.metadata;
+        const promptText = meta?.prompt ?? "Generated artwork";
 
-       if (viewMode === "list") {
         return (
          <CanvasListCard
           key={item.key}
@@ -531,19 +530,8 @@ export default function CanvasPreview(props: Props) {
           copied={copiedKey === item.key}
          />
         );
-       }
-
-       return (
-        <AssetCard
-         key={item.key}
-         asset={item}
-         aspectRatio="1/1"
-         onOpen={() => openAsset(item)}
-         onDelete={onDeleteOutput ? () => onDeleteOutput(item.key) : undefined}
-        />
-       );
-      })}
-     </div>
+       })}
+      </div>
     )}
    </div>
 

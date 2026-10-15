@@ -14,7 +14,7 @@ import {
 import { api, type GalleryItem, type GenerationRecord } from "@/lib/api";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
-import AssetCard from "@/components/AssetCard";
+import AssetCardList from "@/components/AssetCardList";
 
 export interface ModelGenerationsGridProps {
   modelId: string;
@@ -193,19 +193,7 @@ export default function ModelGenerationsGrid({
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div
-              key={i}
-              className="relative aspect-[3/4] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] overflow-hidden"
-            >
-              <div
-                className="absolute inset-0 shimmer opacity-60"
-                style={{ animationDelay: `${i * 60}ms` }}
-              />
-            </div>
-          ))}
-        </div>
+        <AssetCardList loading skeletonCount={10} aspectRatio="natural" items={[]} />
       )}
 
       {/* Error Banner */}
@@ -249,17 +237,12 @@ export default function ModelGenerationsGrid({
       {/* Grid of Generation Cards */}
       {!loading && items.length > 0 && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-            {items.map((item, index) => (
-              <AssetCard
-                key={item.id || galleryItems[index].key}
-                asset={galleryItems[index]}
-                aspectRatio="3/4"
-                remixModelId={modelId}
-                onOpen={() => openAsset(galleryItems[index])}
-              />
-            ))}
-          </div>
+          <AssetCardList
+            items={galleryItems}
+            aspectRatio="natural"
+            remixModelId={modelId}
+            onOpen={(asset) => openAsset(asset as GalleryItem)}
+          />
 
           {/* Load More Button */}
           {hasMore && (

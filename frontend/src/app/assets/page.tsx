@@ -12,7 +12,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import AssetCard from "@/components/AssetCard";
+import AssetCardList from "@/components/AssetCardList";
 import EmptyState from "@/components/EmptyState";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import WorkspaceModal from "@/components/WorkspaceModal";
@@ -40,18 +40,6 @@ function formatCount(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-function AssetCardSkeleton({ index }: { index: number }) {
-  const height = 280 + ((index * 40) % 140);
-  return (
-    <div
-      style={{ height, animationDelay: `${index * 30}ms` }}
-      className="relative flex w-full flex-col justify-end overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)]"
-    >
-      {/* Background base shimmer */}
-      <div className="absolute inset-0 shimmer opacity-60" />
-    </div>
-  );
-}
 
 export default function AssetsPage() {
   const router = useRouter();
@@ -507,11 +495,7 @@ export default function AssetsPage() {
           </div>
         </div>
         {loading ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6" aria-label="Loading assets" aria-busy="true">
-            {Array.from({ length: PAGE_SIZE }).map((_, i) => (
-              <AssetCardSkeleton key={i} index={i} />
-            ))}
-          </div>
+          <AssetCardList loading skeletonCount={PAGE_SIZE} aspectRatio="natural" items={[]} />
         ) : error ? (
           <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 text-center" role="alert">
             <p className="text-sm font-medium text-[var(--danger)]">{error}</p>
@@ -526,18 +510,14 @@ export default function AssetsPage() {
           )
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 animate-in fade-in duration-300 ease-out">
-              {shown.map((asset) => (
-                <AssetCard
-                  key={asset.key}
-                  asset={asset}
-                  saved={savedKeys.has(asset.key)}
-                  onBookmark={() => toggleSaved(asset.key)}
-                  onOpen={() => openAsset(asset)}
-                  onDelete={() => setDeleteTarget(asset.key)}
-                />
-              ))}
-            </div>
+            <AssetCardList
+              items={shown}
+              aspectRatio="natural"
+              savedKeys={savedKeys}
+              onBookmark={(asset) => toggleSaved(asset.key)}
+              onOpen={(asset) => openAsset(asset as AssetRecord)}
+              onDelete={(key) => setDeleteTarget(key)}
+            />
             {filtered.length > shown.length && (
               <div className="mt-6 flex flex-col items-center gap-2 pb-4">
                 <p className="text-xs text-[var(--ink-faint)]">Showing {shown.length} of {formatCount(filtered.length)}</p>

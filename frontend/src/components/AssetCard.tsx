@@ -75,11 +75,12 @@ export default function AssetCard({
   onBookmark,
   onOpen,
   onDelete,
-  aspectRatio,
+  aspectRatio = "natural",
   showRemix = true,
   remixModelId,
 }: AssetCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [naturalAspect, setNaturalAspect] = useState<string | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
 
   const [persistedBookmarks, setPersistedBookmarks] = usePersistentState<string[]>(
@@ -118,6 +119,9 @@ export default function AssetCard({
     if (aspectRatio && aspectRatio !== "natural") {
       return aspectRatio.includes("/") ? aspectRatio : aspectRatio.replace(":", " / ");
     }
+    if (naturalAspect) {
+      return naturalAspect;
+    }
     const width = asset.metadata?.width;
     const height = asset.metadata?.height;
     if (width && height && width > 0 && height > 0) {
@@ -125,7 +129,7 @@ export default function AssetCard({
     }
     const { w, h } = aspectFromKey(asset.key || "");
     return `${w} / ${h}`;
-  }, [aspectRatio, asset.metadata?.width, asset.metadata?.height, asset.key]);
+  }, [aspectRatio, naturalAspect, asset.metadata?.width, asset.metadata?.height, asset.key]);
 
   const download = useCallback(() => {
     const a = document.createElement("a");
@@ -139,19 +143,7 @@ export default function AssetCard({
   const filename = (asset.key || "").split("/").pop() ?? asset.key;
   const promptText = asset.metadata?.prompt || filename;
 
-  // Metadata specs chips
-  const seed = asset.metadata?.seed;
-  const steps = asset.metadata?.steps;
-  const width = asset.metadata?.width;
-  const height = asset.metadata?.height;
   const modelTitle = asset.metadata?.model_title;
-
-  const resolution = width && height ? `${width}×${height}` : asset.metadata?.format_name || "";
-  const specsSubtitle = modelTitle
-    ? resolution
-      ? `${modelTitle} • ${resolution}`
-      : modelTitle
-    : resolution || "Visual output";
 
   // Build Remix Studio link
   const effectiveModelId = remixModelId || asset.metadata?.model_id;
@@ -169,7 +161,7 @@ export default function AssetCard({
   }, [canRemix, effectiveModelId, asset.metadata?.prompt, asset.metadata?.seed]);
 
   return (
-    <article className="group relative overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+    <article className="group relative overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
       {/* Click target wrapper for stage modal */}
       <button
         type="button"
@@ -180,9 +172,8 @@ export default function AssetCard({
         <div style={{ aspectRatio: computedAspect }} className="relative w-full overflow-hidden">
           {/* Shimmer Placeholder with zero CLS */}
           <div
-            className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-              isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-            }`}
+            className={`absolute inset-0 shimmer transition-opacity duration-300 ${isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+              }`}
           />
 
           {/* Full-Bleed Media: 100% Solid Artwork at Rest */}
@@ -195,10 +186,16 @@ export default function AssetCard({
               loop
               playsInline
               preload="metadata"
+              onLoadedMetadata={(e) => {
+                setIsLoaded(true);
+                const vid = e.currentTarget;
+                if (vid.videoWidth && vid.videoHeight) {
+                  setNaturalAspect(`${vid.videoWidth} / ${vid.videoHeight}`);
+                }
+              }}
               onLoadedData={() => setIsLoaded(true)}
-              className={`asset-zoom-media h-full w-full object-cover ${
-                isLoaded ? "opacity-100" : "opacity-0"
-              }`}
+              className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
+                }`}
             />
           ) : (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -206,15 +203,17 @@ export default function AssetCard({
               src={mediaUrl}
               alt={promptText}
               loading="lazy"
-              onLoad={() => setIsLoaded(true)}
-              className={`asset-zoom-media h-full w-full object-cover ${
-                isLoaded ? "opacity-100" : "opacity-0"
-              }`}
+              onLoad={(e) => {
+                setIsLoaded(true);
+                const img = e.currentTarget;
+                if (img.naturalWidth && img.naturalHeight) {
+                  setNaturalAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
+                }
+              }}
+              className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
+                }`}
             />
           )}
-
-          {/* Atmospheric Bottom Gradient Scrim (Smooth fade-in on hover/focus) */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 via-55% to-transparent opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 ease-out" />
         </div>
       </button>
 
@@ -232,16 +231,6 @@ export default function AssetCard({
             <span className="inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90">
               <Box className="h-2.5 w-2.5 text-[var(--accent)]" />
               <span>3D</span>
-            </span>
-          )}
-          {seed !== undefined && seed !== null && (
-            <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90">
-              #{String(seed).slice(0, 6)}
-            </span>
-          )}
-          {steps && (
-            <span className="rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--accent)]">
-              {steps}st
             </span>
           )}
         </div>
@@ -294,11 +283,15 @@ export default function AssetCard({
           {promptText}
         </p>
 
-        {/* Footer Row: Specs & Remix CTA */}
+        {/* Footer Row: Model Title & Remix CTA */}
         <div className="flex items-center justify-between pt-0.5 pointer-events-auto">
-          <span className="font-mono text-[9px] text-white/70 truncate mr-2" title={specsSubtitle}>
-            {specsSubtitle}
-          </span>
+          {modelTitle ? (
+            <span className="font-mono text-[9px] text-white/70 truncate mr-2" title={modelTitle}>
+              {modelTitle}
+            </span>
+          ) : (
+            <span />
+          )}
 
           {canRemix && (
             <Link
