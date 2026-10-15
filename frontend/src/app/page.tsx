@@ -439,6 +439,7 @@ export default function StudioPage() {
                 modelId: target.model_id,
                 versionId: target.version_id,
                 fileId: target.file_id,
+                thumbnailUrl: target.cover_url,
               };
               return [...prev, newLora];
             });
@@ -512,6 +513,7 @@ export default function StudioPage() {
           modelId: l.model_id || matched?.model_id,
           versionId: l.version_id || matched?.version_id,
           fileId: l.file_id || matched?.file_id,
+          thumbnailUrl: matched?.cover_url,
         };
       });
       setLoras(activeLoras);

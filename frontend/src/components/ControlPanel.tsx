@@ -50,7 +50,7 @@ export interface ActiveLora {
  modelId?: string;
  versionId?: string;
  fileId?: string;
- thumbnailUrl?: string;
+ thumbnailUrl?: string | null;
  enabled?: boolean;
  triggerWords?: string[];
  category?: string;
@@ -318,9 +318,17 @@ export default function ControlPanel(props: Props) {
  // Cover image for currently selected model from backend
  const currentModelCover = useMemo(() => {
   if (!selectedModel) return null;
-  const cover = selectedModel.cover_url || publicModelMap.get(selectedModel.model_id)?.cover_url || null;
+  const cover =
+   selectedModel.cover_url ||
+   publicModelMap.get(selectedModel.model_id)?.cover_url ||
+   publicModels.find(
+    (p) =>
+     p.model_id === selectedModel.model_id ||
+     p.title.toLowerCase() === selectedModel.title.toLowerCase()
+   )?.cover_url ||
+   null;
   return resolveMediaUrl(cover);
- }, [selectedModel, publicModelMap]);
+ }, [selectedModel, publicModelMap, publicModels]);
 
  // Adjust LoRA weight
  const updateLoraWeight = (id: string, nextWeight: number) => {
@@ -603,24 +611,30 @@ export default function ControlPanel(props: Props) {
        {/* Model Thumbnail */}
        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)]">
         {currentModelCover ? (
-         <img
-          src={currentModelCover}
-          alt={selectedModel?.title ?? "Model preview"}
-          className="h-full w-full object-cover"
-          onError={(e) => {
-           (e.currentTarget as HTMLElement).style.display = "none";
-          }}
-         />
+         <>
+          <img
+           src={currentModelCover}
+           alt={selectedModel?.title ?? "Model preview"}
+           className="relative z-10 h-full w-full object-cover"
+           onError={(e) => {
+            (e.currentTarget as HTMLElement).style.display = "none";
+           }}
+          />
+          <div className="absolute inset-0 grid place-items-center text-[var(--accent)] opacity-60">
+           <Box className="h-6 w-6" />
+          </div>
+         </>
         ) : (
-         <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)]  text-[var(--accent)]">
+         <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
           <Box className="h-6 w-6 opacity-75" />
          </div>
         )}
-        <div className="absolute inset-0 bg-[var(--surface-soft)]  pointer-events-none" />
         {selectedModel && (
-         <span className="absolute bottom-0.5 left-1 font-mono text-[8px] font-bold text-[var(--ink)] ">
-          {selectedModel.version_name || "v1.0"}
-         </span>
+         <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/45 to-transparent pb-0.5 pt-2.5 px-1 pointer-events-none">
+          <span className="block truncate font-mono text-[8px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+           {selectedModel.version_name || "v1.0"}
+          </span>
+         </div>
         )}
        </div>
 
@@ -744,21 +758,46 @@ export default function ControlPanel(props: Props) {
           {/* Top Row: Badge, Title & Power/Delete Actions */}
           <div className="flex items-start gap-3">
            {/* Thumbnail */}
-           <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] grid place-items-center">
-            {lora.thumbnailUrl ? (
-             <img
-              src={resolveMediaUrl(lora.thumbnailUrl) || lora.thumbnailUrl}
-              alt={lora.title}
-              className="h-full w-full object-cover"
-              onError={(e) => {
-               (e.currentTarget as HTMLElement).style.display = "none";
-              }}
-             />
-            ) : (
-             <Layers className="h-5 w-5 text-[var(--accent)] opacity-80" />
-            )}
-            <div className="absolute inset-0 bg-[var(--surface-soft)] " />
-           </div>
+           {(() => {
+            const loraCover = resolveMediaUrl(
+             lora.thumbnailUrl ||
+              modelOptions.find(
+               (m) =>
+                (lora.modelId && m.model_id === lora.modelId) ||
+                (lora.fileId && m.file_id === lora.fileId) ||
+                m.title === lora.title
+              )?.cover_url ||
+              (lora.modelId ? publicModelMap.get(lora.modelId)?.cover_url : null) ||
+              publicModels.find(
+               (p) =>
+                (lora.modelId && p.model_id === lora.modelId) ||
+                p.title.toLowerCase() === lora.title.toLowerCase()
+              )?.cover_url ||
+              null
+            );
+
+            return (
+             <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] grid place-items-center">
+              {loraCover ? (
+               <>
+                <img
+                 src={loraCover}
+                 alt={lora.title}
+                 className="relative z-10 h-full w-full object-cover"
+                 onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = "none";
+                 }}
+                />
+                <div className="absolute inset-0 grid place-items-center text-[var(--accent)] opacity-60">
+                 <Layers className="h-5 w-5" />
+                </div>
+               </>
+              ) : (
+               <Layers className="h-5 w-5 text-[var(--accent)] opacity-80" />
+              )}
+             </div>
+            );
+           })()}
 
            <div className="min-w-0 flex-1">
             {/* Title Row */}
@@ -946,7 +985,6 @@ export default function ControlPanel(props: Props) {
          <div className="flex items-start gap-3">
           <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] grid place-items-center">
            <Wand2 className="h-5 w-5 text-[var(--ink-faint)]" />
-           <div className="absolute inset-0 bg-[var(--surface-soft)] " />
           </div>
 
           <div className="min-w-0 flex-1">
