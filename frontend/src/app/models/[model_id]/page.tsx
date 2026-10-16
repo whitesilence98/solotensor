@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -152,6 +152,97 @@ export default function PublicModelDetailPage({
     (activeSampleIndex + 1) % currentSamples.length;
   const prevSample = currentSamples[prevSampleIndex];
   const nextSample = currentSamples[nextSampleIndex];
+
+  const showcaseScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [naturalRatios, setNaturalRatios] = useState<Record<string, string>>({});
+
+  const checkScrollLimits = useCallback(() => {
+    const el = showcaseScrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 10);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+  }, []);
+
+  useEffect(() => {
+    const el = showcaseScrollRef.current;
+    if (!el) return;
+
+    checkScrollLimits();
+    el.addEventListener("scroll", checkScrollLimits, { passive: true });
+    window.addEventListener("resize", checkScrollLimits);
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => checkScrollLimits())
+        : null;
+    if (ro) ro.observe(el);
+
+    return () => {
+      el.removeEventListener("scroll", checkScrollLimits);
+      window.removeEventListener("resize", checkScrollLimits);
+      if (ro) ro.disconnect();
+    };
+  }, [checkScrollLimits, currentSamples, naturalRatios]);
+
+  const scrollShowcase = (direction: "left" | "right") => {
+    if (!showcaseScrollRef.current) return;
+    const container = showcaseScrollRef.current;
+    const scrollAmount = container.clientWidth * 0.75;
+    container.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+    setTimeout(checkScrollLimits, 400);
+  };
+
+  const handlePrev = () => {
+    scrollShowcase("left");
+  };
+
+  const handleNext = () => {
+    scrollShowcase("right");
+  };
+
+  const handleSelectSample = (idx: number) => {
+    setActiveSampleIndex(idx);
+  };
+
+  const handleInspectSample = (
+    sample: (typeof currentSamples)[0],
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    if (!model) return;
+    const found = sampleItems.find(
+      (s) =>
+        s.url === sample.url ||
+        s.key === sample.filename ||
+        s.key === sample.sample_id,
+    );
+    if (found) {
+      setSelectedSample(found);
+    } else {
+      setSelectedSample({
+        key: sample.filename || sample.sample_id,
+        url: sample.url,
+        size: 0,
+        last_modified: "",
+        metadata: {
+          prompt_id: sample.sample_id,
+          created_at: "",
+          elapsed_ms: 0,
+          prompt:
+            typeof sample.metadata?.prompt === "string"
+              ? sample.metadata.prompt
+              : sample.filename,
+          model_id: model.model_id,
+          model_title: model.title,
+        },
+      });
+    }
+  };
 
   const activeFiles =
     activeVersion?.files.filter((f) => f.visible) || [];
@@ -530,147 +621,120 @@ export default function PublicModelDetailPage({
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_350px]">
           {/* LEFT COLUMN: Media Showcase, Description, Comments, Related */}
           <section className="space-y-6">
-            {/* 3-Slide Peeking Carousel */}
-            <div className="relative flex h-[480px] sm:h-[540px] items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] select-none">
-              {/* Prev Slide (Peeking Left) */}
-              {currentSamples.length > 1 && (
-                <div
-                  onClick={() => setActiveSampleIndex(prevSampleIndex)}
-                  className="absolute left-[-4%] sm:left-[2%] z-10 h-[84%] w-[24%] cursor-pointer overflow-hidden rounded-xl opacity-35 transition-all duration-300 hover:opacity-60"
-                >
-                  <img
-                    src={prevSample.url}
-                    alt={prevSample.filename}
-                    className="h-full w-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/50" />
-                </div>
-              )}
-
-              {/* Prev Button */}
-              {currentSamples.length > 1 && (
+            {/* Horizontal Multi-Card Portrait Showcase matching reference */}
+            <div className="relative group/showcase w-full overflow-hidden rounded-2xl select-none">
+              {/* Floating Left Navigation Chevron */}
+              {canScrollLeft && (
                 <button
                   type="button"
-                  onClick={() => setActiveSampleIndex(prevSampleIndex)}
-                  className="absolute left-4 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--line-strong)] bg-black/70 text-[var(--ink)] shadow-lg backdrop-blur-md transition hover:bg-black/90 hover:scale-105"
-                  title="Previous image"
+                  onClick={handlePrev}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:bg-black/80 hover:scale-105 active:scale-95"
+                  title="Previous sample"
+                  aria-label="Previous showcase sample"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
               )}
 
-              {/* Center Active Slide */}
-              <div className="relative z-10 flex h-[94%] w-[68%] sm:w-[58%] items-center justify-center overflow-hidden rounded-xl border border-[var(--line-strong)] shadow-2xl">
-                {activeSample.kind === "video" ? (
-                  <video
-                    src={activeSample.url}
-                    controls
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <img
-                    src={activeSample.url}
-                    alt={activeSample.filename}
-                    className="h-full w-full object-cover"
-                  />
-                )}
-
-                {/* Slide Counter Badge */}
-                <div className="absolute bottom-3 left-3 rounded-md border border-[var(--line)] bg-black/70 px-2.5 py-1 font-mono text-[11px] text-[var(--ink)] backdrop-blur-md">
-                  {(activeSampleIndex % currentSamples.length) + 1} /{" "}
-                  {currentSamples.length}
-                </div>
-
-                {/* Inspect Action */}
+              {/* Floating Right Navigation Chevron */}
+              {canScrollRight && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const found = sampleItems.find(
-                      (s) =>
-                        s.url === activeSample.url ||
-                        s.key === activeSample.filename ||
-                        s.key === activeSample.sample_id,
-                    );
-                    if (found) {
-                      setSelectedSample(found);
-                    } else {
-                      setSelectedSample({
-                        key: activeSample.filename || activeSample.sample_id,
-                        url: activeSample.url,
-                        size: 0,
-                        last_modified: "",
-                        metadata: {
-                          prompt_id: activeSample.sample_id,
-                          created_at: "",
-                          elapsed_ms: 0,
-                          prompt:
-                            typeof activeSample.metadata?.prompt === "string"
-                              ? activeSample.metadata.prompt
-                              : activeSample.filename,
-                          model_id: model.model_id,
-                          model_title: model.title,
-                        },
-                      });
-                    }
-                  }}
-                  className="absolute bottom-3 right-3 rounded-md border border-[var(--line)] bg-black/70 p-2 text-[var(--ink)] backdrop-blur-md transition hover:bg-black/90 hover:text-[var(--accent)]"
-                  title="Inspect sample"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Next Slide (Peeking Right) */}
-              {currentSamples.length > 1 && (
-                <div
-                  onClick={() => setActiveSampleIndex(nextSampleIndex)}
-                  className="absolute right-[-4%] sm:right-[2%] z-10 h-[84%] w-[24%] cursor-pointer overflow-hidden rounded-xl opacity-35 transition-all duration-300 hover:opacity-60"
-                >
-                  <img
-                    src={nextSample.url}
-                    alt={nextSample.filename}
-                    className="h-full w-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/50" />
-                </div>
-              )}
-
-              {/* Next Button */}
-              {currentSamples.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSampleIndex(nextSampleIndex)}
-                  className="absolute right-4 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--line-strong)] bg-black/70 text-[var(--ink)] shadow-lg backdrop-blur-md transition hover:bg-black/90 hover:scale-105"
-                  title="Next image"
+                  onClick={handleNext}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:bg-black/80 hover:scale-105 active:scale-95"
+                  title="Next sample"
+                  aria-label="Next showcase sample"
                 >
                   <ChevronRight className="h-5 w-5" />
                 </button>
               )}
-            </div>
 
-            {/* Thumbnail Filmstrip */}
-            {currentSamples.length > 1 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {currentSamples.map((sample, idx) => (
-                  <button
-                    key={sample.sample_id}
-                    type="button"
-                    onClick={() => setActiveSampleIndex(idx)}
-                    className={`relative h-16 w-14 shrink-0 overflow-hidden rounded-lg transition ${
-                      idx === activeSampleIndex % currentSamples.length
-                        ? "border-2 border-[var(--accent)] shadow-[0_0_12px_rgba(199,227,106,0.3)]"
-                        : "border border-[var(--line)] opacity-60 hover:opacity-100 hover:border-[var(--line-strong)]"
-                    }`}
-                  >
-                    <img
-                      src={sample.url}
-                      alt={sample.filename}
-                      className="h-full w-full object-cover"
-                    />
-                  </button>
-                ))}
+              {/* Horizontal Scroll Track */}
+              <div
+                ref={showcaseScrollRef}
+                className="flex items-center gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory py-1"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                {currentSamples.map((sample, idx) => {
+                  const isSelected = activeSampleIndex === idx;
+                  const sampleKey = sample.sample_id || sample.url || `sample-${idx}`;
+                  const metaWidth =
+                    typeof sample.metadata?.width === "number" || typeof sample.metadata?.width === "string"
+                      ? Number(sample.metadata.width)
+                      : null;
+                  const metaHeight =
+                    typeof sample.metadata?.height === "number" || typeof sample.metadata?.height === "string"
+                      ? Number(sample.metadata.height)
+                      : null;
+                  const hasMetaRatio = Boolean(metaWidth && metaHeight && metaWidth > 0 && metaHeight > 0);
+                  const cardRatio = hasMetaRatio
+                    ? `${metaWidth} / ${metaHeight}`
+                    : naturalRatios[sampleKey] || "3 / 4";
+
+                  return (
+                    <div
+                      key={sampleKey}
+                      onClick={() => handleSelectSample(idx)}
+                      style={{ aspectRatio: cardRatio }}
+                      className={`group relative h-[440px] sm:h-[480px] md:h-[520px] w-auto max-w-[85vw] shrink-0 snap-start cursor-pointer overflow-hidden rounded-xl transition-all duration-300 select-none ${
+                        isSelected
+                          ? "opacity-100 shadow-2xl scale-[1.005]"
+                          : "opacity-85 hover:opacity-100"
+                      }`}
+                    >
+                      {/* Media (Image or Video) */}
+                      {sample.kind === "video" ? (
+                        <video
+                          src={sample.url}
+                          onLoadedMetadata={(e) => {
+                            const vid = e.currentTarget;
+                            if (vid.videoWidth && vid.videoHeight) {
+                              const ratioStr = `${vid.videoWidth} / ${vid.videoHeight}`;
+                              setNaturalRatios((prev) => {
+                                if (prev[sampleKey] === ratioStr) return prev;
+                                return { ...prev, [sampleKey]: ratioStr };
+                              });
+                            }
+                          }}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          muted
+                          loop
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={sample.url}
+                          alt=""
+                          onLoad={(e) => {
+                            const img = e.currentTarget;
+                            if (img.naturalWidth && img.naturalHeight) {
+                              const ratioStr = `${img.naturalWidth} / ${img.naturalHeight}`;
+                              setNaturalRatios((prev) => {
+                                if (prev[sampleKey] === ratioStr) return prev;
+                                return { ...prev, [sampleKey]: ratioStr };
+                              });
+                            }
+                          }}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                      )}
+
+                      {/* Hover-only Inspect Action */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleInspectSample(sample, e)}
+                        className="absolute bottom-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white/80 opacity-0 group-hover:opacity-100 backdrop-blur-md transition-all hover:bg-black/90 hover:text-[var(--accent)] hover:scale-105"
+                        title="Inspect full image"
+                        aria-label="Inspect sample"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
 
             {/* Model Description & Prose */}
             <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-5">

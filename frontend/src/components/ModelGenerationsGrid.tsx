@@ -172,13 +172,15 @@ export default function ModelGenerationsGrid({
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            href={`/?model_id=${encodeURIComponent(modelId)}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 font-mono text-xs font-bold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-colors"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            <span>Generate with Model</span>
-          </Link>
+          {total > 0 && (
+            <Link
+              href={`/?model_id=${encodeURIComponent(modelId)}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 font-mono text-xs font-bold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-colors"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              <span>Generate with Model</span>
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => void fetchGenerations(1, true)}
@@ -210,26 +212,81 @@ export default function ModelGenerationsGrid({
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Studio Empty State (Full-Width Atmospheric Stage) */}
       {!loading && !error && items.length === 0 && (
-        <div className="rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-8 text-center max-w-lg mx-auto my-6">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--accent)] mb-4 shadow-sm">
-            <Sparkles className="h-7 w-7" />
+        <div className="relative overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-sunken)]/60 px-6 py-12 sm:px-12 sm:py-16 text-center my-2">
+          {/* Subtle Atmospheric Studio Backdrop */}
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(213,240,111,0.05),transparent_70%)]" />
+
+          {/* Technical Corner Crosshairs */}
+          <div className="pointer-events-none absolute left-3.5 top-3 font-mono text-xs text-[var(--line-strong)] select-none">
+            +
           </div>
-          <h3 className="font-mono text-sm font-bold uppercase tracking-wider text-[var(--ink)]">
-            NO OUTPUTS RECORDED YET
-          </h3>
-          <p className="mt-2 text-xs leading-relaxed text-[var(--ink-faint)]">
-            Be the first creator to synthesize an image using {modelTitle || "this model"}. Generations will automatically be cataloged here.
-          </p>
-          <div className="mt-5">
-            <Link
-              href={`/?model_id=${encodeURIComponent(modelId)}`}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-4 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-[0_0_16px_rgba(213,240,111,0.2)]"
-            >
-              <Zap className="h-3.5 w-3.5 fill-current" />
-              <span>Generate First Output</span>
-            </Link>
+          <div className="pointer-events-none absolute right-3.5 top-3 font-mono text-xs text-[var(--line-strong)] select-none">
+            +
+          </div>
+          <div className="pointer-events-none absolute bottom-3 left-3.5 font-mono text-xs text-[var(--line-strong)] select-none">
+            +
+          </div>
+          <div className="pointer-events-none absolute bottom-3 right-3.5 font-mono text-xs text-[var(--line-strong)] select-none">
+            +
+          </div>
+
+          <div className="relative z-10 mx-auto max-w-xl">
+            {/* Visual Wireframe Preview Dock */}
+            <div className="mb-7 flex items-center justify-center gap-3 opacity-80">
+              <div className="hidden sm:flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)]/40 text-[var(--ink-faint)]">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)]">9:16</span>
+              </div>
+              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--accent)]/50 bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm">
+                <Sparkles className="h-6 w-6 stroke-[1.5]" />
+                <span className="mt-1 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)]">
+                  Canvas
+                </span>
+              </div>
+              <div className="hidden sm:flex h-20 w-28 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)]/40 text-[var(--ink-faint)]">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)]">16:9</span>
+              </div>
+            </div>
+
+            {/* Status Pill */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1 font-mono text-[11px] text-[var(--ink-soft)] mb-3 shadow-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+              <span>STUDIO CANVAS READY</span>
+            </div>
+
+            {/* Headline */}
+            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-[var(--ink)]">
+              Be the first to synthesize with this model
+            </h3>
+
+            {/* Explanatory Body */}
+            <p className="mt-2.5 text-xs sm:text-sm leading-relaxed text-[var(--ink-faint)] max-w-md mx-auto">
+              Run inference with <span className="font-medium text-[var(--ink-soft)]">{modelTitle || "this model"}</span> in SoloTensor Studio. Every generation is automatically cataloged here with full prompt recipes, seeds, and sampling telemetry.
+            </p>
+
+            {/* Feature Highlights Row */}
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5 font-mono text-[11px] text-[var(--ink-soft)]">
+              <div className="flex items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--surface-raised)]/80 px-2.5 py-1">
+                <Zap className="h-3 w-3 text-[var(--accent)]" />
+                <span>Instant Studio Load</span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-md border border-[var(--line)] bg-[var(--surface-raised)]/80 px-2.5 py-1">
+                <Box className="h-3 w-3 text-[var(--accent)]" />
+                <span>Recipe & Seed Logged</span>
+              </div>
+            </div>
+
+            {/* Primary Action Button */}
+            <div className="mt-7">
+              <Link
+                href={`/?model_id=${encodeURIComponent(modelId)}`}
+                className="inline-flex h-11 items-center gap-2.5 rounded-xl bg-[var(--accent)] px-6 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] transition-all duration-200 hover:bg-[var(--accent-hover)] hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_24px_rgba(213,240,111,0.25)]"
+              >
+                <Zap className="h-4 w-4 fill-current" />
+                <span>Launch Studio with Model</span>
+              </Link>
+            </div>
           </div>
         </div>
       )}
