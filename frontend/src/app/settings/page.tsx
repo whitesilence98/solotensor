@@ -13,6 +13,7 @@ import {
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import CreditPill from "@/components/CreditPill";
 import WorkspaceNavbar from "@/components/WorkspaceNavbar";
+import CustomSelect from "@/components/CustomSelect";
 
 const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "1:1": "Square · 1024 × 1024",
@@ -21,6 +22,11 @@ const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "4:3": "Classic · 1152 × 896",
   "3:2": "Wide · 1216 × 832",
 };
+
+const formatOptions = SETTING_FORMATS.map((fmt) => ({
+  value: fmt,
+  label: formatLabels[fmt],
+}));
 
 const fieldLabel = "text-[11px] font-bold text-[var(--ink-soft)]";
 const fieldHelp = "mt-2 block text-xs leading-5 text-[var(--ink-faint)]";
@@ -130,30 +136,27 @@ export default function SettingsPage() {
 
           <div className="px-5 py-6 md:px-7 md:py-7">
             <div className="grid gap-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(15rem,.8fr)] lg:gap-10">
-              <label className="block" htmlFor="default-format">
-                <span className={fieldLabel}>Default format</span>
-                <select
+              <div>
+                <label className="block" htmlFor="default-format">
+                  <span className={fieldLabel}>Default format</span>
+                </label>
+                <CustomSelect
                   id="default-format"
                   value={settings.defaultFormat}
-                  onChange={(event) =>
+                  onChange={(val) =>
                     updateSetting(
                       "defaultFormat",
-                      event.target.value as StudioSettings["defaultFormat"],
+                      val as StudioSettings["defaultFormat"],
                     )
                   }
-                  aria-describedby="default-format-help"
-                  className="workspace-field mt-2 w-full px-3 py-3 text-sm outline-none"
-                >
-                  {SETTING_FORMATS.map((format) => (
-                    <option key={format} value={format}>
-                      {formatLabels[format]}
-                    </option>
-                  ))}
-                </select>
+                  options={formatOptions}
+                  className="mt-2 w-full"
+                  buttonClassName="w-full h-10 px-3.5 text-xs"
+                />
                 <span id="default-format-help" className={fieldHelp}>
                   Custom dimensions remain available from the generator.
                 </span>
-              </label>
+              </div>
 
               <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
                 <label className="block" htmlFor="default-steps">

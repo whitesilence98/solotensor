@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import WorkspaceModal from "@/components/WorkspaceModal";
+import CustomSelect from "@/components/CustomSelect";
 import {
   api,
   uuid,
@@ -276,22 +277,15 @@ function DynamicControl({
     return (
       <div>
         {label}
-        <div className="relative">
-          <select
-            id={id}
-            value={String(value ?? control.value ?? "")}
-            disabled={busy}
-            onChange={(event) => onChange(event.target.value)}
-            className={`${FIELD} h-7.5 appearance-none pr-8 cursor-pointer`}
-          >
-            {control.options.map((option) => (
-              <option key={String(option)} value={String(option)}>
-                {String(option)}
-              </option>
-            ))}
-          </select>
-          <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rotate-90 text-[var(--ink-faint)]" />
-        </div>
+        <CustomSelect
+          id={id}
+          value={String(value ?? control.value ?? "")}
+          disabled={busy}
+          onChange={(val) => onChange(val)}
+          options={control.options.map(String)}
+          className="w-full mt-1"
+          buttonClassName="w-full h-8 px-2.5"
+        />
       </div>
     );
   }

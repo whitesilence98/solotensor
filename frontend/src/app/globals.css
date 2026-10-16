@@ -128,7 +128,7 @@
   /* Tactile Focus Ring */
   .workspace-field:focus { 
     border-color: var(--accent); 
-    box-shadow: 0 0 0 1px var(--accent), inset 0 1px 2px rgba(0,0,0,0.5); 
+    box-shadow: 0 0 0 2px rgba(213, 240, 111, 0.16), inset 0 1px 2px rgba(0,0,0,0.4); 
     outline: none; 
   }
 

@@ -20,6 +20,7 @@ import { api, resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
 import CreateModelDrawer from "@/components/CreateModelDrawer";
+import CustomSelect from "@/components/CustomSelect";
 
 type ModelTypeFilter = "all" | "Checkpoint" | "LoRA" | "Diffusion Model";
 type SortOption = "latest" | "samples" | "title";
@@ -47,6 +48,12 @@ const BASE_MODEL_FILTERS = [
   { value: "flux", label: "FLUX.1" },
   { value: "z-image", label: "Z-Image" },
   { value: "sd1.5", label: "SD 1.5" },
+];
+
+const SORT_OPTIONS = [
+  { value: "latest", label: "Recently Published" },
+  { value: "samples", label: "Most Showcase Samples" },
+  { value: "title", label: "Name (A–Z)" },
 ];
 
 export default function ModelsPage() {
@@ -170,58 +177,54 @@ export default function ModelsPage() {
         {/* Integrated In-Grid Toolbar: Search + Base Model + Sort + Publish CTA */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
           {/* Search Input */}
-          <div className="relative flex-1 max-w-lg">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+          <div className="relative flex-1 max-w-lg group">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search models, tags, trigger words, architectures…"
               aria-label="Search creator models"
-              className="workspace-field h-7.5 w-full pl-8 pr-14 text-xs placeholder:text-[var(--ink-faint)]"
+              className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-14 text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
             />
-            {query && (
+            {query ? (
               <button
                 type="button"
                 onClick={() => setQuery("")}
                 aria-label="Clear model search"
-                className="workspace-action-quiet absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center text-xs"
+                className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
               >
                 <X className="h-3 w-3" />
               </button>
+            ) : (
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none">
+                /
+              </kbd>
             )}
           </div>
 
           {/* Selects & Actions */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <select
+            <CustomSelect
               value={baseModelFilter}
-              onChange={(e) => setBaseModelFilter(e.target.value)}
-              aria-label="Filter by Base Model"
-              className="h-7.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
-            >
-              {BASE_MODEL_FILTERS.map((bf) => (
-                <option key={bf.value} value={bf.value}>
-                  {bf.label}
-                </option>
-              ))}
-            </select>
+              onChange={setBaseModelFilter}
+              options={BASE_MODEL_FILTERS}
+              ariaLabel="Filter by Base Model"
+              buttonClassName="h-8.5"
+            />
 
-            <select
+            <CustomSelect
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
-              aria-label="Sort models"
-              className="h-7.5 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] outline-none transition hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
-            >
-              <option value="latest">Recently Published</option>
-              <option value="samples">Most Showcase Samples</option>
-              <option value="title">Name (A–Z)</option>
-            </select>
+              onChange={(val) => setSortBy(val as SortOption)}
+              options={SORT_OPTIONS}
+              ariaLabel="Sort models"
+              buttonClassName="h-8.5"
+            />
 
             <button
               type="button"
               onClick={() => setStudioOpen(true)}
-              className="inline-flex h-7.5 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
+              className="inline-flex h-8.5 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_14px_rgba(213,240,111,0.22)]"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Publish Model ⚡</span>

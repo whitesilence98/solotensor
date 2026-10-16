@@ -42,6 +42,7 @@ import {
   type ModelVisibility,
 } from "@/lib/api";
 import TensorModelCard from "@/components/TensorModelCard";
+import CustomSelect from "@/components/CustomSelect";
 
 const baseModelPresets = [
   "FLUX.1",
@@ -443,34 +444,26 @@ export default function CreateModelDrawer({
                     <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
                       Model Type
                     </label>
-                    <select
+                    <CustomSelect
                       value={modelType}
-                      onChange={(e) => setModelType(e.target.value as CreatorModelType)}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] focus:border-[var(--accent)] outline-none cursor-pointer"
-                    >
-                      {modelTypes.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setModelType(val as CreatorModelType)}
+                      options={modelTypes.map((t) => ({ value: t, label: t }))}
+                      className="w-full"
+                      buttonClassName="w-full h-8"
+                    />
                   </div>
 
                   <div>
                     <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
                       Category
                     </label>
-                    <select
+                    <CustomSelect
                       value={category}
-                      onChange={(e) => setCategory(e.target.value as CreatorModelCategory)}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] focus:border-[var(--accent)] outline-none cursor-pointer"
-                    >
-                      {categories.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setCategory(val as CreatorModelCategory)}
+                      options={categories.map((c) => ({ value: c, label: c }))}
+                      className="w-full"
+                      buttonClassName="w-full h-8"
+                    />
                   </div>
                 </div>
 
@@ -638,18 +631,20 @@ export default function CreateModelDrawer({
                     <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
                       Recommended Sampler
                     </label>
-                    <select
+                    <CustomSelect
                       value={sampler}
-                      onChange={(e) => setSampler(e.target.value)}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] focus:border-[var(--accent)] outline-none cursor-pointer"
-                    >
-                      <option value="DPM++ 2M Karras">DPM++ 2M Karras</option>
-                      <option value="Euler a">Euler a</option>
-                      <option value="Euler">Euler</option>
-                      <option value="UniPC">UniPC</option>
-                      <option value="DPM++ SDE Karras">DPM++ SDE Karras</option>
-                      <option value="LCM">LCM</option>
-                    </select>
+                      onChange={setSampler}
+                      options={[
+                        "DPM++ 2M Karras",
+                        "Euler a",
+                        "Euler",
+                        "UniPC",
+                        "DPM++ SDE Karras",
+                        "LCM",
+                      ]}
+                      className="w-full"
+                      buttonClassName="w-full h-8"
+                    />
                   </div>
 
                   <div>

@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   ArrowDown,
   Box,
+  ChevronLeft,
+  ChevronRight,
   Film,
   ImageIcon,
   Search,
@@ -75,6 +77,50 @@ export default function AssetsPage() {
     STORAGE_KEYS.ASSETS_TAGS,
     []
   );
+
+  // Tags Horizontal Scroll Rail State
+  const tagsScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollTagsLeft, setCanScrollTagsLeft] = useState(false);
+  const [canScrollTagsRight, setCanScrollTagsRight] = useState(false);
+
+  const checkTagsScrollLimits = useCallback(() => {
+    const el = tagsScrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollTagsLeft(scrollLeft > 6);
+    setCanScrollTagsRight(scrollLeft + clientWidth < scrollWidth - 6);
+  }, []);
+
+  useEffect(() => {
+    const el = tagsScrollRef.current;
+    if (!el) return;
+
+    checkTagsScrollLimits();
+    el.addEventListener("scroll", checkTagsScrollLimits, { passive: true });
+    window.addEventListener("resize", checkTagsScrollLimits);
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => checkTagsScrollLimits())
+        : null;
+    if (ro) ro.observe(el);
+
+    return () => {
+      el.removeEventListener("scroll", checkTagsScrollLimits);
+      window.removeEventListener("resize", checkTagsScrollLimits);
+      if (ro) ro.disconnect();
+    };
+  }, [checkTagsScrollLimits, popularTags]);
+
+  const scrollTags = (direction: "left" | "right") => {
+    const el = tagsScrollRef.current;
+    if (!el) return;
+    const scrollAmount = el.clientWidth * 0.6;
+    el.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+    setTimeout(checkTagsScrollLimits, 350);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -339,8 +385,8 @@ export default function AssetsPage() {
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
             {/* Search Field */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+            <div className="relative flex-1 max-w-md group">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
               <input
                 ref={searchRef}
                 type="search"
@@ -352,9 +398,9 @@ export default function AssetsPage() {
                 onBlur={commitSearch}
                 placeholder="Search local filenames…"
                 aria-label="Search local filenames"
-                className="workspace-field h-7.5 w-full pl-8 pr-14 text-xs placeholder:text-[var(--ink-faint)]"
+                className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-14 text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
               />
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 border border-[var(--line)] bg-[var(--surface-raised)] px-1 py-0.5 text-[9px] font-mono text-[var(--ink-faint)] sm:block">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none sm:block">
                 /
               </kbd>
               {searchDraft && (
@@ -362,7 +408,7 @@ export default function AssetsPage() {
                   type="button"
                   onClick={clearSearch}
                   aria-label="Clear asset search"
-                  className="workspace-action-quiet absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center sm:right-8 text-xs"
+                  className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors sm:right-7 text-xs"
                 >
                   <span aria-hidden>×</span>
                 </button>
@@ -409,49 +455,83 @@ export default function AssetsPage() {
 
         {/* Popular Tags Rail (if available) */}
         {popularTags.length > 0 && (
-          <div
-            className="flex items-center gap-1.5 overflow-x-auto w-full pt-2.5 no-scrollbar"
-            aria-label="Tag filters"
-          >
-            <button
-              type="button"
-              onClick={clearTags}
-              className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold transition ${
-                selectedTags.length === 0
-                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
-                  : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-              }`}
-            >
-              All tags
-            </button>
-            {popularTags.map(({ name, count }) => {
-              const active = selectedTags.includes(name.toLowerCase());
-              return (
+          <div className="relative group/tags w-full pt-2.5">
+            {/* Left Chevron Button & Edge Scrim */}
+            {canScrollTagsLeft && (
+              <div className="absolute left-0 top-2.5 bottom-0 z-20 flex items-center pr-4 bg-gradient-to-r from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
                 <button
-                  key={name}
                   type="button"
-                  onClick={() => toggleTag(name)}
-                  className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] transition ${
-                    active
-                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
-                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                  }`}
+                  onClick={() => scrollTags("left")}
+                  aria-label="Scroll tags left"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 text-[var(--ink)] shadow-md backdrop-blur-md transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)] hover:scale-110 active:scale-95"
                 >
-                  <span className={active ? "text-[var(--accent-ink)]" : "text-[var(--accent)]"}>#</span>
-                  <span>{name}</span>
-                  <span className="ml-1 opacity-60">({count})</span>
+                  <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-              );
-            })}
-            {selectedTags.length > 0 && (
+              </div>
+            )}
+
+            {/* Right Chevron Button & Edge Scrim */}
+            {canScrollTagsRight && (
+              <div className="absolute right-0 top-2.5 bottom-0 z-20 flex items-center pl-4 bg-gradient-to-l from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
+                <button
+                  type="button"
+                  onClick={() => scrollTags("right")}
+                  aria-label="Scroll tags right"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 text-[var(--ink)] shadow-md backdrop-blur-md transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)] hover:scale-110 active:scale-95"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Horizontal Scroll Track */}
+            <div
+              ref={tagsScrollRef}
+              className="flex items-center gap-1.5 overflow-x-auto w-full no-scrollbar scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth py-0.5"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              aria-label="Tag filters"
+            >
               <button
                 type="button"
                 onClick={clearTags}
-                className="workspace-action-quiet min-h-5 shrink-0 whitespace-nowrap px-1.5 text-[9px] font-mono text-[var(--danger)] hover:underline"
+                className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 font-mono text-[10px] font-semibold transition-all duration-150 select-none ${
+                  selectedTags.length === 0
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-[0_0_10px_rgba(213,240,111,0.22)]"
+                    : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+                }`}
               >
-                Clear tags ({selectedTags.length})
+                All tags
               </button>
-            )}
+              {popularTags.map(({ name }) => {
+                const active = selectedTags.includes(name.toLowerCase());
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleTag(name)}
+                    className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 font-mono text-[10px] transition-all duration-150 select-none ${
+                      active
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-[0_0_10px_rgba(213,240,111,0.22)] scale-[1.02]"
+                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <span className={active ? "text-[var(--accent-ink)] font-bold" : "text-[var(--accent)] mr-0.5"}>
+                      #
+                    </span>
+                    <span>{name}</span>
+                  </button>
+                );
+              })}
+              {selectedTags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearTags}
+                  className="h-6 shrink-0 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-2 py-0.5 font-mono text-[10px] text-[var(--danger)] hover:bg-[var(--danger)]/20 hover:border-[var(--danger)]/50 transition-colors whitespace-nowrap"
+                >
+                  Clear tags ({selectedTags.length})
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

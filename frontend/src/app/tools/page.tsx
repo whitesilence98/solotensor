@@ -240,22 +240,22 @@ export default function ToolStudioPage() {
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
             {/* Search Input */}
-            <div className="relative flex-1 max-w-sm">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
+            <div className="relative flex-1 max-w-sm group">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search workflows by name or mode…"
                 aria-label="Search tools"
-                className="workspace-field h-7.5 w-full pl-8 pr-7 font-mono text-[11px] bg-[var(--surface-sunken)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors outline-none"
+                className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-8 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery("")}
                   aria-label="Clear search"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -266,7 +266,7 @@ export default function ToolStudioPage() {
             <button
               type="button"
               onClick={() => setIsCreateOpen(true)}
-              className="inline-flex h-7.5 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
+              className="inline-flex h-8.5 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_14px_rgba(213,240,111,0.22)]"
             >
               <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
               <span>Create New Tool ⚡</span>
