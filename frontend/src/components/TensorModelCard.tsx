@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Box, Layers } from "lucide-react";
 import { resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
+import RoleBadge from "@/components/RoleBadge";
+import UserAvatar from "@/components/UserAvatar";
 
 export interface TensorModelCardData {
   model_id?: string;
@@ -13,6 +15,10 @@ export interface TensorModelCardData {
   base_model?: string | null;
   cover_url?: string | null;
   sample_count?: number;
+  author_id?: string;
+  author_username?: string;
+  author_display_name?: string;
+  author_role?: string;
 }
 
 export interface TensorModelCardProps {
@@ -177,10 +183,31 @@ export function TensorModelCard({
         >
           {item.title || "Untitled model"}
         </h3>
-        <p className="mt-0.5 truncate text-xs sm:text-sm font-medium text-white/75 drop-shadow-sm">
-          {item.category} • {shortBase}{" "}
-          {sampleCount > 0 ? `• ${sampleCount} samples` : ""}
-        </p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="truncate text-xs sm:text-sm font-medium text-white/75 drop-shadow-sm">
+            {item.category} • {shortBase}{" "}
+            {sampleCount > 0 ? `• ${sampleCount} samples` : ""}
+          </p>
+          {"author_role" in item && item.author_role && (
+            <div className="shrink-0 flex items-center gap-1.5 pointer-events-none">
+              <UserAvatar
+                name={item.author_display_name || item.author_username}
+                username={item.author_username}
+                role={item.author_role}
+                size="xs"
+              />
+              {"author_username" in item && item.author_username && (
+                <span className="font-mono text-[10px] font-medium text-white/90 truncate max-w-[80px] drop-shadow-sm hidden sm:inline">
+                  @{item.author_username}
+                </span>
+              )}
+              <RoleBadge
+                role={item.author_role}
+                size="xs"
+              />
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

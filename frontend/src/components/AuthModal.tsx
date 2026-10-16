@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -17,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 import BrandLogo from "@/components/BrandLogo";
 
 export default function AuthModal() {
+  const router = useRouter();
   const {
     isAuthModalOpen,
     closeAuthModal,
@@ -103,7 +105,10 @@ export default function AuthModal() {
     setError(null);
     setBusy(true);
     try {
-      await login(signinIdentifier.trim(), signinPassword);
+      const authenticatedUser = await login(signinIdentifier.trim(), signinPassword);
+      if (authenticatedUser?.username) {
+        router.push(`/user/${encodeURIComponent(authenticatedUser.username)}`);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -136,11 +141,14 @@ export default function AuthModal() {
     setError(null);
     setBusy(true);
     try {
-      await register(
+      const registeredUser = await register(
         registerEmail.trim(),
         registerUsername.trim(),
         registerPassword
       );
+      if (registeredUser?.username) {
+        router.push(`/user/${encodeURIComponent(registeredUser.username)}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -152,7 +160,10 @@ export default function AuthModal() {
     setError(null);
     setBusy(true);
     try {
-      await loginWithOAuth(provider);
+      const socialUser = await loginWithOAuth(provider);
+      if (socialUser?.username) {
+        router.push(`/user/${encodeURIComponent(socialUser.username)}`);
+      }
     } catch (err) {
       setError(
         err instanceof Error

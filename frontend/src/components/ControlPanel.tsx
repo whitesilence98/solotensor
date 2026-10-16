@@ -38,6 +38,8 @@ import {
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import WorkspaceModal from "@/components/WorkspaceModal";
+import { useAuth } from "@/lib/auth-context";
+import RoleBadge from "@/components/RoleBadge";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -160,6 +162,8 @@ interface Props {
  modelsLoading?: boolean;
  modelsError?: string | null;
  onResetDefaults?: () => void;
+ isPrivate?: boolean;
+ onPrivateChange?: (v: boolean) => void;
 }
 
 export default function ControlPanel(props: Props) {
@@ -199,7 +203,45 @@ export default function ControlPanel(props: Props) {
   modelsLoading,
   modelsError,
   onResetDefaults,
+  isPrivate,
+  onPrivateChange,
  } = props;
+
+ const { isPro, isAdmin, switchRoleDemo } = useAuth();
+ const isProUser = isPro || isAdmin;
+
+ const [internalPrivate, setInternalPrivate] = useState(false);
+ const isPrivateActive = props.isPrivate !== undefined ? props.isPrivate : internalPrivate;
+
+ const [hardwareModalOpen, setHardwareModalOpen] = useState(false);
+ const [privateUpsellOpen, setPrivateUpsellOpen] = useState(false);
+
+ const widthNum = format === "custom" ? (Number(customWidth) || 1024) : 1024;
+ const heightNum = format === "custom" ? (Number(customHeight) || 1024) : 1024;
+ const stepsNum = Number(steps) || 25;
+
+ const exceedsHardwareEnvelope = !isProUser && (widthNum > 1024 || heightNum > 1024 || stepsNum > 35);
+
+ const handleTogglePrivate = () => {
+  if (!isProUser) {
+   setPrivateUpsellOpen(true);
+   return;
+  }
+  const next = !isPrivateActive;
+  if (props.onPrivateChange) {
+   props.onPrivateChange(next);
+  } else {
+   setInternalPrivate(next);
+  }
+ };
+
+ const handleGenerateClick = () => {
+  if (exceedsHardwareEnvelope) {
+   setHardwareModalOpen(true);
+   return;
+  }
+  onGenerate?.();
+ };
 
  const [activeMode, setActiveMode] = useState<TensorMode>("Text2Img");
  const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -1334,6 +1376,52 @@ export default function ControlPanel(props: Props) {
 
    {/* Sticky Bottom Generation Action Bar */}
    <div className="sticky bottom-0 z-20 shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_94%,transparent)] backdrop-blur-md p-3.5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+    {/* Studio Pro Controls: Private Output Switch & Fast-Lane Status */}
+    <div className="flex items-center justify-between pb-2.5 text-xs">
+     <button
+      type="button"
+      onClick={handleTogglePrivate}
+      className={`group inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11px] font-semibold transition ${
+       isPrivateActive
+        ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
+        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]"
+      }`}
+      title={
+       isProUser
+        ? `Private Output: ${isPrivateActive ? "ENABLED (Confidential, hidden from gallery)" : "DISABLED (Visible in local gallery)"}`
+        : "Private Output requires SoloTensor Pro"
+      }
+     >
+      {isPrivateActive ? (
+       <Lock className="h-3 w-3 text-[var(--accent)]" />
+      ) : isProUser ? (
+       <Eye className="h-3 w-3 opacity-60" />
+      ) : (
+       <Lock className="h-3 w-3 text-[var(--ink-faint)]" />
+      )}
+      <span>Private Output</span>
+      {!isProUser && (
+       <span className="rounded bg-[var(--accent)]/10 px-1 py-0.2 text-[8px] font-bold text-[var(--accent)] border border-[var(--accent)]/20">
+        PRO
+       </span>
+      )}
+     </button>
+
+     {/* Fast-Lane Queue Readout */}
+     <div className="flex items-center gap-1 font-mono text-[10px]">
+      {isProUser ? (
+       <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-[var(--accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/20 shadow-[0_0_8px_rgba(213,240,111,0.15)]">
+        <Zap className="h-2.5 w-2.5 fill-current" />
+        <span>⚡ PRIORITY QUEUE (~4s)</span>
+       </span>
+      ) : (
+       <span className="text-[var(--ink-faint)]">
+        Standard Queue (~28s)
+       </span>
+      )}
+     </div>
+    </div>
+
     <div className="flex items-center gap-2">
      {/* Batch Image Count Selector */}
      <div className="relative">
@@ -1375,7 +1463,7 @@ export default function ControlPanel(props: Props) {
      {/* Primary Generate Button */}
      <button
       type="button"
-      onClick={onGenerate}
+      onClick={handleGenerateClick}
       disabled={!canGenerate || busy}
       className="workspace-action-primary flex h-10 flex-1 items-center justify-between rounded-xl px-4 text-xs font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
      >
@@ -1388,12 +1476,17 @@ export default function ControlPanel(props: Props) {
        <div className="flex items-center gap-1.5">
         <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
         <span>Generate</span>
+        {isProUser && (
+         <span className="ml-1 rounded bg-[var(--accent-ink)]/15 px-1.5 py-0.5 font-mono text-[9px] font-extrabold tracking-wider text-[var(--accent-ink)] uppercase">
+          ⚡ PRIORITY QUEUE
+         </span>
+        )}
        </div>
       )}
 
       <div className="flex items-center gap-1.5 opacity-80">
        <span className="font-mono text-[10px]">
-        {busy ? progressLabel || "Rendering" : "⌘↵"}
+        {busy ? progressLabel || "Rendering" : isProUser ? "~4s" : "⌘↵"}
        </span>
       </div>
      </button>
@@ -1927,6 +2020,182 @@ export default function ControlPanel(props: Props) {
      >
       <X className="h-3 w-3" />
      </button>
+    </div>
+   )}
+
+   {/* Hardware Envelope Pro Modal */}
+   {hardwareModalOpen && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 animate-in fade-in duration-200">
+     <div className="w-full max-w-lg rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
+      {/* Header */}
+      <div className="flex items-start justify-between border-b border-[var(--line)] pb-4">
+       <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_16px_rgba(213,240,111,0.25)]">
+         <Zap className="h-5 w-5 fill-current" />
+        </div>
+        <div>
+         <h3 className="text-base font-bold text-[var(--ink)] tracking-tight">
+          SoloTensor Pro: 4K Synthesis & High-Step Pipelines
+         </h3>
+         <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
+          Hardware Envelope Guard
+         </span>
+        </div>
+       </div>
+       <button
+        type="button"
+        onClick={() => setHardwareModalOpen(false)}
+        className="rounded-lg p-1 text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition"
+       >
+        <X className="h-5 w-5" />
+       </button>
+      </div>
+
+      {/* Body */}
+      <div className="py-4 space-y-4">
+       <p className="text-xs text-[var(--ink-soft)] leading-relaxed">
+        Standard Creator compute is bounded to <strong className="text-[var(--ink)]">1024×1024</strong> resolution and <strong className="text-[var(--ink)]">35 steps</strong> to ensure shared VRAM isolation. Extended pipelines require SoloTensor Pro.
+       </p>
+
+       {/* Current Request Exceeded Diagnostics */}
+       <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2">
+        <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-faint)] uppercase block">
+         Parameter Envelope Breakdown
+        </span>
+        <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+         <div className="flex items-center justify-between border-b border-[var(--line)] pb-1">
+          <span className="text-[var(--ink-faint)]">Dimensions:</span>
+          <span className={widthNum > 1024 || heightNum > 1024 ? "text-[var(--accent)] font-bold" : "text-[var(--ink)]"}>
+           {widthNum} × {heightNum} px {widthNum > 1024 || heightNum > 1024 ? "(> 1024 Limit)" : ""}
+          </span>
+         </div>
+         <div className="flex items-center justify-between border-b border-[var(--line)] pb-1">
+          <span className="text-[var(--ink-faint)]">Sampling Steps:</span>
+          <span className={stepsNum > 35 ? "text-[var(--accent)] font-bold" : "text-[var(--ink)]"}>
+           {stepsNum} {stepsNum > 35 ? "(> 35 Limit)" : ""}
+          </span>
+         </div>
+        </div>
+       </div>
+
+       {/* Pro Capabilities Specs */}
+       <div className="space-y-2">
+        <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block">
+         SoloTensor Pro Capabilities
+        </span>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+         <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
+          <span className="block font-bold text-[var(--ink)]">⚡ Fast-Lane Priority</span>
+          <span className="text-[11px] text-[var(--ink-faint)]">Instant ComfyUI queue dispatch (~4s)</span>
+         </div>
+         <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
+          <span className="block font-bold text-[var(--ink)]">🖼 4K Synthesis</span>
+          <span className="text-[11px] text-[var(--ink-faint)]">Up to 4096×4096 and 100 steps</span>
+         </div>
+         <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
+          <span className="block font-bold text-[var(--ink)]">🔒 Private Output</span>
+          <span className="text-[11px] text-[var(--ink-faint)]">Keep generations off public feeds</span>
+         </div>
+         <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
+          <span className="block font-bold text-[var(--ink)]">🎛 5x LoRA Enclaves</span>
+          <span className="text-[11px] text-[var(--ink-faint)]">High-concurrency adapter chaining</span>
+         </div>
+        </div>
+       </div>
+      </div>
+
+      {/* CTAs */}
+      <div className="flex items-center justify-end gap-2.5 border-t border-[var(--line)] pt-4">
+       <button
+        type="button"
+        onClick={() => {
+         if (widthNum > 1024) onCustomWidthChange("1024");
+         if (heightNum > 1024) onCustomHeightChange("1024");
+         if (stepsNum > 35) onStepsChange("30");
+         setHardwareModalOpen(false);
+        }}
+        className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] transition"
+       >
+        Clamp to Standard (1024px / 30 steps)
+       </button>
+       <button
+        type="button"
+        onClick={() => {
+         switchRoleDemo("pro_creator");
+         setHardwareModalOpen(false);
+        }}
+        className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
+       >
+        <Zap className="h-3.5 w-3.5 fill-current" />
+        <span>Unlock Pro (Local Studio Preview)</span>
+       </button>
+      </div>
+     </div>
+    </div>
+   )}
+
+   {/* Private Output Pro Upsell Modal */}
+   {privateUpsellOpen && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 animate-in fade-in duration-200">
+     <div className="w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
+      <div className="flex items-start justify-between border-b border-[var(--line)] pb-4">
+       <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_16px_rgba(213,240,111,0.25)]">
+         <Lock className="h-5 w-5" />
+        </div>
+        <div>
+         <h3 className="text-base font-bold text-[var(--ink)] tracking-tight">
+          Private Generation Enclave
+         </h3>
+         <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
+          SoloTensor Pro Exclusive
+         </span>
+        </div>
+       </div>
+       <button
+        type="button"
+        onClick={() => setPrivateUpsellOpen(false)}
+        className="rounded-lg p-1 text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition"
+       >
+        <X className="h-5 w-5" />
+       </button>
+      </div>
+
+      <div className="py-4 space-y-3">
+       <p className="text-xs text-[var(--ink-soft)] leading-relaxed">
+        By default, outputs are saved to your local gallery and eligible for community feeds. <strong className="text-[var(--ink)]">Private Output</strong> guarantees your generated artwork, workflow graph, and prompt tokens remain strictly confidential.
+       </p>
+       <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs text-[var(--ink-faint)]">
+        🔒 Omit prompts and seed metadata from public discovery feeds and shared model showcase reels.
+       </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2.5 border-t border-[var(--line)] pt-4">
+       <button
+        type="button"
+        onClick={() => setPrivateUpsellOpen(false)}
+        className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] transition"
+       >
+        Cancel
+       </button>
+       <button
+        type="button"
+        onClick={() => {
+         switchRoleDemo("pro_creator");
+         setPrivateUpsellOpen(false);
+         if (onPrivateChange) {
+          onPrivateChange(true);
+         } else {
+          setInternalPrivate(true);
+         }
+        }}
+        className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
+       >
+        <Zap className="h-3.5 w-3.5 fill-current" />
+        <span>Unlock Pro (Local Studio Preview)</span>
+       </button>
+      </div>
+     </div>
     </div>
    )}
   </aside>

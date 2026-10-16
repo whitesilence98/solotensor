@@ -329,12 +329,145 @@ export function getSecondsUntilMidnight(): number {
   return Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
 }
 
+export type UserRole =
+  | "guest"
+  | "creator"
+  | "pro_creator"
+  | "verified_creator"
+  | "moderator"
+  | "admin";
+
+export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  guest: [],
+  creator: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "moderation:flag_content",
+  ],
+  pro_creator: [
+    "generation:create_standard",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:manage_billing",
+    "moderation:flag_content",
+  ],
+  verified_creator: [
+    "generation:create_standard",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "model:verified_badge",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "credits:manage_billing",
+    "moderation:flag_content",
+  ],
+  moderator: [
+    "generation:create_standard",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "generation:delete_own",
+    "generation:delete_any",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:edit_any",
+    "model:delete_own",
+    "model:delete_any",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "tool:delete_any",
+    "credits:claim_daily",
+    "moderation:flag_content",
+    "moderation:review_queue",
+    "moderation:ban_user",
+    "moderation:inspect_telemetry",
+  ],
+  admin: [
+    "generation:create_standard",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "generation:delete_own",
+    "generation:delete_any",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:edit_any",
+    "model:delete_own",
+    "model:delete_any",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "tool:delete_any",
+    "credits:claim_daily",
+    "credits:transfer",
+    "credits:manage_billing",
+    "credits:grant_manual",
+    "moderation:flag_content",
+    "moderation:review_queue",
+    "moderation:ban_user",
+    "moderation:inspect_telemetry",
+    "admin:full_access",
+    "agent:dispatch_jobs",
+    "agent:sync_models",
+    "agent:audit_safety",
+  ],
+};
+
+export function normalizeRoleName(role?: string | null): UserRole {
+  if (!role) return "creator";
+  const r = role.toLowerCase().trim();
+  if (r === "pro" || r === "pro_creator" || r === "vip") return "pro_creator";
+  if (r === "verified" || r === "verified_creator" || r === "author") return "verified_creator";
+  if (r === "moderator" || r === "mod") return "moderator";
+  if (r === "admin" || r === "administrator" || r === "staff") return "admin";
+  if (r === "guest" || r === "anonymous") return "guest";
+  return "creator";
+}
+
+export function getDefaultPermissionsForRole(role?: string | null): string[] {
+  const norm = normalizeRoleName(role);
+  return ROLE_DEFAULT_PERMISSIONS[norm] || ROLE_DEFAULT_PERMISSIONS.creator;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
   username: string;
   displayName: string;
   role: string;
+  roles?: string[];
+  primary_role?: string;
+  permissions?: string[];
   avatarUrl?: string | null;
   createdAt?: string;
   is_verified?: boolean;
@@ -346,6 +479,9 @@ export interface UserPublicProfile {
   display_name: string | null;
   avatar_url: string | null;
   role: string;
+  roles?: string[];
+  primary_role?: string;
+  permissions?: string[];
   bio: string | null;
   created_at: string;
   is_following: boolean;
@@ -532,6 +668,50 @@ export interface PublicModelSummary {
   version_count: number;
   file_count: number;
   sample_count: number;
+  author_id?: string;
+  author_username?: string;
+  author_display_name?: string;
+  author_role?: string;
+}
+
+export type ModerationTargetType = "model" | "post" | "comment" | "user";
+
+export interface ModerationQueueItem {
+  id: string;
+  target_type: ModerationTargetType;
+  target_id: string;
+  title: string;
+  preview_url: string | null;
+  author_username: string;
+  author_role?: string;
+  reporter_username: string;
+  reason: string;
+  details?: string;
+  flag_count: number;
+  created_at: string;
+  status: "pending" | "resolved" | "dismissed";
+  severity: "low" | "medium" | "high" | "critical";
+  tags?: string[];
+}
+
+export interface SecurityAuditLogEntry {
+  id: string;
+  actor_username: string;
+  actor_role: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: string;
+  ip_address?: string;
+  created_at: string;
+}
+
+export interface ModerationActionPayload {
+  target_type: ModerationTargetType;
+  target_id: string;
+  action: "approve" | "hide" | "toggle_nsfw" | "takedown" | "ban_user";
+  reason?: string;
+  notes?: string;
 }
 
 export interface ModelInstallResponse {
@@ -1290,6 +1470,76 @@ export const api = {
       throw err;
     }
   },
+
+  async getModerationQueue(status?: string): Promise<ModerationQueueItem[]> {
+    try {
+      const res = await request<ModerationQueueItem[]>(`/api/admin/moderation/queue${status ? `?status=${status}` : ""}`);
+      return res;
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return getFallbackModerationQueue(status);
+      }
+      throw err;
+    }
+  },
+
+  async takeModerationAction(payload: ModerationActionPayload): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await request<{ success: boolean; message: string }>("/api/admin/moderation/action", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      return res;
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return takeFallbackModerationAction(payload);
+      }
+      throw err;
+    }
+  },
+
+  async getSecurityAuditLogs(): Promise<SecurityAuditLogEntry[]> {
+    try {
+      const res = await request<SecurityAuditLogEntry[]>("/api/admin/moderation/audit-logs");
+      return res;
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return getFallbackSecurityAuditLogs();
+      }
+      throw err;
+    }
+  },
+
+  async flagContent(targetType: string, targetId: string, reason: string, details?: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await request<{ success: boolean; message: string }>("/api/moderation/flag", {
+        method: "POST",
+        body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details }),
+      });
+      return res;
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return submitFallbackContentFlag(targetType, targetId, reason, details);
+      }
+      throw err;
+    }
+  },
 };
 
 export function getLocalFollowState(username: string): boolean | null {
@@ -1336,7 +1586,10 @@ export function getFallbackUserProfile(username: string): UserPublicProfile {
       username: "riiwa",
       display_name: "riiwa",
       avatar_url: null,
-      role: "PRO",
+      role: "verified_creator",
+      roles: ["verified_creator", "pro_creator"],
+      primary_role: "verified_creator",
+      permissions: getDefaultPermissionsForRole("verified_creator"),
       bio: "Obsidian darkroom creator & deep generative synthesis researcher specializing in high-fidelity character models, cinematic LoRAs, and autonomous workflow tooling.",
       created_at: "2023-11-20T12:00:00Z",
       is_following: isFollowing,
@@ -1353,6 +1606,12 @@ export function getFallbackUserProfile(username: string): UserPublicProfile {
     };
   }
 
+  const userRole = normalizeRoleName(currentUser?.primary_role || currentUser?.role || "creator");
+  const userRoles = currentUser?.roles && currentUser.roles.length > 0 ? currentUser.roles.map(normalizeRoleName) : [userRole];
+  const permissions = currentUser?.permissions && currentUser.permissions.length > 0
+    ? currentUser.permissions
+    : getDefaultPermissionsForRole(userRole);
+
   const displayName = isSelf && currentUser?.displayName ? currentUser.displayName : username;
   const baseFollowers = 1420;
   return {
@@ -1360,7 +1619,10 @@ export function getFallbackUserProfile(username: string): UserPublicProfile {
     username,
     display_name: displayName,
     avatar_url: isSelf ? currentUser?.avatarUrl || null : null,
-    role: "PRO",
+    role: userRole,
+    roles: userRoles,
+    primary_role: userRole,
+    permissions,
     bio: "Visual AI practitioner and workflow engineer creating neural pipelines on SoloTensor.",
     created_at: isSelf && currentUser?.createdAt ? currentUser.createdAt : "2024-02-10T10:00:00Z",
     is_following: isFollowing,
@@ -1391,12 +1653,24 @@ export function toggleFallbackFollowUser(username: string): { following: boolean
 function normalizeAuthResponse(raw: any): AuthResponse {
   const token = raw?.access_token || raw?.token || "";
   const rawUser = raw?.user || raw || {};
+  const rawRole = rawUser.primary_role || rawUser.role || "creator";
+  const normRole = normalizeRoleName(rawRole);
+  const rawRoles = Array.isArray(rawUser.roles) && rawUser.roles.length > 0
+    ? rawUser.roles.map(normalizeRoleName)
+    : [normRole];
+  const permissions = Array.isArray(rawUser.permissions) && rawUser.permissions.length > 0
+    ? rawUser.permissions
+    : getDefaultPermissionsForRole(normRole);
+
   const user: UserProfile = {
     id: rawUser.id || "",
     email: rawUser.email || "",
     username: rawUser.username || "",
     displayName: rawUser.display_name || rawUser.displayName || rawUser.username || "",
-    role: rawUser.role || "creator",
+    role: normRole,
+    roles: rawRoles,
+    primary_role: normRole,
+    permissions,
     avatarUrl: rawUser.avatar_url || rawUser.avatarUrl || null,
     createdAt: rawUser.created_at || rawUser.createdAt || new Date().toISOString(),
     is_verified: rawUser.is_verified ?? rawUser.isVerified ?? false,
@@ -1430,12 +1704,16 @@ function createFallbackAuthResponse(payload: LoginPayload): AuthResponse {
   const identifier = payload.emailOrUsername.trim();
   const name = identifier.includes("@") ? identifier.split("@")[0] : identifier;
   const token = `st_token_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  const defaultRole: UserRole = "creator";
   const user: UserProfile = {
     id: `usr_${Math.random().toString(36).slice(2, 10)}`,
     email: identifier.includes("@") ? identifier : `${identifier}@solotensor.local`,
     username: name.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
     displayName: name.charAt(0).toUpperCase() + name.slice(1),
-    role: "creator",
+    role: defaultRole,
+    roles: [defaultRole],
+    primary_role: defaultRole,
+    permissions: getDefaultPermissionsForRole(defaultRole),
     avatarUrl: null,
     createdAt: new Date().toISOString(),
     is_verified: payload.provider === "google" || payload.provider === "discord",
@@ -1457,12 +1735,16 @@ function createFallbackAuthResponse(payload: LoginPayload): AuthResponse {
 
 function createFallbackRegisterResponse(payload: RegisterPayload): AuthResponse {
   const token = `st_token_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  const defaultRole: UserRole = "creator";
   const user: UserProfile = {
     id: `usr_${Math.random().toString(36).slice(2, 10)}`,
     email: payload.email,
     username: payload.username.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
     displayName: payload.displayName || payload.username,
-    role: "creator",
+    role: defaultRole,
+    roles: [defaultRole],
+    primary_role: defaultRole,
+    permissions: getDefaultPermissionsForRole(defaultRole),
     avatarUrl: null,
     createdAt: new Date().toISOString(),
     is_verified: false,
@@ -1494,16 +1776,26 @@ function getFallbackUserSession(): { user: UserProfile; credits: CreditStatus } 
     /* ignore */
   }
   if (!user) {
+    const defaultRole: UserRole = "creator";
     user = {
       id: "usr_solo_local",
       email: "creator@solotensor.local",
       username: "solocreator",
       displayName: "Solo Creator",
-      role: "creator",
+      role: defaultRole,
+      roles: [defaultRole],
+      primary_role: defaultRole,
+      permissions: getDefaultPermissionsForRole(defaultRole),
       avatarUrl: null,
       createdAt: new Date().toISOString(),
       is_verified: false,
     };
+  } else {
+    const norm = normalizeRoleName(user.primary_role || user.role);
+    user.role = norm;
+    user.primary_role = norm;
+    if (!user.roles || user.roles.length === 0) user.roles = [norm];
+    if (!user.permissions || user.permissions.length === 0) user.permissions = getDefaultPermissionsForRole(norm);
   }
   if (!credits) {
     credits = {
@@ -1517,6 +1809,237 @@ function getFallbackUserSession(): { user: UserProfile; credits: CreditStatus } 
   }
   return { user, credits };
 }
+
+export const MODERATION_QUEUE_KEY = "solotensor_moderation_queue";
+export const SECURITY_AUDIT_LOGS_KEY = "solotensor_security_audit_logs";
+
+const INITIAL_MODERATION_QUEUE: ModerationQueueItem[] = [
+  {
+    id: "mod-q-101",
+    target_type: "model",
+    target_id: "mod_tokyo_cyber_v2",
+    title: "Neo-Shinjuku Cyberpunk Architecture LoRA",
+    preview_url: null,
+    author_username: "cyber_artisan",
+    author_role: "creator",
+    reporter_username: "prompt_sentinel",
+    reason: "Suspected unlicensed checkpoint weight merge without attribution",
+    details: "Metadata signatures show 98% parameter overlap with v1 checkpoint without creator license.",
+    flag_count: 3,
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+    status: "pending",
+    severity: "medium",
+    tags: ["architecture", "sdxl", "lora"],
+  },
+  {
+    id: "mod-q-102",
+    target_type: "post",
+    target_id: "post_neon_visage_88",
+    title: "Cybernetic Geisha Portrait // Extended Latent",
+    preview_url: null,
+    author_username: "ghost_in_the_latent",
+    author_role: "creator",
+    reporter_username: "safety_guard_bot",
+    reason: "Graphic content unflagged / Mature content filter bypass",
+    details: "Automated DeepDanbooru flagged aesthetic gore at 0.89 confidence without mature tag.",
+    flag_count: 5,
+    created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
+    status: "pending",
+    severity: "high",
+    tags: ["portrait", "nsfw_unflagged"],
+  },
+  {
+    id: "mod-q-103",
+    target_type: "model",
+    target_id: "mod_inversion_faces_v1",
+    title: "Deep Embedding Facial Morph Enclave",
+    preview_url: null,
+    author_username: "latent_rebel",
+    author_role: "creator",
+    reporter_username: "community_watch",
+    reason: "Potential Real-Person Impersonation safetensors",
+    details: "Embedding tokens match non-consensual identity tags.",
+    flag_count: 8,
+    created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
+    status: "pending",
+    severity: "critical",
+    tags: ["embedding", "impersonation"],
+  },
+  {
+    id: "mod-q-104",
+    target_type: "post",
+    target_id: "post_darkroom_synthesis_909",
+    title: "Infinite Brutalist Monoliths",
+    preview_url: null,
+    author_username: "riiwa",
+    author_role: "verified_creator",
+    reporter_username: "anon_user_44",
+    reason: "Accidental flag / False positive",
+    details: "Reported as spam, but conforms to all architectural synthesis standards.",
+    flag_count: 1,
+    created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+    status: "resolved",
+    severity: "low",
+    tags: ["architecture", "monolith"],
+  },
+];
+
+const INITIAL_SECURITY_AUDIT_LOGS: SecurityAuditLogEntry[] = [
+  {
+    id: "audit-001",
+    actor_username: "system_admin",
+    actor_role: "admin",
+    action: "role:grant_verified",
+    resource_type: "user",
+    resource_id: "usr_riiwa",
+    details: "Promoted to Verified Creator with partner publishing download controls.",
+    ip_address: "127.0.0.1",
+    created_at: new Date(Date.now() - 3600000 * 36).toISOString(),
+  },
+  {
+    id: "audit-002",
+    actor_username: "mod_kusanagi",
+    actor_role: "moderator",
+    action: "content:toggle_nsfw",
+    resource_type: "post",
+    resource_id: "post_neon_77",
+    details: "Applied mature aesthetic tag after community report review.",
+    ip_address: "127.0.0.1",
+    created_at: new Date(Date.now() - 3600000 * 18).toISOString(),
+  },
+  {
+    id: "audit-003",
+    actor_username: "system_admin",
+    actor_role: "admin",
+    action: "credits:grant_manual",
+    resource_type: "user",
+    resource_id: "usr_solo_local",
+    details: "Manual allocation of +1000 Studio Energy units for compute cluster evaluation.",
+    ip_address: "127.0.0.1",
+    created_at: new Date(Date.now() - 3600000 * 6).toISOString(),
+  },
+];
+
+export function getFallbackModerationQueue(status?: string): ModerationQueueItem[] {
+  if (typeof window === "undefined") return INITIAL_MODERATION_QUEUE;
+  try {
+    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
+    let items: ModerationQueueItem[] = raw ? JSON.parse(raw) : INITIAL_MODERATION_QUEUE;
+    if (!raw) {
+      localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(INITIAL_MODERATION_QUEUE));
+    }
+    if (status && status !== "all") {
+      items = items.filter((i) => i.status === status);
+    }
+    return items;
+  } catch {
+    return INITIAL_MODERATION_QUEUE;
+  }
+}
+
+export function takeFallbackModerationAction(payload: ModerationActionPayload): { success: boolean; message: string } {
+  if (typeof window === "undefined") return { success: true, message: "Action recorded" };
+  try {
+    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
+    const items: ModerationQueueItem[] = raw ? JSON.parse(raw) : [...INITIAL_MODERATION_QUEUE];
+    const index = items.findIndex((i) => i.target_id === payload.target_id || i.id === payload.target_id);
+
+    if (index !== -1) {
+      if (payload.action === "approve") {
+        items[index].status = "resolved";
+      } else if (payload.action === "takedown" || payload.action === "ban_user") {
+        items[index].status = "dismissed";
+      } else {
+        items[index].status = "resolved";
+      }
+      localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(items));
+    }
+
+    const rawLogs = localStorage.getItem(SECURITY_AUDIT_LOGS_KEY);
+    const logs: SecurityAuditLogEntry[] = rawLogs ? JSON.parse(rawLogs) : [...INITIAL_SECURITY_AUDIT_LOGS];
+    const currentUser = getFallbackUserSession().user;
+    logs.unshift({
+      id: `audit-${Date.now()}`,
+      actor_username: currentUser.username,
+      actor_role: currentUser.primary_role || currentUser.role,
+      action: `moderation:${payload.action}`,
+      resource_type: payload.target_type,
+      resource_id: payload.target_id,
+      details: payload.reason || payload.notes || `Moderation action ${payload.action} executed on ${payload.target_type}:${payload.target_id}`,
+      ip_address: "127.0.0.1",
+      created_at: new Date().toISOString(),
+    });
+    localStorage.setItem(SECURITY_AUDIT_LOGS_KEY, JSON.stringify(logs.slice(0, 100)));
+
+    return {
+      success: true,
+      message: `Action '${payload.action}' executed successfully on ${payload.target_type} ${payload.target_id}.`,
+    };
+  } catch {
+    return { success: true, message: `Action '${payload.action}' applied.` };
+  }
+}
+
+export function getFallbackSecurityAuditLogs(): SecurityAuditLogEntry[] {
+  if (typeof window === "undefined") return INITIAL_SECURITY_AUDIT_LOGS;
+  try {
+    const raw = localStorage.getItem(SECURITY_AUDIT_LOGS_KEY);
+    if (!raw) {
+      localStorage.setItem(SECURITY_AUDIT_LOGS_KEY, JSON.stringify(INITIAL_SECURITY_AUDIT_LOGS));
+      return INITIAL_SECURITY_AUDIT_LOGS;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return INITIAL_SECURITY_AUDIT_LOGS;
+  }
+}
+
+export function submitFallbackContentFlag(targetType: string, targetId: string, reason: string, details?: string): { success: boolean; message: string } {
+  if (typeof window === "undefined") return { success: true, message: "Report submitted." };
+  try {
+    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
+    const items: ModerationQueueItem[] = raw ? JSON.parse(raw) : [...INITIAL_MODERATION_QUEUE];
+    const currentUser = getFallbackUserSession().user;
+    items.unshift({
+      id: `mod-q-${Date.now()}`,
+      target_type: (targetType as ModerationTargetType) || "post",
+      target_id: targetId,
+      title: `${targetType.toUpperCase()} // Flagged Content [${targetId.slice(0, 8)}]`,
+      preview_url: null,
+      author_username: "community_creator",
+      author_role: "creator",
+      reporter_username: currentUser.username,
+      reason,
+      details: details || "Submitted by user via inline report action.",
+      flag_count: 1,
+      created_at: new Date().toISOString(),
+      status: "pending",
+      severity: "medium",
+    });
+    localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(items));
+    return { success: true, message: "Content report dispatched to the SoloTensor Moderation Darkroom." };
+  } catch {
+    return { success: true, message: "Report recorded." };
+  }
+}
+
+export function setLocalUserRole(newRole: UserRole): UserProfile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const rawUser = localStorage.getItem(AUTH_USER_KEY);
+    const user: UserProfile = rawUser ? JSON.parse(rawUser) : getFallbackUserSession().user;
+    const norm = normalizeRoleName(newRole);
+    user.role = norm;
+    user.primary_role = norm;
+    user.roles = Array.from(new Set([norm, ...(user.roles || [])]));
+    user.permissions = getDefaultPermissionsForRole(norm);
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    return user;
+  } catch {
+    return null;
+  }
+}
+
 
 function claimFallbackDailyEnergy(): CreditStatus {
   let credits: CreditStatus = {

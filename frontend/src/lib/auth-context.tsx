@@ -13,12 +13,17 @@ import {
   getAuthToken,
   getSecondsUntilMidnight,
   setAuthToken,
+  ApiError,
   AUTH_CREDITS_KEY,
   AUTH_USER_KEY,
   type CreditStatus,
   type LoginPayload,
   type RegisterPayload,
   type UserProfile,
+  type UserRole,
+  normalizeRoleName,
+  getDefaultPermissionsForRole,
+  setLocalUserRole,
 } from "./api";
 
 export interface AuthContextType {
@@ -28,14 +33,23 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   isAuthModalOpen: boolean;
-  login: (emailOrUsername: string, password?: string) => Promise<void>;
-  loginWithOAuth: (provider: "google" | "discord") => Promise<void>;
+  primaryRole: string;
+  roles: string[];
+  permissions: string[];
+  hasRole: (role: string) => boolean;
+  hasPermission: (permission: string) => boolean;
+  isPro: boolean;
+  isMod: boolean;
+  isAdmin: boolean;
+  switchRoleDemo: (role: UserRole) => void;
+  login: (emailOrUsername: string, password?: string) => Promise<UserProfile>;
+  loginWithOAuth: (provider: "google" | "discord") => Promise<UserProfile>;
   register: (
     email: string,
     username: string,
     password?: string,
     displayName?: string
-  ) => Promise<void>;
+  ) => Promise<UserProfile>;
   logout: () => void;
   claimDaily: () => Promise<{ success: boolean; message: string }>;
   refreshCredits: () => Promise<void>;
@@ -113,8 +127,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
               localStorage.setItem(AUTH_USER_KEY, JSON.stringify(remoteSession.user));
             }
-          } catch {
-            // Keep local session if server is offline / route not found
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 401) {
+              setAuthToken(null);
+              setTokenState(null);
+              setUser(null);
+              try {
+                localStorage.removeItem(AUTH_USER_KEY);
+                localStorage.removeItem(AUTH_CREDITS_KEY);
+              } catch {
+                /* ignore */
+              }
+            }
+            // Keep local session if server is offline / transient network error
           }
         } else {
           setCredits(parsedCredits);
@@ -166,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const closeAuthModal = useCallback(() => setIsAuthModalOpen(false), []);
 
   const login = useCallback(
-    async (emailOrUsername: string, password?: string) => {
+    async (emailOrUsername: string, password?: string): Promise<UserProfile> => {
       const payload: LoginPayload = {
         emailOrUsername,
         password,
@@ -184,12 +209,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
       setIsAuthModalOpen(false);
+      return response.user;
     },
     []
   );
 
   const loginWithOAuth = useCallback(
-    async (provider: "google" | "discord") => {
+    async (provider: "google" | "discord"): Promise<UserProfile> => {
       const mockName = provider === "google" ? "google_creator" : "discord_creator";
       const payload: LoginPayload = {
         emailOrUsername: `${mockName}@${provider}.com`,
@@ -207,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
       setIsAuthModalOpen(false);
+      return response.user;
     },
     []
   );
@@ -217,7 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       username: string,
       password?: string,
       displayName?: string
-    ) => {
+    ): Promise<UserProfile> => {
       const payload: RegisterPayload = {
         email,
         username,
@@ -236,6 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* ignore */
       }
       setIsAuthModalOpen(false);
+      return response.user;
     },
     []
   );
@@ -338,6 +366,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user?.email]
   );
 
+  const primaryRole = useMemo(() => {
+    return normalizeRoleName(user?.primary_role || user?.role || "creator");
+  }, [user]);
+
+  const roles = useMemo(() => {
+    if (user?.roles && user.roles.length > 0) {
+      return user.roles.map(normalizeRoleName);
+    }
+    return [primaryRole];
+  }, [user, primaryRole]);
+
+  const permissions = useMemo(() => {
+    if (user?.permissions && user.permissions.length > 0) {
+      return user.permissions;
+    }
+    return getDefaultPermissionsForRole(primaryRole);
+  }, [user, primaryRole]);
+
+  const hasRole = useCallback(
+    (checkRole: string) => {
+      const target = normalizeRoleName(checkRole);
+      return roles.includes(target) || primaryRole === target;
+    },
+    [roles, primaryRole]
+  );
+
+  const hasPermission = useCallback(
+    (permission: string) => {
+      if (permissions.includes("admin:full_access")) return true;
+      return permissions.includes(permission);
+    },
+    [permissions]
+  );
+
+  const isPro = useMemo(() => {
+    return (
+      hasRole("pro_creator") ||
+      hasRole("verified_creator") ||
+      hasRole("moderator") ||
+      hasRole("admin") ||
+      hasPermission("generation:create_pro")
+    );
+  }, [hasRole, hasPermission]);
+
+  const isMod = useMemo(() => {
+    return (
+      hasRole("moderator") ||
+      hasRole("admin") ||
+      hasPermission("moderation:review_queue")
+    );
+  }, [hasRole, hasPermission]);
+
+  const isAdmin = useMemo(() => {
+    return hasRole("admin") || hasPermission("admin:full_access");
+  }, [hasRole, hasPermission]);
+
+  const switchRoleDemo = useCallback((newRole: UserRole) => {
+    const updated = setLocalUserRole(newRole);
+    if (updated) {
+      setUser({ ...updated });
+    }
+  }, []);
+
   const value = useMemo<AuthContextType>(
     () => ({
       user,
@@ -346,6 +437,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: Boolean(token && user),
       isLoading,
       isAuthModalOpen,
+      primaryRole,
+      roles,
+      permissions,
+      hasRole,
+      hasPermission,
+      isPro,
+      isMod,
+      isAdmin,
+      switchRoleDemo,
       login,
       loginWithOAuth,
       register,
@@ -365,6 +465,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       isLoading,
       isAuthModalOpen,
+      primaryRole,
+      roles,
+      permissions,
+      hasRole,
+      hasPermission,
+      isPro,
+      isMod,
+      isAdmin,
+      switchRoleDemo,
       login,
       loginWithOAuth,
       register,

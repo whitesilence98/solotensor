@@ -1,5 +1,6 @@
 """Pydantic request/response schemas for the Comfy Studio API."""
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Generic, Literal, Optional, TypeVar
 
@@ -782,6 +783,26 @@ class UserResponse(BaseModel):
     role: str = "creator"
     is_verified: bool = False
     created_at: str
+    roles: list[str] = Field(default_factory=lambda: ["creator"])
+    primary_role: str = "creator"
+    permissions: list[str] = Field(default_factory=list)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+    @model_validator(mode="after")
+    def sync_user_roles(self) -> "UserResponse":
+        if self.role and self.role not in self.roles:
+            self.roles = [self.role] + [r for r in self.roles if r != self.role]
+        if (not self.primary_role or self.primary_role == "creator") and self.roles:
+            self.primary_role = self.roles[0]
+        elif not self.primary_role:
+            self.primary_role = self.role or "creator"
+        return self
 
 
 class UserCreditsResponse(BaseModel):
@@ -792,6 +813,13 @@ class UserCreditsResponse(BaseModel):
     last_daily_claim_at: Optional[str] = None
     seconds_until_next_reset: int = 0
     can_claim_daily: bool = False
+
+    @field_validator("last_claimed_at", "last_daily_claim_at", mode="before")
+    @classmethod
+    def serialize_credit_timestamps(cls, v: Any) -> Optional[str]:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else None
 
     @model_validator(mode="after")
     def sync_aliases(self) -> "UserCreditsResponse":
@@ -821,6 +849,26 @@ class UserMeResponse(BaseModel):
     created_at: str
     credits: UserCreditsResponse
     user: Optional[UserResponse] = None
+    roles: list[str] = Field(default_factory=lambda: ["creator"])
+    primary_role: str = "creator"
+    permissions: list[str] = Field(default_factory=list)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+    @model_validator(mode="after")
+    def sync_me_roles(self) -> "UserMeResponse":
+        if self.role and self.role not in self.roles:
+            self.roles = [self.role] + [r for r in self.roles if r != self.role]
+        if (not self.primary_role or self.primary_role == "creator") and self.roles:
+            self.primary_role = self.roles[0]
+        elif not self.primary_role:
+            self.primary_role = self.role or "creator"
+        return self
 
 
 class UserPublicProfileResponse(BaseModel):
@@ -842,6 +890,26 @@ class UserPublicProfileResponse(BaseModel):
     models_count: int = 0
     posts_count: int = 0
     workflows_count: int = 0
+    roles: list[str] = Field(default_factory=lambda: ["creator"])
+    primary_role: str = "creator"
+    permissions: list[str] = Field(default_factory=list)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+    @model_validator(mode="after")
+    def sync_profile_roles(self) -> "UserPublicProfileResponse":
+        if self.role and self.role not in self.roles:
+            self.roles = [self.role] + [r for r in self.roles if r != self.role]
+        if (not self.primary_role or self.primary_role == "creator") and self.roles:
+            self.primary_role = self.roles[0]
+        elif not self.primary_role:
+            self.primary_role = self.role or "creator"
+        return self
 
 
 class UserFollowResponse(BaseModel):
@@ -864,6 +932,13 @@ class ApiKeyResponse(BaseModel):
     created_at: str
     api_key: Optional[str] = None
 
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
 
 class ApiKeyListItem(BaseModel):
     id: str
@@ -871,6 +946,63 @@ class ApiKeyListItem(BaseModel):
     name: str
     created_at: str
     masked_key: Optional[str] = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+
+# ---------------------------------------------------------------------------
+# Content Moderation & Governance
+# ---------------------------------------------------------------------------
+
+
+class ContentFlagCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    target_type: str = Field(..., min_length=1, max_length=50)
+    target_id: str = Field(..., min_length=1, max_length=100)
+    reason: str = Field(..., min_length=1, max_length=1000)
+
+
+class ContentFlagResponse(BaseModel):
+    id: str
+    user_id: Optional[str] = None
+    target_type: str
+    target_id: str
+    reason: str
+    status: str = "pending"
+    resolution_notes: Optional[str] = None
+    resolved_by: Optional[str] = None
+    created_at: str
+    resolved_at: Optional[str] = None
+
+    @field_validator("created_at", "resolved_at", mode="before")
+    @classmethod
+    def serialize_datetime(cls, v: Any) -> Optional[str]:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else None
+
+
+class ContentFlagResolveRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    flag_id: Optional[str] = None
+    status: Literal["resolved", "dismissed"] = "resolved"
+    resolution_notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ModerationQueueResponse(BaseModel):
+    items: list[ContentFlagResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    has_more: bool
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -1010,6 +1142,13 @@ class GenerationRecordResponse(BaseModel):
     metadata: Optional[dict[str, Any]] = None
     model_title: Optional[str] = None
     loras: list[GenerationLoraResponse] = Field(default_factory=list)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
 
 
 class PaginatedGenerationsResponse(PaginatedResponse[GenerationRecordResponse]):

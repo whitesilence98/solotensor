@@ -37,9 +37,15 @@ logger = logging.getLogger("solotensor.router.auth")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def _is_expired(expires_at_str: str) -> bool:
+def _is_expired(expires_at: Any) -> bool:
     try:
-        dt = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+        if isinstance(expires_at, datetime):
+            dt = expires_at
+        elif isinstance(expires_at, str):
+            dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        else:
+            return True
+
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) > dt
@@ -166,6 +172,9 @@ async def get_me(
         created_at=user.created_at,
         credits=credits_info,
         user=user,
+        roles=user.roles,
+        primary_role=user.primary_role,
+        permissions=user.permissions,
     )
 
 
@@ -255,12 +264,19 @@ async def reset_password(
     """Reset account password using reset token or 6-digit code."""
     token_record = None
 
-    if req.token:
-        token_record = db.get_auth_token(req.token, token_type="password_reset")
-    elif req.otp_code and req.email:
-        user = db.get_user_by_email(req.email)
-        if user:
-            token_record = db.get_auth_token_by_otp(user["id"], req.otp_code, token_type="password_reset")
+    clean_token = (req.token or "").strip()
+    clean_otp = (req.otp_code or "").strip()
+
+    if clean_token:
+        token_record = db.get_auth_token(clean_token, token_type="password_reset")
+
+    if not token_record and clean_otp:
+        if req.email:
+            user = db.get_user_by_email(req.email)
+            if user:
+                token_record = db.get_auth_token_by_otp(user["id"], clean_otp, token_type="password_reset")
+        if not token_record:
+            token_record = db.get_auth_token(clean_otp, token_type="password_reset")
 
     if not token_record or _is_expired(token_record["expires_at"]):
         raise HTTPException(
@@ -287,12 +303,19 @@ async def verify_email_post(
     """Verify email using URL token or 6-digit code."""
     token_record = None
 
-    if req.token:
-        token_record = db.get_auth_token(req.token, token_type="email_verification")
-    elif req.otp_code and req.email:
-        user = db.get_user_by_email(req.email)
-        if user:
-            token_record = db.get_auth_token_by_otp(user["id"], req.otp_code, token_type="email_verification")
+    clean_token = (req.token or "").strip()
+    clean_otp = (req.otp_code or "").strip()
+
+    if clean_token:
+        token_record = db.get_auth_token(clean_token, token_type="email_verification")
+
+    if not token_record and clean_otp:
+        if req.email:
+            user = db.get_user_by_email(req.email)
+            if user:
+                token_record = db.get_auth_token_by_otp(user["id"], clean_otp, token_type="email_verification")
+        if not token_record:
+            token_record = db.get_auth_token(clean_otp, token_type="email_verification")
 
     if not token_record or _is_expired(token_record["expires_at"]):
         raise HTTPException(

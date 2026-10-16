@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .db import Database, get_db
 from .routers.auth import router as auth_router, get_current_user, get_optional_user
+from .routers.moderation import router as moderation_router
 from .schemas import (
     AssistantRequest,
     AssistantResponse,
@@ -117,6 +118,8 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(auth_router, prefix="/api/v1/auth")
+app.include_router(moderation_router, prefix="/api/v1/moderation")
+app.include_router(moderation_router, prefix="/api/moderation")
 
 
 # --- Creator Profiles & Social Endpoints ------------------------------------

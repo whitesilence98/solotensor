@@ -102,12 +102,17 @@ class CreditService:
             can_claim_daily = False
             seconds_until_next_reset = DAILY_RESET_SECONDS
 
+        claimed_iso = (
+            last_claimed_raw.isoformat()
+            if isinstance(last_claimed_raw, datetime)
+            else (str(last_claimed_raw) if last_claimed_raw is not None else None)
+        )
         return UserCreditsResponse(
             user_id=user_id,
             balance=balance,
             daily_allowance=allowance,
-            last_claimed_at=last_claimed_raw,
-            last_daily_claim_at=last_claimed_raw,
+            last_claimed_at=claimed_iso,
+            last_daily_claim_at=claimed_iso,
             seconds_until_next_reset=seconds_until_next_reset,
             can_claim_daily=can_claim_daily,
         )

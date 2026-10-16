@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Award,
@@ -19,6 +19,7 @@ import {
   Plus,
   Rocket,
   Search,
+  Settings,
   Share2,
   Sparkles,
   Trophy,
@@ -26,15 +27,24 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 import {
   api,
   resolveMediaUrl,
+  type GalleryItem,
   type GenerationRecord,
   type PublicModelSummary,
   type ToolSummary,
   type UserPublicProfile,
 } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
+import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
+import AssetCardList from "@/components/AssetCardList";
+import WorkspaceModal from "@/components/WorkspaceModal";
+import AssetInspectionStage from "@/components/AssetInspectionStage";
+import { generationRecordToGalleryItem } from "@/components/ModelGenerationsGrid";
+import RoleBadge from "@/components/RoleBadge";
+import UserAvatar from "@/components/UserAvatar";
 
 type ActiveTab =
   | "all"
@@ -66,6 +76,12 @@ export default function UserProfilePage({
   const unwrappedParams = use(params);
   const username = decodeURIComponent(unwrappedParams.username);
 
+  const { user: currentUser } = useAuth();
+  const isSelf = Boolean(
+    currentUser?.username &&
+    currentUser.username.toLowerCase() === username.toLowerCase()
+  );
+
   const [profile, setProfile] = useState<UserPublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
@@ -91,8 +107,31 @@ export default function UserProfilePage({
   const [reportedSuccess, setReportedSuccess] = useState(false);
   const [blockedSuccess, setBlockedSuccess] = useState(false);
 
-  // Lightbox preview for posts
-  const [previewPost, setPreviewPost] = useState<GenerationRecord | null>(null);
+  // Modal Inspection Stage for posts
+  const [selectedAsset, setSelectedAsset] = useState<GalleryItem | null>(null);
+
+  const openAsset = useCallback((asset: GalleryItem) => {
+    setSelectedAsset(asset);
+  }, []);
+
+  const selectAssetInCarousel = useCallback((asset: GalleryItem) => {
+    setSelectedAsset(asset);
+  }, []);
+
+  const closeAsset = useCallback(() => {
+    setSelectedAsset(null);
+  }, []);
+
+  // Listen for browser Back button to dismiss inspection stage smoothly
+  useEffect(() => {
+    const onPopState = () => {
+      if (selectedAsset) {
+        setSelectedAsset(null);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [selectedAsset]);
 
   // Load creator profile and all their authentic creations
   useEffect(() => {
@@ -225,6 +264,16 @@ export default function UserProfilePage({
     });
   }, [posts, searchQuery]);
 
+  const galleryItems = useMemo(
+    () => posts.map(generationRecordToGalleryItem),
+    [posts]
+  );
+
+  const filteredGalleryItems = useMemo(
+    () => filteredPosts.map(generationRecordToGalleryItem),
+    [filteredPosts]
+  );
+
   // Workflows directly derived from user's active tool definitions
   const workflows = useMemo(() => {
     return tools.map((t) => ({
@@ -246,7 +295,8 @@ export default function UserProfilePage({
   // Display user details & telemetry
   const displayName = profile?.display_name || profile?.username || username;
   const userId = profile?.id || "";
-  const userRole = (profile?.role || "CREATOR").toUpperCase();
+  const primaryRole = profile?.primary_role || profile?.role || "creator";
+  const userRoles = profile?.roles && profile.roles.length > 0 ? profile.roles : [primaryRole];
   const followingCount = profile?.following_count ?? 0;
   const runsCount = profile?.runs_count ?? 0;
   const downloadsCount = profile?.downloads_count ?? 0;
@@ -274,47 +324,17 @@ export default function UserProfilePage({
         {/* HEADER PROFILE CARD                                       */}
         {/* ========================================================= */}
         <header className="relative flex flex-col md:flex-row items-start gap-6 pb-6 border-b border-[var(--line)]">
-          {/* 84px Circular Avatar matching screenshot */}
+          {/* 84px Hero Avatar */}
           <div className="relative flex-shrink-0">
-            <div className="relative flex h-[84px] w-[84px] items-center justify-center overflow-hidden rounded-full border-2 border-[var(--line-strong)] bg-[#0a0c0a] shadow-xl">
-              {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={displayName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                /* High-fidelity stylized black cat with glowing eyes */
-                <svg
-                  viewBox="0 0 100 100"
-                  className="h-full w-full fill-none"
-                  aria-label={`${displayName} avatar`}
-                >
-                  <circle cx="50" cy="50" r="48" fill="#070807" />
-                  <polygon points="20,50 30,12 50,38" fill="#141715" stroke="#222723" strokeWidth="1.5" />
-                  <polygon points="25,44 32,20 46,36" fill="#2d1727" opacity="0.6" />
-                  <polygon points="80,50 70,12 50,38" fill="#141715" stroke="#222723" strokeWidth="1.5" />
-                  <polygon points="75,44 68,20 54,36" fill="#2d1727" opacity="0.6" />
-                  <ellipse cx="50" cy="62" rx="36" ry="30" fill="#0e110f" stroke="#1d221e" strokeWidth="1.5" />
-                  <ellipse cx="36" cy="58" rx="7" ry="7.5" fill="#f59e0b" />
-                  <ellipse cx="36" cy="58" rx="6" ry="6.5" fill="#ec4899" opacity="0.8" />
-                  <ellipse cx="36" cy="58" rx="4" ry="4.5" fill="#fef08a" />
-                  <ellipse cx="36.5" cy="58" rx="1.5" ry="4.5" fill="#18181b" />
-                  <circle cx="38" cy="55" r="1.5" fill="#ffffff" />
-                  <ellipse cx="64" cy="58" rx="7" ry="7.5" fill="#f59e0b" />
-                  <ellipse cx="64" cy="58" rx="6" ry="6.5" fill="#ec4899" opacity="0.8" />
-                  <ellipse cx="64" cy="58" rx="4" ry="4.5" fill="#fef08a" />
-                  <ellipse cx="63.5" cy="58" rx="1.5" ry="4.5" fill="#18181b" />
-                  <circle cx="66" cy="55" r="1.5" fill="#ffffff" />
-                  <polygon points="48,68 52,68 50,71" fill="#f472b6" opacity="0.9" />
-                </svg>
-              )}
-            </div>
-
-            {/* Online Status Dot */}
-            <span
-              className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full bg-emerald-500 ring-2 ring-[var(--ground)]"
-              title="Online now"
+            <UserAvatar
+              src={profile?.avatar_url}
+              name={displayName}
+              username={username}
+              role={primaryRole}
+              size="2xl"
+              showRoleRing={true}
+              online={true}
+              shape="circle"
             />
           </div>
 
@@ -326,10 +346,12 @@ export default function UserProfilePage({
                 {displayName}
               </h1>
 
-              {/* Exact Role gold badge specification */}
-              <span className="border border-[#664d1a] bg-[#3b2d12] text-[#f5c66e] text-[10px] font-bold px-2 py-0.5 rounded font-mono tracking-wider uppercase inline-flex items-center">
-                {userRole}
-              </span>
+              {/* Dynamic Brutalist Role Badges */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {userRoles.map((r) => (
+                  <RoleBadge key={r} role={r} size="sm" />
+                ))}
+              </div>
             </div>
 
             {/* Row 2: Numeric / String User ID */}
@@ -424,62 +446,86 @@ export default function UserProfilePage({
 
             {/* Row 5: Action Buttons */}
             <div className="flex items-center gap-2 pt-1">
-              {/* Primary Follow Button */}
-              <button
-                type="button"
-                onClick={handleToggleFollow}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
-                  isFollowing
-                    ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] hover:bg-[var(--surface-soft)]"
-                    : "bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
-                }`}
-                aria-pressed={isFollowing}
-              >
-                {isFollowing ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-                    <span>Following</span>
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-                    <span>Follow</span>
-                  </>
-                )}
-              </button>
+              {isSelf ? (
+                <>
+                  <Link
+                    href="/settings"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent)] bg-[var(--surface-raised)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--accent)] transition-all hover:bg-[var(--surface-soft)] active:scale-95"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                    <span>Studio Settings</span>
+                  </Link>
 
-              {/* Secondary Icon: Share Profile ➦ */}
-              <button
-                type="button"
-                onClick={handleShare}
-                title="Share profile"
-                aria-label="Share creator profile"
-                className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
-              >
-                <Share2 className="h-4 w-4" />
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    title="Share profile"
+                    aria-label="Share creator profile"
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Primary Follow Button */}
+                  <button
+                    type="button"
+                    onClick={handleToggleFollow}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+                      isFollowing
+                        ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] hover:bg-[var(--surface-soft)]"
+                        : "bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
+                    }`}
+                    aria-pressed={isFollowing}
+                  >
+                    {isFollowing ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+                        <span>Following</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                        <span>Follow</span>
+                      </>
+                    )}
+                  </button>
 
-              {/* Secondary Icon: Report ⚑ */}
-              <button
-                type="button"
-                onClick={() => setReportModalOpen(true)}
-                title="Report user"
-                aria-label="Report this creator profile"
-                className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
-              >
-                <Flag className="h-4 w-4" />
-              </button>
+                  {/* Secondary Icon: Share Profile ➦ */}
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    title="Share profile"
+                    aria-label="Share creator profile"
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </button>
 
-              {/* Secondary Action: Block */}
-              <button
-                type="button"
-                onClick={() => setBlockModalOpen(true)}
-                title="Block user"
-                aria-label="Block this creator"
-                className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
-              >
-                Block
-              </button>
+                  {/* Secondary Icon: Report ⚑ */}
+                  <button
+                    type="button"
+                    onClick={() => setReportModalOpen(true)}
+                    title="Report user"
+                    aria-label="Report this creator profile"
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
+                  >
+                    <Flag className="h-4 w-4" />
+                  </button>
+
+                  {/* Secondary Action: Block */}
+                  <button
+                    type="button"
+                    onClick={() => setBlockModalOpen(true)}
+                    title="Block user"
+                    aria-label="Block this creator"
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:border-[var(--line-strong)] hover:text-white active:scale-95"
+                  >
+                    Block
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </header>
@@ -681,7 +727,7 @@ export default function UserProfilePage({
                       {models.length}
                     </span>
                   </div>
-                  {models.length > 5 && (
+                  {models.length > 6 && (
                     <button
                       type="button"
                       onClick={() => setActiveTab("models")}
@@ -694,18 +740,15 @@ export default function UserProfilePage({
                 </div>
 
                 {contentLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {Array.from({ length: 5 }).map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="aspect-[3/4] rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] animate-pulse"
-                      />
+                  <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4">
+                    {Array.from({ length: 6 }).map((_, idx) => (
+                      <ModelCardSkeleton key={idx} index={idx} />
                     ))}
                   </div>
                 ) : models.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {models.slice(0, 5).map((model) => (
-                      <CreatorModelCard key={model.model_id} model={model} />
+                  <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4 animate-in fade-in duration-300 ease-out">
+                    {models.slice(0, 6).map((model, idx) => (
+                      <TensorModelCard key={model.model_id} item={model} index={idx} />
                     ))}
                   </div>
                 ) : (
@@ -744,24 +787,13 @@ export default function UserProfilePage({
                 </div>
 
                 {contentLoading ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    {Array.from({ length: 6 }).map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="aspect-square rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] animate-pulse"
-                      />
-                    ))}
-                  </div>
-                ) : posts.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    {posts.slice(0, 6).map((post) => (
-                      <CreatorPostCard
-                        key={post.id}
-                        post={post}
-                        onSelect={() => setPreviewPost(post)}
-                      />
-                    ))}
-                  </div>
+                  <AssetCardList loading skeletonCount={6} aspectRatio="natural" items={[]} />
+                ) : galleryItems.length > 0 ? (
+                  <AssetCardList
+                    items={galleryItems.slice(0, 6)}
+                    aspectRatio="natural"
+                    onOpen={(asset) => openAsset(asset as GalleryItem)}
+                  />
                 ) : (
                   <div className="py-10 text-center border border-dashed border-[var(--line)] rounded-xl bg-[var(--surface-sunken)] p-6">
                     <ImageIcon className="mx-auto h-7 w-7 text-[var(--ink-faint)] opacity-60 mb-2" />
@@ -884,9 +916,9 @@ export default function UserProfilePage({
 
               {/* Grid of Models */}
               {filteredModels.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {filteredModels.map((model) => (
-                    <CreatorModelCard key={model.model_id} model={model} />
+                <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 sm:gap-4 animate-in fade-in duration-300 ease-out">
+                  {filteredModels.map((model, idx) => (
+                    <TensorModelCard key={model.model_id} item={model} index={idx} />
                   ))}
                 </div>
               ) : (
@@ -926,21 +958,17 @@ export default function UserProfilePage({
                   )}
                 </div>
                 <span className="font-mono text-xs text-[var(--ink-faint)]">
-                  {filteredPosts.length} creations
+                  {filteredGalleryItems.length} creations
                 </span>
               </div>
 
               {/* Grid of Posts */}
-              {filteredPosts.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {filteredPosts.map((post) => (
-                    <CreatorPostCard
-                      key={post.id}
-                      post={post}
-                      onSelect={() => setPreviewPost(post)}
-                    />
-                  ))}
-                </div>
+              {filteredGalleryItems.length > 0 ? (
+                <AssetCardList
+                  items={filteredGalleryItems}
+                  aspectRatio="natural"
+                  onOpen={(asset) => openAsset(asset as GalleryItem)}
+                />
               ) : (
                 <div className="py-16 text-center border border-dashed border-[var(--line)] rounded-xl bg-[var(--surface-sunken)] p-8">
                   <ImageIcon className="mx-auto h-8 w-8 text-[var(--ink-faint)] opacity-60 mb-2" />
@@ -1043,71 +1071,24 @@ export default function UserProfilePage({
       </div>
 
       {/* ========================================================= */}
-      {/* POST PREVIEW LIGHTBOX MODAL                               */}
+      {/* ASSET INSPECTION STAGE MODAL                              */}
       {/* ========================================================= */}
-      {previewPost && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
-          onClick={() => setPreviewPost(null)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="relative max-w-3xl w-full rounded-2xl border border-[var(--line-strong)] bg-[var(--surface)] p-6 shadow-2xl space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
-              <h3 className="text-base font-bold text-[var(--ink)] truncate max-w-md">
-                {previewPost.model_title || previewPost.filename}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setPreviewPost(null)}
-                className="rounded-lg p-1.5 text-[var(--ink-faint)] hover:text-white hover:bg-[var(--surface-raised)] transition"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Visual Box */}
-            <div className="relative w-full max-h-[60vh] aspect-video rounded-xl bg-black flex items-center justify-center overflow-hidden border border-[var(--line)]">
-              {previewPost.url ? (
-                <img
-                  src={previewPost.url}
-                  alt={previewPost.prompt || "Creation preview"}
-                  className="max-h-full max-w-full object-contain"
-                />
-              ) : (
-                <Sparkles className="h-12 w-12 text-[var(--accent)] opacity-40 animate-pulse" />
-              )}
-            </div>
-
-            {previewPost.prompt && (
-              <div className="rounded-lg bg-[var(--surface-sunken)] p-3 border border-[var(--line)]">
-                <p className="text-xs font-mono text-[var(--ink-soft)] line-clamp-3">
-                  &ldquo;{previewPost.prompt}&rdquo;
-                </p>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-2 flex-wrap gap-2">
-              <div className="flex items-center gap-3 text-xs font-mono text-[var(--ink-faint)]">
-                {previewPost.format_name && <span>Format: {previewPost.format_name}</span>}
-                {previewPost.steps && <span>Steps: {previewPost.steps}</span>}
-                {previewPost.cfg && <span>CFG: {previewPost.cfg}</span>}
-                {previewPost.seed && <span>Seed: {previewPost.seed}</span>}
-              </div>
-              <Link
-                href={`/?prompt=${encodeURIComponent(previewPost.prompt || "")}`}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition"
-              >
-                <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Remix in Studio</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
+      <WorkspaceModal
+        open={Boolean(selectedAsset)}
+        onClose={closeAsset}
+        headless
+        size="media"
+      >
+        {selectedAsset && (
+          <AssetInspectionStage
+            mode="modal"
+            asset={selectedAsset}
+            items={activeTab === "all" ? galleryItems.slice(0, 6) : filteredGalleryItems}
+            onSelectAsset={selectAssetInCarousel}
+            onClose={closeAsset}
+          />
+        )}
+      </WorkspaceModal>
 
       {/* ========================================================= */}
       {/* REPORT USER MODAL                                         */}
@@ -1312,121 +1293,4 @@ function CreatorToolCard({ tool }: { tool: ToolSummary }) {
   );
 }
 
-// =================================================================
-// SUB-COMPONENT: CREATOR MODEL CARD
-// Display genuine model summary with cover image or typographic poster,
-// model category/type badge, base model, and link to model detail.
-// =================================================================
-function CreatorModelCard({ model }: { model: PublicModelSummary }) {
-  const isLora =
-    model.model_type?.toLowerCase().includes("lora") ||
-    model.category?.toLowerCase().includes("lora");
 
-  return (
-    <Link
-      href={`/models/${encodeURIComponent(model.model_id)}`}
-      className="group relative flex aspect-[3/4] w-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] transition-all duration-300 ease-out hover:border-[var(--line-strong)] hover:shadow-xl"
-    >
-      {/* Background Graphic or Cover Image */}
-      {model.cover_url ? (
-        <img
-          src={model.cover_url}
-          alt={model.title}
-          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1c22] via-[#101216] to-[#08090b] transition-transform duration-500 group-hover:scale-105 flex flex-col justify-center items-center text-center p-4">
-          <div className="font-sans font-black text-xl tracking-tighter text-white drop-shadow-lg line-clamp-2">
-            {model.title}
-          </div>
-          <div className="font-mono text-[10px] uppercase tracking-widest text-[var(--accent)] mt-1 line-clamp-1">
-            {model.base_model || model.category}
-          </div>
-        </div>
-      )}
-
-      {/* Top Floating Tag Badges */}
-      <div className="absolute inset-x-2.5 top-2.5 z-10 flex items-center justify-between pointer-events-none">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span
-            className={`inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider backdrop-blur-md ${
-              isLora
-                ? "border-[#254573] bg-[#172339]/90 text-[#4096ff]"
-                : "border-white/20 bg-black/60 text-white/90"
-            }`}
-          >
-            {model.model_type || (isLora ? "LoRA" : "Checkpoint")}
-          </span>
-          {model.base_model && (
-            <span className="inline-flex items-center gap-1 rounded border border-white/20 bg-black/60 px-1.5 py-0.5 font-mono text-[8px] font-bold text-white/90 backdrop-blur-md">
-              <span className="truncate max-w-[100px]">{model.base_model}</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Atmospheric Bottom Gradient Scrim */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent" />
-
-      {/* Bottom Title & Base Model */}
-      <div className="absolute inset-x-0 bottom-0 z-10 p-3">
-        <h3
-          className="truncate text-xs font-bold text-white transition-colors group-hover:text-[var(--accent)]"
-          title={model.title}
-        >
-          {model.title}
-        </h3>
-        <p className="font-mono text-[10px] text-white/60 mt-0.5 truncate">
-          {model.base_model || model.category} • {model.version_count ?? 1} ver
-        </p>
-      </div>
-    </Link>
-  );
-}
-
-// =================================================================
-// SUB-COMPONENT: CREATOR POST (CREATION) CARD
-// Interactive card for genuine studio generations
-// =================================================================
-function CreatorPostCard({
-  post,
-  onSelect,
-}: {
-  post: GenerationRecord;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="group relative flex aspect-square w-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] text-left transition-all duration-300 hover:border-[var(--line-strong)] hover:shadow-lg focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
-    >
-      {/* Background Graphic / Generation Image */}
-      {post.url ? (
-        <img
-          src={post.url}
-          alt={post.prompt || post.filename}
-          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#181d19] via-[#0e120f] to-[#060807] transition-transform duration-500 group-hover:scale-105 flex items-center justify-center">
-          <Sparkles className="h-6 w-6 text-white/20 group-hover:text-[var(--accent)] transition-colors" />
-        </div>
-      )}
-
-      {/* Atmospheric Hover Veil */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
-
-      {/* Bottom Metadata */}
-      <div className="absolute inset-x-0 bottom-0 z-10 p-2.5">
-        <h4 className="truncate text-[11px] font-bold text-white group-hover:text-[var(--accent)] transition-colors">
-          {post.model_title || post.prompt || post.filename}
-        </h4>
-        <div className="mt-0.5 flex items-center justify-between font-mono text-[9px] text-white/70">
-          <span>{post.format_name || "1:1"}</span>
-          <span>{post.steps ? `${post.steps} steps` : "Completed"}</span>
-        </div>
-      </div>
-    </button>
-  );
-}

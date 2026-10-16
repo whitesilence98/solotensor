@@ -16,11 +16,15 @@ import {
   Maximize2,
   Minimize2,
   Plus,
+  Shield,
+  ShieldAlert,
   Sparkles,
   Tag,
   Trash2,
   X,
   Zap,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { formatBytes } from "@/components/AssetCard";
 import {
@@ -32,6 +36,7 @@ import {
   type InstalledGalleryModel,
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
+import { useAuth } from "@/lib/auth-context";
 
 export const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v4";
 
@@ -132,6 +137,66 @@ export default function AssetInspectionStage({
   const [newTagDraft, setNewTagDraft] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagToast, setTagToast] = useState<string | null>(null);
+
+  // Moderation Governance State
+  const { isMod, isAdmin, hasPermission } = useAuth();
+  const canModerate = isMod || isAdmin || hasPermission("moderation:review_queue") || hasPermission("generation:delete_any");
+  const [modMenuOpen, setModMenuOpen] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
+  const [isNsfw, setIsNsfw] = useState(
+    Array.isArray(asset.metadata?.tags) && asset.metadata.tags.some((t) => t.toLowerCase() === "nsfw" || t.toLowerCase() === "mature")
+  );
+  const [modToast, setModToast] = useState<string | null>(null);
+
+  const handleModAction = async (action: "hide" | "toggle_nsfw" | "takedown") => {
+    try {
+      if (action === "hide") {
+        const next = !isHidden;
+        setIsHidden(next);
+        await api.takeModerationAction({
+          target_type: "post",
+          target_id: asset.key,
+          action: "hide",
+          notes: next ? "Asset hidden by moderator" : "Asset unhidden by moderator",
+        });
+        setModToast(next ? "[Mod] Output hidden from gallery" : "[Mod] Output restored to gallery");
+      } else if (action === "toggle_nsfw") {
+        const next = !isNsfw;
+        setIsNsfw(next);
+        const updatedTags = next
+          ? [...tags, "nsfw"]
+          : tags.filter((t) => t.toLowerCase() !== "nsfw" && t.toLowerCase() !== "mature");
+        setTags(updatedTags);
+        if (asset.metadata) {
+          asset.metadata.tags = updatedTags;
+        }
+        await api.takeModerationAction({
+          target_type: "post",
+          target_id: asset.key,
+          action: "toggle_nsfw",
+          notes: next ? "Marked NSFW/Mature" : "Cleared NSFW/Mature flag",
+        });
+        setModToast(next ? "[Mod] Marked as NSFW/Mature" : "[Mod] NSFW tag removed");
+      } else if (action === "takedown") {
+        await api.takeModerationAction({
+          target_type: "post",
+          target_id: asset.key,
+          action: "takedown",
+          notes: "Moderator emergency takedown",
+        });
+        setModToast("[Mod] Asset taken down");
+        setTimeout(() => {
+          onDeleteOutput?.(asset.key);
+          onClose?.();
+        }, 1200);
+      }
+      setTimeout(() => setModToast(null), 3500);
+      setModMenuOpen(false);
+    } catch {
+      setModToast("[Mod] Action could not be recorded");
+      setTimeout(() => setModToast(null), 3000);
+    }
+  };
 
   useEffect(() => {
     setTags(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
@@ -473,30 +538,96 @@ export default function AssetInspectionStage({
             )}
           </div>
 
-          {/* Standalone Breadcrumb / Modal Close Button */}
-          {mode === "modal" && onClose ? (
-            <button
-              type="button"
-              onClick={() => {
-                setIsZoomed(false);
-                setConfirmDelete(false);
-                onClose();
-              }}
-              className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
-              aria-label="Close dialog"
-              title="Close (Esc)"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : mode === "standalone" ? (
-            <Link
-              href={backHref}
-              className="absolute top-4 right-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs font-mono text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--line-strong)] transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span>{backLabel}</span>
-            </Link>
-          ) : null}
+          {modToast && (
+            <div className="mb-2 rounded border border-[#0c4a6e]/50 bg-[#082f49]/50 px-2.5 py-1 text-[11px] font-mono text-[#38bdf8] flex items-center gap-1.5 animate-in fade-in duration-150">
+              <Shield className="h-3.5 w-3.5 shrink-0" />
+              <span>{modToast}</span>
+            </div>
+          )}
+
+          {/* Standalone Breadcrumb / Modal Close Button / Mod Actions */}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            {canModerate && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setModMenuOpen((v) => !v)}
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-[#0c4a6e] bg-[#082f49] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[#38bdf8] hover:bg-[#0c4a6e]/60 transition-colors shadow-sm"
+                  title="Moderator Actions & Governance"
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  <span>Mod Actions</span>
+                </button>
+
+                {modMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[#0c4a6e]/60 bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-2 py-1 pb-1.5 border-b border-[var(--line)]">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#38bdf8] block">
+                        🛡 Mod Controls
+                      </span>
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate block">
+                        {asset.key.split("/").pop()}
+                      </span>
+                    </div>
+
+                    <div className="py-1 space-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleModAction("hide")}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                      >
+                        {isHidden ? <Eye className="h-3.5 w-3.5 text-[var(--accent)]" /> : <EyeOff className="h-3.5 w-3.5 text-[var(--ink-faint)]" />}
+                        <span>{isHidden ? "Unhide from Gallery" : "Hide from Gallery"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleModAction("toggle_nsfw")}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                      >
+                        <ShieldAlert className={`h-3.5 w-3.5 ${isNsfw ? "text-amber-400" : "text-[var(--ink-faint)]"}`} />
+                        <span>{isNsfw ? "Remove NSFW Tag" : "Flag as NSFW / Mature"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleModAction("takedown")}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Takedown / Delete Asset</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {mode === "modal" && onClose ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsZoomed(false);
+                  setConfirmDelete(false);
+                  setModMenuOpen(false);
+                  onClose();
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
+                aria-label="Close dialog"
+                title="Close (Esc)"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : mode === "standalone" ? (
+              <Link
+                href={backHref}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs font-mono text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--line-strong)] transition-colors"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span>{backLabel}</span>
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         {/* Body Content */}

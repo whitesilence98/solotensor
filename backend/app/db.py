@@ -326,6 +326,323 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_generations_key ON generations(key);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_loras_generation_id ON generation_loras(generation_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_gen_loras_model_id ON generation_loras(lora_model_id);")
+
+            # --- RBAC & Content Moderation Relational Schema ---------------------
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS roles (
+                    name TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    description TEXT,
+                    tier_level INTEGER NOT NULL DEFAULT 1,
+                    badge_style TEXT DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS permissions (
+                    codename TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    description TEXT NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS role_permissions (
+                    role_name TEXT NOT NULL,
+                    permission_codename TEXT NOT NULL,
+                    PRIMARY KEY (role_name, permission_codename),
+                    FOREIGN KEY(role_name) REFERENCES roles(name) ON DELETE CASCADE,
+                    FOREIGN KEY(permission_codename) REFERENCES permissions(codename) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_roles (
+                    user_id TEXT NOT NULL,
+                    role_name TEXT NOT NULL,
+                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    granted_by TEXT,
+                    expires_at TIMESTAMP,
+                    PRIMARY KEY (user_id, role_name),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(role_name) REFERENCES roles(name) ON DELETE CASCADE,
+                    FOREIGN KEY(granted_by) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS security_audit_logs (
+                    id TEXT PRIMARY KEY,
+                    actor_id TEXT,
+                    action TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    resource_id TEXT NOT NULL,
+                    details TEXT DEFAULT '{}',
+                    ip_address TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS content_flags (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    resolution_notes TEXT,
+                    resolved_by TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+                    FOREIGN KEY(resolved_by) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_roles_role_name ON user_roles(role_name);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_name);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_role_permissions_perm ON role_permissions(permission_codename);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON security_audit_logs(actor_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON security_audit_logs(action);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON security_audit_logs(resource_type, resource_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_content_flags_status ON content_flags(status);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_content_flags_target ON content_flags(target_type, target_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_content_flags_user ON content_flags(user_id);")
+
+            # Check if roles and permissions are already seeded
+            roles_count_row = conn.execute("SELECT COUNT(*) as count FROM roles;").fetchone()
+            already_seeded = bool(roles_count_row and roles_count_row["count"] >= 6)
+
+            if not already_seeded:
+                # Seed Baseline Roles
+                baseline_roles = [
+                    (
+                        "guest",
+                        "Guest",
+                        "Anonymous guest visitor",
+                        0,
+                        json.dumps({"label": "GUEST", "color": "gray", "className": "border border-[#282c28] bg-[#121412] text-[#8a8e87]"}),
+                    ),
+                    (
+                        "creator",
+                        "Creator",
+                        "Standard registered creator",
+                        1,
+                        json.dumps({"label": "CREATOR", "color": "bronze", "className": "border border-[#383d38] bg-[#181b18] text-[#8a8e87]"}),
+                    ),
+                    (
+                        "pro_creator",
+                        "Pro Creator",
+                        "Subscribed VIP creator with fast lane priority",
+                        2,
+                        json.dumps({"label": "⚡ PRO", "color": "lime", "className": "border border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"}),
+                    ),
+                    (
+                        "verified_creator",
+                        "Verified Creator",
+                        "Verified model author and partner",
+                        3,
+                        json.dumps({"label": "★ VERIFIED AUTHOR", "color": "gold", "className": "border border-[#664d1a] bg-[#3b2d12] text-[#f5c66e]"}),
+                    ),
+                    (
+                        "moderator",
+                        "Moderator",
+                        "Community moderator with review and takedown privileges",
+                        4,
+                        json.dumps({"label": "🛡 MODERATOR", "color": "cyan", "className": "border border-[#0c4a6e] bg-[#082f49] text-[#38bdf8]"}),
+                    ),
+                    (
+                        "admin",
+                        "System Admin",
+                        "Full system access and registry control",
+                        5,
+                        json.dumps({"label": "⚙ ADMIN", "color": "crimson", "className": "border border-[#881337] bg-[#4c0519] text-[#fb7185]"}),
+                    ),
+                    (
+                        "agent:dispatcher",
+                        "ComfyUI Dispatcher Service",
+                        "Service account for ComfyUI execution and job dispatch",
+                        1,
+                        json.dumps({"label": "DISPATCHER", "color": "purple"}),
+                    ),
+                    (
+                        "agent:safety_scanner",
+                        "Safety Scanner Service",
+                        "Service account for automated safety and content filtering",
+                        1,
+                        json.dumps({"label": "SAFETY", "color": "indigo"}),
+                    ),
+                    (
+                        "agent:model_sync",
+                        "Model Sync Service",
+                        "Service account for filesystem weights synchronization",
+                        1,
+                        json.dumps({"label": "SYNC", "color": "blue"}),
+                    ),
+                ]
+                for r_name, r_dname, r_desc, r_tier, r_badge in baseline_roles:
+                    conn.execute(
+                        """
+                        INSERT INTO roles (name, display_name, description, tier_level, badge_style)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET
+                            display_name = excluded.display_name,
+                            description = excluded.description,
+                            tier_level = excluded.tier_level,
+                            badge_style = excluded.badge_style
+                        """,
+                        (r_name, r_dname, r_desc, r_tier, r_badge),
+                    )
+
+                # Seed Baseline Permissions
+                baseline_permissions = [
+                    # Generations & Canvas
+                    ("generation:create_standard", "generation", "Standard inference (up to 1024x1024, 30 steps)"),
+                    ("generation:create_pro", "generation", "High-res, 2K/4K latent upscale, extended steps"),
+                    ("generation:create_private", "generation", "Mark generation private (omit from community feeds)"),
+                    ("generation:batch_multirun", "generation", "Run batch sizes > 1 (e.g. 4x concurrent synthesis)"),
+                    ("generation:delete_own", "generation", "Delete owned outputs from disk and database"),
+                    ("generation:delete_any", "generation", "Moderator override to delete violating generations"),
+                    ("generation:complete_any", "generation", "Service account generation completion permission"),
+
+                    # Models
+                    ("model:publish", "model", "Upload checkpoints, LoRAs, and sidecar recipes"),
+                    ("model:download_weights", "model", "Download model safetensors weights files"),
+                    ("model:edit_own", "model", "Update title, preview covers, tags of owned models"),
+                    ("model:edit_any", "model", "Moderator update of categories or tags"),
+                    ("model:delete_own", "model", "Soft delete / unpublish owned model"),
+                    ("model:delete_any", "model", "Moderator takedown of violating model"),
+
+                    # AI Tools
+                    ("tool:execute", "tool", "Run visual pipelines"),
+                    ("tool:publish", "tool", "Export workflow graphs as interactive Studio Tools"),
+                    ("tool:delete_own", "tool", "Remove personal tools"),
+                    ("tool:delete_any", "tool", "Moderate catalog tools"),
+
+                    # Credits & Monetization
+                    ("credits:claim_daily", "credits", "Claim standard daily credit allowance"),
+                    ("credits:transfer", "credits", "Tip creators for models or workflow recipes"),
+                    ("credits:manage_billing", "credits", "Manage Pro subscriptions and invoices"),
+                    ("credits:grant_manual", "credits", "Admin credit injection / refund"),
+
+                    # Moderation & Governance
+                    ("moderation:flag_content", "moderation", "Submit user reports on violating assets/models"),
+                    ("moderation:review_queue", "moderation", "Access moderation dashboard and report queue"),
+                    ("moderation:ban_user", "moderation", "Suspend or shadowban user accounts"),
+                    ("moderation:inspect_telemetry", "moderation", "View inference prompts, IP address, and node logs"),
+
+                    # System & Backend Agents
+                    ("agent:dispatch_jobs", "agent", "Service account permission to pull jobs for ComfyUI"),
+                    ("agent:sync_models", "agent", "Service account permission to scan filesystem weights"),
+                    ("agent:audit_safety", "agent", "Automated NSFW/safety scanner callback"),
+                ]
+                for p_code, p_cat, p_desc in baseline_permissions:
+                    conn.execute(
+                        """
+                        INSERT INTO permissions (codename, category, description)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(codename) DO UPDATE SET
+                            category = excluded.category,
+                            description = excluded.description
+                        """,
+                        (p_code, p_cat, p_desc),
+                    )
+
+                # Role-Permission Mapping
+                creator_perms = [
+                    "generation:create_standard",
+                    "generation:delete_own",
+                    "model:publish",
+                    "model:download_weights",
+                    "model:edit_own",
+                    "model:delete_own",
+                    "tool:execute",
+                    "tool:publish",
+                    "tool:delete_own",
+                    "credits:claim_daily",
+                    "credits:transfer",
+                    "moderation:flag_content",
+                ]
+                pro_perms = creator_perms + [
+                    "generation:create_pro",
+                    "generation:create_private",
+                    "generation:batch_multirun",
+                    "credits:manage_billing",
+                ]
+                verified_perms = pro_perms
+                moderator_perms = creator_perms + [
+                    "generation:delete_any",
+                    "model:edit_any",
+                    "model:delete_any",
+                    "tool:delete_any",
+                    "moderation:review_queue",
+                    "moderation:ban_user",
+                    "moderation:inspect_telemetry",
+                ]
+                all_perm_codes = [p[0] for p in baseline_permissions]
+
+                role_perms_map = {
+                    "guest": [],
+                    "creator": creator_perms,
+                    "pro_creator": pro_perms,
+                    "verified_creator": verified_perms,
+                    "moderator": moderator_perms,
+                    "admin": all_perm_codes,
+                    "agent:dispatcher": ["agent:dispatch_jobs", "generation:complete_any"],
+                    "agent:safety_scanner": ["agent:audit_safety", "moderation:flag_content"],
+                    "agent:model_sync": ["agent:sync_models", "model:publish"],
+                }
+                for role_key, perm_list in role_perms_map.items():
+                    for perm_key in perm_list:
+                        conn.execute(
+                            """
+                            INSERT INTO role_permissions (role_name, permission_codename)
+                            VALUES (?, ?)
+                            ON CONFLICT(role_name, permission_codename) DO NOTHING
+                            """,
+                            (role_key, perm_key),
+                        )
+
+            # Assign user winnguyen282 both admin and verified_creator roles
+            u_win = conn.execute(
+                "SELECT id FROM users WHERE id = ? OR lower(username) = lower(?)",
+                ("d08abc9c-53af-4576-8074-5da4de0d0723", "winnguyen282"),
+            ).fetchone()
+            if u_win:
+                win_uid = u_win["id"]
+                now_str = datetime.now(timezone.utc).isoformat()
+                for r_win in ("admin", "verified_creator"):
+                    conn.execute(
+                        """
+                        INSERT INTO user_roles (user_id, role_name, granted_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(user_id, role_name) DO NOTHING
+                        """,
+                        (win_uid, r_win, now_str),
+                    )
+                conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (win_uid,))
+
+            # Backfill any existing users without user_roles
+            conn.execute(
+                """
+                INSERT INTO user_roles (user_id, role_name, granted_at)
+                SELECT id, COALESCE(role, 'creator'), created_at
+                FROM users
+                WHERE id NOT IN (SELECT user_id FROM user_roles)
+                ON CONFLICT(user_id, role_name) DO NOTHING
+                """
+            )
+
             if is_pg:
                 logger.info("Initialized SoloTensor PostgreSQL schema from DATABASE_URL")
             else:
@@ -347,25 +664,58 @@ class Database:
         bio: Optional[str] = None,
     ) -> dict[str, Any]:
         ts = created_at or datetime.now(timezone.utc).isoformat()
+        assigned_role = role or "creator"
         with self.get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO users (id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user_id, email.lower(), username, display_name, hashed_password, role, int(is_verified), avatar_url, bio, ts),
+                (user_id, email.lower(), username, display_name, hashed_password, assigned_role, int(is_verified), avatar_url, bio, ts),
             )
+            # Default new registered user to creator role in user_roles
+            conn.execute(
+                """
+                INSERT INTO user_roles (user_id, role_name, granted_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, role_name) DO NOTHING
+                """,
+                (user_id, assigned_role, ts),
+            )
+            # Check if this user is winnguyen282, assign admin + verified_creator
+            if user_id == "d08abc9c-53af-4576-8074-5da4de0d0723" or username.lower() == "winnguyen282":
+                for special_role in ("admin", "verified_creator"):
+                    conn.execute(
+                        """
+                        INSERT INTO user_roles (user_id, role_name, granted_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(user_id, role_name) DO NOTHING
+                        """,
+                        (user_id, special_role, ts),
+                    )
+                conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
+                assigned_role = "admin"
+
         return {
             "id": user_id,
             "email": email.lower(),
             "username": username,
             "display_name": display_name,
-            "role": role,
+            "role": assigned_role,
             "is_verified": bool(is_verified),
             "avatar_url": avatar_url,
             "bio": bio,
             "created_at": ts,
         }
+
+    def _clean_user_row(self, row: Any) -> Optional[dict[str, Any]]:
+        if not row:
+            return None
+        data = dict(row)
+        data["is_verified"] = bool(data.get("is_verified", 0))
+        if isinstance(data.get("created_at"), datetime):
+            data["created_at"] = data["created_at"].isoformat()
+        return data
 
     def get_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -373,12 +723,7 @@ class Database:
                 "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            data = dict(row)
-            data["is_verified"] = bool(data.get("is_verified", 0))
-            return data
+            return self._clean_user_row(cursor.fetchone())
 
     def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -386,12 +731,7 @@ class Database:
                 "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(email) = lower(?)",
                 (email,),
             )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            data = dict(row)
-            data["is_verified"] = bool(data.get("is_verified", 0))
-            return data
+            return self._clean_user_row(cursor.fetchone())
 
     def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -399,12 +739,7 @@ class Database:
                 "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(username) = lower(?)",
                 (username,),
             )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            data = dict(row)
-            data["is_verified"] = bool(data.get("is_verified", 0))
-            return data
+            return self._clean_user_row(cursor.fetchone())
 
     def get_user_by_email_or_username(self, identifier: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -416,12 +751,7 @@ class Database:
                 """,
                 (identifier, identifier),
             )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            data = dict(row)
-            data["is_verified"] = bool(data.get("is_verified", 0))
-            return data
+            return self._clean_user_row(cursor.fetchone())
 
     def verify_user(self, user_id: str) -> bool:
         """Mark user's email as verified."""
@@ -590,6 +920,10 @@ class Database:
         if viewer_id:
             is_following_val = self.is_following(viewer_id, user_id)
 
+        roles = self.get_user_roles(user_id)
+        primary_role = roles[0] if roles else (user_data.get("role") or "creator")
+        permissions = list(self.get_user_permissions(user_id))
+
         return {
             "id": user_id,
             "username": username,
@@ -609,6 +943,9 @@ class Database:
             "models_count": models_count,
             "posts_count": posts_count,
             "workflows_count": tools_count,
+            "roles": roles,
+            "primary_role": primary_role,
+            "permissions": permissions,
         }
 
     # --- Auth Tokens (Verification & Password Reset) ------------------------
@@ -648,15 +985,17 @@ class Database:
         }
 
     def get_auth_token(self, token: str, token_type: str) -> Optional[dict[str, Any]]:
-        """Look up an unused auth token by token string and type."""
+        """Look up an unused auth token by token string or 6-digit OTP code and type."""
+        clean = token.strip()
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
                 SELECT id, user_id, token, token_type, otp_code, expires_at, used_at, created_at
                 FROM auth_tokens
-                WHERE token = ? AND token_type = ? AND used_at IS NULL
+                WHERE (token = ? OR otp_code = ?) AND token_type = ? AND used_at IS NULL
+                ORDER BY created_at DESC LIMIT 1
                 """,
-                (token, token_type),
+                (clean, clean, token_type),
             )
             row = cursor.fetchone()
             return dict(row) if row else None
@@ -722,7 +1061,14 @@ class Database:
                 (user_id,),
             )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            data = dict(row)
+            if isinstance(data.get("last_claimed_at"), datetime):
+                data["last_claimed_at"] = data["last_claimed_at"].isoformat()
+            if isinstance(data.get("updated_at"), datetime):
+                data["updated_at"] = data["updated_at"].isoformat()
+            return data
 
     def update_credits(
         self,
@@ -1155,6 +1501,8 @@ class Database:
             items: list[dict[str, Any]] = []
             for r in rows:
                 item = dict(r)
+                if isinstance(item.get("created_at"), datetime):
+                    item["created_at"] = item["created_at"].isoformat()
                 raw_meta = item.pop("metadata_json", None)
                 try:
                     item["metadata"] = json.loads(raw_meta) if raw_meta else None
@@ -1256,6 +1604,8 @@ class Database:
             items: list[dict[str, Any]] = []
             for r in rows:
                 item = dict(r)
+                if isinstance(item.get("created_at"), datetime):
+                    item["created_at"] = item["created_at"].isoformat()
                 raw_meta = item.pop("metadata_json", None)
                 try:
                     item["metadata"] = json.loads(raw_meta) if raw_meta else None
@@ -1371,6 +1721,271 @@ class Database:
             synced_generations,
         )
         return {"synced_models": synced_models, "synced_generations": synced_generations}
+
+    # --- Role-Based Access Control (RBAC) Operations ------------------------
+
+    def get_user_roles(self, user_id: str) -> list[str]:
+        """Fetch all active roles assigned to a user, sorted by highest tier level."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT ur.role_name
+                FROM user_roles ur
+                LEFT JOIN roles r ON ur.role_name = r.name
+                WHERE ur.user_id = ? AND (ur.expires_at IS NULL OR ur.expires_at > ?)
+                ORDER BY COALESCE(r.tier_level, 0) DESC, ur.granted_at ASC
+                """,
+                (user_id, now),
+            )
+            roles = [r["role_name"] for r in cursor.fetchall()]
+            if not roles:
+                u_row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+                if u_row and u_row["role"]:
+                    roles = [u_row["role"]]
+                else:
+                    roles = ["creator"]
+            return roles
+
+    def get_user_permissions(self, user_id: str) -> set[str]:
+        """Fetch unique permissions for all active roles of a user."""
+        roles = self.get_user_roles(user_id)
+        with self.get_connection() as conn:
+            if "admin" in roles:
+                cursor = conn.execute("SELECT codename FROM permissions")
+                return {r["codename"] for r in cursor.fetchall()}
+            if not roles:
+                return set()
+            placeholders = ",".join("?" for _ in roles)
+            cursor = conn.execute(
+                f"SELECT DISTINCT permission_codename FROM role_permissions WHERE role_name IN ({placeholders})",
+                tuple(roles),
+            )
+            return {r["permission_codename"] for r in cursor.fetchall()}
+
+    def assign_user_role(
+        self,
+        user_id: str,
+        role_name: str,
+        granted_by: Optional[str] = None,
+        expires_at: Optional[str] = None,
+    ) -> bool:
+        """Assign or renew a role for a user."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            # Validate granted_by exists in users table (to satisfy FK)
+            if granted_by:
+                g_row = conn.execute("SELECT id FROM users WHERE id = ?", (granted_by,)).fetchone()
+                if not g_row:
+                    granted_by = None
+
+            conn.execute(
+                """
+                INSERT INTO user_roles (user_id, role_name, granted_at, granted_by, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, role_name) DO UPDATE SET
+                    granted_at = excluded.granted_at,
+                    granted_by = excluded.granted_by,
+                    expires_at = excluded.expires_at
+                """,
+                (user_id, role_name, now, granted_by, expires_at),
+            )
+            # Synchronize primary role in users table if new role tier is higher
+            r_row = conn.execute("SELECT tier_level FROM roles WHERE name = ?", (role_name,)).fetchone()
+            if r_row:
+                new_tier = r_row["tier_level"]
+                u_row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+                if u_row:
+                    cur_role = u_row["role"]
+                    cur_tier_row = conn.execute("SELECT tier_level FROM roles WHERE name = ?", (cur_role,)).fetchone()
+                    cur_tier = cur_tier_row["tier_level"] if cur_tier_row else 0
+                    if new_tier >= cur_tier:
+                        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role_name, user_id))
+            return True
+
+    def revoke_user_role(self, user_id: str, role_name: str) -> bool:
+        """Revoke a role from a user."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM user_roles WHERE user_id = ? AND role_name = ?",
+                (user_id, role_name),
+            )
+            deleted = cursor.rowcount > 0
+            if deleted:
+                # Recompute primary role and update users table
+                remaining = self.get_user_roles(user_id)
+                new_primary = remaining[0] if remaining else "creator"
+                conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_primary, user_id))
+            return deleted
+
+    def insert_audit_log(
+        self,
+        actor_id: Optional[str],
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        details: Optional[dict[str, Any]] = None,
+        ip_address: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Record an entry in security_audit_logs."""
+        log_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        details_json = json.dumps(details or {}, ensure_ascii=False)
+        with self.get_connection() as conn:
+            effective_actor = actor_id
+            if effective_actor:
+                a_row = conn.execute("SELECT id FROM users WHERE id = ?", (effective_actor,)).fetchone()
+                if not a_row:
+                    effective_actor = None
+
+            conn.execute(
+                """
+                INSERT INTO security_audit_logs (id, actor_id, action, resource_type, resource_id, details, ip_address, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (log_id, effective_actor, action, resource_type, resource_id, details_json, ip_address, now),
+            )
+        return {
+            "id": log_id,
+            "actor_id": actor_id,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "details": details or {},
+            "ip_address": ip_address,
+            "created_at": now,
+        }
+
+    # --- Content Moderation & Reporting Operations --------------------------
+
+    def create_content_flag(
+        self,
+        target_type: str,
+        target_id: str,
+        reason: str,
+        user_id: Optional[str] = None,
+        flag_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Submit a new content flag / user report."""
+        f_id = flag_id or str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            effective_user = user_id
+            if effective_user:
+                u_row = conn.execute("SELECT id FROM users WHERE id = ?", (effective_user,)).fetchone()
+                if not u_row:
+                    effective_user = None
+
+            conn.execute(
+                """
+                INSERT INTO content_flags (id, user_id, target_type, target_id, reason, status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (f_id, effective_user, target_type, target_id, reason, now),
+            )
+        return {
+            "id": f_id,
+            "user_id": user_id,
+            "target_type": target_type,
+            "target_id": target_id,
+            "reason": reason,
+            "status": "pending",
+            "resolution_notes": None,
+            "resolved_by": None,
+            "created_at": now,
+            "resolved_at": None,
+        }
+
+    def get_content_flags(
+        self,
+        status: Optional[str] = None,
+        target_type: Optional[str] = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Fetch paginated content flags with optional status and target_type filtering."""
+        page = max(1, page)
+        limit = max(1, min(limit, 100))
+        offset = (page - 1) * limit
+        where_clauses = ["1=1"]
+        params: list[Any] = []
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
+        if target_type:
+            where_clauses.append("target_type = ?")
+            params.append(target_type)
+        where_sql = " AND ".join(where_clauses)
+
+        with self.get_connection() as conn:
+            count_cursor = conn.execute(f"SELECT COUNT(*) as total FROM content_flags WHERE {where_sql}", tuple(params))
+            total = count_cursor.fetchone()["total"]
+
+            query_sql = f"""
+                SELECT id, user_id, target_type, target_id, reason, status, resolution_notes, resolved_by, created_at, resolved_at
+                FROM content_flags
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """
+            rows = conn.execute(query_sql, tuple(params + [limit, offset])).fetchall()
+            items: list[dict[str, Any]] = []
+            for r in rows:
+                data = dict(r)
+                if isinstance(data.get("created_at"), datetime):
+                    data["created_at"] = data["created_at"].isoformat()
+                if isinstance(data.get("resolved_at"), datetime):
+                    data["resolved_at"] = data["resolved_at"].isoformat()
+                items.append(data)
+            return items, total
+
+    def get_content_flag_by_id(self, flag_id: str) -> Optional[dict[str, Any]]:
+        """Fetch single content flag by ID."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, user_id, target_type, target_id, reason, status, resolution_notes, resolved_by, created_at, resolved_at
+                FROM content_flags WHERE id = ?
+                """,
+                (flag_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            data = dict(row)
+            if isinstance(data.get("created_at"), datetime):
+                data["created_at"] = data["created_at"].isoformat()
+            if isinstance(data.get("resolved_at"), datetime):
+                data["resolved_at"] = data["resolved_at"].isoformat()
+            return data
+
+    def resolve_content_flag(
+        self,
+        flag_id: str,
+        status: str,
+        resolved_by: Optional[str] = None,
+        resolution_notes: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Resolve or dismiss a moderation content flag."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            effective_resolver = resolved_by
+            if effective_resolver:
+                r_row = conn.execute("SELECT id FROM users WHERE id = ?", (effective_resolver,)).fetchone()
+                if not r_row:
+                    effective_resolver = None
+
+            cursor = conn.execute(
+                """
+                UPDATE content_flags
+                SET status = ?, resolution_notes = ?, resolved_by = ?, resolved_at = ?
+                WHERE id = ?
+                """,
+                (status, resolution_notes, effective_resolver, now, flag_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.get_content_flag_by_id(flag_id)
 
 
 _default_db: Optional[Database] = None

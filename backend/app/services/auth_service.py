@@ -146,6 +146,26 @@ class LocalAuthProvider(AuthProvider):
         self.jwt_secret = self.settings.JWT_SECRET
         self.jwt_expire_seconds = self.settings.JWT_EXPIRE_DAYS * 86400
 
+    def _build_user_response(self, user_row: dict[str, Any]) -> UserResponse:
+        uid = str(user_row.get("user_id") or user_row.get("id"))
+        roles = self.db.get_user_roles(uid) if uid else []
+        if not roles:
+            roles = [user_row.get("role") or "creator"]
+        primary_role = roles[0] if roles else (user_row.get("role") or "creator")
+        perms = list(self.db.get_user_permissions(uid)) if uid else []
+        return UserResponse(
+            id=uid,
+            email=user_row["email"],
+            username=user_row["username"],
+            display_name=user_row.get("display_name"),
+            role=user_row.get("role", "creator"),
+            is_verified=bool(user_row.get("is_verified", False)),
+            created_at=str(user_row.get("user_created_at") or user_row.get("created_at")),
+            roles=roles,
+            primary_role=primary_role,
+            permissions=perms,
+        )
+
     def create_user(
         self,
         email: str,
@@ -182,15 +202,7 @@ class LocalAuthProvider(AuthProvider):
         self.credits.init_user_credits(user_id=user_id)
         logger.info("Created local user %s (%s)", clean_username, user_id)
 
-        return UserResponse(
-            id=user_record["id"],
-            email=user_record["email"],
-            username=user_record["username"],
-            display_name=user_record.get("display_name"),
-            role=user_record.get("role", "creator"),
-            is_verified=bool(user_record.get("is_verified", False)),
-            created_at=str(user_record["created_at"]),
-        )
+        return self._build_user_response(user_record)
 
     def authenticate(self, email_or_username: str, password: str) -> Optional[UserResponse]:
         identifier = email_or_username.strip()
@@ -201,15 +213,7 @@ class LocalAuthProvider(AuthProvider):
         if not verify_password(password, user_row["hashed_password"]):
             return None
 
-        return UserResponse(
-            id=user_row["id"],
-            email=user_row["email"],
-            username=user_row["username"],
-            display_name=user_row.get("display_name"),
-            role=user_row.get("role", "creator"),
-            is_verified=bool(user_row.get("is_verified", False)),
-            created_at=str(user_row["created_at"]),
-        )
+        return self._build_user_response(user_row)
 
     def create_token(self, user: UserResponse) -> str:
         header = {"alg": "HS256", "typ": "JWT"}
@@ -220,6 +224,8 @@ class LocalAuthProvider(AuthProvider):
             "username": user.username,
             "email": user.email,
             "role": user.role,
+            "roles": user.roles,
+            "primary_role": user.primary_role,
             "iat": now,
             "exp": exp,
         }
@@ -263,15 +269,7 @@ class LocalAuthProvider(AuthProvider):
             if not user_row:
                 return None
 
-            return UserResponse(
-                id=user_row["id"],
-                email=user_row["email"],
-                username=user_row["username"],
-                display_name=user_row.get("display_name"),
-                role=user_row.get("role", "creator"),
-                is_verified=bool(user_row.get("is_verified", False)),
-                created_at=str(user_row["created_at"]),
-            )
+            return self._build_user_response(user_row)
         except Exception:
             return None
 
@@ -301,23 +299,49 @@ class LocalAuthProvider(AuthProvider):
 
     def verify_api_key(self, api_key: str) -> Optional[UserResponse]:
         clean_key = api_key.strip()
-        if not clean_key.startswith("st_live_"):
+        if not (clean_key.startswith("st_live_") or clean_key.startswith("st_agent_")):
             return None
 
         key_hash = hashlib.sha256(clean_key.encode("utf-8")).hexdigest()
         row = self.db.get_api_key_by_hash(key_hash)
-        if not row:
-            return None
+        if row:
+            return self._build_user_response(row)
 
-        return UserResponse(
-            id=row["user_id"],
-            email=row["email"],
-            username=row["username"],
-            display_name=row.get("display_name"),
-            role=row.get("role", "creator"),
-            is_verified=bool(row.get("is_verified", False)),
-            created_at=str(row.get("user_created_at") or row.get("created_at")),
-        )
+        # Scoped service account keys (st_agent_*)
+        if clean_key.startswith("st_agent_"):
+            if "dispatcher" in clean_key:
+                role = "agent:dispatcher"
+                perms = ["agent:dispatch_jobs", "generation:complete_any"]
+                username = "agent-dispatcher"
+            elif "safety" in clean_key:
+                role = "agent:safety_scanner"
+                perms = ["agent:audit_safety", "moderation:flag_content"]
+                username = "agent-safety-scanner"
+            elif "sync" in clean_key:
+                role = "agent:model_sync"
+                perms = ["agent:sync_models", "model:publish"]
+                username = "agent-model-sync"
+            else:
+                parts = clean_key.split("_")
+                scope = parts[2] if len(parts) >= 3 else "default"
+                role = f"agent:{scope}"
+                perms = [f"agent:{scope}"]
+                username = f"agent-{scope}"
+
+            return UserResponse(
+                id=f"sa_{username}",
+                email=f"{username}@agent.solotensor.internal",
+                username=username,
+                display_name=f"Service Account ({username})",
+                role=role,
+                roles=[role],
+                primary_role=role,
+                permissions=perms,
+                is_verified=True,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+        return None
 
     def list_api_keys(self, user_id: str) -> list[ApiKeyListItem]:
         keys = self.db.list_api_keys(user_id)
