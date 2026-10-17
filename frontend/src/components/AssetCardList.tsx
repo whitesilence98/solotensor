@@ -1,21 +1,11 @@
 "use client";
 
-import React, { memo, useMemo } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import AssetCard from "@/components/AssetCard";
 import type { AssetRecord, GalleryItem } from "@/lib/api";
 
-/**
- * Responsive CSS Multi-Column Masonry Classes.
- * - Mobile (<640px): 1 column
- * - Small tablet (640px-1023px): 2 columns
- * - Standard Desktop @ 100% zoom (1024px-1535px): 3 columns
- * - Zoom-out / Wide (1536px-1919px): 4 columns
- * - 2K / Further zoom-out (1920px-2399px): 5 columns
- * - 4K Ultra-wide (2400px+): 6 columns
- * - Clean 14px gap (gap-3.5)
- */
-export const MASONRY_COLUMNS_CLASSES =
-  "columns-1 sm:columns-2 md:columns-3 lg:columns-3 xl:columns-3 2xl:columns-4 min-[1920px]:columns-5 min-[2400px]:columns-6 gap-3.5";
+export const MASONRY_COLUMNS_CLASSES = "flex items-start gap-3.5";
+export const GRID_COLUMNS_CLASSES = MASONRY_COLUMNS_CLASSES;
 
 const SKELETON_ASPECTS = [
   "9 / 16",
@@ -105,10 +95,20 @@ export interface AssetCardListProps {
   emptyState?: React.ReactNode;
 }
 
+function getMasonryColumns(width: number): number {
+  if (width < 600) return 1;
+  if (width < 900) return 2;
+  if (width < 1400) return 3;
+  if (width < 1850) return 4;
+  if (width < 2300) return 5;
+  return 6;
+}
+
 /**
- * Reusable True Masonry Gallery for Asset Cards (Civitai / Pinterest layout).
- * Images retain their natural proportions and pack tightly down columns.
- * Standardizes 3 columns on desktop with automatic responsive expansion when zooming out.
+ * True Row-First Masonry Gallery for Asset Cards (Civitai / Pinterest layout).
+ * Distributes items round-robin across columns (1 2 3 / 4 5 6 / 7 8 9),
+ * while allowing images with varying natural heights to pack tightly down columns
+ * with zero vertical gaps.
  */
 function AssetCardListComponent({
   items,
@@ -124,21 +124,87 @@ function AssetCardListComponent({
   className = "",
   emptyState,
 }: AssetCardListProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(() => {
+    if (typeof window === "undefined") return 3;
+    return getMasonryColumns(window.innerWidth);
+  });
+
+  useEffect(() => {
+    const updateColumns = () => {
+      const el = containerRef.current;
+      if (el && el.clientWidth > 0) {
+        setColumns(getMasonryColumns(el.clientWidth));
+      } else if (typeof window !== "undefined") {
+        setColumns(getMasonryColumns(window.innerWidth));
+      }
+    };
+
+    updateColumns();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        updateColumns();
+      });
+      ro.observe(containerRef.current);
+    }
+
+    window.addEventListener("resize", updateColumns, { passive: true });
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", updateColumns);
+    };
+  }, []);
+
   const savedSet = useMemo(() => {
     if (!savedKeys) return null;
     return savedKeys instanceof Set ? savedKeys : new Set(savedKeys);
   }, [savedKeys]);
 
+  // Distribute items round-robin across columns so Row 1 is [1, 2, 3], Row 2 is [4, 5, 6]
+  const columnBuckets = useMemo(() => {
+    const safeCols = Math.max(1, columns);
+    const buckets: Array<
+      Array<{
+        item: AssetRecord | GalleryItem;
+        index: number;
+        key: string;
+      }>
+    > = Array.from({ length: safeCols }, () => []);
+
+    items.forEach((item, index) => {
+      const key =
+        item.key || ("id" in item ? String((item as any).id) : String(index));
+      buckets[index % safeCols].push({ item, index, key });
+    });
+
+    return buckets;
+  }, [items, columns]);
+
+  // Distribute skeletons round-robin during loading state
+  const skeletonBuckets = useMemo(() => {
+    const safeCols = Math.max(1, columns);
+    const buckets: number[][] = Array.from({ length: safeCols }, () => []);
+    Array.from({ length: skeletonCount }).forEach((_, i) => {
+      buckets[i % safeCols].push(i);
+    });
+    return buckets;
+  }, [skeletonCount, columns]);
+
   if (loading) {
     return (
       <div
-        className={`${MASONRY_COLUMNS_CLASSES} ${className}`}
+        ref={containerRef}
+        className={`flex items-start gap-3.5 ${className}`}
         aria-label="Loading assets"
         aria-busy="true"
       >
-        {Array.from({ length: skeletonCount }).map((_, i) => (
-          <div key={i} className="break-inside-avoid mb-3.5 inline-block w-full">
-            <AssetCardSkeleton index={i} aspectRatio={aspectRatio} />
+        {skeletonBuckets.map((indices, colIdx) => (
+          <div key={colIdx} className="flex flex-1 flex-col gap-3.5 min-w-0">
+            {indices.map((i) => (
+              <AssetCardSkeleton key={i} index={i} aspectRatio={aspectRatio} />
+            ))}
           </div>
         ))}
       </div>
@@ -151,27 +217,30 @@ function AssetCardListComponent({
 
   return (
     <div
-      className={`${MASONRY_COLUMNS_CLASSES} animate-in fade-in duration-300 ease-out ${className}`}
+      ref={containerRef}
+      className={`flex items-start gap-3.5 animate-in fade-in duration-300 ease-out ${className}`}
     >
-      {items.map((item, index) => {
-        const itemKey = item.key || ("id" in item ? String((item as any).id) : String(index));
-        const isSaved = savedSet ? savedSet.has(itemKey) : undefined;
+      {columnBuckets.map((bucket, colIdx) => (
+        <div key={colIdx} className="flex flex-1 flex-col gap-3.5 min-w-0">
+          {bucket.map(({ item, index, key }) => {
+            const isSaved = savedSet ? savedSet.has(key) : undefined;
 
-        return (
-          <div key={itemKey} className="break-inside-avoid mb-3.5 inline-block w-full">
-            <AssetCard
-              asset={item}
-              aspectRatio={aspectRatio}
-              saved={isSaved}
-              onBookmark={onBookmark ? () => onBookmark(item) : undefined}
-              onOpen={onOpen ? () => onOpen(item, index) : () => {}}
-              onDelete={onDelete ? () => onDelete(itemKey) : undefined}
-              showRemix={showRemix}
-              remixModelId={remixModelId}
-            />
-          </div>
-        );
-      })}
+            return (
+              <AssetCard
+                key={key}
+                asset={item}
+                aspectRatio={aspectRatio}
+                saved={isSaved}
+                onBookmark={onBookmark ? () => onBookmark(item) : undefined}
+                onOpen={onOpen ? () => onOpen(item, index) : () => {}}
+                onDelete={onDelete ? () => onDelete(key) : undefined}
+                showRemix={showRemix}
+                remixModelId={remixModelId}
+              />
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

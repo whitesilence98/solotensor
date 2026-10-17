@@ -1243,10 +1243,10 @@ function CreatorToolCard({ tool }: { tool: ToolSummary }) {
         <img
           src={tool.thumbnail_url}
           alt={tool.name}
-          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="asset-zoom-media absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1c1f26] via-[#121418] to-[#0a0b0d] transition-transform duration-500 group-hover:scale-105 flex flex-col justify-center items-center text-center p-3">
+        <div className="asset-zoom-media absolute inset-0 bg-gradient-to-br from-[#1c1f26] via-[#121418] to-[#0a0b0d] flex flex-col justify-center items-center text-center p-3">
           <div className="font-sans font-black text-lg tracking-tighter text-white/90 drop-shadow-md line-clamp-1">
             {tool.name}
           </div>

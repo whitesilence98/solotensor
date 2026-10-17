@@ -97,7 +97,7 @@ export default function ImageUpload({ references, onChange, disabled }: Props) {
         <img
          src={dataUrl}
          alt={`Reference ${i + 1}`}
-         className="h-full w-full object-cover"
+         className="asset-zoom-media h-full w-full object-cover"
         />
         <button
          type="button"

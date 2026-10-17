@@ -19,6 +19,7 @@ import {
 import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import CustomSelect from "@/components/CustomSelect";
+import SeedInput from "@/components/SeedInput";
 import {
   api,
   uuid,
@@ -65,7 +66,7 @@ function ImagePreview({ file, alt }: { file: File; alt: string }) {
   }, [file]);
 
   return url ? (
-    <img src={url} alt={alt} className="h-full w-full object-cover" />
+    <img src={url} alt={alt} className="asset-zoom-media h-full w-full object-cover" />
   ) : (
     <ImagePlus className="h-5 w-5 text-[var(--ink-faint)]" />
   );
@@ -290,7 +291,27 @@ function DynamicControl({
     );
   }
 
-  const numeric = control.kind === "number" || control.kind === "seed";
+  if (control.kind === "seed" || control.seed) {
+    return (
+      <SeedInput
+        id={id}
+        label={display}
+        showLabel={true}
+        value={
+          typeof value === "number" || typeof value === "string"
+            ? value
+            : typeof control.value === "number" || typeof control.value === "string"
+              ? control.value
+              : -1
+        }
+        onChange={(nextVal) => onChange(nextVal)}
+        disabled={busy}
+        size="sm"
+      />
+    );
+  }
+
+  const numeric = control.kind === "number";
   return (
     <div>
       {label}
@@ -312,25 +333,15 @@ function DynamicControl({
         <div className="relative">
           <input
             id={id}
-            type={
-              control.kind === "seed" ? "text" : numeric ? "number" : "text"
-            }
-            inputMode={control.kind === "seed" ? "numeric" : undefined}
-            value={
-              control.kind === "seed" && value === -1
-                ? "Random"
-                : String(value ?? control.value ?? "")
-            }
+            type={numeric ? "number" : "text"}
+            value={String(value ?? control.value ?? "")}
             disabled={busy}
-            min={control.kind === "seed" ? -1 : (control.minimum ?? undefined)}
+            min={control.minimum ?? undefined}
             max={control.maximum ?? undefined}
             step={control.step ?? undefined}
-            placeholder={control.kind === "seed" ? "Random" : undefined}
             onChange={(event) => {
               const raw = event.target.value.trim();
-              if (control.kind === "seed" && raw.toLowerCase() === "random") {
-                onChange(-1);
-              } else if (numeric) {
+              if (numeric) {
                 onChange(raw === "" ? "" : Number(raw));
               } else {
                 onChange(event.target.value);
@@ -338,18 +349,11 @@ function DynamicControl({
             }}
             className={`${FIELD} h-7.5 ${numeric ? "tabular-nums" : ""}`}
           />
-          {control.kind === "seed" && (
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
-              -1 = RANDOM
-            </span>
-          )}
         </div>
       )}
       {numeric && (control.minimum !== null || control.maximum !== null) && (
         <p className="mt-2 text-[11px] text-[var(--ink-faint)]">
-          {control.kind === "seed"
-            ? "Enter -1 for a random seed"
-            : `Range ${control.minimum ?? "—"} to ${control.maximum ?? "—"}`}
+          {`Range ${control.minimum ?? "—"} to ${control.maximum ?? "—"}`}
           {control.step ? ` · step ${control.step}` : ""}
         </p>
       )}
@@ -755,9 +759,9 @@ export default function ToolDetailPage() {
                   aspectRatio="16/9"
                 />
               ) : (
-                <div className="aspect-[16/9] w-full border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                <div className="aspect-[16/9] w-full overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result.images[0].url} alt={`Generated result from ${tool!.name}`} className="h-full w-full object-contain" />
+                  <img src={result.images[0].url} alt={`Generated result from ${tool!.name}`} className="asset-zoom-media h-full w-full object-contain" />
                 </div>
               )}
 

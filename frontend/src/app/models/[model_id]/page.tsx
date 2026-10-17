@@ -60,7 +60,6 @@ export default function PublicModelDetailPage({
   const [isFollowed, setIsFollowed] = useState(false);
   const [copiedTrigger, setCopiedTrigger] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
-  const [runDropdownOpen, setRunDropdownOpen] = useState(false);
   const [expandedDescription, setExpandedDescription] = useState(false);
   const [commentTab, setCommentTab] = useState<"latest" | "liked">("latest");
   const [commentInput, setCommentInput] = useState("");
@@ -696,7 +695,7 @@ export default function PublicModelDetailPage({
                               });
                             }
                           }}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          className="asset-zoom-media h-full w-full object-cover"
                           muted
                           loop
                           playsInline
@@ -715,7 +714,7 @@ export default function PublicModelDetailPage({
                               });
                             }
                           }}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          className="asset-zoom-media h-full w-full object-cover"
                           loading="lazy"
                         />
                       )}
@@ -945,73 +944,16 @@ export default function PublicModelDetailPage({
 
           {/* RIGHT COLUMN: Sticky Telemetry, Actions & License Rail (350px) */}
           <aside className="space-y-4 self-start lg:sticky lg:top-24">
-            {/* Primary Action Button (Split Run Button) */}
-            <div className="relative">
-              <div className="flex rounded-lg shadow-[0_0_16px_rgba(213,240,111,0.2)]">
-                <button
-                  type="button"
-                  onClick={() => runInStudio()}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-l-lg bg-[var(--accent)] px-4 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
-                >
-                  <Play className="h-4 w-4 fill-[var(--accent-ink)]" />
-                  <span>Run</span>
-                  <span className="font-mono text-[10px] opacity-80">⚡ 2M</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRunDropdownOpen(!runDropdownOpen)}
-                  className="flex items-center justify-center rounded-r-lg border-l border-[var(--accent-ink)]/15 bg-[var(--accent)] px-3 text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
-                  title="Run options"
-                >
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform duration-200 ${
-                      runDropdownOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Dropdown Menu */}
-              {runDropdownOpen && (
-                <div className="absolute right-0 top-full z-20 mt-1.5 w-full rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1.5 shadow-2xl animate-fade-in text-xs">
-                  {primaryFile && activeVersion && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRunDropdownOpen(false);
-                        void install(primaryFile, activeVersion.version_id, true);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition"
-                    >
-                      <HardDriveDownload className="h-3.5 w-3.5 text-[var(--accent)]" />
-                      <span>Install to ComfyUI & Run</span>
-                    </button>
-                  )}
-                  {primaryFile && (
-                    <a
-                      href={primaryFile.download_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] transition"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>Download file directly</span>
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRunDropdownOpen(false);
-                      handleShare();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)] transition"
-                  >
-                    <Share2 className="h-3.5 w-3.5" />
-                    <span>Copy share link</span>
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Primary Action Button (Run in Studio) */}
+            <button
+              type="button"
+              onClick={() => runInStudio()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-[0_0_16px_rgba(213,240,111,0.2)] transition hover:bg-[var(--accent-hover)] active:scale-[0.99]"
+            >
+              <Play className="h-4 w-4 fill-[var(--accent-ink)]" />
+              <span>Run</span>
+              <span className="font-mono text-[10px] opacity-80">⚡ 2M</span>
+            </button>
 
             {/* Quick Actions Row */}
             <div className="flex gap-2">

@@ -71,7 +71,7 @@ export default function StudioPage() {
   const [loras, setLoras] = useState<ActiveLora[]>([]);
   const [embeddings, setEmbeddings] = useState<ActiveEmbedding[]>([]);
 
-  const [seed, setSeed] = useState("");
+  const [seed, setSeed] = useState("-1");
   const [steps, setSteps] = useState("25");
   const [imageCount, setImageCount] = useState("1");
   const [cfg, setCfg] = useState("7.0");
@@ -146,7 +146,8 @@ export default function StudioPage() {
       if (saved && typeof saved === "object") {
         if (typeof saved.prompt === "string" && saved.prompt) setPrompt(saved.prompt);
         if (typeof saved.negativePrompt === "string") setNegativePrompt(saved.negativePrompt);
-        if (typeof saved.seed === "string") setSeed(saved.seed);
+        if (typeof saved.seed === "string") setSeed(saved.seed || "-1");
+        else if (typeof saved.seed === "number") setSeed(String(saved.seed));
         if (typeof saved.steps === "string") setSteps(saved.steps);
         if (typeof saved.imageCount === "string") setImageCount(saved.imageCount);
         if (typeof saved.cfg === "string") setCfg(saved.cfg);
@@ -172,7 +173,7 @@ export default function StudioPage() {
   const resetStudioDefaults = useCallback(() => {
     setPrompt(DEFAULT_SAMPLE_PROMPT);
     setNegativePrompt("");
-    setSeed("");
+    setSeed("-1");
     const settings = loadSettings();
     setSteps(String(settings.defaultSteps));
     setImageCount("1");
@@ -308,9 +309,16 @@ export default function StudioPage() {
     const parsedWidth = Math.floor((Number(resolvedWidth) || 1024) / 8) * 8;
     const parsedHeight = Math.floor((Number(resolvedHeight) || 1024) / 8) * 8;
     const rawSeed = seed.trim();
-    const parsedSeed = rawSeed ? Number(rawSeed) : undefined;
+    const rawNum = rawSeed ? Number(rawSeed) : undefined;
+    const isRandomSeed =
+      rawSeed === "" ||
+      rawSeed === "-1" ||
+      rawNum === -1 ||
+      rawSeed.toLowerCase() === "random";
+    const parsedSeed = isRandomSeed ? undefined : rawNum;
 
     if (
+      !isRandomSeed &&
       rawSeed &&
       (parsedSeed === undefined ||
         !Number.isInteger(parsedSeed) ||

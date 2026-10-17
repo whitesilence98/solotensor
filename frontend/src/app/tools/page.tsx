@@ -99,7 +99,7 @@ function TensorToolCard({
           loading="lazy"
           onLoad={() => setIsLoaded(true)}
           onError={() => setImgError(true)}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
+          className={`asset-zoom-media absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
             isLoaded ? "opacity-100" : "opacity-0"
           }`}
         />

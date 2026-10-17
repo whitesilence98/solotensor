@@ -527,7 +527,7 @@ export default function CreateToolDrawer({
                       <img
                         src={thumbnailPreview}
                         alt="Thumbnail preview"
-                        className="h-full w-full object-cover"
+                        className="asset-zoom-media h-full w-full object-cover"
                       />
                     </div>
                   ) : (

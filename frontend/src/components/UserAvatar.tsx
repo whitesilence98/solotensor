@@ -196,7 +196,7 @@ export function UserAvatar({
             src={src}
             alt={name || username || "User avatar"}
             onError={() => setImageError(true)}
-            className="h-full w-full object-cover"
+            className="asset-zoom-media h-full w-full object-cover"
           />
         ) : (
           /* High-craft Procedural Studio Wafer Avatar */

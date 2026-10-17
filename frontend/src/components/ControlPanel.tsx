@@ -40,6 +40,7 @@ import { resolveModelGalleryUrl } from "@/lib/models";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
+import SeedInput from "@/components/SeedInput";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -657,7 +658,7 @@ export default function ControlPanel(props: Props) {
           <img
            src={currentModelCover}
            alt={selectedModel?.title ?? "Model preview"}
-           className="relative z-10 h-full w-full object-cover"
+           className="asset-zoom-media relative z-10 h-full w-full object-cover"
            onError={(e) => {
             (e.currentTarget as HTMLElement).style.display = "none";
            }}
@@ -825,7 +826,7 @@ export default function ControlPanel(props: Props) {
                 <img
                  src={loraCover}
                  alt={lora.title}
-                 className="relative z-10 h-full w-full object-cover"
+                 className="asset-zoom-media relative z-10 h-full w-full object-cover"
                  onError={(e) => {
                   (e.currentTarget as HTMLElement).style.display = "none";
                  }}
@@ -1307,21 +1308,18 @@ export default function ControlPanel(props: Props) {
 
       {advancedOpen && (
        <div className="space-y-3.5 border-t border-[var(--line)] p-3 pt-3.5">
-        {/* Seed, Steps, CFG */}
-        <div className="grid grid-cols-3 gap-2">
-         <div>
-          <label htmlFor="param-seed" className="block text-[10px] font-semibold uppercase text-[var(--ink-faint)]">Seed</label>
-          <input
-           id="param-seed"
-           type="number"
-           min="0"
-           value={seed}
-           onChange={(e) => onSeedChange(e.target.value)}
-           placeholder="Random"
-           disabled={busy}
-           className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none focus:border-[var(--accent)]"
-          />
-         </div>
+        {/* Unified Seed Control */}
+        <SeedInput
+         id="param-seed"
+         label="Seed"
+         value={seed}
+         onChange={(val) => onSeedChange(String(val))}
+         disabled={busy}
+         size="sm"
+        />
+
+        {/* Steps & CFG */}
+        <div className="grid grid-cols-2 gap-2">
          <div>
           <label htmlFor="param-steps" className="block text-[10px] font-semibold uppercase text-[var(--ink-faint)]">Steps</label>
           <input
@@ -1332,7 +1330,7 @@ export default function ControlPanel(props: Props) {
            value={steps}
            onChange={(e) => onStepsChange(e.target.value)}
            disabled={busy}
-           className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+           className="mt-1 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
           />
          </div>
          <div>
@@ -1346,7 +1344,7 @@ export default function ControlPanel(props: Props) {
            value={cfg}
            onChange={(e) => onCfgChange(e.target.value)}
            disabled={busy}
-           className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+           className="mt-1 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
           />
          </div>
         </div>
@@ -1609,7 +1607,7 @@ export default function ControlPanel(props: Props) {
               src={cover}
               alt={m.title}
               loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+              className="asset-zoom-media absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
               onError={(e) => {
                (e.currentTarget as HTMLElement).style.display = "none";
               }}
@@ -1805,7 +1803,7 @@ export default function ControlPanel(props: Props) {
                src={resolveMediaUrl(item.thumbnailUrl) || item.thumbnailUrl}
                alt={item.title}
                loading="lazy"
-               className="relative z-10 h-full w-full object-cover transition-opacity duration-300"
+               className="asset-zoom-media relative z-10 h-full w-full object-cover transition-opacity duration-300"
                onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = "none";
                }}
