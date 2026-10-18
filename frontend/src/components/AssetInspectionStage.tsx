@@ -16,8 +16,6 @@ import {
   ExternalLink,
   Layers,
   Loader2,
-  Maximize2,
-  Minimize2,
   Plus,
   Shield,
   ShieldAlert,
@@ -274,7 +272,6 @@ export default function AssetInspectionStage({
 
   const meta = asset.metadata;
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
-  const rawMediaUrl = asset.url;
 
   // Auto-measure prompt overflow against 15-line limit (approx 316px) & reset state on asset change
   useEffect(() => {
@@ -307,8 +304,6 @@ export default function AssetInspectionStage({
           (item) => item.key === asset.key || (item.url && item.url === asset.url)
         );
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
-  const currentNum = String(resolvedIndex + 1).padStart(2, "0");
-  const totalNum = String(effectiveItems.length).padStart(2, "0");
   const hasCarousel = effectiveItems.length > 1;
 
   const isVideo =
@@ -458,45 +453,6 @@ export default function AssetInspectionStage({
           <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
         </div>
 
-        {/* Top Floating Output Counter Pill */}
-        <div className="absolute top-3.5 left-3.5 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 backdrop-blur-md shadow-md">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-          <span className="font-mono text-[10px] tracking-widest text-[var(--accent)] uppercase font-semibold">
-            {currentNum} / {totalNum} OUTPUTS
-          </span>
-        </div>
-
-        {/* Top Floating Stage Darkroom Toolstrip */}
-        <div
-          className={`absolute top-3.5 z-20 flex items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1 backdrop-blur-md shadow-2xl transition-all ${
-            mode === "modal" && onClose ? "right-12 lg:right-3.5" : "right-3.5"
-          }`}
-        >
-          {/* Zoom Control */}
-          {!isVideo && (
-            <button
-              type="button"
-              onClick={() => setIsZoomed((z) => !z)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-              title={isZoomed ? "Fit to view (Esc)" : "100% 1:1 Pixel Scale"}
-              aria-label={isZoomed ? "Fit to view" : "100% Pixel Scale"}
-            >
-              {isZoomed ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </button>
-          )}
-
-          {/* Raw File Source */}
-          <a
-            href={rawMediaUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-            title="Open uncompressed raw file in new tab"
-            aria-label="Open raw file"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
 
         {/* Previous / Next Floating Chevrons */}
         {hasCarousel && (
@@ -578,24 +534,6 @@ export default function AssetInspectionStage({
             </button>
           )}
 
-          {/* Copy Prompt */}
-          <button
-            type="button"
-            onClick={() => copyText(meta?.prompt ?? "", "stage-prompt")}
-            className={`p-1.5 rounded transition-all active:scale-95 ${
-              copiedKey === "stage-prompt"
-                ? "text-[var(--accent)]"
-                : "text-white/40 hover:text-white"
-            }`}
-            title={copiedKey === "stage-prompt" ? "Prompt copied!" : "Copy prompt"}
-            aria-label={copiedKey === "stage-prompt" ? "Prompt copied" : "Copy prompt"}
-          >
-            {copiedKey === "stage-prompt" ? (
-              <Check className="h-4 w-4 text-[var(--accent)]" />
-            ) : (
-              <Copy className="h-4 w-4" />
-            )}
-          </button>
 
           {/* Download / Save */}
           <a
