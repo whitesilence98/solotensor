@@ -369,7 +369,7 @@ export default function AssetInspectionStage({
       onClose?.();
     } else {
       saveRemixToStorage(meta, modelOptions);
-      router.push("/");
+      router.push("/generate");
     }
   };
 

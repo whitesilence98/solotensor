@@ -15,6 +15,7 @@ from app.services.ai_tools import (
     AIToolNotFound,
     AIToolService,
     extract_controls,
+    set_ai_tool_service,
 )
 
 
@@ -555,6 +556,10 @@ class AIToolServiceTests(unittest.TestCase):
 
 class ToolApiEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.tools_temp = tempfile.TemporaryDirectory()
+        self.test_tools_service = AIToolService(Settings(TOOLS_DIR=self.tools_temp.name))
+        set_ai_tool_service(self.test_tools_service)
+
         from unittest.mock import AsyncMock, MagicMock
         from app.routers.auth import get_current_user
         from app.schemas import UserResponse
@@ -589,6 +594,8 @@ class ToolApiEndpointTests(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
+        set_ai_tool_service(None)
+        self.tools_temp.cleanup()
         from app.routers.auth import get_current_user
         from app.services.rbac_service import get_rbac_service
         app.dependency_overrides.pop(get_current_user, None)

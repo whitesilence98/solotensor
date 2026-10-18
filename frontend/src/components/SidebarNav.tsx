@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, FolderOpen, ImageIcon, Layers3, MessageSquareCode, MoreHorizontal, Settings, Shield, Sparkles, Wrench } from "lucide-react";
+import { Box, Compass, FolderOpen, Home, ImageIcon, Layers3, MessageSquareCode, MoreHorizontal, Settings, Shield, Sparkles, Wand2, Wrench } from "lucide-react";
 import UserNavProfile from "./UserNavProfile";
 import BrandLogo, { TensorPrismEmblem } from "./BrandLogo";
 import { useAuth } from "@/lib/auth-context";
@@ -17,16 +17,18 @@ interface NavItem {
 }
 
 const BASE_NAV_ITEMS: readonly NavItem[] = [
-  { id: "assets", icon: FolderOpen, label: "Library", href: "/assets", primary: true },
-  { id: "generate", icon: ImageIcon, label: "Generate", href: "/", primary: true },
+  { id: "home", icon: Home, label: "Explore", href: "/", primary: true },
+  { id: "generate", icon: Wand2, label: "Generate", href: "/generate", primary: true },
   { id: "tools", icon: Wrench, label: "Tool studio", href: "/tools", primary: true },
   { id: "models", icon: Box, label: "Models", href: "/models", primary: true },
+  { id: "assets", icon: FolderOpen, label: "Library", href: "/assets", primary: true },
   { id: "assist", icon: MessageSquareCode, label: "Code Assist", href: "/assist", primary: false },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings", primary: false },
 ];
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
+  if (href === "/generate") return pathname === "/generate" || pathname.startsWith("/generate");
   if (href === "/models") return pathname === "/models" || pathname.startsWith("/models");
   return pathname === href || pathname.startsWith(`${href}/`);
 }

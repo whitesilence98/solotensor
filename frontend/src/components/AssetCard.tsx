@@ -150,14 +150,14 @@ export default function AssetCard({
   const canRemix = showRemix && (Boolean(asset.metadata?.prompt) || Boolean(effectiveModelId));
 
   const remixHref = useMemo(() => {
-    if (!canRemix) return "/";
+    if (!canRemix) return "/generate";
     const params = new URLSearchParams();
     if (effectiveModelId) params.set("model_id", effectiveModelId);
     if (asset.metadata?.prompt) params.set("prompt", asset.metadata.prompt);
     if (asset.metadata?.seed !== undefined && asset.metadata?.seed !== null) {
       params.set("seed", String(asset.metadata.seed));
     }
-    return `/?${params.toString()}`;
+    return `/generate?${params.toString()}`;
   }, [canRemix, effectiveModelId, asset.metadata?.prompt, asset.metadata?.seed]);
 
   return (

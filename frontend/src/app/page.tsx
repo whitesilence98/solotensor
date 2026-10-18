@@ -1,620 +1,727 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ControlPanel, {
-  type ActiveEmbedding,
-  type ActiveLora,
-  type FormatKey,
-} from "@/components/ControlPanel";
-import CanvasPreview from "@/components/CanvasPreview";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  ArrowRight,
+  Box,
+  Compass,
+  Flame,
+  Layers,
+  Play,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Wand2,
+  Wrench,
+  X,
+  Zap,
+} from "lucide-react";
 import {
   api,
-  uuid,
+  withTypes,
+  type AssetRecord,
   type GalleryItem,
-  type GalleryMetadata,
-  type GeneratePayload,
-  type GenerationMode,
-  type GenerationResult,
   type InstalledGalleryModel,
-  type LoraAdapterPayload,
-  type ProgressEvent,
+  type PublicModelSummary,
+  type ToolSummary,
 } from "@/lib/api";
-import { loadSettings } from "@/lib/settings";
-import { STORAGE_KEYS } from "@/lib/storage";
+import AssetCardList from "@/components/AssetCardList";
+import AssetInspectionStage from "@/components/AssetInspectionStage";
+import WorkspaceModal from "@/components/WorkspaceModal";
+import WorkspaceFooter from "@/components/WorkspaceFooter";
+import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
+import { resolveMediaUrl } from "@/lib/api";
 
-const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
+type HomeTab = "all" | "posts" | "models" | "tools";
 
-const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> = {
-  "1:1": [1024, 1024],
-  "16:9": [1344, 768],
-  "9:16": [768, 1344],
-  "4:3": [1152, 896],
-  "3:2": [1216, 832],
-};
+const QUICK_TAGS = [
+  "Photorealistic",
+  "Anime & Manga",
+  "Cyberpunk",
+  "Cinematic Portrait",
+  "Sci-Fi",
+  "Architecture",
+  "Surrealism",
+  "3D Render",
+  "Retro Pixel",
+  "Dark Fantasy",
+];
 
-const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"];
+const HERO_HIGHLIGHTS = [
+  {
+    title: "FLUX & SDXL Workflows",
+    desc: "Generate high-fidelity assets locally without cloud fees or queue delays.",
+    badge: "Native ComfyUI",
+    icon: Wand2,
+    href: "/generate",
+  },
+  {
+    title: "Creator Model Hub",
+    desc: "Download and condition community checkpoints, LoRAs, and ControlNets.",
+    badge: "16 Model Types",
+    icon: Box,
+    href: "/models",
+  },
+  {
+    title: "Tool Studio Pipelines",
+    desc: "1-Click automated workflows for upscaling, styling, and video synthesis.",
+    badge: "Instant Execution",
+    icon: Wrench,
+    href: "/tools",
+  },
+];
 
-const DEFAULT_SAMPLE_PROMPT =
-  "Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85mm lens, atmospheric haze, volumetric rim lighting, fine textures";
+function HomeToolCard({ tool }: { tool: ToolSummary }) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const thumbUrl = resolveMediaUrl(tool.thumbnail_url);
+  const isVideo = tool.mode.includes("video");
 
-const isBaseModel = (type?: string) => (type ? ["Checkpoint", "SVD"].includes(type) : false);
-const isAdapterModel = (type?: string) => (type ? ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(type) : false);
+  return (
+    <Link
+      href={`/tools/${encodeURIComponent(tool.tool_id)}`}
+      className="group relative flex flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] transition-all duration-300 hover:border-[var(--line-strong)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.6)]"
+    >
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-[var(--surface-sunken)]">
+        {thumbUrl && !imgError && (
+          <div
+            className={`absolute inset-0 shimmer transition-opacity duration-300 ${
+              isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+            }`}
+          />
+        )}
 
-interface ModelIdentity {
-  modelId: string;
-  versionId: string;
-  fileId: string;
+        {thumbUrl && !imgError ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={thumbUrl}
+            alt={tool.name}
+            loading="lazy"
+            onLoad={() => setIsLoaded(true)}
+            onError={() => setImgError(true)}
+            className={`h-full w-full object-cover transition-all duration-500 group-hover:scale-105 ${
+              isLoaded ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
+              <Wrench className="h-5 w-5" />
+            </div>
+          </div>
+        )}
+
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--ground)] via-transparent to-transparent opacity-80" />
+
+        <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 font-mono text-[9px] font-semibold text-white/90 backdrop-blur-md border border-white/10">
+            {isVideo ? <Play className="h-2.5 w-2.5 text-[var(--accent)] fill-current" /> : <Zap className="h-2.5 w-2.5 text-[var(--accent)]" />}
+            <span>{tool.mode}</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col justify-between p-3.5">
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="font-heading text-sm font-semibold text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors truncate">
+              {tool.name}
+            </h4>
+            <span className="shrink-0 font-mono text-[10px] text-[var(--accent)] bg-[var(--surface-sunken)] px-1.5 py-0.5 rounded border border-[var(--line)]">
+              {tool.default_aspect_ratio}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs text-[var(--ink-soft)] leading-relaxed">
+            {tool.has_prompt ? "Custom prompt-driven pipeline with instant parameter tuning." : "Interactive ComfyUI pipeline ready for instant parameter tuning."}
+          </p>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between border-t border-[var(--line)]/60 pt-2.5">
+          <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate max-w-[140px]">
+            {tool.author_username || "Comfy Studio"}
+          </span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] group-hover:translate-x-0.5 transition-transform">
+            Run tool <ArrowRight className="h-3 w-3" />
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
 }
 
-function modelKey(model: ModelIdentity): string {
-  return `${model.modelId}:${model.versionId}:${model.fileId}`;
-}
+export default function HomePage() {
+  const router = useRouter();
 
-function galleryModelKey(model: InstalledGalleryModel): string {
-  return modelKey({
-    modelId: model.model_id,
-    versionId: model.version_id,
-    fileId: model.file_id,
-  });
-}
+  // Tab & Search State
+  const [activeTab, setActiveTab] = useState<HomeTab>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-export default function StudioPage() {
-  const [mode] = useState<GenerationMode>("text-to-image");
-  const [prompt, setPrompt] = useState(DEFAULT_SAMPLE_PROMPT);
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [selection, setSelection] = useState<ModelIdentity | null>(null);
-  const [baseSelection, setBaseSelection] = useState<ModelIdentity | null>(null);
+  // Data states
+  const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [models, setModels] = useState<PublicModelSummary[]>([]);
+  const [tools, setTools] = useState<ToolSummary[]>([]);
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
-  const [modelsError, setModelsError] = useState<string | null>(null);
-  const [modelsLoading, setModelsLoading] = useState(true);
 
-  // Active LoRAs & Embeddings (matching Tensor.Art stacked list)
-  const [loras, setLoras] = useState<ActiveLora[]>([]);
-  const [embeddings, setEmbeddings] = useState<ActiveEmbedding[]>([]);
-
-  const [seed, setSeed] = useState("-1");
-  const [steps, setSteps] = useState("25");
-  const [imageCount, setImageCount] = useState("1");
-  const [cfg, setCfg] = useState("7.0");
-  const [denoise, setDenoise] = useState("1");
-  const [format, setFormat] = useState<FormatKey>("9:16");
-  const [customWidth, setCustomWidth] = useState("768");
-  const [customHeight, setCustomHeight] = useState("1344");
-  const [referenceImage, setReferenceImage] = useState<string | null>(null);
-
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [progressLabel, setProgressLabel] = useState("");
+  // Loading & error states
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [gallery, setGallery] = useState<GalleryItem[]>([]);
-  const [hydrated, setHydrated] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const clientIdRef = useRef<string>("");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Find currently selected Basic Model
-  const selectedModel = useMemo(() => {
-    if (selection) {
-      return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(selection)) ??
-        null
-      );
-    }
-    // Default to the first Checkpoint or base model if available
-    const baseFirst = modelOptions.find((item) => isBaseModel(item.model_type));
-    return baseFirst ?? null;
-  }, [modelOptions, selection]);
+  // Asset Inspection Stage Modal
+  const [inspectedAsset, setInspectedAsset] = useState<AssetRecord | null>(null);
 
-  const baseModel = useMemo(() => {
-    if (baseSelection) {
-      return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(baseSelection)) ??
-        null
-      );
-    }
-    if (selectedModel && isBaseModel(selectedModel.model_type)) {
-      return selectedModel;
-    }
-    return modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
-  }, [modelOptions, baseSelection, selectedModel]);
-
-  const baseModelOptions = useMemo(() => {
-    return modelOptions.filter((item) => isBaseModel(item.model_type));
-  }, [modelOptions]);
-
-  const refreshGallery = useCallback(async () => {
-    try {
-      setGallery(await api.getGallery());
-    } catch {
-      /* gallery is non-critical */
-    }
-  }, []);
-
-  // Hydrate settings
-  useEffect(() => {
-    try {
-      const raw =
-        localStorage.getItem(SAVED_INPUTS_KEY) ??
-        localStorage.getItem("solotensor:last-successful-inputs:v4") ??
-        localStorage.getItem("comfy_studio_saved_inputs") ??
-        "null";
-      const saved = JSON.parse(raw);
-      if (saved && typeof saved === "object") {
-        if (typeof saved.prompt === "string" && saved.prompt) setPrompt(saved.prompt);
-        if (typeof saved.negativePrompt === "string") setNegativePrompt(saved.negativePrompt);
-        if (typeof saved.seed === "string") setSeed(saved.seed || "-1");
-        else if (typeof saved.seed === "number") setSeed(String(saved.seed));
-        if (typeof saved.steps === "string") setSteps(saved.steps);
-        if (typeof saved.imageCount === "string") setImageCount(saved.imageCount);
-        if (typeof saved.cfg === "string") setCfg(saved.cfg);
-        if (typeof saved.denoise === "string") setDenoise(saved.denoise);
-        if (typeof saved.format === "string" && FORMAT_KEYS.includes(saved.format)) setFormat(saved.format);
-        if (saved.modelId && saved.versionId && saved.fileId) {
-          setSelection({ modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId });
-        }
-        if (Array.isArray(saved.loras) && saved.loras.length > 0) {
-          setLoras(saved.loras);
-        }
-      } else {
-        const settings = loadSettings();
-        setFormat(settings.defaultFormat);
-        setSteps(String(settings.defaultSteps));
-      }
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
-
-  const resetStudioDefaults = useCallback(() => {
-    setPrompt(DEFAULT_SAMPLE_PROMPT);
-    setNegativePrompt("");
-    setSeed("-1");
-    const settings = loadSettings();
-    setSteps(String(settings.defaultSteps));
-    setImageCount("1");
-    setCfg("7.0");
-    setDenoise("1");
-    setFormat(settings.defaultFormat);
-    setLoras([]);
-    setSelection(null);
-    try {
-      localStorage.removeItem(SAVED_INPUTS_KEY);
-      localStorage.removeItem("solotensor:last-successful-inputs:v4");
-      localStorage.removeItem("comfy_studio_saved_inputs");
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Persist settings
-  useEffect(() => {
-    if (!hydrated || modelsLoading) return;
-    try {
-      localStorage.setItem(
-        SAVED_INPUTS_KEY,
-        JSON.stringify({
-          prompt,
-          negativePrompt,
-          modelId: selectedModel?.model_id ?? "",
-          versionId: selectedModel?.version_id ?? "",
-          fileId: selectedModel?.file_id ?? "",
-          loras,
-          seed,
-          steps,
-          imageCount,
-          cfg,
-          denoise,
-          format,
-        })
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [hydrated, modelsLoading, prompt, negativePrompt, selectedModel, loras, seed, steps, imageCount, cfg, denoise, format]);
-
-  // Load models from API
+  // Fetch initial combined data
   useEffect(() => {
     let cancelled = false;
-    void api
-      .listSelectableModels()
-      .then((items) => {
+    setLoading(true);
+    setError(null);
+
+    Promise.allSettled([
+      api.getAssets(60),
+      api.getPublicModels(""),
+      api.getTools(),
+      api.listSelectableModels(),
+    ])
+      .then(([assetsRes, modelsRes, toolsRes, selectableRes]) => {
         if (cancelled) return;
-        setModelOptions(items);
 
+        if (assetsRes.status === "fulfilled") {
+          setAssets(withTypes(assetsRes.value));
+        }
+        if (modelsRes.status === "fulfilled") {
+          setModels(modelsRes.value.items || []);
+        }
+        if (toolsRes.status === "fulfilled") {
+          setTools(toolsRes.value);
+        }
+        if (selectableRes.status === "fulfilled") {
+          setModelOptions(selectableRes.value);
+        }
 
+        // If all 3 main sources failed, report error
+        if (
+          assetsRes.status === "rejected" &&
+          modelsRes.status === "rejected" &&
+          toolsRes.status === "rejected"
+        ) {
+          setError("Failed to communicate with SoloTensor backend services.");
+        }
       })
-      .catch((reason: unknown) => {
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setModelsError(reason instanceof Error ? reason.message : "Could not load models");
+          setError(err instanceof Error ? err.message : "Failed to load discovery stream.");
         }
       })
       .finally(() => {
-        if (!cancelled) setModelsLoading(false);
+        if (!cancelled) setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
-  useEffect(() => {
-    void refreshGallery();
-  }, [refreshGallery]);
-
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close();
-    };
-  }, []);
-
-  const outputDimensions = useMemo(() => {
-    const values = format === "custom" ? [Number(customWidth), Number(customHeight)] : FORMATS[format];
-    return {
-      width: Number.isFinite(values[0]) && values[0] > 0 ? values[0] : 1024,
-      height: Number.isFinite(values[1]) && values[1] > 0 ? values[1] : 1024,
-    };
-  }, [format, customWidth, customHeight]);
-
-  const canGenerate = useMemo(() => {
-    if (!prompt.trim() || busy) return false;
-    return true;
-  }, [prompt, busy]);
-
-  const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || busy) return;
-
-    // Determine effective model to use
-    let targetModel = selectedModel;
-    let effectiveBase = baseModel;
-
-    const isPrimaryLora = isAdapterModel(targetModel?.model_type);
-
-    if (!targetModel) {
-      // Fallback: pick first available base model if any
-      targetModel =
-        modelOptions.find((m) => isBaseModel(m.model_type)) ?? modelOptions[0] ?? null;
+  // Handle Quick Tag click
+  const handleTagClick = (tag: string) => {
+    if (selectedTag === tag) {
+      setSelectedTag(null);
+    } else {
+      setSelectedTag(tag);
+      setSearchQuery("");
     }
+  };
 
-    if (!targetModel) {
-      setError("Please ensure at least one model is available in the gallery before generating.");
-      return;
-    }
+  // Filtered Assets (Posts)
+  const filteredAssets = useMemo(() => {
+    let list = assets;
+    const q = searchQuery.trim().toLowerCase();
+    const tag = selectedTag ? selectedTag.toLowerCase() : null;
 
-    // Build active lora_adapters from the Tensor.Art stacked LoRA cards
-    const loraAdapters: LoraAdapterPayload[] = loras
-      .filter((l) => Boolean(l.modelId && l.fileId && l.versionId) && l.enabled !== false)
-      .map((l) => ({
-        model_id: l.modelId!,
-        version_id: l.versionId!,
-        file_id: l.fileId!,
-        strength: l.weight,
-        on: l.enabled !== false,
-      }));
-
-    const [resolvedWidth, resolvedHeight] =
-      format === "custom" ? [customWidth, customHeight] : FORMATS[format].map(String);
-
-    const parsedSteps = Math.max(1, Math.min(100, Number(steps) || 20));
-    const parsedImageCount = Math.max(1, Math.min(4, Number(imageCount) || 1));
-    const parsedCfg = Math.max(0, Math.min(30, Number(cfg) || 7.0));
-    const parsedDenoise = Math.max(0, Math.min(1, Number(denoise) || 1.0));
-    const parsedWidth = Math.floor((Number(resolvedWidth) || 1024) / 8) * 8;
-    const parsedHeight = Math.floor((Number(resolvedHeight) || 1024) / 8) * 8;
-    const rawSeed = seed.trim();
-    const rawNum = rawSeed ? Number(rawSeed) : undefined;
-    const isRandomSeed =
-      rawSeed === "" ||
-      rawSeed === "-1" ||
-      rawNum === -1 ||
-      rawSeed.toLowerCase() === "random";
-    const parsedSeed = isRandomSeed ? undefined : rawNum;
-
-    if (
-      !isRandomSeed &&
-      rawSeed &&
-      (parsedSeed === undefined ||
-        !Number.isInteger(parsedSeed) ||
-        parsedSeed < 0 ||
-        parsedSeed > 2 ** 32 - 1)
-    ) {
-      setError("Seed must be an integer from 0 to 4,294,967,295.");
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    setProgress(0);
-    setProgressLabel("Queuing workflow…");
-
-    clientIdRef.current = uuid();
-    const clientId = clientIdRef.current;
-
-    const ws = api.openProgressSocket(clientId, (event: ProgressEvent) => {
-      if (event.type === "progress" && event.max) {
-        const pct = Math.round(((event.value ?? 0) / event.max) * 100);
-        setProgress(pct);
-        setProgressLabel(`Rendering… node ${event.node ?? ""} ${pct}%`);
-      } else if (event.type === "executing") {
-        setProgressLabel(`Executing node ${event.node ?? ""}`);
-      } else if (event.type === "error") {
-        setError(event.message ?? "Generation failed");
-      }
-    });
-    wsRef.current = ws;
-
-    try {
-      const payload: GeneratePayload = {
-        model_id: targetModel.model_id,
-        version_id: targetModel.version_id,
-        file_id: targetModel.file_id,
-        ...(isPrimaryLora && effectiveBase
-          ? {
-              base_model_id: effectiveBase.model_id,
-              base_version_id: effectiveBase.version_id,
-              base_file_id: effectiveBase.file_id,
-            }
-          : {}),
-        mode,
-        prompt,
-        negative_prompt: negativePrompt,
-        seed: parsedSeed,
-        steps: parsedSteps,
-        image_count: parsedImageCount,
-        cfg: parsedCfg,
-        denoise: parsedDenoise,
-        width: parsedWidth,
-        height: parsedHeight,
-        format_name: format,
-        client_id: clientId,
-        lora_adapters: loraAdapters,
-      };
-
-      const result: GenerationResult = await api.generate(payload);
-      if (result.status === "completed") {
-        setProgress(100);
-        setProgressLabel("Done");
-        void refreshGallery();
-      } else {
-        setError(result.error ?? `Generation ${result.status}`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setBusy(false);
-      setTimeout(() => ws.close(), 1500);
-    }
-  }, [
-    prompt,
-    negativePrompt,
-    selectedModel,
-    baseModel,
-    loras,
-    modelOptions,
-    mode,
-    seed,
-    steps,
-    imageCount,
-    cfg,
-    denoise,
-    format,
-    customWidth,
-    customHeight,
-    busy,
-    refreshGallery,
-  ]);
-
-  // Handle incoming query params (e.g. from gallery "Install and use")
-  useEffect(() => {
-    if (!modelOptions.length) return;
-    try {
-      const search = new URLSearchParams(window.location.search);
-      const urlModelId = search.get("model_id");
-      const urlVersionId = search.get("version_id");
-      const urlFileId = search.get("file_id");
-      const urlBaseModelId = search.get("base_model_id");
-      const urlBaseFileId = search.get("base_file_id");
-
-      if (urlModelId) {
-        const target =
-          modelOptions.find(
-            (m) =>
-              m.model_id === urlModelId &&
-              (!urlFileId || m.file_id === urlFileId) &&
-              (!urlVersionId || m.version_id === urlVersionId)
-          ) || modelOptions.find((m) => m.model_id === urlModelId);
-
-        if (target) {
-          if (isAdapterModel(target.model_type)) {
-            setLoras((prev) => {
-              const alreadyExists = prev.some(
-                (l) => l.modelId === target.model_id && (!target.file_id || l.fileId === target.file_id)
-              );
-              if (alreadyExists) return prev;
-              const newLora: ActiveLora = {
-                id: `${target.model_id}:${target.file_id}`,
-                title: target.title,
-                baseModel: target.version_name || "SDXL",
-                weight: 0.8,
-                enabled: true,
-                modelId: target.model_id,
-                versionId: target.version_id,
-                fileId: target.file_id,
-                thumbnailUrl: target.cover_url,
-              };
-              return [...prev, newLora];
-            });
-
-            if (urlBaseModelId) {
-              const baseMatch =
-                modelOptions.find(
-                  (m) =>
-                    m.model_id === urlBaseModelId &&
-                    (!urlBaseFileId || m.file_id === urlBaseFileId)
-                ) || modelOptions.find((m) => m.model_id === urlBaseModelId);
-              if (baseMatch) {
-                setBaseSelection({
-                  modelId: baseMatch.model_id,
-                  versionId: baseMatch.version_id,
-                  fileId: baseMatch.file_id,
-                });
-              }
-            }
-          } else {
-            setSelection({
-              modelId: target.model_id,
-              versionId: target.version_id,
-              fileId: target.file_id,
-            });
-          }
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [modelOptions]);
-
-  const handleRemix = useCallback((meta: GalleryMetadata) => {
-    if (meta.prompt) setPrompt(meta.prompt);
-    if (typeof meta.negative_prompt === "string") setNegativePrompt(meta.negative_prompt);
-    if (meta.seed !== undefined && meta.seed !== null) setSeed(String(meta.seed));
-    if (meta.steps !== undefined && meta.steps !== null) setSteps(String(meta.steps));
-    if (meta.cfg !== undefined && meta.cfg !== null) setCfg(String(meta.cfg));
-    if (meta.denoise !== undefined && meta.denoise !== null) setDenoise(String(meta.denoise));
-    if (meta.format_name && FORMAT_KEYS.includes(meta.format_name as FormatKey)) {
-      setFormat(meta.format_name as FormatKey);
-    }
-    if (meta.width && meta.height) {
-      setCustomWidth(String(meta.width));
-      setCustomHeight(String(meta.height));
-    }
-    if (meta.model_id && meta.version_id && meta.file_id) {
-      setSelection({
-        modelId: meta.model_id,
-        versionId: meta.version_id,
-        fileId: meta.file_id,
+    if (tag) {
+      list = list.filter((a) => {
+        const prompt = (a.metadata?.prompt || "").toLowerCase();
+        const modelTitle = (a.metadata?.model_title || "").toLowerCase();
+        const tags = (a.metadata?.tags || []).map((t) => t.toLowerCase());
+        return prompt.includes(tag) || modelTitle.includes(tag) || tags.some((t) => t.includes(tag));
       });
     }
-    if (Array.isArray(meta.loras) && meta.loras.length > 0) {
-      const activeLoras: ActiveLora[] = meta.loras.map((l, index) => {
-        const matched = modelOptions.find(
-          (m) =>
-            (l.model_id && m.model_id === l.model_id) ||
-            m.filename === l.lora ||
-            m.title === l.lora ||
-            l.lora.includes(m.filename) ||
-            m.filename.includes(l.lora)
+
+    if (q) {
+      list = list.filter((a) => {
+        const prompt = (a.metadata?.prompt || "").toLowerCase();
+        const modelTitle = (a.metadata?.model_title || "").toLowerCase();
+        const key = (a.key || "").toLowerCase();
+        const tags = (a.metadata?.tags || []).map((t) => t.toLowerCase());
+        return (
+          prompt.includes(q) ||
+          modelTitle.includes(q) ||
+          key.includes(q) ||
+          tags.some((t) => t.includes(q))
         );
-        return {
-          id: `remix-${index}-${l.lora}`,
-          title: matched?.title || l.lora,
-          baseModel: matched?.version_name || "SDXL",
-          weight: l.strength,
-          enabled: l.on,
-          modelId: l.model_id || matched?.model_id,
-          versionId: l.version_id || matched?.version_id,
-          fileId: l.file_id || matched?.file_id,
-          thumbnailUrl: matched?.cover_url,
-        };
       });
-      setLoras(activeLoras);
     }
-  }, [modelOptions]);
 
-  const handleDeleteOutput = useCallback(async (key: string) => {
-    try {
-      await api.deleteAsset(key);
-      await refreshGallery();
-    } catch (err) {
-      console.error("Failed to delete asset:", err);
+    return list;
+  }, [assets, searchQuery, selectedTag]);
+
+  // Filtered Models
+  const filteredModels = useMemo(() => {
+    let list = models;
+    const q = searchQuery.trim().toLowerCase();
+    const tag = selectedTag ? selectedTag.toLowerCase() : null;
+
+    if (tag) {
+      list = list.filter((m) => {
+        const title = m.title.toLowerCase();
+        const cat = m.category.toLowerCase();
+        const tags = (m.tags || []).map((t) => t.toLowerCase());
+        return title.includes(tag) || cat.includes(tag) || tags.some((t) => t.includes(tag));
+      });
     }
-  }, [refreshGallery]);
+
+    if (q) {
+      list = list.filter((m) => {
+        const title = m.title.toLowerCase();
+        const cat = m.category.toLowerCase();
+        const base = (m.base_model || "").toLowerCase();
+        const type = m.model_type.toLowerCase();
+        const tags = (m.tags || []).map((t) => t.toLowerCase());
+        return (
+          title.includes(q) ||
+          cat.includes(q) ||
+          base.includes(q) ||
+          type.includes(q) ||
+          tags.some((t) => t.includes(q))
+        );
+      });
+    }
+
+    return list;
+  }, [models, searchQuery, selectedTag]);
+
+  // Filtered Tools
+  const filteredTools = useMemo(() => {
+    let list = tools;
+    const q = searchQuery.trim().toLowerCase();
+    const tag = selectedTag ? selectedTag.toLowerCase() : null;
+
+    if (tag) {
+      list = list.filter((t) => {
+        const name = t.name.toLowerCase();
+        const mode = t.mode.toLowerCase();
+        return name.includes(tag) || mode.includes(tag);
+      });
+    }
+
+    if (q) {
+      list = list.filter((t) => {
+        const name = t.name.toLowerCase();
+        const mode = t.mode.toLowerCase();
+        return name.includes(q) || mode.includes(q);
+      });
+    }
+
+    return list;
+  }, [tools, searchQuery, selectedTag]);
+
+  const hasFilter = searchQuery.trim() !== "" || selectedTag !== null;
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedTag(null);
+  };
+
+  const openAssetInspection = useCallback((item: AssetRecord | GalleryItem) => {
+    setInspectedAsset(item as AssetRecord);
+  }, []);
 
   return (
-    <div className="workspace-bezel relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-transparent p-2 sm:p-3 lg:flex-row lg:gap-3 lg:overflow-hidden">
-      {/* Left Control Panel (Collapsible) */}
-      <div
-        className={`min-h-0 shrink-0 ${
-          isSidebarCollapsed ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none" : "h-auto w-full lg:h-full lg:w-[24.5rem]"
-        }`}
-      >
-        <ControlPanel
-          prompt={prompt}
-          onPromptChange={setPrompt}
-          selectedModel={selectedModel}
-          modelOptions={modelOptions}
-          onModelChange={(key) => {
-            const model = modelOptions.find((item) => galleryModelKey(item) === key) ?? null;
-            const next = model
-              ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-              : null;
-            setSelection(next);
-            setModelsError(null);
-          }}
-          baseModel={baseModel}
-          baseModelOptions={baseModelOptions}
-          onBaseModelChange={(key) => {
-            const model = baseModelOptions.find((item) => galleryModelKey(item) === key) ?? null;
-            setBaseSelection(
-              model
-                ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-                : null
-            );
-          }}
-          loras={loras}
-          onLorasChange={setLoras}
-          embeddings={embeddings}
-          onEmbeddingsChange={setEmbeddings}
-          seed={seed}
-          onSeedChange={setSeed}
-          steps={steps}
-          onStepsChange={setSteps}
-          cfg={cfg}
-          onCfgChange={setCfg}
-          denoise={denoise}
-          onDenoiseChange={setDenoise}
-          negativePrompt={negativePrompt}
-          onNegativePromptChange={setNegativePrompt}
-          customWidth={customWidth}
-          onCustomWidthChange={setCustomWidth}
-          customHeight={customHeight}
-          onCustomHeightChange={setCustomHeight}
-          format={format}
-          onFormatChange={setFormat}
-          busy={busy}
-          canGenerate={canGenerate}
-          onGenerate={handleGenerate}
-          progress={progress}
-          progressLabel={progressLabel}
-          imageCount={imageCount}
-          onImageCountChange={setImageCount}
-          modelsLoading={modelsLoading}
-          modelsError={modelsError}
-          onResetDefaults={resetStudioDefaults}
+    <main
+      id="main-content"
+      className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]"
+    >
+      {/* 1. Tensor.Art-Inspired Discovery Hero & Banner */}
+      <section className="relative overflow-hidden border-b border-[var(--line)] bg-[var(--surface-sunken)]">
+        {/* Subtle Ambient Radial Glow */}
+        <div
+          className="pointer-events-none absolute -top-40 left-1/2 -z-0 h-[480px] w-[800px] -translate-x-1/2 rounded-full bg-[var(--accent)]/10 blur-[120px]"
+          aria-hidden="true"
         />
+
+        <div className="relative z-10 mx-auto max-w-[1600px] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+          <div className="flex flex-col items-center text-center max-w-3xl mx-auto">
+            {/* Top Tagline Badge */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line-strong)] bg-[var(--surface-raised)]/80 px-3.5 py-1 text-xs font-medium text-[var(--ink-soft)] backdrop-blur-md mb-4 shadow-sm">
+              <span className="flex h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+              <span>SoloTensor Visual Discovery</span>
+              <span className="font-mono text-[10px] text-[var(--ink-faint)]">v2.4</span>
+            </div>
+
+            <h1 className="font-sans text-3xl font-extrabold tracking-tight text-[var(--ink)] sm:text-5xl">
+              Local AI creation,{" "}
+              <span className="text-[var(--accent)] underline decoration-[var(--accent)]/30 underline-offset-8">
+                unbounded craft.
+              </span>
+            </h1>
+            <p className="mt-3 text-sm text-[var(--ink-soft)] sm:text-base max-w-xl">
+              Explore generative assets, checkpoint models, and automated tool pipelines powered directly by your local ComfyUI GPU backend.
+            </p>
+
+            {/* Quick CTAs */}
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/generate"
+                className="workspace-action-primary flex items-center gap-2 px-5 py-2.5 text-xs font-bold shadow-md hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Wand2 className="h-4 w-4" />
+                <span>Open Studio Canvas</span>
+              </Link>
+              <Link
+                href="/models"
+                className="workspace-action-secondary flex items-center gap-2 px-4 py-2.5 text-xs font-semibold hover:border-[var(--line-strong)]"
+              >
+                <Box className="h-4 w-4 text-[var(--accent)]" />
+                <span>Browse Models ({models.length})</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Feature Highlights Bento Rail */}
+          <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {HERO_HIGHLIGHTS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.title}
+                  href={item.href}
+                  className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 transition-all duration-300 hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] hover:shadow-lg"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--accent)] group-hover:scale-105 transition-transform">
+                      <Icon className="h-4.5 w-4.5" />
+                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-wider font-semibold text-[var(--ink-faint)] bg-[var(--surface-sunken)] px-2 py-0.5 rounded border border-[var(--line)]">
+                      {item.badge}
+                    </span>
+                  </div>
+                  <div className="mt-3">
+                    <h2 className="font-heading text-sm font-semibold text-[var(--ink)] group-hover:text-[var(--accent)] transition-colors">
+                      {item.title}
+                    </h2>
+                    <p className="mt-1 text-xs text-[var(--ink-soft)] leading-relaxed">
+                      {item.desc}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Unified Search & Discovery Filter Bar */}
+          <div className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/90 p-3 shadow-xl backdrop-blur-md">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              {/* Search Field */}
+              <div className="relative flex-1 group">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search prompts, models, styles, tags, or workflows..."
+                  className="h-10 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] pl-10 pr-10 text-xs font-normal text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* View / Content Tabs */}
+              <div className="flex items-center gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1">
+                {(
+                  [
+                    { id: "all", label: "All Works", icon: Compass },
+                    { id: "posts", label: "Latest Posts", icon: Sparkles },
+                    { id: "models", label: "Models", icon: Box },
+                    { id: "tools", label: "AI Tools", icon: Wrench },
+                  ] as const
+                ).map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                        isActive
+                          ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                          : "text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--surface)]"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Quick Inspiration Tags Carousel */}
+            <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+              <span className="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-faint)] pr-1">
+                Trends:
+              </span>
+              {QUICK_TAGS.map((tag) => {
+                const isSelected = selectedTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all duration-150 ${
+                      isSelected
+                        ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    #{tag}
+                  </button>
+                );
+              })}
+              {hasFilter && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="shrink-0 text-[11px] font-semibold text-[var(--danger)] hover:underline ml-2"
+                >
+                  Reset filters
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Main Discovery Sections */}
+      <div className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 space-y-12">
+        {/* Error Notice */}
+        {error && (
+          <div className="rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-2 rounded-full bg-[var(--danger)] animate-ping" />
+              <p className="text-xs text-[var(--ink)]">{error}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="workspace-action-secondary px-3 py-1.5 text-xs font-medium"
+            >
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Retry
+            </button>
+          </div>
+        )}
+
+        {/* SECTION 1: LATEST POSTS / GENERATIONS */}
+        {(activeTab === "all" || activeTab === "posts") && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-[var(--accent)]" />
+                <h3 className="font-heading text-lg font-bold text-[var(--ink)]">
+                  Latest Creations
+                </h3>
+                <span className="font-mono text-xs text-[var(--ink-faint)]">
+                  ({filteredAssets.length})
+                </span>
+              </div>
+              <Link
+                href="/assets"
+                className="group inline-flex items-center gap-1 font-mono text-xs font-semibold text-[var(--accent)] hover:underline"
+              >
+                <span>View all in Library</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <ModelCardSkeleton key={i} index={i} />
+                ))}
+              </div>
+            ) : filteredAssets.length > 0 ? (
+              <AssetCardList
+                items={filteredAssets}
+                aspectRatio="natural"
+                onOpen={openAssetInspection}
+              />
+            ) : (
+              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-10 text-center">
+                <Sparkles className="mx-auto h-8 w-8 text-[var(--ink-faint)] opacity-50" />
+                <h4 className="mt-3 text-sm font-semibold text-[var(--ink)]">
+                  {hasFilter ? "No generations match your search" : "No generations found yet"}
+                </h4>
+                <p className="mt-1 text-xs text-[var(--ink-soft)] max-w-sm mx-auto">
+                  {hasFilter
+                    ? "Try clearing tags or using broader keywords to find assets."
+                    : "Create your first visual masterpiece in the SoloTensor workspace studio."}
+                </p>
+                <div className="mt-4">
+                  {hasFilter ? (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="workspace-action-secondary px-3.5 py-1.5 text-xs font-semibold"
+                    >
+                      Clear search filters
+                    </button>
+                  ) : (
+                    <Link
+                      href="/generate"
+                      className="workspace-action-primary px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                      <span>Start generating</span>
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* SECTION 2: FEATURED CREATOR MODELS */}
+        {(activeTab === "all" || activeTab === "models") && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <div className="flex items-center gap-2">
+                <Box className="h-4 w-4 text-[var(--accent)]" />
+                <h3 className="font-heading text-lg font-bold text-[var(--ink)]">
+                  Trending Models & Checkpoints
+                </h3>
+                <span className="font-mono text-xs text-[var(--ink-faint)]">
+                  ({filteredModels.length})
+                </span>
+              </div>
+              <Link
+                href="/models"
+                className="group inline-flex items-center gap-1 font-mono text-xs font-semibold text-[var(--accent)] hover:underline"
+              >
+                <span>Browse all models</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <ModelCardSkeleton key={i} index={i} />
+                ))}
+              </div>
+            ) : filteredModels.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                {filteredModels.slice(0, activeTab === "models" ? undefined : 12).map((item, idx) => (
+                  <TensorModelCard key={item.model_id} item={item} index={idx} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-8 text-center">
+                <Box className="mx-auto h-8 w-8 text-[var(--ink-faint)] opacity-50" />
+                <h4 className="mt-3 text-sm font-semibold text-[var(--ink)]">
+                  No models match query
+                </h4>
+                <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                  Try adjusting filters or import your own safetensors checkpoint.
+                </p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* SECTION 3: AI TOOL STUDIO WORKFLOWS */}
+        {(activeTab === "all" || activeTab === "tools") && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <div className="flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-[var(--accent)]" />
+                <h3 className="font-heading text-lg font-bold text-[var(--ink)]">
+                  Automated AI Tools & Pipelines
+                </h3>
+                <span className="font-mono text-xs text-[var(--ink-faint)]">
+                  ({filteredTools.length})
+                </span>
+              </div>
+              <Link
+                href="/tools"
+                className="group inline-flex items-center gap-1 font-mono text-xs font-semibold text-[var(--accent)] hover:underline"
+              >
+                <span>Explore all tools</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="relative aspect-[16/10] rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] shimmer"
+                  />
+                ))}
+              </div>
+            ) : filteredTools.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {filteredTools.slice(0, activeTab === "tools" ? undefined : 8).map((tool) => (
+                  <HomeToolCard key={tool.tool_id} tool={tool} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-8 text-center">
+                <Wrench className="mx-auto h-8 w-8 text-[var(--ink-faint)] opacity-50" />
+                <h4 className="mt-3 text-sm font-semibold text-[var(--ink)]">
+                  No automated tools available
+                </h4>
+                <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                  Build and publish ComfyUI visual workflows in the Tool Studio.
+                </p>
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
-      {/* Main Canvas Area */}
-      <CanvasPreview
-        canGenerate={canGenerate}
-        onGenerate={handleGenerate}
-        busy={busy}
-        progress={progress}
-        progressLabel={progressLabel}
-        gallery={gallery}
-        error={error}
-        outputWidth={outputDimensions.width}
-        outputHeight={outputDimensions.height}
-        referenceImage={referenceImage}
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebarCollapse={() => setIsSidebarCollapsed((v) => !v)}
-        onReload={refreshGallery}
-        onRemix={handleRemix}
-        onSetReferenceImage={setReferenceImage}
-        onDeleteOutput={handleDeleteOutput}
-        modelOptions={modelOptions}
-      />
-    </div>
+      {/* Footer */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 mt-12">
+        <WorkspaceFooter />
+      </div>
+
+      {/* Asset Inspection Modal Dialog */}
+      {inspectedAsset && (
+        <WorkspaceModal
+          open={Boolean(inspectedAsset)}
+          onClose={() => setInspectedAsset(null)}
+          title={inspectedAsset.metadata?.prompt || inspectedAsset.key}
+          size="media"
+          headless
+        >
+          <AssetInspectionStage
+            asset={inspectedAsset}
+            items={assets}
+            modelOptions={modelOptions}
+            mode="modal"
+            onClose={() => setInspectedAsset(null)}
+          />
+        </WorkspaceModal>
+      )}
+    </main>
   );
 }

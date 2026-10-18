@@ -1031,6 +1031,34 @@ export const api = {
     }));
   },
 
+  async getAssets(
+    limit = 60,
+    filters: {
+      origin?: string;
+      tool_id?: string;
+      tool_type?: string;
+      tag?: string;
+      tags?: string[];
+      tag_mode?: "all" | "any";
+    } = {}
+  ): Promise<GalleryItem[]> {
+    return this.getGallery(limit, filters);
+  },
+
+  async getPublicAssets(
+    limit = 60,
+    filters: {
+      origin?: string;
+      tool_id?: string;
+      tool_type?: string;
+      tag?: string;
+      tags?: string[];
+      tag_mode?: "all" | "any";
+    } = {}
+  ): Promise<GalleryItem[]> {
+    return this.getGallery(limit, filters);
+  },
+
   async getGalleryPaginated(params: {
     page?: number;
     limit?: number;

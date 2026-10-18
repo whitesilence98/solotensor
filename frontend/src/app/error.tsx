@@ -18,7 +18,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
             <button type="button" onClick={reset} className="workspace-action-primary min-h-11 gap-2 px-4 text-sm">
               <RotateCcw className="h-4 w-4" aria-hidden="true" /> Retry
             </button>
-            <Link href="/" className="workspace-action-secondary min-h-11 px-4 text-sm">Return to Create</Link>
+            <Link href="/generate" className="workspace-action-secondary min-h-11 px-4 text-sm">Return to Create</Link>
           </div>
         </div>
       </section>

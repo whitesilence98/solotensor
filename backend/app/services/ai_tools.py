@@ -11,7 +11,7 @@ import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ..config import Settings, get_settings
 from ..schemas import (
@@ -1437,8 +1437,21 @@ class AIToolService:
         return path
 
 
-def get_ai_tool_service() -> AIToolService:
-    return AIToolService()
+_ai_tool_service: Optional[AIToolService] = None
+
+
+def get_ai_tool_service(settings: Optional[Settings] = None) -> AIToolService:
+    global _ai_tool_service
+    if settings is not None:
+        return AIToolService(settings)
+    if _ai_tool_service is None:
+        _ai_tool_service = AIToolService()
+    return _ai_tool_service
+
+
+def set_ai_tool_service(service: Optional[AIToolService]) -> None:
+    global _ai_tool_service
+    _ai_tool_service = service
 
 
 AIToolStorage = AIToolService
@@ -1451,4 +1464,5 @@ __all__ = [
     "AIToolStorage",
     "extract_controls",
     "get_ai_tool_service",
+    "set_ai_tool_service",
 ]

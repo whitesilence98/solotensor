@@ -19,7 +19,11 @@ from app.schemas import (
     UserPublicProfileResponse,
     UserFollowResponse,
 )
-from app.services.ai_tools import get_ai_tool_service
+from app.services.ai_tools import (
+    AIToolService,
+    get_ai_tool_service,
+    set_ai_tool_service,
+)
 from app.services.auth_service import LocalAuthProvider, set_auth_provider
 from app.services.credit_service import CreditService, set_credit_service
 from app.services.models import ModelService
@@ -74,15 +78,8 @@ class CreatorProfilesAndOwnershipTests(unittest.TestCase):
         model_storage.ensure_root()
         self.models_service = model_storage
 
-        tools_service = get_ai_tool_service()
-        self.orig_tools_root = tools_service.root
-        self.orig_tools_definitions = tools_service.definitions
-        self.orig_tools_outputs = tools_service.outputs
-        tools_service.root = self.tools_dir
-        tools_service.definitions = self.tools_dir / "definitions"
-        tools_service.outputs = self.tools_dir / "outputs"
-        tools_service.definitions.mkdir(parents=True, exist_ok=True)
-        tools_service.outputs.mkdir(parents=True, exist_ok=True)
+        self.tools_service = AIToolService(self.settings)
+        set_ai_tool_service(self.tools_service)
 
         app.dependency_overrides[get_db] = lambda: self.db
         self.client = TestClient(app)
@@ -91,10 +88,7 @@ class CreatorProfilesAndOwnershipTests(unittest.TestCase):
         model_storage.root = self.orig_models_root
         model_storage.definitions = self.orig_models_definitions
 
-        tools_service = get_ai_tool_service()
-        tools_service.root = self.orig_tools_root
-        tools_service.definitions = self.orig_tools_definitions
-        tools_service.outputs = self.orig_tools_outputs
+        set_ai_tool_service(None)
 
         app.dependency_overrides.clear()
         set_db(None)
@@ -246,12 +240,7 @@ class CreatorProfilesAndOwnershipTests(unittest.TestCase):
         self.assertEqual(len(u3_models), 0)
 
     def test_ai_tools_user_id_ownership_and_filtering(self) -> None:
-        tools_service = get_ai_tool_service()
-        tools_service.root = self.tools_dir
-        tools_service.definitions = self.tools_dir / "definitions"
-        tools_service.outputs = self.tools_dir / "outputs"
-        tools_service.definitions.mkdir(parents=True, exist_ok=True)
-        tools_service.outputs.mkdir(parents=True, exist_ok=True)
+        tools_service = self.tools_service
 
         wf_bytes = json.dumps(SAMPLE_WORKFLOW).encode("utf-8")
 

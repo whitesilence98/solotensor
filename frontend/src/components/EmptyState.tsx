@@ -51,7 +51,7 @@ export default function EmptyState({
             {s.hint}<ArrowRight className="h-4.5 w-4.5" strokeWidth={1.5} />
           </button>
         ) : (
-          <Link href="/" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
+          <Link href="/generate" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
             <Sparkles className="h-4.5 w-4.5" strokeWidth={1.5} />{s.hint}
           </Link>
         )}
