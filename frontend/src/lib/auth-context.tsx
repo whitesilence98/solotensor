@@ -33,6 +33,7 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   isAuthModalOpen: boolean;
+  authModalReason: string | null;
   primaryRole: string;
   roles: string[];
   permissions: string[];
@@ -65,7 +66,7 @@ export interface AuthContextType {
   resendVerification: (
     email?: string
   ) => Promise<{ success: boolean; message: string }>;
-  openAuthModal: () => void;
+  openAuthModal: (reason?: string | unknown) => void;
   closeAuthModal: () => void;
 }
 
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [credits, setCredits] = useState<CreditStatus>(DEFAULT_CREDITS);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalReason, setAuthModalReason] = useState<string | null>(null);
 
   // Initialize from storage or backend session
   useEffect(() => {
@@ -187,8 +189,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(timer);
   }, []);
 
-  const openAuthModal = useCallback(() => setIsAuthModalOpen(true), []);
-  const closeAuthModal = useCallback(() => setIsAuthModalOpen(false), []);
+  const openAuthModal = useCallback((reason?: unknown) => {
+    setAuthModalReason(typeof reason === "string" ? reason : null);
+    setIsAuthModalOpen(true);
+  }, []);
+  const closeAuthModal = useCallback(() => {
+    setIsAuthModalOpen(false);
+    setAuthModalReason(null);
+  }, []);
 
   const login = useCallback(
     async (emailOrUsername: string, password?: string): Promise<UserProfile> => {
@@ -437,6 +445,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: Boolean(token && user),
       isLoading,
       isAuthModalOpen,
+      authModalReason,
       primaryRole,
       roles,
       permissions,
@@ -465,6 +474,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       isLoading,
       isAuthModalOpen,
+      authModalReason,
       primaryRole,
       roles,
       permissions,

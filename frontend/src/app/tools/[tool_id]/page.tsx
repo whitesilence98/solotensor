@@ -20,6 +20,8 @@ import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import CustomSelect from "@/components/CustomSelect";
 import SeedInput from "@/components/SeedInput";
+import { useAuth } from "@/lib/auth-context";
+import { Can } from "@/components/rbac";
 import {
   api,
   uuid,
@@ -582,15 +584,17 @@ export default function ToolDetailPage() {
               <ArrowLeft className="h-3 w-3" aria-hidden="true" />
               <span>Back to tools</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(true)}
-              className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors"
-              title="Delete tool"
-            >
-              <Trash2 className="h-3 w-3" />
-              <span>Delete</span>
-            </button>
+            <Can do="tool:delete" ownerId={tool?.user_id}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors"
+                title="Delete tool"
+              >
+                <Trash2 className="h-3 w-3" />
+                <span>Delete</span>
+              </button>
+            </Can>
           </nav>
           <div className="mb-1.5 flex items-center justify-between gap-3">
             <p className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase truncate">

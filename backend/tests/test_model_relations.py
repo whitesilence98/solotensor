@@ -328,6 +328,23 @@ class ModelRelationsApiTests(unittest.TestCase):
         set_db(self.db)
         app.dependency_overrides[get_db] = lambda: self.db
 
+        from unittest.mock import AsyncMock, MagicMock
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+        from app.services.rbac_service import get_rbac_service
+
+        self.mock_user = UserResponse(
+            id="relation_author_1",
+            username="relation_author",
+            email="relation@test.com",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+        self.mock_rbac = MagicMock()
+        self.mock_rbac.has_permission = AsyncMock(return_value=True)
+        app.dependency_overrides[get_current_user] = lambda: self.mock_user
+        app.dependency_overrides[get_rbac_service] = lambda: self.mock_rbac
+
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

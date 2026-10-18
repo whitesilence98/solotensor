@@ -643,7 +643,7 @@ export default function AssetInspectionStage({
                 <button
                   type="button"
                   onClick={() => setModMenuOpen((v) => !v)}
-                  className="flex h-8 items-center gap-1.5 rounded-lg border border-[#0c4a6e] bg-[#082f49] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[#38bdf8] hover:bg-[#0c4a6e]/60 transition-colors shadow-sm"
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
                   title="Moderator Actions & Governance"
                 >
                   <Shield className="h-3.5 w-3.5" />
@@ -651,9 +651,9 @@ export default function AssetInspectionStage({
                 </button>
 
                 {modMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[#0c4a6e]/60 bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
                     <div className="px-2 py-1 pb-1.5 border-b border-[var(--line)]">
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#38bdf8] block">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] block">
                         🛡 Mod Controls
                       </span>
                       <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate block">

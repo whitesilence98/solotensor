@@ -27,6 +27,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, type ToolAspectRatio, type ToolMode, type ToolSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 const modes: {
   value: ToolMode;
@@ -82,6 +83,7 @@ export default function CreateToolDrawer({
   onClose,
   onCreated,
 }: CreateToolDrawerProps) {
+  const { isAuthenticated, openAuthModal } = useAuth();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [file, setFile] = useState<File | null>(null);
   const [workflowMeta, setWorkflowMeta] = useState<WorkflowMeta | null>(null);
@@ -98,6 +100,13 @@ export default function CreateToolDrawer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const thumbInputRef = useRef<HTMLInputElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
+
+  // Auth gate interception on drawer open
+  useEffect(() => {
+    if (open && !isAuthenticated) {
+      openAuthModal("create_tool");
+    }
+  }, [open, isAuthenticated, openAuthModal]);
 
   // Reset form on open
   useEffect(() => {
@@ -182,6 +191,11 @@ export default function CreateToolDrawer({
   };
 
   const submit = async () => {
+    if (!isAuthenticated) {
+      openAuthModal("create_tool");
+      return;
+    }
+
     if (!file) {
       setError("ComfyUI workflow JSON file is required.");
       setStep(1);
@@ -271,6 +285,32 @@ export default function CreateToolDrawer({
             </button>
           </div>
         </header>
+
+        {/* Obsidian & Acid-Lime Sign-In Notice Banner */}
+        {!isAuthenticated && (
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--accent)]/30 bg-[var(--surface-sunken)] px-6 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]">
+                <Zap className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                  Creator Access Required
+                </p>
+                <p className="font-sans text-xs text-[var(--ink-soft)]">
+                  Sign in to author parametric studio tools
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => openAuthModal("create_tool")}
+              className="shrink-0 rounded-[5px] bg-[var(--accent)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition-all hover:bg-[var(--accent-hover)] active:scale-[0.98]"
+            >
+              Sign In
+            </button>
+          </div>
+        )}
 
         {/* Step Stepper Navigation Bar */}
         <nav

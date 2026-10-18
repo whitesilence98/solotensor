@@ -23,8 +23,12 @@ import {
   CheckCircle2,
   XCircle,
   Play,
+  Edit3,
+  Trash2,
 } from "lucide-react";
 import { api, type CreatorModel, type CreatorModelFile, type GalleryItem } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { Can } from "@/components/rbac";
 import ModelGenerationsGrid from "@/components/ModelGenerationsGrid";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
@@ -90,6 +94,58 @@ export default function PublicModelDetailPage({
     },
   ]);
   const [selectedSample, setSelectedSample] = useState<GalleryItem | null>(null);
+
+  // Authentication & RBAC Actions
+  const { isAuthenticated, openAuthModal } = useAuth();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const handleDeleteModel = async () => {
+    if (!model) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteCreatorModel(model.model_id);
+      router.push("/models");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete model");
+      setDeleting(false);
+    }
+  };
+
+  const handleOpenEdit = () => {
+    if (!model) return;
+    setEditTitle(model.title);
+    setEditError(null);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!model) return;
+    if (!editTitle.trim()) {
+      setEditError("Title cannot be blank");
+      return;
+    }
+    setEditing(true);
+    setEditError(null);
+    try {
+      const updated = await api.updateCreatorModel(model.model_id, {
+        title: editTitle.trim(),
+      });
+      setModel(updated);
+      setShowEditModal(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update model");
+    } finally {
+      setEditing(false);
+    }
+  };
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -535,6 +591,30 @@ export default function PublicModelDetailPage({
                 <Share2 className="h-4 w-4" />
               </button>
 
+              <Can do="model:edit" ownerId={model.user_id}>
+                <button
+                  type="button"
+                  onClick={handleOpenEdit}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-[11px] text-[var(--ink-soft)] transition hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                  title="Edit Model"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>Edit Model</span>
+                </button>
+              </Can>
+
+              <Can do="model:delete" ownerId={model.user_id}>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger-line)]/50 bg-[var(--danger-surface)] px-2.5 py-1.5 font-mono text-[11px] text-[var(--danger)] transition hover:border-[var(--danger-line)] hover:bg-[var(--danger)]/20"
+                  title="Delete Model"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Model</span>
+                </button>
+              </Can>
+
               <button
                 type="button"
                 className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-2 text-[var(--ink-faint)] transition hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
@@ -959,13 +1039,20 @@ export default function PublicModelDetailPage({
             <div className="flex gap-2">
               {primaryFile && (
                 <a
-                  href={primaryFile.download_url}
-                  target="_blank"
+                  href={isAuthenticated ? primaryFile.download_url : "#"}
+                  target={isAuthenticated ? "_blank" : undefined}
                   rel="noreferrer"
+                  onClick={(e) => {
+                    if (!isAuthenticated) {
+                      e.preventDefault();
+                      openAuthModal("download_weights");
+                    }
+                  }}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] py-2 text-xs font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                  title="Download Model (.safetensors)"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  <span>Download file</span>
+                  <span>Download Model (.safetensors)</span>
                 </a>
               )}
               {primaryFile && activeVersion && (
@@ -1205,6 +1292,110 @@ export default function PublicModelDetailPage({
           />
         )}
       </WorkspaceModal>
+
+      {/* Delete Model Confirmation Modal */}
+      {model && (
+        <WorkspaceModal
+          open={showDeleteModal}
+          onClose={() => {
+            if (!deleting) {
+              setShowDeleteModal(false);
+              setDeleteError(null);
+            }
+          }}
+          destructive
+          title="Delete model permanently?"
+          description={`"${model.title}" and all associated weights and sample versions will be deleted from disk. This action cannot be undone.`}
+          eyebrow="Confirm Deletion"
+        >
+          <div className="space-y-4">
+            {deleteError && (
+              <p className="text-xs font-semibold text-[var(--danger)]" role="alert">
+                {deleteError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteError(null);
+                }}
+                disabled={deleting}
+                className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteModel}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--danger)]/90 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete Model"}
+              </button>
+            </div>
+          </div>
+        </WorkspaceModal>
+      )}
+
+      {/* Edit Model Modal */}
+      {model && (
+        <WorkspaceModal
+          open={showEditModal}
+          onClose={() => {
+            if (!editing) {
+              setShowEditModal(false);
+              setEditError(null);
+            }
+          }}
+          title="Edit Model Details"
+          description="Update metadata and title for this model."
+          eyebrow="Creator Settings"
+        >
+          <div className="space-y-4">
+            {editError && (
+              <p className="text-xs font-semibold text-[var(--danger)]" role="alert">
+                {editError}
+              </p>
+            )}
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)] mb-1.5">
+                Model Title
+              </label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                disabled={editing}
+                className="w-full px-3 py-2 text-xs font-mono rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink)] focus:border-[var(--accent)] outline-none transition-colors"
+                placeholder="Enter model title"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditError(null);
+                }}
+                disabled={editing}
+                className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={editing || !editTitle.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+              >
+                {editing ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </WorkspaceModal>
+      )}
     </main>
   );
 }

@@ -526,12 +526,12 @@ class AuthEndpointsAPITests(unittest.TestCase):
             self.assertEqual(res_insufficient.status_code, 402)
             self.assertIn("INSUFFICIENT_CREDITS", res_insufficient.json()["detail"])
 
-            # 3. Unauthenticated guest generation (backwards compatibility): succeeds without deduction
+            # 3. Unauthenticated guest generation is rejected with 401 Unauthorized
             res_guest = self.client.post(
                 "/api/v1/generate",
                 json=gen_payload,
             )
-            self.assertEqual(res_guest.status_code, 200)
+            self.assertEqual(res_guest.status_code, 401)
 
     def test_email_verification_flow(self) -> None:
         reg = self.client.post(

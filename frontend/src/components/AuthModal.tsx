@@ -21,6 +21,7 @@ export default function AuthModal() {
   const router = useRouter();
   const {
     isAuthModalOpen,
+    authModalReason,
     closeAuthModal,
     login,
     loginWithOAuth,
@@ -236,6 +237,45 @@ export default function AuthModal() {
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Contextual Action Prompt Banner */}
+        {authModalReason && (
+          <div className="mb-4 rounded-xl border border-[var(--accent)]/30 bg-[var(--surface-sunken)] p-3 text-left">
+            <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+              <span>⚡</span>
+              <span>
+                {authModalReason === "generation"
+                  ? "Neural Compute Clearance Required"
+                  : authModalReason === "tool_execution"
+                  ? "Workflow Tool Execution"
+                  : authModalReason === "create_model"
+                  ? "Publish Creator Model"
+                  : authModalReason === "create_tool"
+                  ? "Author Parametric Tool"
+                  : authModalReason === "download_weights"
+                  ? "Model Checkpoint Access"
+                  : authModalReason === "flag_content"
+                  ? "Community Moderation Report"
+                  : "Authentication Required"}
+              </span>
+            </div>
+            <p className="mt-1 font-sans text-xs text-[var(--ink-soft)] leading-snug">
+              {authModalReason === "generation"
+                ? "Sign in with a free Creator account to claim your 100 daily energy pool and launch generative pipelines."
+                : authModalReason === "tool_execution"
+                ? "Sign in to dispatch remote ComfyUI tool workflows and sync results to your private studio library."
+                : authModalReason === "create_model"
+                ? "Sign in to publish creator models, upload safetensors weights, and share workflow recipes."
+                : authModalReason === "create_tool"
+                ? "Sign in to author parametric studio tools and deploy ComfyUI pipelines."
+                : authModalReason === "download_weights"
+                ? "Sign in to download safetensors checkpoint files and local workstation weights."
+                : authModalReason === "flag_content"
+                ? "Sign in to submit content flags directly to the SoloTensor Trust & Safety darkroom."
+                : "Sign in to access privileged studio capabilities and preserve your local workflows."}
+            </p>
+          </div>
+        )}
 
         {/* Normal Mode: Social Buttons and Switcher */}
         {tab !== "forgot" && (

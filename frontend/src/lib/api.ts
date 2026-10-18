@@ -187,6 +187,8 @@ export interface ToolSummary {
   has_prompt: boolean;
   created_at: string;
   thumbnail_url: string | null;
+  user_id?: string | null;
+  author_username?: string | null;
 }
 
 export interface ToolDetail extends ToolSummary {
@@ -658,6 +660,8 @@ export interface CreatorModelVersion {
 
 export interface CreatorModel {
   model_id: string;
+  user_id?: string | null;
+  author_username?: string | null;
   title: string;
   category: CreatorModelCategory;
   model_type: CreatorModelType;

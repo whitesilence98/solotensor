@@ -12,30 +12,48 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Annotated, Any
 
-from typing import Annotated, Any, Optional
-
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import Database, get_db
-from .routers.auth import router as auth_router, get_current_user, get_optional_user
+from .dependencies.permissions import RequireOwnerOrPermission, RequirePermission
+from .routers.auth import get_current_user, get_optional_user
+from .routers.auth import router as auth_router
 from .routers.moderation import router as moderation_router
 from .schemas import (
     AssistantRequest,
     AssistantResponse,
-    GenerateRequest,
-    GenerationResult,
+    CreateToolRequest,
     DeleteAssetResponse,
+    DeleteToolResponse,
     GalleryItem,
     GalleryResponse,
+    GenerateRequest,
+    GenerationRecordResponse,
+    GenerationResult,
     HealthResponse,
+    InstalledGalleryModel,
+    InstalledGalleryModelList,
+    LocalModelImportRequest,
+    LocalModelListResponse,
     ModelCreateRequest,
     ModelFilePatchRequest,
-    ModelFileResponse,
+    ModelInstallResponse,
     ModelListResponse,
     ModelPrecision,
     ModelPublishRequest,
@@ -44,33 +62,25 @@ from .schemas import (
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
-    ModelInstallResponse,
-    InstalledGalleryModel,
-    InstalledGalleryModelList,
-    LocalModelImportRequest,
-    LocalModelListResponse,
+    PaginatedGenerationsResponse,
+    PaginatedSamplesResponse,
     PublicModelListResponse,
     TagInterrogateResponse,
     TagSummary,
     TagSummaryList,
     TagUpdateRequest,
-    CreateToolRequest,
-    DeleteToolResponse,
     ToolAspectRatio,
     ToolCatalogResponse,
     ToolControl,
     ToolDetail,
+    ToolExecuteRequest,
     ToolExecutionResult,
     ToolMode,
-    ToolExecuteRequest,
     ToolParseResponse,
     UploadedAsset,
-    UserResponse,
-    UserPublicProfileResponse,
     UserFollowResponse,
-    GenerationRecordResponse,
-    PaginatedGenerationsResponse,
-    PaginatedSamplesResponse,
+    UserPublicProfileResponse,
+    UserResponse,
 )
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.code_assistant import (
@@ -82,11 +92,14 @@ from .services.code_assistant import (
 from .services.comfy_client import ComfyClientError, get_comfy_client
 from .services.credit_service import get_credit_service
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
+from .services.rbac_service import RBACService, get_rbac_service
 from .services.redis_service import get_redis_service
-from .services.storage import StorageError, StorageService, get_storage
+from .services.storage import StorageError, get_storage
 from .services.tagger import TaggerError, get_tagger_service
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger("comfy_studio")
 
 settings = get_settings()
@@ -101,7 +114,9 @@ redis_service = get_redis_service(settings)
 db = get_db()
 db.init_db()
 try:
-    db.sync_filesystem_to_db(models_dir=model_storage.definitions, storage_dir=storage.root)
+    db.sync_filesystem_to_db(
+        models_dir=model_storage.definitions, storage_dir=storage.root
+    )
 except Exception as exc:
     logger.warning("Could not sync filesystem to SQLite on startup: %s", exc)
 
@@ -129,7 +144,7 @@ app.include_router(moderation_router, prefix="/api/moderation")
 @app.get("/api/users/{username_or_id}", response_model=UserPublicProfileResponse)
 async def get_user_public_profile(
     username_or_id: str,
-    viewer: Optional[UserResponse] = Depends(get_optional_user),
+    viewer: UserResponse | None = Depends(get_optional_user),
     db: Database = Depends(get_db),
 ) -> UserPublicProfileResponse:
     viewer_id = viewer.id if viewer else None
@@ -149,7 +164,9 @@ async def follow_user(
     current_user: UserResponse = Depends(get_current_user),
     db: Database = Depends(get_db),
 ) -> UserFollowResponse:
-    target = db.get_user_by_id(username_or_id) or db.get_user_by_username(username_or_id)
+    target = db.get_user_by_id(username_or_id) or db.get_user_by_username(
+        username_or_id
+    )
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -161,7 +178,9 @@ async def follow_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot follow yourself",
         )
-    is_following = db.toggle_follow_user(follower_id=current_user.id, following_id=target_id)
+    is_following = db.toggle_follow_user(
+        follower_id=current_user.id, following_id=target_id
+    )
     followers_count = db.get_followers_count(target_id)
     return UserFollowResponse(
         following=is_following,
@@ -173,7 +192,7 @@ async def follow_user(
 
 @app.on_event("startup")
 def startup_event() -> None:
-    db.init_db()
+    pass
 
 
 @app.on_event("shutdown")
@@ -195,19 +214,31 @@ def decode_reference_image(data_url: str, index: int) -> tuple[bytes, str]:
         try:
             header, payload = payload.split(",", 1)
         except ValueError:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Malformed data URL for reference {index}")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"Malformed data URL for reference {index}"
+            )
         mime = header.removeprefix("data:").split(";", 1)[0].lower()
         ext = ALLOWED_IMAGE_MIME.get(mime)
         if ext is None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unsupported image type for reference {index}")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Unsupported image type for reference {index}",
+            )
     try:
         decoded = base64.b64decode(payload, validate=True)
     except (binascii.Error, ValueError):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Reference image {index} is not valid base64")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Reference image {index} is not valid base64"
+        )
     if not decoded:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Reference image {index} is empty")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Reference image {index} is empty"
+        )
     if len(decoded) > settings.UPLOAD_MAX_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"Reference image {index} exceeds size limit")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Reference image {index} exceeds size limit",
+        )
     return decoded, ext
 
 
@@ -226,7 +257,11 @@ async def health() -> HealthResponse:
         storage_ok = False
 
     db_driver = "postgresql" if db.is_postgres else "sqlite"
-    redis_status = "up" if redis_service.ping() else ("disabled" if not redis_service.is_enabled else "down")
+    redis_status = (
+        "up"
+        if redis_service.ping()
+        else ("disabled" if not redis_service.is_enabled else "down")
+    )
     s3_status = "enabled" if storage.is_s3_enabled else "disabled"
 
     return HealthResponse(
@@ -252,7 +287,9 @@ async def assist(req: AssistantRequest) -> AssistantResponse:
     except AssistantRateLimited as exc:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except AssistantUnavailable as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except AssistantUpstreamError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return AssistantResponse(persona=req.persona, answer=answer)
@@ -273,7 +310,6 @@ MODEL_CATEGORIES = {
 }
 
 
-
 def _model_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ModelNotFound):
         return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -283,49 +319,74 @@ def _model_http_error(exc: Exception) -> HTTPException:
 
 
 @app.get("/api/v1/models/local", response_model=LocalModelListResponse)
-async def list_local_models(q: str | None = None, category: str | None = None, limit: int = 50) -> LocalModelListResponse:
+async def list_local_models(
+    q: str | None = None, category: str | None = None, limit: int = 50
+) -> LocalModelListResponse:
     try:
-        return LocalModelListResponse(items=model_storage.list_local_models(q, category, limit))
+        return LocalModelListResponse(
+            items=model_storage.list_local_models(q, category, limit)
+        )
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local", response_model=ModelResponse)
-async def import_local_model_file(model_id: str, version_id: str, req: LocalModelImportRequest) -> ModelResponse:
+@app.post(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local",
+    response_model=ModelResponse,
+)
+async def import_local_model_file(
+    model_id: str, version_id: str, req: LocalModelImportRequest
+) -> ModelResponse:
     try:
-        return model_storage.import_local_file(model_id, version_id, req.category, req.filename, req.precision)
+        return model_storage.import_local_file(
+            model_id, version_id, req.category, req.filename, req.precision
+        )
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
 @app.get("/api/v1/models/public", response_model=PublicModelListResponse)
-async def list_public_models(q: str | None = None, user_id: str | None = None) -> PublicModelListResponse:
+async def list_public_models(
+    q: str | None = None, user_id: str | None = None
+) -> PublicModelListResponse:
     items = []
     for model in model_storage.public_list(query=q, user_id=user_id):
-        public_files = sum(1 for version in model.versions for item in version.files if item.visible)
+        public_files = sum(
+            1 for version in model.versions for item in version.files if item.visible
+        )
         public_samples = sum(len(version.samples) for version in model.versions)
-        cover = next((sample.url for version in model.versions for sample in version.samples), None)
-        items.append({
-            "model_id": model.model_id,
-            "title": model.title,
-            "category": model.category,
-            "model_type": model.model_type,
-            "tags": model.tags,
-            "base_model": model.compatibility.base_model,
-            "published_at": model.published_at,
-            "updated_at": model.updated_at,
-            "cover_url": cover,
-            "version_count": len(model.versions),
-            "file_count": public_files,
-            "sample_count": public_samples,
-        })
+        cover = next(
+            (sample.url for version in model.versions for sample in version.samples),
+            None,
+        )
+        items.append(
+            {
+                "model_id": model.model_id,
+                "title": model.title,
+                "category": model.category,
+                "model_type": model.model_type,
+                "tags": model.tags,
+                "base_model": model.compatibility.base_model,
+                "published_at": model.published_at,
+                "updated_at": model.updated_at,
+                "cover_url": cover,
+                "version_count": len(model.versions),
+                "file_count": public_files,
+                "sample_count": public_samples,
+            }
+        )
     return PublicModelListResponse(items=items)
 
 
 @app.get("/api/v1/models/public/selectable", response_model=InstalledGalleryModelList)
 async def list_selectable_public_models() -> InstalledGalleryModelList:
     try:
-        return InstalledGalleryModelList(items=[InstalledGalleryModel(**item) for item in model_storage.selectable_gallery_files()])
+        return InstalledGalleryModelList(
+            items=[
+                InstalledGalleryModel(**item)
+                for item in model_storage.selectable_gallery_files()
+            ]
+        )
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -338,30 +399,45 @@ async def get_public_model(model_id: str) -> ModelResponse:
         raise _model_http_error(exc) from exc
 
 
-@app.post("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/install", response_model=ModelInstallResponse)
-async def install_public_model_file(model_id: str, version_id: str, file_id: str) -> ModelInstallResponse:
+@app.post(
+    "/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/install",
+    response_model=ModelInstallResponse,
+)
+async def install_public_model_file(
+    model_id: str, version_id: str, file_id: str
+) -> ModelInstallResponse:
     try:
-        return ModelInstallResponse(**model_storage.install_file(model_id, version_id, file_id))
+        return ModelInstallResponse(
+            **model_storage.install_file(model_id, version_id, file_id)
+        )
     except ModelConflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ModelError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     except ModelNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/models", response_model=ModelListResponse)
-async def list_creator_models(visibility: str | None = None, q: str | None = None, user_id: str | None = None) -> ModelListResponse:
-    return ModelListResponse(items=model_storage.list(visibility=visibility, query=q, user_id=user_id))
+async def list_creator_models(
+    visibility: str | None = None, q: str | None = None, user_id: str | None = None
+) -> ModelListResponse:
+    return ModelListResponse(
+        items=model_storage.list(visibility=visibility, query=q, user_id=user_id)
+    )
 
 
-@app.post("/api/v1/models", response_model=ModelResponse, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/api/v1/models", response_model=ModelResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_creator_model(
     req: ModelCreateRequest,
-    current_user: Optional[UserResponse] = Depends(get_optional_user),
+    current_user: UserResponse = Depends(RequirePermission("model:publish")),
 ) -> ModelResponse:
     try:
-        user_id = current_user.id if current_user else None
+        user_id = current_user.id
         return model_storage.create(req, user_id=user_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
@@ -376,77 +452,194 @@ async def get_creator_model(model_id: str) -> ModelResponse:
 
 
 @app.patch("/api/v1/models/id/{model_id}", response_model=ModelResponse)
-async def update_creator_model(model_id: str, req: ModelUpdateRequest) -> ModelResponse:
+async def update_creator_model(
+    model_id: str,
+    req: ModelUpdateRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         return model_storage.update(model_id, req)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
 @app.delete("/api/v1/models/id/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_creator_model(model_id: str) -> None:
+async def delete_creator_model(
+    model_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> None:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:delete_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         model_storage.delete(model_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.post("/api/v1/models/id/{model_id}/versions", response_model=ModelVersionResponse, status_code=status.HTTP_201_CREATED)
-async def create_model_version(model_id: str, req: ModelVersionCreateRequest) -> ModelVersionResponse:
+@app.post(
+    "/api/v1/models/id/{model_id}/versions",
+    response_model=ModelVersionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_model_version(
+    model_id: str,
+    req: ModelVersionCreateRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelVersionResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         return model_storage.create_version(model_id, req)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/files", response_model=ModelResponse)
-async def upload_model_file(model_id: str, version_id: str, file: UploadFile = File(...), precision: ModelPrecision = Form(ModelPrecision.FP16)) -> ModelResponse:
-    data = await file.read(settings.MODEL_MAX_BYTES + 1)
+@app.post(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/files",
+    response_model=ModelResponse,
+)
+async def upload_model_file(
+    model_id: str,
+    version_id: str,
+    file: UploadFile = File(...),
+    precision: ModelPrecision = Form(ModelPrecision.FP16),
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
     try:
-        return model_storage.add_file(model_id, version_id, file.filename or "model.bin", data, precision)
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        data = await file.read(settings.MODEL_MAX_BYTES + 1)
+        return model_storage.add_file(
+            model_id, version_id, file.filename or "model.bin", data, precision
+        )
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.patch("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}", response_model=ModelResponse)
-async def patch_model_file(model_id: str, version_id: str, file_id: str, req: ModelFilePatchRequest) -> ModelResponse:
+@app.patch(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}",
+    response_model=ModelResponse,
+)
+async def patch_model_file(
+    model_id: str,
+    version_id: str,
+    file_id: str,
+    req: ModelFilePatchRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         return model_storage.patch_file(model_id, version_id, file_id, req)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.delete("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_model_file(model_id: str, version_id: str, file_id: str) -> None:
+@app.delete(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_model_file(
+    model_id: str,
+    version_id: str,
+    file_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> None:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:delete_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         model_storage.remove_file(model_id, version_id, file_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.post("/api/v1/models/id/{model_id}/versions/{version_id}/samples", response_model=ModelResponse)
-async def upload_model_sample(model_id: str, version_id: str, file: UploadFile = File(...), metadata: str = Form("{}")) -> ModelResponse:
+@app.post(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples",
+    response_model=ModelResponse,
+)
+async def upload_model_sample(
+    model_id: str,
+    version_id: str,
+    file: UploadFile = File(...),
+    metadata: str = Form("{}"),
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         parsed = json.loads(metadata)
         if not isinstance(parsed, dict):
             raise ValueError("Sample metadata must be an object")
         data = await file.read(settings.MODEL_SAMPLE_MAX_BYTES + 1)
-        return model_storage.add_sample(model_id, version_id, file.filename or "sample.png", data, parsed)
-    except (json.JSONDecodeError, ValueError, ModelError, ModelConflict, ModelNotFound) as exc:
+        return model_storage.add_sample(
+            model_id, version_id, file.filename or "sample.png", data, parsed
+        )
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        ModelError,
+        ModelConflict,
+        ModelNotFound,
+    ) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.delete("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_model_sample(model_id: str, version_id: str, sample_id: str) -> None:
+@app.delete(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_model_sample(
+    model_id: str,
+    version_id: str,
+    sample_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> None:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:delete_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         model_storage.remove_sample(model_id, version_id, sample_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
 @app.post("/api/v1/models/id/{model_id}/publish", response_model=ModelResponse)
-async def publish_creator_model(model_id: str, req: ModelPublishRequest) -> ModelResponse:
+async def publish_creator_model(
+    model_id: str,
+    req: ModelPublishRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:publish").enforce(
+            existing.user_id, current_user, rbac
+        )
         return model_storage.publish(model_id, req)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
@@ -454,28 +647,56 @@ async def publish_creator_model(model_id: str, req: ModelPublishRequest) -> Mode
 
 @app.get("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
 @app.head("/api/v1/models/id/{model_id}/versions/{version_id}/files/{file_id}/download")
-@app.get("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download")
-@app.head("/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download")
-async def download_model_file(model_id: str, version_id: str, file_id: str) -> FileResponse:
+@app.get(
+    "/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download"
+)
+@app.head(
+    "/api/v1/models/public/{model_id}/versions/{version_id}/files/{file_id}/download"
+)
+async def download_model_file(
+    model_id: str,
+    version_id: str,
+    file_id: str,
+    current_user: UserResponse = Depends(RequirePermission("model:download_weights")),
+) -> FileResponse:
     try:
-        return FileResponse(model_storage.public_file_path(model_id, version_id, file_id))
+        return FileResponse(
+            model_storage.public_file_path(model_id, version_id, file_id)
+        )
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.get("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
-@app.head("/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download")
-@app.get("/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download")
-@app.head("/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download")
-async def download_model_sample(model_id: str, version_id: str, sample_id: str) -> FileResponse:
+@app.get(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download"
+)
+@app.head(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/download"
+)
+@app.get(
+    "/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download"
+)
+@app.head(
+    "/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download"
+)
+async def download_model_sample(
+    model_id: str, version_id: str, sample_id: str
+) -> FileResponse:
     try:
-        return FileResponse(model_storage.public_sample_path(model_id, version_id, sample_id))
+        return FileResponse(
+            model_storage.public_sample_path(model_id, version_id, sample_id)
+        )
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
 
-@app.get("/api/v1/models/id/{model_id}/images", response_model=PaginatedGenerationsResponse)
-@app.get("/api/v1/models/public/{model_id}/images", response_model=PaginatedGenerationsResponse)
+@app.get(
+    "/api/v1/models/id/{model_id}/images", response_model=PaginatedGenerationsResponse
+)
+@app.get(
+    "/api/v1/models/public/{model_id}/images",
+    response_model=PaginatedGenerationsResponse,
+)
 async def list_model_generations(
     model_id: str,
     page: int = 1,
@@ -488,7 +709,9 @@ async def list_model_generations(
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
-    items, total = get_db().get_model_generations(model_id, version_id=version_id, page=page, limit=limit)
+    items, total = get_db().get_model_generations(
+        model_id, version_id=version_id, page=page, limit=limit
+    )
     return PaginatedGenerationsResponse.create(
         items=[GenerationRecordResponse(**item) for item in items],
         total=total,
@@ -497,8 +720,14 @@ async def list_model_generations(
     )
 
 
-@app.get("/api/v1/models/id/{model_id}/samples-paginated", response_model=PaginatedSamplesResponse)
-@app.get("/api/v1/models/public/{model_id}/samples-paginated", response_model=PaginatedSamplesResponse)
+@app.get(
+    "/api/v1/models/id/{model_id}/samples-paginated",
+    response_model=PaginatedSamplesResponse,
+)
+@app.get(
+    "/api/v1/models/public/{model_id}/samples-paginated",
+    response_model=PaginatedSamplesResponse,
+)
 async def list_model_samples_paginated(
     model_id: str,
     page: int = 1,
@@ -511,7 +740,9 @@ async def list_model_samples_paginated(
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
-    items, total = get_db().get_model_samples(model_id, version_id=version_id, page=page, limit=limit)
+    items, total = get_db().get_model_samples(
+        model_id, version_id=version_id, page=page, limit=limit
+    )
     return PaginatedSamplesResponse.create(
         items=[ModelSampleResponse(**item) for item in items],
         total=total,
@@ -534,7 +765,10 @@ async def models(category: str) -> list[str]:
 async def clip_options() -> dict[str, list[str]]:
     try:
         comfy = get_comfy_client()
-        return {"encoders": await comfy.list_models("text_encoders"), "types": await comfy.clip_types()}
+        return {
+            "encoders": await comfy.list_models("text_encoders"),
+            "types": await comfy.clip_types(),
+        }
     except ComfyClientError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -594,12 +828,23 @@ async def workflow_template_info() -> dict[str, Any]:
                 clip_type = inputs.get("type")
             elif c_type in ("UNETLoader", "CheckpointLoaderSimple") and not unet_name:
                 unet_name = inputs.get("unet_name") or inputs.get("ckpt_name")
-            elif "sampler" in c_type.lower() or c_type in ("KSampler", "KSamplerAdvanced"):
+            elif "sampler" in c_type.lower() or c_type in (
+                "KSampler",
+                "KSamplerAdvanced",
+            ):
                 if "sampler_name" in inputs and not sampler_name:
                     sampler_name = inputs.get("sampler_name")
-                if "steps" in inputs and steps is None and isinstance(inputs.get("steps"), (int, float)):
+                if (
+                    "steps" in inputs
+                    and steps is None
+                    and isinstance(inputs.get("steps"), (int, float))
+                ):
                     steps = int(inputs.get("steps"))
-                if "cfg" in inputs and cfg is None and isinstance(inputs.get("cfg"), (int, float)):
+                if (
+                    "cfg" in inputs
+                    and cfg is None
+                    and isinstance(inputs.get("cfg"), (int, float))
+                ):
                     cfg = float(inputs.get("cfg"))
                 if not prompt and "positive" in inputs:
                     prompt = resolve_text(inputs.get("positive"))
@@ -614,14 +859,21 @@ async def workflow_template_info() -> dict[str, Any]:
                 inputs = node.get("inputs", {})
                 if not isinstance(inputs, dict):
                     continue
-                if c_type in ("CR Prompt Text", "CLIPTextEncode") or "prompt" in c_type.lower():
+                if (
+                    c_type in ("CR Prompt Text", "CLIPTextEncode")
+                    or "prompt" in c_type.lower()
+                ):
                     meta_title = str(node.get("_meta", {}).get("title", "")).lower()
                     if "neg" in meta_title:
                         if not negative_prompt:
-                            negative_prompt = resolve_text(inputs.get("text") or inputs.get("prompt"))
+                            negative_prompt = resolve_text(
+                                inputs.get("text") or inputs.get("prompt")
+                            )
                     else:
                         if not prompt:
-                            prompt = resolve_text(inputs.get("prompt") or inputs.get("text"))
+                            prompt = resolve_text(
+                                inputs.get("prompt") or inputs.get("text")
+                            )
 
         lower_ref = f"{unet_name or ''} {clip_name or ''} {vae_name or ''}".lower()
         if "flux" in lower_ref:
@@ -663,7 +915,7 @@ async def workflow_template_info() -> dict[str, Any]:
 @app.post("/api/generate", response_model=GenerationResult)
 async def generate(
     req: GenerateRequest,
-    user: Annotated[Optional[UserResponse], Depends(get_optional_user)] = None,
+    user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
     if req.mode != "text-to-image":
@@ -676,16 +928,17 @@ async def generate(
     credit_service = get_credit_service()
     cost = settings.DEFAULT_GENERATION_COST
     credits_deducted = False
-    if user:
-        if not credit_service.deduct_credits(user.id, amount=cost):
-            raise HTTPException(
-                status.HTTP_402_PAYMENT_REQUIRED,
-                detail="INSUFFICIENT_CREDITS",
-            )
-        credits_deducted = True
+    if not credit_service.deduct_credits(user.id, amount=cost):
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            detail="INSUFFICIENT_CREDITS",
+        )
+    credits_deducted = True
 
     try:
-        selected_model = model_storage.resolve_installed_gallery_file(req.model_id, req.version_id, req.file_id)
+        selected_model = model_storage.resolve_installed_gallery_file(
+            req.model_id, req.version_id, req.file_id
+        )
         is_lora = selected_model["model_type"] in {"LoRA", "LyCORIS"}
         if is_lora:
             expected_base = (
@@ -695,13 +948,20 @@ async def generate(
             )
             base_ids = (req.base_model_id, req.base_version_id, req.base_file_id)
             if expected_base != base_ids:
-                raise ModelConflict("This LoRA is compatible only with its configured base model")
+                raise ModelConflict(
+                    "This LoRA is compatible only with its configured base model"
+                )
             base_model = model_storage.resolve_installed_gallery_file(*base_ids)  # type: ignore[arg-type]
             if base_model["model_type"] not in {"Checkpoint", "Diffusion Model"}:
                 raise ModelConflict("LoRA base must be a Checkpoint or Diffusion Model")
         else:
-            if any(value is not None for value in (req.base_model_id, req.base_version_id, req.base_file_id)):
-                raise ModelConflict("Base model identity is only valid for LoRA generation")
+            if any(
+                value is not None
+                for value in (req.base_model_id, req.base_version_id, req.base_file_id)
+            ):
+                raise ModelConflict(
+                    "Base model identity is only valid for LoRA generation"
+                )
             base_model = selected_model
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
@@ -729,15 +989,19 @@ async def generate(
     try:
         active_loras: list[dict[str, Any]] = []
         if is_lora:
-            resolved_primary_lora = await comfy.resolve_model_name("loras", selected_model["filename"])
-            active_loras.append({
-                "lora": resolved_primary_lora,
-                "strength": 1.0,
-                "on": True,
-                "model_id": selected_model.get("model_id"),
-                "version_id": selected_model.get("version_id"),
-                "file_id": selected_model.get("file_id"),
-            })
+            resolved_primary_lora = await comfy.resolve_model_name(
+                "loras", selected_model["filename"]
+            )
+            active_loras.append(
+                {
+                    "lora": resolved_primary_lora,
+                    "strength": 1.0,
+                    "on": True,
+                    "model_id": selected_model.get("model_id"),
+                    "version_id": selected_model.get("version_id"),
+                    "file_id": selected_model.get("file_id"),
+                }
+            )
 
         for adapter in req.lora_adapters:
             if not adapter.on:
@@ -757,8 +1021,17 @@ async def generate(
             else:
                 continue
 
-            resolved_adapter_lora = await comfy.resolve_model_name("loras", raw_filename)
-            existing = next((item for item in active_loras if item["lora"] == resolved_adapter_lora), None)
+            resolved_adapter_lora = await comfy.resolve_model_name(
+                "loras", raw_filename
+            )
+            existing = next(
+                (
+                    item
+                    for item in active_loras
+                    if item["lora"] == resolved_adapter_lora
+                ),
+                None,
+            )
             if existing is not None:
                 existing["strength"] = adapter.strength
                 existing["on"] = adapter.on
@@ -767,28 +1040,50 @@ async def generate(
                     existing["version_id"] = adapter_version_id
                     existing["file_id"] = adapter_file_id
             else:
-                active_loras.append({
-                    "lora": resolved_adapter_lora,
-                    "strength": adapter.strength,
-                    "on": adapter.on,
-                    "model_id": adapter_model_id,
-                    "version_id": adapter_version_id,
-                    "file_id": adapter_file_id,
-                })
+                active_loras.append(
+                    {
+                        "lora": resolved_adapter_lora,
+                        "strength": adapter.strength,
+                        "on": adapter.on,
+                        "model_id": adapter_model_id,
+                        "version_id": adapter_version_id,
+                        "file_id": adapter_file_id,
+                    }
+                )
 
         resolved_clip = ""
         resolved_clip_type = ""
         resolved_vae = ""
         if is_modular:
-            resolved_base = await comfy.resolve_model_name("diffusion_models", base_model["filename"])
-            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name) if clip_name else ""
-            resolved_clip_type = await comfy.resolve_clip_type(clip_type) if clip_type else ""
-            resolved_vae = await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
+            resolved_base = await comfy.resolve_model_name(
+                "diffusion_models", base_model["filename"]
+            )
+            resolved_clip = (
+                await comfy.resolve_model_name("text_encoders", clip_name)
+                if clip_name
+                else ""
+            )
+            resolved_clip_type = (
+                await comfy.resolve_clip_type(clip_type) if clip_type else ""
+            )
+            resolved_vae = (
+                await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
+            )
         else:
-            resolved_base = await comfy.resolve_model_name("checkpoints", base_model["filename"])
-            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name) if clip_name else ""
-            resolved_clip_type = await comfy.resolve_clip_type(clip_type) if clip_type else ""
-            resolved_vae = await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
+            resolved_base = await comfy.resolve_model_name(
+                "checkpoints", base_model["filename"]
+            )
+            resolved_clip = (
+                await comfy.resolve_model_name("text_encoders", clip_name)
+                if clip_name
+                else ""
+            )
+            resolved_clip_type = (
+                await comfy.resolve_clip_type(clip_type) if clip_type else ""
+            )
+            resolved_vae = (
+                await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
+            )
 
         if is_lora:
             graph = comfy.build_lora_workflow(
@@ -808,7 +1103,8 @@ async def generate(
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
-                category=base_category or ("diffusion_models" if is_modular else "checkpoints"),
+                category=base_category
+                or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
             )
         else:
@@ -828,39 +1124,53 @@ async def generate(
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
-                category=selected_model.get("category") or ("diffusion_models" if is_modular else "checkpoints"),
+                category=selected_model.get("category")
+                or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
             )
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
-        if credits_deducted and user:
+        if credits_deducted:
             credit_service.db.update_credits(
                 user.id,
-                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
             )
         raise _model_http_error(exc) from exc
     except ComfyClientError as exc:
-        if credits_deducted and user:
+        if credits_deducted:
             credit_service.db.update_credits(
                 user.id,
-                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
             )
         logger.error("ComfyUI error: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     if final_status != "completed":
-        if credits_deducted and user:
+        if credits_deducted:
             credit_service.db.update_credits(
                 user.id,
-                balance=credit_service.get_user_credits(user.id, auto_replenish=False).balance + cost,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
             )
         return GenerationResult(
-            prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms
+            prompt_id=prompt_id,
+            status=final_status,
+            images=[],
+            error=final_status,
+            elapsed_ms=elapsed_ms,
         )
 
-    user_id = user.id if user else None
+    user_id = user.id
     assets: list[UploadedAsset] = []
     metadata = {
         "prompt_id": prompt_id,
@@ -888,7 +1198,9 @@ async def generate(
         "base_version_id": base_model["version_id"] if is_lora else "",
         "base_file_id": base_model["file_id"] if is_lora else "",
         "base_model_filename": base_model["filename"] if is_lora else "",
-        "lora_filename": selected_model["filename"] if is_lora else (active_loras[0]["lora"] if active_loras else ""),
+        "lora_filename": selected_model["filename"]
+        if is_lora
+        else (active_loras[0]["lora"] if active_loras else ""),
         "loras": active_loras,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_ms": elapsed_ms,
@@ -901,23 +1213,31 @@ async def generate(
                 blob,
                 prompt_id,
                 image["filename"],
-                metadata={**metadata, "source_filename": image["filename"], "user_id": user_id},
+                metadata={
+                    **metadata,
+                    "source_filename": image["filename"],
+                    "user_id": user_id,
+                },
                 namespace=user_id,
             )
             assets.append(UploadedAsset(filename=image["filename"], url=url))
 
             # Extract key from url
-            rel_key = url.split("/files/")[-1] if "/files/" in url else image["filename"]
+            rel_key = (
+                url.split("/files/")[-1] if "/files/" in url else image["filename"]
+            )
 
             # Prepare LoRAs list for relational DB
             loras_list = []
             for item in active_loras:
-                loras_list.append({
-                    "lora_name": item.get("lora", ""),
-                    "lora_model_id": item.get("model_id"),
-                    "lora_version_id": item.get("version_id"),
-                    "strength": float(item.get("strength", 1.0)),
-                })
+                loras_list.append(
+                    {
+                        "lora_name": item.get("lora", ""),
+                        "lora_model_id": item.get("model_id"),
+                        "lora_version_id": item.get("version_id"),
+                        "strength": float(item.get("strength", 1.0)),
+                    }
+                )
 
             try:
                 get_db().insert_generation(
@@ -944,7 +1264,13 @@ async def generate(
                         "origin": "generation",
                         "gallery_saved": 1,
                         "created_at": datetime.now(timezone.utc).isoformat(),
-                        "metadata_json": json.dumps({**metadata, "source_filename": image["filename"], "user_id": user_id}),
+                        "metadata_json": json.dumps(
+                            {
+                                **metadata,
+                                "source_filename": image["filename"],
+                                "user_id": user_id,
+                            }
+                        ),
                     },
                     loras_list=loras_list,
                 )
@@ -955,8 +1281,15 @@ async def generate(
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     return GenerationResult(
-        prompt_id=prompt_id, status="completed", images=assets, error=None, elapsed_ms=elapsed_ms
+        prompt_id=prompt_id,
+        status="completed",
+        images=assets,
+        error=None,
+        elapsed_ms=elapsed_ms,
     )
+
+
+generate_images = generate
 
 
 # ---------------------------------------------------------------------- #
@@ -971,10 +1304,14 @@ async def parse_tool(
 ) -> ToolParseResponse:
     """Store a server-owned workflow and return only safe editable controls."""
     if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file"
+        )
     payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
     if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large"
+        )
     try:
         return get_ai_tool_service().parse(payload, name)
     except AIToolError as exc:
@@ -991,33 +1328,49 @@ async def create_tool(
     controls: str | None = Form(None),
     user_id: str | None = Form(None),
     author_username: str | None = Form(None),
-    current_user: Optional[UserResponse] = Depends(get_optional_user),
+    current_user: UserResponse = Depends(RequirePermission("tool:publish")),
 ) -> ToolDetail:
     if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file"
+        )
     payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
     if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Workflow file is too large"
+        )
     thumbnail_data: bytes | None = None
     thumbnail_ext: str | None = None
     if thumbnail is not None:
-        thumbnail_ext = f".{ALLOWED_IMAGE_MIME.get(thumbnail.content_type or '') or ''}".rstrip(".")
+        thumbnail_ext = (
+            f".{ALLOWED_IMAGE_MIME.get(thumbnail.content_type or '') or ''}".rstrip(".")
+        )
         if thumbnail_ext not in {".png", ".jpg", ".webp"}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unsupported thumbnail image type")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Unsupported thumbnail image type"
+            )
         thumbnail_data = await thumbnail.read(settings.UPLOAD_MAX_BYTES + 1)
         if len(thumbnail_data) > settings.UPLOAD_MAX_BYTES:
-            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Thumbnail image is too large")
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Thumbnail image is too large"
+            )
     custom_controls = None
     if controls:
         try:
             parsed = json.loads(controls)
             if not isinstance(parsed, list):
-                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Controls must be a JSON array")
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "Controls must be a JSON array",
+                )
             custom_controls = [ToolControl.model_validate(c) for c in parsed]
         except (json.JSONDecodeError, ValueError) as exc:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid controls JSON: {exc}") from exc
-    effective_user_id = user_id or (current_user.id if current_user else None)
-    effective_author = author_username or (current_user.username if current_user else None)
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid controls JSON: {exc}",
+            ) from exc
+    effective_user_id = current_user.id
+    effective_author = author_username or current_user.username
     try:
         summary = get_ai_tool_service().create(
             payload,
@@ -1038,7 +1391,7 @@ async def create_tool(
 @app.post("/api/tools", response_model=ToolDetail)
 async def create_tool_json(
     req: CreateToolRequest,
-    current_user: Optional[UserResponse] = Depends(get_optional_user),
+    current_user: UserResponse = Depends(RequirePermission("tool:publish")),
 ) -> ToolDetail:
     """Create a tool with optional user-customized controls via JSON payload."""
     raw_workflow = req.workflow_api
@@ -1048,8 +1401,8 @@ async def create_tool_json(
         payload = raw_workflow.encode("utf-8")
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid workflow_api format")
-    effective_user_id = req.user_id or (current_user.id if current_user else None)
-    effective_author = req.author_username or (current_user.username if current_user else None)
+    effective_user_id = current_user.id
+    effective_author = req.author_username or current_user.username
     try:
         summary = get_ai_tool_service().create(
             payload,
@@ -1081,8 +1434,16 @@ async def get_tool(tool_id: str) -> ToolDetail:
 
 
 @app.delete("/api/tools/{tool_id}", response_model=DeleteToolResponse)
-async def delete_tool_endpoint(tool_id: str) -> DeleteToolResponse:
+async def delete_tool_endpoint(
+    tool_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> DeleteToolResponse:
     try:
+        tool = get_ai_tool_service().detail(tool_id)
+        await RequireOwnerOrPermission("tool:delete_any").enforce(
+            tool.user_id, current_user, rbac
+        )
         get_ai_tool_service().delete(tool_id)
         return DeleteToolResponse(deleted=True, tool_id=tool_id)
     except AIToolNotFound as exc:
@@ -1101,6 +1462,7 @@ async def _run_tool(
     image_control_ids: list[str] | None = None,
     client_id: str | None = None,
     save_to_gallery: bool = True,
+    user_id: str | None = None,
 ) -> ToolExecutionResult:
     tools = get_ai_tool_service()
     try:
@@ -1112,57 +1474,182 @@ async def _run_tool(
     comfy = get_comfy_client()
     uploaded_images: dict[str, str] = {}
     image_ids = {control.id for control in detail.controls if control.kind == "image"}
-    uploads = ([input_image] if input_image else []) + [file for file in (files or []) if file.filename]
+    uploads = ([input_image] if input_image else []) + [
+        file for file in (files or []) if file.filename
+    ]
     submitted_image_ids = image_control_ids or []
     if len(submitted_image_ids) != len(uploads):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Each input image must name one image control")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Each input image must name one image control",
+        )
     if len(set(submitted_image_ids)) != len(submitted_image_ids):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Duplicate image control")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="Duplicate image control"
+        )
     for upload, field_id in zip(uploads, submitted_image_ids):
         if field_id not in image_ids:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unknown image control")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, detail="Unknown image control"
+            )
         if field_id in uploaded_images:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Duplicate image control")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, detail="Duplicate image control"
+            )
         if upload.content_type not in ALLOWED_IMAGE_MIME:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unsupported input image type")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, detail="Unsupported input image type"
+            )
         image_data = await upload.read(settings.UPLOAD_MAX_BYTES + 1)
         if len(image_data) > settings.UPLOAD_MAX_BYTES:
-            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Input image is too large")
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Input image is too large",
+            )
         try:
-            uploaded_images[field_id] = await comfy.upload_image(image_data, upload.filename or "input.png", upload.content_type or "image/png")
+            uploaded_images[field_id] = await comfy.upload_image(
+                image_data,
+                upload.filename or "input.png",
+                upload.content_type or "image/png",
+            )
         except ComfyClientError as exc:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     if detail.requires_image and len(uploaded_images) != len(image_ids):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All input image controls are required")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="All input image controls are required",
+        )
     try:
-        graph, resolved = tools.build_graph(tool_id, prompt, chosen_ratio, values=values, images=uploaded_images)
+        graph, resolved = tools.build_graph(
+            tool_id, prompt, chosen_ratio, values=values, images=uploaded_images
+        )
         session_id = client_id or f"tool-{uuid.uuid4().hex}"
         started = time.monotonic()
         prompt_id = await comfy.queue_prompt(graph, session_id)
         final_status = await comfy.wait_until_done(prompt_id, session_id)
     except AIToolError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     except ComfyClientError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     elapsed_ms = int((time.monotonic() - started) * 1000)
     if final_status != "completed":
-        return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status=final_status, images=[], error=final_status, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
+        return ToolExecutionResult(
+            tool_id=tool_id,
+            prompt_id=prompt_id,
+            status=final_status,
+            images=[],
+            error=final_status,
+            elapsed_ms=elapsed_ms,
+            tool_mode=detail.mode,
+            aspect_ratio=chosen_ratio,
+        )
     assets: list[UploadedAsset] = []
     kind = detail.output_kind
-    metadata_base = {"origin": "ai_tool_studio", "source": "tool", "tool_id": tool_id, "tool_name": detail.name, "tool_type": detail.mode.value, "tool_mode": detail.mode.value, "kind": kind, "gallery_saved": save_to_gallery, "prompt": prompt, "aspect_ratio": chosen_ratio.value, "width": resolved["width"], "height": resolved["height"], "prompt_id": prompt_id, "created_at": datetime.now(timezone.utc).isoformat(), "elapsed_ms": elapsed_ms, "controls": values or {}, "tags": ["ai_tool_studio", detail.mode.value]}
+    metadata_base = {
+        "origin": "ai_tool_studio",
+        "source": "tool",
+        "tool_id": tool_id,
+        "tool_name": detail.name,
+        "tool_type": detail.mode.value,
+        "tool_mode": detail.mode.value,
+        "kind": kind,
+        "gallery_saved": save_to_gallery,
+        "prompt": prompt,
+        "aspect_ratio": chosen_ratio.value,
+        "width": resolved["width"],
+        "height": resolved["height"],
+        "prompt_id": prompt_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "elapsed_ms": elapsed_ms,
+        "controls": values or {},
+        "tags": ["ai_tool_studio", detail.mode.value],
+        "user_id": user_id,
+    }
     try:
         for output in await comfy.list_output_files(prompt_id, kind):
             blob = await comfy.fetch_image_bytes(output)
-            url = await storage.upload_asset(blob, prompt_id, output["filename"], metadata={**metadata_base, "source_filename": output["filename"]}, namespace=f"tools/{tool_id}")
-            assets.append(UploadedAsset(filename=output["filename"], url=url, kind=kind, saved=save_to_gallery))
+            asset_meta = {
+                **metadata_base,
+                "source_filename": output["filename"],
+                "user_id": user_id,
+            }
+            url = await storage.upload_asset(
+                blob,
+                prompt_id,
+                output["filename"],
+                metadata=asset_meta,
+                namespace=f"tools/{tool_id}",
+            )
+            assets.append(
+                UploadedAsset(
+                    filename=output["filename"],
+                    url=url,
+                    kind=kind,
+                    saved=save_to_gallery,
+                )
+            )
+            if "/files/" in url:
+                rel_key = url.split("/files/")[-1]
+            elif f"tools/{tool_id}/" in url:
+                rel_key = "tools/" + tool_id + "/" + url.split(f"tools/{tool_id}/")[-1]
+            else:
+                rel_key = output["filename"]
+            try:
+                get_db().insert_generation(
+                    {
+                        "prompt_id": prompt_id,
+                        "user_id": user_id,
+                        "filename": output["filename"],
+                        "url": url,
+                        "key": rel_key,
+                        "prompt": prompt,
+                        "width": resolved["width"],
+                        "height": resolved["height"],
+                        "status": "completed",
+                        "elapsed_ms": elapsed_ms,
+                        "origin": "ai_tool_studio",
+                        "gallery_saved": 1 if save_to_gallery else 0,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "metadata_json": json.dumps(asset_meta),
+                    }
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to insert tool generation record into DB: %s", exc
+                )
     except (ComfyClientError, StorageError) as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="AI Tool output retrieval failed") from exc
-    return ToolExecutionResult(tool_id=tool_id, prompt_id=prompt_id, status="completed", images=assets, error=None, elapsed_ms=elapsed_ms, tool_mode=detail.mode, aspect_ratio=chosen_ratio)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, detail="AI Tool output retrieval failed"
+        ) from exc
+    return ToolExecutionResult(
+        tool_id=tool_id,
+        prompt_id=prompt_id,
+        status="completed",
+        images=assets,
+        error=None,
+        elapsed_ms=elapsed_ms,
+        tool_mode=detail.mode,
+        aspect_ratio=chosen_ratio,
+    )
 
 
 @app.post("/api/tools/execute", response_model=ToolExecutionResult)
-async def execute_tool(req: ToolExecuteRequest) -> ToolExecutionResult:
-    return await _run_tool(req.tool_id, req.prompt, req.aspect_ratio, None, req.values, client_id=req.client_id, save_to_gallery=req.save_to_gallery)
+async def execute_tool(
+    req: ToolExecuteRequest,
+    user: UserResponse = Depends(get_current_user),
+) -> ToolExecutionResult:
+    return await _run_tool(
+        req.tool_id,
+        req.prompt,
+        req.aspect_ratio,
+        None,
+        req.values,
+        client_id=req.client_id,
+        save_to_gallery=req.save_to_gallery,
+        user_id=user.id,
+    )
 
 
 @app.post("/api/tools/{tool_id}/run", response_model=ToolExecutionResult)
@@ -1175,14 +1662,25 @@ async def run_tool(
     client_id: str | None = Form(None),
     save_to_gallery: bool = Form(True),
     files: Annotated[list[UploadFile] | None, File()] = None,
+    user: UserResponse = Depends(get_current_user),
 ) -> ToolExecutionResult:
     try:
         parsed_values = json.loads(values)
         parsed_image_ids = json.loads(image_control_ids)
     except json.JSONDecodeError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values and image control IDs must be valid JSON") from exc
-    if not isinstance(parsed_values, dict) or not isinstance(parsed_image_ids, list) or not all(isinstance(item, str) for item in parsed_image_ids):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Values must be an object and image control IDs an array")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Values and image control IDs must be valid JSON",
+        ) from exc
+    if (
+        not isinstance(parsed_values, dict)
+        or not isinstance(parsed_image_ids, list)
+        or not all(isinstance(item, str) for item in parsed_image_ids)
+    ):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Values must be an object and image control IDs an array",
+        )
     return await _run_tool(
         tool_id,
         prompt,
@@ -1193,14 +1691,21 @@ async def run_tool(
         image_control_ids=parsed_image_ids,
         client_id=client_id,
         save_to_gallery=save_to_gallery,
+        user_id=user.id,
     )
+
+
+run_tool_endpoint = run_tool
+
 
 @app.get("/api/tools/{tool_id}/thumbnail")
 async def tool_thumbnail(tool_id: str) -> FileResponse:
     try:
         return FileResponse(get_ai_tool_service().thumbnail_path(tool_id))
     except AIToolNotFound as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool thumbnail not found") from exc
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail="Tool thumbnail not found"
+        ) from exc
 
 
 @app.get("/api/tools/{tool_id}/files/{relative_path:path}")
@@ -1209,7 +1714,9 @@ async def tool_file(tool_id: str, relative_path: str) -> FileResponse:
     try:
         path = get_ai_tool_service().output_path(tool_id, relative_path)
     except AIToolNotFound as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool output not found") from exc
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail="Tool output not found"
+        ) from exc
     return FileResponse(path)
 
 
@@ -1234,7 +1741,9 @@ async def ws_progress(websocket: WebSocket, client_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("WS relay error for %s: %s", client_id, exc)
         try:
-            await websocket.send_text(json.dumps({"type": "error", "message": f"Relay lost: {exc}"}))
+            await websocket.send_text(
+                json.dumps({"type": "error", "message": f"Relay lost: {exc}"})
+            )
         except Exception:  # noqa: BLE001
             pass
     finally:
@@ -1265,7 +1774,9 @@ async def gallery(
     try:
         import asyncio
 
-        parsed_tags = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        parsed_tags = (
+            [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        )
         items = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: storage.list_recent(
@@ -1292,7 +1803,9 @@ async def paginated_gallery(
     user_id: str | None = None,
 ) -> PaginatedGenerationsResponse:
     """Return paginated gallery with relational filtering by model and user."""
-    items, total = get_db().get_paginated_generations(user_id=user_id, model_id=model_id, page=page, limit=limit)
+    items, total = get_db().get_paginated_generations(
+        user_id=user_id, model_id=model_id, page=page, limit=limit
+    )
     return PaginatedGenerationsResponse.create(
         items=[GenerationRecordResponse(**item) for item in items],
         total=total,
@@ -1317,7 +1830,9 @@ async def interrogate_image(file: UploadFile = File(...)) -> TagInterrogateRespo
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty image file")
     tagger = get_tagger_service()
     try:
-        tags = await tagger.interrogate_image(content, filename=file.filename or "image.png")
+        tags = await tagger.interrogate_image(
+            content, filename=file.filename or "image.png"
+        )
     except TaggerError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -1374,8 +1889,17 @@ async def image_detail(key: str) -> GalleryItem:
 
 
 @app.delete("/api/v1/gallery/{key:path}", response_model=DeleteAssetResponse)
-async def delete_gallery_asset(key: str) -> DeleteAssetResponse:
+async def delete_gallery_asset(
+    key: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> DeleteAssetResponse:
     try:
+        item = storage.get_asset(key)
+        asset_user_id = (item.metadata or {}).get("user_id")
+        await RequireOwnerOrPermission("generation:delete_any").enforce(
+            asset_user_id, current_user, rbac
+        )
         storage.delete_asset(key)
         return DeleteAssetResponse(deleted=True, key=key)
     except FileNotFoundError as exc:
@@ -1385,5 +1909,9 @@ async def delete_gallery_asset(key: str) -> DeleteAssetResponse:
 
 
 @app.delete("/api/v1/assets/{key:path}", response_model=DeleteAssetResponse)
-async def delete_asset_endpoint(key: str) -> DeleteAssetResponse:
-    return await delete_gallery_asset(key)
+async def delete_asset_endpoint(
+    key: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> DeleteAssetResponse:
+    return await delete_gallery_asset(key, current_user=current_user, rbac=rbac)

@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -554,6 +555,23 @@ class AIToolServiceTests(unittest.TestCase):
 
 class ToolApiEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+        from app.services.rbac_service import get_rbac_service
+
+        self.mock_user = UserResponse(
+            id="tool-test-creator-id",
+            email="tool_creator@test.com",
+            username="tool_creator",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+        self.mock_rbac = MagicMock()
+        self.mock_rbac.has_permission = AsyncMock(return_value=True)
+        app.dependency_overrides[get_current_user] = lambda: self.mock_user
+        app.dependency_overrides[get_rbac_service] = lambda: self.mock_rbac
+
         self.client = TestClient(app)
         self.workflow = {
             "prompt": {"class_type": "CLIPTextEncode", "inputs": {"text": "cyberpunk city"}},
@@ -569,6 +587,12 @@ class ToolApiEndpointTests(unittest.TestCase):
                 },
             },
         }
+
+    def tearDown(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.services.rbac_service import get_rbac_service
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_rbac_service, None)
 
     def test_post_tools_parse_returns_candidate_controls(self) -> None:
         files = {"workflow_api": ("workflow_api.json", json.dumps(self.workflow).encode(), "application/json")}
@@ -678,6 +702,108 @@ class ToolApiEndpointTests(unittest.TestCase):
     def test_delete_tool_endpoint_rejects_invalid_id(self) -> None:
         resp = self.client.delete("/api/tools/invalid-id-not-hex")
         self.assertEqual(resp.status_code, 404)
+
+    def test_execute_tool_requires_authentication(self) -> None:
+        from app.routers.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.post("/api/tools/execute", json={"tool_id": "tool123", "prompt": "a sunset"})
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+    def test_run_tool_endpoint_requires_authentication(self) -> None:
+        from app.routers.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.post("/api/tools/tool123/run", data={"prompt": "a sunset"})
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+    @patch("app.main._run_tool")
+    def test_execute_tool_authenticated_passes_user_id(self, mock_run_tool: MagicMock) -> None:
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse, ToolExecutionResult
+        mock_user = UserResponse(id="user-auth-123", email="user@test.com", username="testuser", created_at="2026-10-18T00:00:00Z")
+        mock_run_tool.return_value = ToolExecutionResult(
+            tool_id="a" * 32,
+            prompt_id="prompt123",
+            status="completed",
+            images=[],
+            error=None,
+            elapsed_ms=100,
+            tool_mode=ToolMode.TEXT_TO_IMAGE,
+            aspect_ratio=ToolAspectRatio.SQUARE,
+        )
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        try:
+            resp = self.client.post(
+                "/api/tools/execute",
+                json={"tool_id": "a" * 32, "prompt": "a sunset", "aspect_ratio": "1:1"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            mock_run_tool.assert_called_once()
+            _, kwargs = mock_run_tool.call_args
+            self.assertEqual(kwargs.get("user_id"), "user-auth-123")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    @patch("app.main.get_db")
+    @patch("app.main.storage")
+    @patch("app.main.get_comfy_client")
+    @patch("app.main.get_ai_tool_service")
+    def test_run_tool_records_generation_with_user_attribution(
+        self, mock_get_tools: MagicMock, mock_get_comfy: MagicMock, mock_storage: MagicMock, mock_get_db: MagicMock
+    ) -> None:
+        import asyncio
+        from app.main import _run_tool
+        from app.schemas import ToolDetail
+
+        mock_tools = MagicMock()
+        mock_tools.get.return_value = {"default_aspect_ratio": "1:1"}
+        mock_detail = MagicMock(spec=ToolDetail)
+        mock_detail.controls = []
+        mock_detail.requires_image = False
+        mock_detail.output_kind = "image"
+        mock_detail.name = "Test Tool"
+        mock_detail.mode = ToolMode.TEXT_TO_IMAGE
+        mock_tools.detail.return_value = mock_detail
+        mock_tools.build_graph.return_value = ({}, {"width": 512, "height": 512})
+        mock_get_tools.return_value = mock_tools
+
+        mock_comfy = MagicMock()
+        mock_comfy.queue_prompt = AsyncMock(return_value="prompt-abc")
+        mock_comfy.wait_until_done = AsyncMock(return_value="completed")
+        mock_comfy.list_output_files = AsyncMock(return_value=[{"filename": "out.png"}])
+        mock_comfy.fetch_image_bytes = AsyncMock(return_value=b"fake-png-bytes")
+        mock_get_comfy.return_value = mock_comfy
+
+        mock_storage.upload_asset = AsyncMock(return_value="http://localhost:8000/files/tools/tool123/prompt-abc/out.png")
+        mock_db = MagicMock()
+        mock_get_db.return_value = mock_db
+
+        result = asyncio.run(_run_tool(
+            tool_id="tool123",
+            prompt="cyberpunk car",
+            aspect_ratio=ToolAspectRatio.SQUARE,
+            input_image=None,
+            user_id="user-456",
+            save_to_gallery=True,
+        ))
+
+        self.assertEqual(result.status, "completed")
+        mock_storage.upload_asset.assert_called_once()
+        _, s_kwargs = mock_storage.upload_asset.call_args
+        self.assertEqual(s_kwargs["metadata"]["user_id"], "user-456")
+        self.assertEqual(s_kwargs["metadata"]["origin"], "ai_tool_studio")
+
+        mock_db.insert_generation.assert_called_once()
+        gen_payload = mock_db.insert_generation.call_args[0][0]
+        self.assertEqual(gen_payload["user_id"], "user-456")
+        self.assertEqual(gen_payload["origin"], "ai_tool_studio")
+        self.assertEqual(gen_payload["prompt_id"], "prompt-abc")
+        self.assertEqual(gen_payload["gallery_saved"], 1)
 
 
 if __name__ == "__main__":

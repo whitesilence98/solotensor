@@ -2,19 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { Box, FolderOpen, ImageIcon, Layers3, MessageSquareCode, MoreHorizontal, Settings, Sparkles, Wrench } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, FolderOpen, ImageIcon, Layers3, MessageSquareCode, MoreHorizontal, Settings, Shield, Sparkles, Wrench } from "lucide-react";
 import UserNavProfile from "./UserNavProfile";
 import BrandLogo, { TensorPrismEmblem } from "./BrandLogo";
+import { useAuth } from "@/lib/auth-context";
 
-const NAV_ITEMS = [
+interface NavItem {
+  id: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  label: string;
+  href: string;
+  primary: boolean;
+}
+
+const BASE_NAV_ITEMS: readonly NavItem[] = [
   { id: "assets", icon: FolderOpen, label: "Library", href: "/assets", primary: true },
   { id: "generate", icon: ImageIcon, label: "Generate", href: "/", primary: true },
   { id: "tools", icon: Wrench, label: "Tool studio", href: "/tools", primary: true },
   { id: "models", icon: Box, label: "Models", href: "/models", primary: true },
   { id: "assist", icon: MessageSquareCode, label: "Code Assist", href: "/assist", primary: false },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings", primary: false },
-] as const;
+];
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -24,10 +33,26 @@ function isActive(pathname: string, href: string): boolean {
 
 export default function SidebarNav() {
   const pathname = usePathname();
+  const { isMod, isAdmin } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const moreSheetRef = useRef<HTMLDivElement>(null);
-  const secondaryActive = NAV_ITEMS.some((item) => !item.primary && isActive(pathname, item.href));
+
+  const navItems = useMemo<NavItem[]>(() => {
+    const items = [...BASE_NAV_ITEMS];
+    if (isMod || isAdmin) {
+      items.push({
+        id: "moderation",
+        icon: Shield,
+        label: "Moderation",
+        href: "/admin/moderation",
+        primary: false,
+      });
+    }
+    return items;
+  }, [isMod, isAdmin]);
+
+  const secondaryActive = navItems.some((item) => !item.primary && isActive(pathname, item.href));
 
   const closeMore = () => setMoreOpen(false);
 
@@ -62,7 +87,7 @@ export default function SidebarNav() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [moreOpen]);
 
-  const item = ({ id, icon: Icon, label, href, primary }: (typeof NAV_ITEMS)[number]) => {
+  const item = ({ id, icon: Icon, label, href, primary }: NavItem) => {
     const active = isActive(pathname, href);
     return (
       <Link
@@ -103,7 +128,7 @@ export default function SidebarNav() {
         </div>
 
         <div className="flex flex-1 items-center justify-between gap-1 md:w-full md:flex-none md:flex-col md:gap-1.5">
-          {NAV_ITEMS.map(item)}
+          {navItems.map(item)}
           
           <div className="hidden md:block w-6 h-px bg-[var(--line-strong)] my-2 rounded-full" />
           
@@ -153,7 +178,7 @@ export default function SidebarNav() {
               <div className="px-3 pb-2.5 pt-2 border-b border-[var(--line)] mb-2">
                 <BrandLogo size="sm" subtitle="AI CREATION STUDIO" />
               </div>
-              {NAV_ITEMS.filter(({ primary }) => !primary).map(({ id, icon: Icon, label, href }) => {
+              {navItems.filter(({ primary }) => !primary).map(({ id, icon: Icon, label, href }) => {
                 const active = isActive(pathname, href);
                 return (
                   <Link key={id} href={href} aria-current={active ? "page" : undefined} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-all duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${active ? "bg-[var(--accent)] text-[var(--accent-ink)]" : "text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"}`}>

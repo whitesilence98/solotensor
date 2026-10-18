@@ -61,11 +61,21 @@ class StorageServiceDeleteTests(unittest.TestCase):
 
     def test_delete_asset_api_endpoint(self) -> None:
         # Test the FastAPI endpoints via TestClient
+        from unittest.mock import AsyncMock, MagicMock
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+        from app.services.rbac_service import get_rbac_service
         import app.main as main_mod
 
         # Inject our temp storage service into main module
         old_storage = main_mod.storage
         main_mod.storage = self.service
+
+        test_user = UserResponse(id="storage_owner_1", username="owner", email="owner@test.com", role="creator", created_at="2026-01-01T00:00:00Z")
+        mock_rbac = MagicMock()
+        mock_rbac.has_permission = AsyncMock(return_value=True)
+        app.dependency_overrides[get_current_user] = lambda: test_user
+        app.dependency_overrides[get_rbac_service] = lambda: mock_rbac
         try:
             client = TestClient(app)
 
@@ -75,7 +85,7 @@ class StorageServiceDeleteTests(unittest.TestCase):
             media = asset_dir / "output.png"
             sidecar = asset_dir / "output.png.json"
             media.write_bytes(b"sample tool output")
-            sidecar.write_text(json.dumps({"tool_id": "test"}), encoding="utf-8")
+            sidecar.write_text(json.dumps({"tool_id": "test", "user_id": "storage_owner_1"}), encoding="utf-8")
 
             # 1. Successful DELETE via /api/v1/gallery/{key:path}
             resp = client.delete("/api/v1/gallery/tools/sample/output.png")
@@ -95,6 +105,8 @@ class StorageServiceDeleteTests(unittest.TestCase):
             self.assertEqual(resp_400.status_code, 400)
         finally:
             main_mod.storage = old_storage
+            app.dependency_overrides.pop(get_current_user, None)
+            app.dependency_overrides.pop(get_rbac_service, None)
 
 
 if __name__ == "__main__":

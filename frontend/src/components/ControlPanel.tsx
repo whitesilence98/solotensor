@@ -208,7 +208,7 @@ export default function ControlPanel(props: Props) {
   onPrivateChange,
  } = props;
 
- const { isPro, isAdmin, switchRoleDemo } = useAuth();
+ const { isPro, isAdmin, switchRoleDemo, isAuthenticated, openAuthModal } = useAuth();
  const isProUser = isPro || isAdmin;
 
  const [internalPrivate, setInternalPrivate] = useState(false);
@@ -224,6 +224,10 @@ export default function ControlPanel(props: Props) {
  const exceedsHardwareEnvelope = !isProUser && (widthNum > 1024 || heightNum > 1024 || stepsNum > 35);
 
  const handleTogglePrivate = () => {
+  if (!isAuthenticated) {
+   openAuthModal("generation");
+   return;
+  }
   if (!isProUser) {
    setPrivateUpsellOpen(true);
    return;
@@ -237,6 +241,10 @@ export default function ControlPanel(props: Props) {
  };
 
  const handleGenerateClick = () => {
+  if (!isAuthenticated) {
+   openAuthModal("generation");
+   return;
+  }
   if (exceedsHardwareEnvelope) {
    setHardwareModalOpen(true);
    return;
@@ -1462,7 +1470,7 @@ export default function ControlPanel(props: Props) {
      <button
       type="button"
       onClick={handleGenerateClick}
-      disabled={!canGenerate || busy}
+      disabled={busy || (isAuthenticated && !canGenerate)}
       className="workspace-action-primary flex h-10 flex-1 items-center justify-between rounded-xl px-4 text-xs font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
      >
       {busy ? (
@@ -1470,13 +1478,22 @@ export default function ControlPanel(props: Props) {
         <Loader2 className="h-4 w-4 animate-spin text-[var(--accent-ink)]" aria-hidden="true" />
         <span>Rendering {progress ?? 0}%</span>
        </div>
+      ) : !isAuthenticated ? (
+       <div className="flex items-center gap-1.5">
+        <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+        <span>Sign In to Generate</span>
+       </div>
       ) : (
        <div className="flex items-center gap-1.5">
         <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
         <span>Generate</span>
-        {isProUser && (
+        {isProUser ? (
          <span className="ml-1 rounded bg-[var(--accent-ink)]/15 px-1.5 py-0.5 font-mono text-[9px] font-extrabold tracking-wider text-[var(--accent-ink)] uppercase">
           ⚡ PRIORITY QUEUE
+         </span>
+        ) : (
+         <span className="ml-1 rounded bg-[var(--accent-ink)]/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-[var(--accent-ink)] uppercase">
+          STANDARD
          </span>
         )}
        </div>
@@ -1484,7 +1501,7 @@ export default function ControlPanel(props: Props) {
 
       <div className="flex items-center gap-1.5 opacity-80">
        <span className="font-mono text-[10px]">
-        {busy ? progressLabel || "Rendering" : isProUser ? "~4s" : "⌘↵"}
+        {busy ? progressLabel || "Rendering" : !isAuthenticated ? "LOGIN" : isProUser ? "~4s" : "~28s"}
        </span>
       </div>
      </button>

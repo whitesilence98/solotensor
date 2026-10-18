@@ -285,9 +285,9 @@ export default function UserNavProfile() {
               <Link
                 href="/admin/moderation"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-lg border border-[#0c4a6e]/40 bg-[#082f49]/30 px-2.5 py-2 text-xs font-semibold text-[#38bdf8] transition-colors hover:bg-[#082f49]/60 hover:text-white"
+                className="flex items-center gap-2.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-2 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--surface-soft)] hover:text-white"
               >
-                <ShieldCheck className="h-3.5 w-3.5 text-[#38bdf8]" />
+                <ShieldCheck className="h-3.5 w-3.5 text-[var(--accent)]" />
                 <span>Moderation Darkroom</span>
               </Link>
             )}

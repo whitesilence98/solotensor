@@ -55,6 +55,7 @@ import TensorModelCard from "@/components/TensorModelCard";
 import CustomSelect from "@/components/CustomSelect";
 import HierarchicalSelect from "@/components/HierarchicalSelect";
 import { BASE_MODEL_ARCHITECTURES } from "@/lib/baseModelArchitectures";
+import { useAuth } from "@/lib/auth-context";
 
 const modelTypes: CreatorModelType[] = [
   "Checkpoint",
@@ -180,7 +181,15 @@ export default function CreateModelDrawer({
   onClose,
   onCreated,
 }: CreateModelDrawerProps) {
+  const { isAuthenticated, openAuthModal } = useAuth();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Auth gate interception on drawer open
+  useEffect(() => {
+    if (open && !isAuthenticated) {
+      openAuthModal("create_model");
+    }
+  }, [open, isAuthenticated, openAuthModal]);
 
   // Step 1: Identity & Architecture
   const [title, setTitle] = useState("");
@@ -831,6 +840,11 @@ export default function CreateModelDrawer({
 
   // Submission Pipeline
   const submit = async () => {
+    if (!isAuthenticated) {
+      openAuthModal("create_model");
+      return;
+    }
+
     const firstStagedFile = versions[0]?.files[0];
     const modelTitle =
       title.trim() ||
@@ -1078,6 +1092,32 @@ export default function CreateModelDrawer({
             </button>
           </div>
         </header>
+
+        {/* Obsidian & Acid-Lime Sign-In Notice Banner */}
+        {!isAuthenticated && (
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--accent)]/30 bg-[var(--surface-sunken)] px-6 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]">
+                <Zap className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                  Creator Access Required
+                </p>
+                <p className="font-sans text-xs text-[var(--ink-soft)]">
+                  Sign in to publish creator models and recipes
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => openAuthModal("create_model")}
+              className="shrink-0 rounded-[5px] bg-[var(--accent)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition-all hover:bg-[var(--accent-hover)] active:scale-[0.98]"
+            >
+              Sign In
+            </button>
+          </div>
+        )}
 
         {/* Step Stepper Navigation Bar */}
         <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">

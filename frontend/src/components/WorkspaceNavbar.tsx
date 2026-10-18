@@ -1,8 +1,11 @@
 "use client";
 
 import React, { ReactNode } from "react";
+import Link from "next/link";
+import { Shield } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 import CreditPill from "@/components/CreditPill";
+import { useAuth } from "@/lib/auth-context";
 
 export interface WorkspaceNavbarProps {
   subtitle: string;
@@ -27,6 +30,7 @@ export default function WorkspaceNavbar({
   children,
   maxWidth = "max-w-[1600px]",
 }: WorkspaceNavbarProps) {
+  const { isMod, isAdmin } = useAuth();
   const statusDotClass =
     statusVariant === "warning"
       ? "bg-amber-400"
@@ -59,6 +63,16 @@ export default function WorkspaceNavbar({
               </div>
             )}
             {showCreditPill && <CreditPill />}
+            {(isMod || isAdmin) && (
+              <Link
+                href="/admin/moderation"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors"
+                title="SoloTensor Moderation Darkroom"
+              >
+                <Shield className="h-3 w-3" />
+                <span>MOD DARKROOM</span>
+              </Link>
+            )}
             {actions}
           </div>
         </div>
