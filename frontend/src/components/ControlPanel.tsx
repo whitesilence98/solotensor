@@ -325,15 +325,15 @@ export default function ControlPanel(props: Props) {
   return map;
  }, [publicModels]);
 
- // Available base models (Checkpoint or Diffusion Model) from backend
+ // Available base models (Checkpoint or SVD) from backend
  const baseModels = useMemo(
-  () => modelOptions.filter((m) => m.model_type === "Checkpoint" || m.model_type === "Diffusion Model"),
+  () => modelOptions.filter((m) => m.model_type === "Checkpoint" || m.model_type === "SVD"),
   [modelOptions]
  );
 
- // Available LoRA models from backend
+ // Available adapter models from backend
  const galleryLoras = useMemo(
-  () => modelOptions.filter((m) => m.model_type === "LoRA" || m.model_type === "LyCORIS"),
+  () => modelOptions.filter((m) => ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(m.model_type)),
   [modelOptions]
  );
 
@@ -1541,7 +1541,7 @@ export default function ControlPanel(props: Props) {
         {[
          { id: "all", label: "All Types" },
          { id: "Checkpoint", label: "Checkpoints" },
-         { id: "Diffusion Model", label: "Diffusion Models" },
+         { id: "SVD", label: "SVD" },
         ].map((tab) => {
          const active = modelCategoryFilter === tab.id;
          return (
@@ -1624,7 +1624,7 @@ export default function ControlPanel(props: Props) {
             {/* Top Tag Overlays */}
             <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
              <span className="rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold text-white/90 backdrop-blur-md uppercase tracking-wider">
-              {m.model_type === "Checkpoint" ? "CKPT" : "DIFF"}
+              {m.model_type === "Checkpoint" ? "CKPT" : m.model_type}
              </span>
              <span className="rounded-md border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white/80 backdrop-blur-md">
               {m.version_name || "v1.0"}

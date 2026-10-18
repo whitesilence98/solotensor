@@ -783,7 +783,7 @@ export default function AssetInspectionStage({
                       );
                       if (matched?.title) return matched.title;
                       const base = item.lora.split(/[/\\]/).pop() || item.lora;
-                      return base.replace(/\.(safetensors|ckpt|pt|pth|bin|gguf)$/i, "");
+                      return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "");
                     })();
 
                     return (

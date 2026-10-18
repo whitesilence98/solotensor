@@ -341,7 +341,7 @@ export default function PublicModelDetailPage({
     if (vId) queryParams.version_id = vId;
     if (fId) queryParams.file_id = fId;
     if (
-      (model.model_type === "LoRA" || model.model_type === "LyCORIS") &&
+      ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(model.model_type) &&
       model.compatibility.base_model_id &&
       model.compatibility.base_version_id &&
       model.compatibility.base_file_id

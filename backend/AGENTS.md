@@ -1,6 +1,7 @@
 # SoloTensor Backend Agent Directory
 
 This document outlines the specialized backend agent suite available for SoloTensor.
+For system topology, the 16 model types specification, and ComfyUI enclave contracts, see [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/docs/ARCHITECTURE.md).
 
 ---
 

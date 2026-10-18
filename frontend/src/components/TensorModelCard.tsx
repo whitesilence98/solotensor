@@ -76,11 +76,22 @@ export function TensorModelCard({
   const typeBadgeStyle = useMemo(() => {
     switch (item.model_type) {
       case "LoRA":
+      case "LoKr":
+      case "LoCon":
       case "LyCORIS":
+      case "DoRA":
+      case "Motion LoRA":
         return "bg-[var(--surface)]/90 text-[var(--accent)] border-[var(--accent)]/30";
       case "Checkpoint":
-      case "Diffusion Model":
+      case "SVD":
         return "bg-[var(--surface)]/90 text-[var(--accent)] border-[var(--accent)]/30";
+      case "ControlNet":
+      case "Poses":
+        return "bg-[var(--surface)]/90 text-cyan-400 border-cyan-400/30";
+      case "VAE":
+      case "StyleModel":
+      case "Aesthetic Gradient":
+        return "bg-[var(--surface)]/90 text-amber-400 border-amber-400/30";
       default:
         return "bg-[var(--surface)]/90 text-[var(--ink)] border-[var(--line)]";
     }
@@ -147,7 +158,7 @@ export function TensorModelCard({
         <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
           <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
-              {item.model_type === "LoRA" || item.model_type === "LyCORIS" ? (
+              {["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(item.model_type) ? (
                 <Layers className="h-6 w-6 opacity-80" />
               ) : (
                 <Box className="h-6 w-6 opacity-80" />

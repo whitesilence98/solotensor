@@ -21,6 +21,7 @@ export interface CustomSelectProps {
   disabled?: boolean;
   align?: "left" | "right";
   id?: string;
+  icon?: React.ReactNode;
 }
 
 export default function CustomSelect({
@@ -35,6 +36,7 @@ export default function CustomSelect({
   disabled = false,
   align = "left",
   id: explicitId,
+  icon,
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -121,15 +123,18 @@ export default function CustomSelect({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label={ariaLabel || selectedOption?.label || placeholder}
-        className={`group flex h-8 items-center justify-between gap-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-[11px] text-[var(--ink)] transition-all duration-150 outline-none hover:border-[var(--line-strong)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`group flex h-8 items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 text-xs font-medium text-[var(--ink)] transition-all duration-150 outline-none hover:border-[var(--line-strong)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-40 ${
           isOpen
             ? "border-[var(--line-strong)] ring-2 ring-[var(--accent)]/20 bg-[var(--surface-raised)]"
             : ""
         } ${buttonClassName}`}
       >
-        <span className="truncate">
-          {selectedOption ? selectedOption.label : placeholder}
-        </span>
+        <div className="flex items-center gap-2 truncate">
+          {icon && <span className="shrink-0">{icon}</span>}
+          <span className="truncate">
+            {selectedOption ? selectedOption.label : placeholder}
+          </span>
+        </div>
         <ChevronDown
           className={`h-3 w-3 shrink-0 text-[var(--ink-faint)] transition-transform duration-200 group-hover:text-[var(--ink)] ${
             isOpen ? "rotate-180 text-[var(--accent)]" : ""
@@ -158,9 +163,9 @@ export default function CustomSelect({
                   role="option"
                   aria-selected={isSelected}
                   onClick={() => handleSelect(opt.value)}
-                  className={`flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 font-mono text-[11px] transition-colors cursor-pointer select-none ${
+                  className={`flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer select-none ${
                     isSelected
-                      ? "bg-[var(--accent)]/10 font-bold text-[var(--accent)]"
+                      ? "bg-[var(--accent)]/10 font-semibold text-[var(--accent)]"
                       : "text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
                   }`}
                 >

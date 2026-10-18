@@ -5,6 +5,7 @@ import {
   DragEvent,
   KeyboardEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -13,18 +14,24 @@ import {
   ArrowRight,
   Box,
   Check,
-  ChevronRight,
+  ChevronDown,
   Cpu,
   FileArchive,
+  FileCode2,
   FileImage,
   FolderDown,
   HardDrive,
   Info,
   Layers3,
+  Network,
+  RefreshCw,
   Search,
   ShieldCheck,
+  Plus,
+  Sliders,
   Sparkles,
-  Tag,
+  Star,
+  Trash2,
   Upload,
   X,
   Zap,
@@ -33,38 +40,40 @@ import {
   api,
   type CreatorModel,
   type CreatorModelCategory,
-  type CreatorModelCompatibility,
-  type CreatorModelGeneration,
-  type CreatorModelPermissions,
-  type CreatorModelType,
   type CreatorModelPayload,
+  type CreatorModelType,
+  type InstalledGalleryModel,
   type LocalModelSummary,
+  type ModelPrecision,
   type ModelVisibility,
+  type WorkflowTemplateInfo,
 } from "@/lib/api";
 import TensorModelCard from "@/components/TensorModelCard";
 import CustomSelect from "@/components/CustomSelect";
-
-const baseModelPresets = [
-  "FLUX.1",
-  "Stable Diffusion XL (SDXL)",
-  "Stable Diffusion 1.5 (SD 1.5)",
-  "Stable Diffusion 3.5",
-  "Pony Diffusion V6 XL",
-  "Illustrious XL",
-  "Wan 2.1 / Wan 2.8",
-  "Z-Image / Z-Image-Turbo",
-  "Qwen-Image-2.1",
-  "Hunyuan-DiT",
-];
+import HierarchicalSelect from "@/components/HierarchicalSelect";
+import { BASE_MODEL_ARCHITECTURES } from "@/lib/baseModelArchitectures";
 
 const modelTypes: CreatorModelType[] = [
   "Checkpoint",
-  "LoRA",
-  "LyCORIS",
-  "Diffusion Model",
-  "VAE",
+  "Hyper Network",
   "Embedding",
+  "Aesthetic Gradient",
+  "LoRA",
+  "LoKr",
+  "LoCon",
+  "ControlNet",
+  "Poses",
+  "Wildcards",
+  "LyCORIS",
+  "SVD",
+  "Motion LoRA",
+  "VAE",
+  "DoRA",
+  "StyleModel",
 ];
+
+const isAdapterModelType = (t: string) =>
+  ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(t);
 
 const categories: CreatorModelCategory[] = [
   "General",
@@ -79,6 +88,28 @@ function formatBytes(size: number): string {
   if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`;
   if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(2)} MB`;
   return `${(size / 1024 ** 3).toFixed(2)} GB`;
+}
+
+export interface StagedModelFile {
+  id: string;
+  kind: "upload" | "local";
+  filename: string;
+  size: number;
+  precision: ModelPrecision;
+  file?: File;
+  local?: LocalModelSummary;
+}
+
+export interface StagedModelVersion {
+  id: string;
+  name: string;
+  files: StagedModelFile[];
+}
+
+export interface StagedShowcaseItem {
+  id: string;
+  file: File;
+  previewUrl: string;
 }
 
 export interface CreateModelDrawerProps {
@@ -98,10 +129,37 @@ export default function CreateModelDrawer({
   const [title, setTitle] = useState("");
   const [modelType, setModelType] = useState<CreatorModelType>("Checkpoint");
   const [category, setCategory] = useState<CreatorModelCategory>("General");
-  const [baseModel, setBaseModel] = useState("Stable Diffusion XL (SDXL)");
+  const [baseModel, setBaseModel] = useState("Allegro");
   const [customBaseModel, setCustomBaseModel] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState("");
+
+  // Base Model link for LoRA / LyCORIS
+  const [selectedBaseKey, setSelectedBaseKey] = useState("");
+  const [baseOptions, setBaseOptions] = useState<InstalledGalleryModel[]>([]);
+  const [baseOptionsLoading, setBaseOptionsLoading] = useState(false);
+
+  // Dynamic Compatibility: VAE (from ComfyUI models/vae/ & workflow)
+  const [vae, setVae] = useState("");
+  const [isCustomVae, setIsCustomVae] = useState(false);
+  const [customVae, setCustomVae] = useState("");
+  const [vaeFiles, setVaeFiles] = useState<string[]>([]);
+  const [vaeLoading, setVaeLoading] = useState(false);
+  const [vaeError, setVaeError] = useState<string | null>(null);
+
+  // Dynamic Compatibility: Text Encoder (from ComfyUI models/text_encoders/ & workflow)
+  const [textEncoder, setTextEncoder] = useState("");
+  const [isCustomEncoder, setIsCustomEncoder] = useState(false);
+  const [customEncoder, setCustomEncoder] = useState("");
+  const [encoderFiles, setEncoderFiles] = useState<string[]>([]);
+  const [encoderLoading, setEncoderLoading] = useState(false);
+  const [encoderError, setEncoderError] = useState<string | null>(null);
+
+  // Dynamic Compatibility: CLIP Type (from ComfyUI clip-options & workflow)
+  const [clipType, setClipType] = useState("");
+  const [clipTypes, setClipTypes] = useState<string[]>([]);
+  const [clipTypesLoading, setClipTypesLoading] = useState(false);
+
+  // Backend reference info from active template
+  const [workflowInfo, setWorkflowInfo] = useState<WorkflowTemplateInfo | null>(null);
 
   // Step 2: Presets & Generation Parameters
   const [triggerWords, setTriggerWords] = useState<string[]>([]);
@@ -115,22 +173,189 @@ export default function CreateModelDrawer({
   const [recommendedPrompt, setRecommendedPrompt] = useState("");
   const [recommendedNegative, setRecommendedNegative] = useState("");
 
-  // Step 3: Files & Weights
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [selectedLocalFile, setSelectedLocalFile] = useState<LocalModelSummary | null>(null);
+  // Step 3: Files, Versions & Weights
+  const [versions, setVersions] = useState<StagedModelVersion[]>([
+    {
+      id: "ver-1",
+      name: "v1.0",
+      files: [],
+    },
+  ]);
+  const [activeVersionId, setActiveVersionId] = useState<string>("ver-1");
+  const [isEditingVersionName, setIsEditingVersionName] = useState(false);
+  const [versionNameInput, setVersionNameInput] = useState("v1.0");
+  const [selectedPrecision, setSelectedPrecision] = useState<ModelPrecision>("FP16");
+
   const [showLocalPicker, setShowLocalPicker] = useState(false);
   const [localSearch, setLocalSearch] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalModelSummary[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+
+  const activeVersion = useMemo(() => {
+    return versions.find((v) => v.id === activeVersionId) || versions[0];
+  }, [versions, activeVersionId]);
+
+  const totalFilesCount = useMemo(() => {
+    return versions.reduce((sum, v) => sum + v.files.length, 0);
+  }, [versions]);
+
+  const addVersion = () => {
+    const nextNum = versions.length + 1;
+    const nextName = `v${nextNum}.0`;
+    const newVer: StagedModelVersion = {
+      id: `ver-${Date.now()}`,
+      name: nextName,
+      files: [],
+    };
+    setVersions((prev) => [...prev, newVer]);
+    setActiveVersionId(newVer.id);
+    setVersionNameInput(nextName);
+    setIsEditingVersionName(false);
+  };
+
+  const removeVersion = (verId: string) => {
+    if (versions.length <= 1) return;
+    const remaining = versions.filter((v) => v.id !== verId);
+    setVersions(remaining);
+    if (activeVersionId === verId) {
+      setActiveVersionId(remaining[0].id);
+      setVersionNameInput(remaining[0].name);
+      setIsEditingVersionName(false);
+    }
+  };
+
+  const startRenameVersion = () => {
+    setVersionNameInput(activeVersion.name);
+    setIsEditingVersionName(true);
+  };
+
+  const saveVersionName = () => {
+    const clean = versionNameInput.trim() || activeVersion.name;
+    setVersions((prev) =>
+      prev.map((v) => (v.id === activeVersion.id ? { ...v, name: clean } : v)),
+    );
+    setIsEditingVersionName(false);
+  };
+
+  const addUploadedFile = (file: File) => {
+    const newFile: StagedModelFile = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      kind: "upload",
+      filename: file.name,
+      size: file.size,
+      precision: selectedPrecision,
+      file,
+    };
+    setVersions((prev) =>
+      prev.map((v) =>
+        v.id === activeVersion.id ? { ...v, files: [...v.files, newFile] } : v,
+      ),
+    );
+  };
+
+  const addLocalFile = (item: LocalModelSummary) => {
+    const exists = activeVersion.files.some(
+      (f) =>
+        f.kind === "local" &&
+        f.local?.filename === item.filename &&
+        f.local?.category === item.category,
+    );
+    if (exists) return;
+
+    const newFile: StagedModelFile = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      kind: "local",
+      filename: item.filename,
+      size: item.size,
+      precision: selectedPrecision,
+      local: item,
+    };
+    setVersions((prev) =>
+      prev.map((v) =>
+        v.id === activeVersion.id ? { ...v, files: [...v.files, newFile] } : v,
+      ),
+    );
+    setShowLocalPicker(false);
+  };
+
+  const removeFile = (fileId: string) => {
+    setVersions((prev) =>
+      prev.map((v) =>
+        v.id === activeVersion.id
+          ? { ...v, files: v.files.filter((f) => f.id !== fileId) }
+          : v,
+      ),
+    );
+  };
+
+  const updateFilePrecision = (fileId: string, precision: ModelPrecision) => {
+    setVersions((prev) =>
+      prev.map((v) =>
+        v.id === activeVersion.id
+          ? {
+              ...v,
+              files: v.files.map((f) =>
+                f.id === fileId ? { ...f, precision } : f,
+              ),
+            }
+          : v,
+      ),
+    );
+  };
 
   // Step 4: Showcase & Permissions
-  const [showcaseFile, setShowcaseFile] = useState<File | null>(null);
-  const [showcasePreview, setShowcasePreview] = useState<string | null>(null);
+  const [showcaseFiles, setShowcaseFiles] = useState<StagedShowcaseItem[]>([]);
+  const [thumbnailId, setThumbnailId] = useState<string | null>(null);
+  const [isDraggingShowcase, setIsDraggingShowcase] = useState(false);
   const [visibility, setVisibility] = useState<ModelVisibility>("Public");
   const [commercial, setCommercial] = useState(true);
   const [remix, setRemix] = useState(false);
   const [creditRequired, setCreditRequired] = useState(true);
+
+  const activeThumbnail = useMemo(() => {
+    if (showcaseFiles.length === 0) return null;
+    return showcaseFiles.find((s) => s.id === thumbnailId) || showcaseFiles[0];
+  }, [showcaseFiles, thumbnailId]);
+
+  const coverPreviewUrl = activeThumbnail ? activeThumbnail.previewUrl : null;
+
+  const addShowcaseFiles = (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!list.length) return;
+    const newItems: StagedShowcaseItem[] = list.map((f) => ({
+      id: `showcase-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      file: f,
+      previewUrl: URL.createObjectURL(f),
+    }));
+
+    setShowcaseFiles((prev) => {
+      const updated = [...prev, ...newItems];
+      if (!thumbnailId && updated.length > 0) {
+        setThumbnailId(updated[0].id);
+      }
+      return updated;
+    });
+  };
+
+  const removeShowcaseItem = (id: string) => {
+    setShowcaseFiles((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      const remaining = prev.filter((item) => item.id !== id);
+      if (thumbnailId === id) {
+        setThumbnailId(remaining[0]?.id ?? null);
+      }
+      return remaining;
+    });
+  };
+
+  const setAsThumbnail = (id: string) => {
+    setThumbnailId(id);
+  };
 
   // Submission State
   const [busy, setBusy] = useState(false);
@@ -148,16 +373,14 @@ export default function CreateModelDrawer({
     }
   }, [open]);
 
-  // Handle showcase preview cleanup
+  // Clean up object URLs on unmount
   useEffect(() => {
-    if (!showcaseFile) {
-      setShowcasePreview(null);
-      return;
-    }
-    const url = URL.createObjectURL(showcaseFile);
-    setShowcasePreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [showcaseFile]);
+    return () => {
+      showcaseFiles.forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, []);
 
   // Escape key close
   useEffect(() => {
@@ -172,16 +395,37 @@ export default function CreateModelDrawer({
   }, [open, busy, onClose]);
 
   // ComfyUI category resolution
-  const comfyCategory =
-    modelType === "Checkpoint"
-      ? "checkpoints"
-      : modelType === "Diffusion Model"
-        ? "diffusion_models"
-        : modelType === "LoRA" || modelType === "LyCORIS"
-          ? "loras"
-          : modelType === "VAE"
-            ? "vae"
-            : "embeddings";
+  const comfyCategory = useMemo(() => {
+    switch (modelType) {
+      case "Checkpoint":
+      case "SVD":
+        return "checkpoints";
+      case "Hyper Network":
+        return "hypernetworks";
+      case "Embedding":
+      case "Aesthetic Gradient":
+        return "embeddings";
+      case "LoRA":
+      case "LoKr":
+      case "LoCon":
+      case "LyCORIS":
+      case "DoRA":
+      case "Motion LoRA":
+        return "loras";
+      case "ControlNet":
+        return "controlnet";
+      case "Poses":
+        return "poses";
+      case "Wildcards":
+        return "wildcards";
+      case "VAE":
+        return "vae";
+      case "StyleModel":
+        return "style_models";
+      default:
+        return "checkpoints";
+    }
+  }, [modelType]);
 
   // Scan local ComfyUI models when picker opens
   useEffect(() => {
@@ -208,14 +452,239 @@ export default function CreateModelDrawer({
     };
   }, [showLocalPicker, localSearch, comfyCategory, open]);
 
-  // Tag helper
-  const addTag = () => {
-    const clean = tagInput.trim().toLowerCase();
-    if (clean && !tags.includes(clean)) {
-      setTags([...tags, clean]);
-    }
-    setTagInput("");
+  // Load ComfyUI local models & workflow info when drawer opens
+  const refreshComfyEnclave = () => {
+    // 1. Scan VAE files from local ComfyUI directory and live ComfyUI instance
+    setVaeLoading(true);
+    setVaeError(null);
+    Promise.allSettled([
+      api.listLocalModels("", "vae"),
+      api.getModels("vae"),
+    ])
+      .then(([localRes, comfyRes]) => {
+        const found = new Set<string>();
+        if (localRes.status === "fulfilled" && localRes.value?.items) {
+          localRes.value.items.forEach((x) => {
+            if (x.filename) found.add(x.filename);
+          });
+        }
+        if (comfyRes.status === "fulfilled" && Array.isArray(comfyRes.value)) {
+          comfyRes.value.forEach((x) => {
+            if (x) found.add(x);
+          });
+        }
+        setVaeFiles(Array.from(found));
+      })
+      .catch((err) =>
+        setVaeError(err instanceof Error ? err.message : "Could not scan ComfyUI VAE directory"),
+      )
+      .finally(() => setVaeLoading(false));
+
+    // 2. Scan Text Encoder files from local ComfyUI directory and live ComfyUI instance
+    setEncoderLoading(true);
+    setEncoderError(null);
+    Promise.allSettled([
+      api.listLocalModels("", "text_encoders"),
+      api.getModels("text_encoders"),
+    ])
+      .then(([localRes, comfyRes]) => {
+        const found = new Set<string>();
+        if (localRes.status === "fulfilled" && localRes.value?.items) {
+          localRes.value.items.forEach((x) => {
+            if (x.filename) found.add(x.filename);
+          });
+        }
+        if (comfyRes.status === "fulfilled" && Array.isArray(comfyRes.value)) {
+          comfyRes.value.forEach((x) => {
+            if (x) found.add(x);
+          });
+        }
+        setEncoderFiles(Array.from(found));
+      })
+      .catch((err) =>
+        setEncoderError(
+          err instanceof Error ? err.message : "Could not scan ComfyUI text encoders directory",
+        ),
+      )
+      .finally(() => setEncoderLoading(false));
+
+    // 3. Scan CLIP conditioning types and additional encoders
+    setClipTypesLoading(true);
+    api
+      .getClipOptions()
+      .then((res) => {
+        if (res?.types?.length) setClipTypes(res.types);
+        if (res?.encoders?.length) {
+          setEncoderFiles((prev) => {
+            const combined = [...prev];
+            res.encoders.forEach((enc) => {
+              if (!combined.includes(enc)) combined.push(enc);
+            });
+            return combined;
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setClipTypesLoading(false));
+
+    // 4. Load Selectable Base Models (Installed Checkpoints & Diffusion models)
+    setBaseOptionsLoading(true);
+    api
+      .listSelectableModels()
+      .then((items) => {
+        setBaseOptions(
+          items.filter(
+            (item) => item.model_type === "Checkpoint" || item.model_type === "SVD",
+          ),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setBaseOptionsLoading(false));
+
+    // 5. Query default model configuration from active backend template
+    api
+      .getWorkflowTemplateInfo()
+      .then((info) => {
+        if (info?.has_template) {
+          setWorkflowInfo(info);
+          applyWorkflowDefaults(info);
+        }
+      })
+      .catch(() => {});
   };
+
+  useEffect(() => {
+    if (open) {
+      refreshComfyEnclave();
+    }
+  }, [open]);
+
+  // Apply reference node values from backend template
+  const applyWorkflowDefaults = (info: WorkflowTemplateInfo) => {
+    if (info.vae_name) {
+      setVae(info.vae_name);
+    }
+    if (info.clip_name) {
+      setTextEncoder(info.clip_name);
+    }
+    if (info.base_architecture) {
+      setBaseModel(info.base_architecture);
+    }
+    if (info.sampler_name) {
+      setSampler(info.sampler_name);
+    }
+    if (typeof info.cfg === "number") {
+      setCfgMin(Math.max(1, info.cfg - 1));
+      setCfgMax(info.cfg);
+    }
+    if (typeof info.steps === "number") {
+      setStepsMin(Math.max(1, info.steps - 5));
+      setStepsMax(info.steps);
+    }
+    if (info.prompt) {
+      setRecommendedPrompt(info.prompt);
+    }
+    if (info.negative_prompt) {
+      setRecommendedNegative(info.negative_prompt);
+    }
+  };
+
+  // Base model select handler for LoRA / LyCORIS
+  const onSelectBaseModel = (key: string) => {
+    setSelectedBaseKey(key);
+    const chosen = baseOptions.find(
+      (item) => `${item.model_id}:${item.version_id}:${item.file_id}` === key,
+    );
+    if (chosen) {
+      if (chosen.filename.toLowerCase().includes("flux")) {
+        setBaseModel("FLUX.1");
+      } else if (chosen.filename.toLowerCase().includes("krea")) {
+        setBaseModel("Krea-2");
+      } else if (
+        chosen.filename.toLowerCase().includes("z-image") ||
+        chosen.filename.toLowerCase().includes("z_image")
+      ) {
+        setBaseModel("Z-Image");
+      } else if (chosen.filename.toLowerCase().includes("wan")) {
+        setBaseModel("Wan2.1");
+      }
+      if (chosen.vae) setVae(chosen.vae);
+      if (chosen.text_encoder) setTextEncoder(chosen.text_encoder);
+      if (chosen.clip_type) setClipType(chosen.clip_type);
+    }
+  };
+
+  // Dynamic VAE options from ComfyUI enclave & workflow nodes
+  const vaeOptions = useMemo(() => {
+    const list: string[] = [];
+    if (workflowInfo?.vae_name && !list.includes(workflowInfo.vae_name)) {
+      list.push(workflowInfo.vae_name);
+    }
+    vaeFiles.forEach((name) => {
+      if (!list.includes(name)) list.push(name);
+    });
+    // Ensure standard .safetensors & .sft options are readily available
+    const standardVaers = ["ae.safetensors", "ae.sft"];
+    standardVaers.forEach((std) => {
+      if (!list.includes(std)) list.push(std);
+    });
+    return list;
+  }, [workflowInfo?.vae_name, vaeFiles]);
+
+  // Dynamic Text Encoder options from ComfyUI enclave & workflow nodes
+  const encoderOptions = useMemo(() => {
+    const list: string[] = [];
+    if (workflowInfo?.clip_name && !list.includes(workflowInfo.clip_name)) {
+      list.push(workflowInfo.clip_name);
+    }
+    encoderFiles.forEach((name) => {
+      if (!list.includes(name)) list.push(name);
+    });
+    return list;
+  }, [workflowInfo?.clip_name, encoderFiles]);
+
+  // Dynamic CLIP conditioning types (natural order, unpinned)
+  const clipTypeOptions = useMemo(() => {
+    const defaultTypes = [
+      "stable_diffusion",
+      "sdxl",
+      "sd3",
+      "flux2",
+      "wan",
+      "lumina2",
+      "qwen_image",
+      "krea2",
+    ];
+    const source = clipTypes.length ? clipTypes : defaultTypes;
+    const list: string[] = [];
+    source.forEach((name) => {
+      if (!list.includes(name)) list.push(name);
+    });
+    if (workflowInfo?.clip_type && !list.includes(workflowInfo.clip_type)) {
+      list.push(workflowInfo.clip_type);
+    }
+    return list;
+  }, [workflowInfo?.clip_type, clipTypes]);
+
+  // Auto-select first available option as default
+  useEffect(() => {
+    if (vaeOptions.length > 0 && (!vae || (!vaeOptions.includes(vae) && !isCustomVae))) {
+      setVae(vaeOptions[0]);
+    }
+  }, [vaeOptions, vae, isCustomVae]);
+
+  useEffect(() => {
+    if (encoderOptions.length > 0 && (!textEncoder || (!encoderOptions.includes(textEncoder) && !isCustomEncoder))) {
+      setTextEncoder(encoderOptions[0]);
+    }
+  }, [encoderOptions, textEncoder, isCustomEncoder]);
+
+  useEffect(() => {
+    if (clipTypeOptions.length > 0 && (!clipType || !clipTypeOptions.includes(clipType))) {
+      setClipType(clipTypeOptions[0]);
+    }
+  }, [clipTypeOptions, clipType]);
+
 
   // Trigger word helper
   const addTriggerWord = () => {
@@ -226,32 +695,59 @@ export default function CreateModelDrawer({
     setTriggerInput("");
   };
 
+  // Resolved Compatibility values
+  const resolvedBaseModel =
+    baseModel === "Other / Custom" || baseModel === "Other"
+      ? customBaseModel.trim() || "Universal"
+      : baseModel;
+
+  const resolvedVae = (isCustomVae ? customVae.trim() : vae.trim()) || null;
+
+  const resolvedEncoder = (isCustomEncoder ? customEncoder.trim() : textEncoder.trim()) || null;
+
+  const resolvedClipType = clipType.trim() || null;
+
   // Submission Pipeline
   const submit = async () => {
-    const modelTitle = title.trim() || (selectedLocalFile ? selectedLocalFile.filename.replace(/\.[^/.]+$/, "") : "Untitled model");
+    const firstStagedFile = versions[0]?.files[0];
+    const modelTitle =
+      title.trim() ||
+      (firstStagedFile
+        ? firstStagedFile.filename.replace(/\.[^/.]+$/, "")
+        : "Untitled model");
+
+    if (totalFilesCount === 0) {
+      setError("Please attach at least one weights file (.safetensors / .sft / .ckpt) before creating the model.");
+      setStep(3);
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
-    try {
-      const activeBaseModel = baseModel === "Other / Custom" ? customBaseModel.trim() || "Universal" : baseModel;
+    const selectedBase = baseOptions.find(
+      (item) => `${item.model_id}:${item.version_id}:${item.file_id}` === selectedBaseKey,
+    );
 
+    try {
       const payload: CreatorModelPayload = {
         title: modelTitle,
         category,
         model_type: modelType,
-        tags,
+        tags: [],
         compatibility: {
-          base_model: activeBaseModel,
-          base_model_id: null,
-          base_version_id: null,
-          base_file_id: null,
-          vae: null,
-          text_encoder: null,
-          clip_type: null,
+          base_model: resolvedBaseModel,
+          base_model_id: selectedBase?.model_id ?? null,
+          base_version_id: selectedBase?.version_id ?? null,
+          base_file_id: selectedBase?.file_id ?? null,
+          vae: resolvedVae,
+          text_encoder: resolvedEncoder,
+          clip_type: resolvedClipType,
           parent_model: null,
         },
         generation: {
-          trigger_words: modelType === "LoRA" || modelType === "LyCORIS" ? triggerWords : [],
+          trigger_words:
+            isAdapterModelType(modelType) ? triggerWords : [],
           sampler,
           steps_min: stepsMin,
           steps_max: stepsMax,
@@ -272,26 +768,69 @@ export default function CreateModelDrawer({
 
       // 1. Create model metadata
       const created = await api.createCreatorModel(payload);
-      const versionId = created.versions[0]?.version_id;
+      const initialVerId = created.versions[0]?.version_id;
 
-      // 2. Attach weights (local ComfyUI import or uploaded file)
-      if (versionId) {
-        if (selectedLocalFile) {
-          await api.importLocalModelFile(
-            created.model_id,
-            versionId,
-            selectedLocalFile.category,
-            selectedLocalFile.filename,
-          );
-        } else if (uploadedFile) {
-          await api.uploadModelFile(created.model_id, versionId, uploadedFile);
+      // 2. Attach weights across all staged versions
+      for (let i = 0; i < versions.length; i++) {
+        const v = versions[i];
+        let targetVerId: string | null = null;
+        if (i === 0) {
+          targetVerId = initialVerId;
+        } else {
+          const res = await api.createModelVersion(created.model_id, v.name);
+          targetVerId = res.version_id;
         }
 
-        // 3. Attach showcase thumbnail if present
-        if (showcaseFile) {
-          await api.uploadModelSample(created.model_id, versionId, showcaseFile, {
+        if (targetVerId) {
+          for (const f of v.files) {
+            if (f.kind === "local" && f.local) {
+              await api.importLocalModelFile(
+                created.model_id,
+                targetVerId,
+                f.local.category,
+                f.local.filename,
+                f.precision,
+              );
+            } else if (f.kind === "upload" && f.file) {
+              await api.uploadModelFile(
+                created.model_id,
+                targetVerId,
+                f.file,
+                f.precision,
+              );
+            }
+          }
+        }
+      }
+
+      // 3. Attach showcase thumbnail & gallery samples (thumbnail first)
+      if (initialVerId && showcaseFiles.length > 0) {
+        const thumbnailItem =
+          showcaseFiles.find((s) => s.id === thumbnailId) || showcaseFiles[0];
+        const otherItems = showcaseFiles.filter((s) => s.id !== thumbnailItem.id);
+
+        // Upload primary thumbnail first so backend resolves it as the cover
+        await api.uploadModelSample(
+          created.model_id,
+          initialVerId,
+          thumbnailItem.file,
+          {
             role: "showcase",
-          });
+            is_cover: true,
+          },
+        );
+
+        // Upload any remaining showcase images
+        for (const item of otherItems) {
+          await api.uploadModelSample(
+            created.model_id,
+            initialVerId,
+            item.file,
+            {
+              role: "gallery",
+              is_cover: false,
+            },
+          );
         }
       }
 
@@ -314,30 +853,36 @@ export default function CreateModelDrawer({
 
   if (!open) return null;
 
+  const currentDisplayTitle = title.trim() || "Untitled model";
+
+  const stepsList = [
+    { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
+    { s: 2 as const, label: "Prompt & Presets", num: "02", icon: Sparkles },
+    { s: 3 as const, label: "Weights", num: "03", icon: HardDrive },
+    { s: 4 as const, label: "Showcase", num: "04", icon: FileImage },
+  ];
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Publish Creator Model"
-      className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
+      className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
     >
       <div
         ref={drawerRef}
-        className="relative flex h-full w-full max-w-2xl flex-col border-l border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)] shadow-2xl animate-in slide-in-from-right duration-250 ease-out sm:max-w-3xl"
+        className="relative flex h-full w-full max-w-4xl lg:max-w-5xl flex-col border-l border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)] shadow-2xl animate-in slide-in-from-right duration-250 ease-out"
       >
-        {/* Header */}
-        <header className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)] px-5 py-3">
+        {/* Header Bar */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)] px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--accent)] shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--accent)] shadow-sm">
               <Box className="h-4 w-4 stroke-[2]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase">
-                  MODEL STUDIO
+                  MODEL VAULT
                 </span>
                 <span className="font-mono text-[9px] text-[var(--line-strong)]">/</span>
                 <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
@@ -350,26 +895,27 @@ export default function CreateModelDrawer({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close panel"
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink)] disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] text-[var(--ink-soft)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+              Live Preview Synchronized
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              aria-label="Close panel"
+              className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink)] disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
-        {/* Step Navigation Pill Bar */}
-        <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-2">
-          <div className="grid w-full grid-cols-4 gap-1.5 font-mono text-[10px]">
-            {[
-              { s: 1, label: "01 Identity" },
-              { s: 2, label: "02 Presets" },
-              { s: 3, label: "03 Weights" },
-              { s: 4, label: "04 Showcase" },
-            ].map(({ s, label }) => {
+        {/* Step Stepper Navigation Bar */}
+        <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
+          <div className="grid w-full grid-cols-4 gap-2 font-mono text-[11px]">
+            {stepsList.map(({ s, label, num, icon: Icon }) => {
               const isActive = step === s;
               const isPast = step > s;
               return (
@@ -377,479 +923,822 @@ export default function CreateModelDrawer({
                   key={s}
                   type="button"
                   disabled={busy}
-                  onClick={() => setStep(s as 1 | 2 | 3 | 4)}
-                  className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-bold transition-all ${
+                  onClick={() => setStep(s)}
+                  className={`group relative flex items-center justify-center gap-2 rounded-[5px] py-2 px-2 transition-all ${
                     isActive
-                      ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
+                      ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm shadow-[var(--accent)]/5"
                       : isPast
-                        ? "border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink)] hover:border-[var(--accent)]/50"
+                        ? "border border-[var(--line)] bg-[var(--surface-raised)]/60 text-[var(--ink)] hover:border-[var(--line-strong)] hover:text-[var(--accent)]"
                         : "border border-transparent text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"
                   }`}
                 >
-                  {isPast ? <Check className="h-3 w-3 text-[var(--accent)]" /> : null}
-                  <span>{label}</span>
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[9px] font-bold ${
+                      isActive
+                        ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                        : isPast
+                          ? "bg-[var(--accent)]/20 text-[var(--accent)]"
+                          : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+                    }`}
+                  >
+                    {isPast ? <Check className="h-2.5 w-2.5 stroke-[3]" /> : num}
+                  </span>
+                  <span className="truncate font-semibold tracking-wide uppercase text-[10px]">
+                    {label}
+                  </span>
+                  {isActive && (
+                    <div className="absolute inset-x-2 -bottom-2 h-0.5 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Error Banner */}
+        {/* Error Notification Banner */}
         {error && (
           <div
             role="alert"
-            className="mx-5 mt-4 flex items-center justify-between rounded-md border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 font-mono text-xs text-[var(--danger)]"
+            className="mx-6 mt-4 flex items-center justify-between rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 font-mono text-xs text-[var(--danger)] animate-in fade-in"
           >
-            <span>{error}</span>
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
+              <span>{error}</span>
+            </div>
             <button
               type="button"
               onClick={() => setError(null)}
-              className="text-xs hover:underline"
+              className="text-xs font-bold hover:underline"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Step Content Area */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* STEP 1: IDENTITY & ARCHITECTURE */}
-          {step === 1 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3.5">
-                <div className="flex items-center gap-2 pb-2 border-b border-[var(--line)]">
-                  <Cpu className="h-4 w-4 text-[var(--accent)]" />
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                    MODEL IDENTITY & BASE ARCHITECTURE
-                  </span>
-                </div>
+        {/* Dual-Pane Workspace Body: Form Left + Realtime Preview Right */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* LEFT: Step Form Inputs */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 border-r border-[var(--line)]">
+            {/* STEP 1: IDENTITY & COMPATIBILITY STACK */}
+            {step === 1 && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                {/* Panel 1A: Basic Identity */}
+                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--line)]">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                      <Cpu className="h-3.5 w-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                        Model Identity & Taxonomy
+                      </span>
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                        Core metadata displayed across SoloTensor search & catalog
+                      </span>
+                    </div>
+                  </div>
 
-                {/* Title */}
-                <div>
-                  <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                    Model Title *
-                  </label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g. Cyberpunk Cinematic Lighting, RealVisV5..."
-                    className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none transition-colors"
-                  />
-                </div>
-
-                {/* Type & Category 2-Column */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Title */}
                   <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Model Type
+                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Model Title <span className="text-[var(--accent)]">*</span>
                     </label>
-                    <CustomSelect
-                      value={modelType}
-                      onChange={(val) => setModelType(val as CreatorModelType)}
-                      options={modelTypes.map((t) => ({ value: t, label: t }))}
-                      className="w-full"
-                      buttonClassName="w-full h-8"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Category
-                    </label>
-                    <CustomSelect
-                      value={category}
-                      onChange={(val) => setCategory(val as CreatorModelCategory)}
-                      options={categories.map((c) => ({ value: c, label: c }))}
-                      className="w-full"
-                      buttonClassName="w-full h-8"
-                    />
-                  </div>
-                </div>
-
-                {/* Base Architecture Chips */}
-                <div>
-                  <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                    Base Model Architecture
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {baseModelPresets.map((bp) => {
-                      const isSel = baseModel === bp;
-                      return (
-                        <button
-                          key={bp}
-                          type="button"
-                          onClick={() => setBaseModel(bp)}
-                          className={`rounded-md px-2.5 py-1 font-mono text-[10px] transition-colors ${
-                            isSel
-                              ? "border border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
-                              : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                          }`}
-                        >
-                          {bp}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setBaseModel("Other / Custom")}
-                      className={`rounded-md px-2.5 py-1 font-mono text-[10px] transition-colors ${
-                        baseModel === "Other / Custom"
-                          ? "border border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
-                          : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                      }`}
-                    >
-                      Custom…
-                    </button>
-                  </div>
-                  {baseModel === "Other / Custom" && (
                     <input
                       type="text"
-                      value={customBaseModel}
-                      onChange={(e) => setCustomBaseModel(e.target.value)}
-                      placeholder="Enter custom base architecture name…"
-                      className="mt-2 workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Cyberpunk Cinematic Lighting, RealVisV5..."
+                      className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 outline-none transition-colors"
                     />
-                  )}
+                  </div>
+
+                  {/* Type & Category 2-Column */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Model Type
+                      </label>
+                      <CustomSelect
+                        value={modelType}
+                        onChange={(val) => setModelType(val as CreatorModelType)}
+                        options={modelTypes.map((t) => ({ value: t, label: t }))}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Category
+                      </label>
+                      <CustomSelect
+                        value={category}
+                        onChange={(val) => setCategory(val as CreatorModelCategory)}
+                        options={categories.map((c) => ({ value: c, label: c }))}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Base Architecture Dropdown */}
+                  <div>
+                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Base Model Architecture
+                    </label>
+                    <HierarchicalSelect
+                      value={baseModel}
+                      onChange={setBaseModel}
+                      options={BASE_MODEL_ARCHITECTURES}
+                      placeholder="Select Base Architecture…"
+                    />
+                    {(baseModel === "Other" || baseModel === "Other / Custom") && (
+                      <input
+                        type="text"
+                        value={customBaseModel}
+                        onChange={(e) => setCustomBaseModel(e.target.value)}
+                        placeholder="Enter custom base architecture name (e.g. Lumina-Next, Playground v2.5)…"
+                        className="mt-2 workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                      />
+                    )}
+                  </div>
                 </div>
 
-                {/* Tags Editor */}
-                <div>
-                  <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                    Search Tags
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === ",") {
-                          e.preventDefault();
-                          addTag();
-                        }
-                      }}
-                      placeholder="Type tag and press Enter…"
-                      className="workspace-field h-7.5 flex-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={addTag}
-                      className="h-7.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                    >
-                      Add Tag
-                    </button>
-                  </div>
-                  {tags.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {tags.map((t) => (
-                        <span
-                          key={t}
-                          className="inline-flex items-center gap-1 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)]"
-                        >
-                          #{t}
-                          <button
-                            type="button"
-                            onClick={() => setTags(tags.filter((x) => x !== t))}
-                            className="text-[var(--ink-faint)] hover:text-[var(--danger)]"
-                          >
-                            ×
-                          </button>
+                {/* Panel 1B: Compatibility Stack (VAE, CLIP, Parent Model) */}
+                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                        <Network className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                          Compatibility & Conditioning Stack
                         </span>
-                      ))}
+                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                          Dynamically detected from environment
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={refreshComfyEnclave}
+                      disabled={vaeLoading || encoderLoading}
+                      title="Re-scan local ComfyUI models folder"
+                      className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${vaeLoading || encoderLoading ? "animate-spin" : ""}`} />
+                      <span>Rescan</span>
+                    </button>
+                  </div>
+
+                  {/* Adapter / LoRA Base Model Enclave Binding */}
+                  {isAdapterModelType(modelType) && (
+                    <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                          Exact Base Checkpoint / Diffusion Enclave{" "}
+                          <span className="text-[var(--accent)]">(Installed in Gallery)</span>
+                        </label>
+                        {baseOptionsLoading && (
+                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                            Scanning gallery…
+                          </span>
+                        )}
+                      </div>
+                      <CustomSelect
+                        value={selectedBaseKey}
+                        onChange={onSelectBaseModel}
+                        options={[
+                          { value: "", label: "Universal / Any Base Architecture" },
+                          ...baseOptions.map((opt) => ({
+                            value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
+                            label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                          })),
+                        ]}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
+                      <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                        Binding to an installed base model auto-inherits its verified architecture, VAE, and text encoder.
+                      </p>
                     </div>
                   )}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* STEP 2: PRESETS & GENERATION PARAMETERS */}
-          {step === 2 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3.5">
-                <div className="flex items-center gap-2 pb-2 border-b border-[var(--line)]">
-                  <Sparkles className="h-4 w-4 text-[var(--accent)]" />
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                    INFERENCE PRESETS & TRIGGER WORDS
-                  </span>
-                </div>
+                  {/* Recommended VAE Selection */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        VAE{" "}
+                        <span className="text-[var(--accent)] font-semibold">
+                          ({vaeFiles.length} detected)
+                        </span>
+                      </label>
+                      {vaeLoading && (
+                        <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                          Scanning VAEs…
+                        </span>
+                      )}
+                    </div>
 
-                {/* Trigger Words (Essential for LoRAs) */}
-                <div>
-                  <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                    Recommended Trigger Words {modelType === "LoRA" ? "(Recommended for LoRA)" : "(Optional)"}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={triggerInput}
-                      onChange={(e) => setTriggerInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === ",") {
-                          e.preventDefault();
-                          addTriggerWord();
+                    <CustomSelect
+                      value={isCustomVae ? "__custom__" : vae}
+                      onChange={(val) => {
+                        if (val === "__custom__") {
+                          setIsCustomVae(true);
+                          setVae(customVae);
+                        } else {
+                          setIsCustomVae(false);
+                          setVae(val);
                         }
                       }}
-                      placeholder="e.g. anime girl, retro style, sora-cinematic..."
-                      className="workspace-field h-7.5 flex-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={addTriggerWord}
-                      className="h-7.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                    >
-                      Add Trigger
-                    </button>
-                  </div>
-                  {triggerWords.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {triggerWords.map((tw) => (
-                        <span
-                          key={tw}
-                          className="inline-flex items-center gap-1 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)]"
-                        >
-                          ⚡ {tw}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setTriggerWords(triggerWords.filter((x) => x !== tw))
-                            }
-                            className="text-[var(--accent)]/60 hover:text-[var(--danger)]"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Sampler & Clip Skip */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Recommended Sampler
-                    </label>
-                    <CustomSelect
-                      value={sampler}
-                      onChange={setSampler}
                       options={[
-                        "DPM++ 2M Karras",
-                        "Euler a",
-                        "Euler",
-                        "UniPC",
-                        "DPM++ SDE Karras",
-                        "LCM",
+                        ...vaeOptions.map((vp) => ({
+                          value: vp,
+                          label: vp,
+                        })),
+                        {
+                          value: "__custom__",
+                          label: "Custom VAE filename (.safetensors, .sft)…",
+                        },
                       ]}
                       className="w-full"
-                      buttonClassName="w-full h-8"
+                      buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
                     />
+
+                    {isCustomVae && (
+                      <input
+                        type="text"
+                        value={customVae}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCustomVae(val);
+                          setVae(val);
+                        }}
+                        placeholder="e.g. ae.sft, ae.safetensors, or custom_vae.sft…"
+                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                      />
+                    )}
+
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {vaeOptions.map((vp) => {
+                        const isSel = !isCustomVae && vae === vp;
+                        return (
+                          <button
+                            key={vp}
+                            type="button"
+                            onClick={() => {
+                              setIsCustomVae(false);
+                              setVae(vp);
+                            }}
+                            className={`rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-bold transition-all ${
+                              isSel
+                                ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                                : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                            }`}
+                          >
+                            <span>{vp}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {vaeError && (
+                      <div className="flex items-center justify-between rounded-[4px] border border-[var(--danger-line)] bg-[var(--danger-surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--danger)]">
+                        <span>{vaeError}</span>
+                        <button
+                          type="button"
+                          onClick={refreshComfyEnclave}
+                          className="font-bold underline hover:no-underline"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Clip Skip
-                    </label>
-                    <div className="flex gap-2">
-                      {[1, 2].map((cs) => (
-                        <button
-                          key={cs}
-                          type="button"
-                          onClick={() => setClipSkip(cs)}
-                          className={`h-7.5 flex-1 rounded-md font-mono text-[11px] font-bold transition-colors ${
-                            clipSkip === cs
-                              ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                              : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                          }`}
-                        >
-                          Clip Skip {cs}
-                        </button>
-                      ))}
+                  {/* CLIP & Text Encoder 2-Column Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Text Encoder Model */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                          CLIP{" "}
+                          <span className="text-[var(--ink-faint)]">
+                            ({encoderFiles.length} detected)
+                          </span>
+                        </label>
+                        {encoderLoading && (
+                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                            Scanning…
+                          </span>
+                        )}
+                      </div>
+
+                      <CustomSelect
+                        value={isCustomEncoder ? "__custom__" : textEncoder}
+                        onChange={(val) => {
+                          if (val === "__custom__") {
+                            setIsCustomEncoder(true);
+                            setTextEncoder(customEncoder);
+                          } else {
+                            setIsCustomEncoder(false);
+                            setTextEncoder(val);
+                          }
+                        }}
+                        options={[
+                          { value: "", label: "None / Not Required" },
+                          ...encoderOptions.map((enc) => ({
+                            value: enc,
+                            label: enc,
+                          })),
+                          {
+                            value: "__custom__",
+                            label: "Custom Encoder filename (.safetensors, .sft)…",
+                          },
+                        ]}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
+
+                      {isCustomEncoder && (
+                        <input
+                          type="text"
+                          value={customEncoder}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomEncoder(val);
+                            setTextEncoder(val);
+                          }}
+                          placeholder="e.g. t5xxl_fp8_e4m3fn.sft or clip_l.safetensors…"
+                          className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                        />
+                      )}
+
+                      {encoderError && (
+                        <p className="font-mono text-[9px] text-[var(--danger)]">
+                          {encoderError}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* CLIP Type / Protocol */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                          CLIP Type
+                        </label>
+                        {clipTypesLoading && (
+                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                            Loading…
+                          </span>
+                        )}
+                      </div>
+
+                      <CustomSelect
+                        value={clipType}
+                        onChange={(val) => setClipType(val)}
+                        options={clipTypeOptions.map((c) => ({
+                          value: c,
+                          label: c,
+                        }))}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
                     </div>
                   </div>
-                </div>
-
-                {/* Steps & CFG Range */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Min Steps
-                    </label>
-                    <input
-                      type="number"
-                      value={stepsMin}
-                      onChange={(e) => setStepsMin(Number(e.target.value))}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[11px] text-[var(--ink)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Max Steps
-                    </label>
-                    <input
-                      type="number"
-                      value={stepsMax}
-                      onChange={(e) => setStepsMax(Number(e.target.value))}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[11px] text-[var(--ink)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Min CFG
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={cfgMin}
-                      onChange={(e) => setCfgMin(Number(e.target.value))}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[11px] text-[var(--ink)]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Max CFG
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={cfgMax}
-                      onChange={(e) => setCfgMax(Number(e.target.value))}
-                      className="workspace-field h-7.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[11px] text-[var(--ink)]"
-                    />
-                  </div>
-                </div>
-
-                {/* Default Starter Prompt & Negative Prompt */}
-                <div>
-                  <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                    Recommended Prompt Template
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={recommendedPrompt}
-                    onChange={(e) => setRecommendedPrompt(e.target.value)}
-                    placeholder="Recommended prompt conditioning for best model fidelity…"
-                    className="workspace-field w-full rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-2 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none resize-none"
-                  />
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* STEP 3: FILES & WEIGHTS */}
-          {step === 3 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3.5">
-                <div className="flex items-center gap-2 pb-2 border-b border-[var(--line)]">
-                  <HardDrive className="h-4 w-4 text-[var(--accent)]" />
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                    MODEL WEIGHTS (.SAFETENSORS / .CKPT)
-                  </span>
-                </div>
-
-                {/* Attached File Preview if present */}
-                {(selectedLocalFile || uploadedFile) && (
-                  <div className="flex items-center justify-between rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--surface-raised)] text-[var(--accent)]">
-                        <Check className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-mono text-xs font-bold text-[var(--ink)]">
-                          {selectedLocalFile ? selectedLocalFile.filename : uploadedFile?.name}
-                        </p>
-                        <p className="font-mono text-[10px] text-[var(--ink-soft)]">
-                          {selectedLocalFile
-                            ? `Local ComfyUI (${selectedLocalFile.category}) · ${formatBytes(selectedLocalFile.size)}`
-                            : uploadedFile
-                              ? `Uploaded file · ${formatBytes(uploadedFile.size)}`
-                              : ""}
-                        </p>
-                      </div>
+            {/* STEP 2: PROMPT & PRESETS */}
+            {step === 2 && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--line)]">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                      <Sparkles className="h-3.5 w-3.5" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedLocalFile(null);
-                        setUploadedFile(null);
-                      }}
-                      className="rounded-md border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--danger)] hover:bg-[var(--danger-surface)]"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )}
-
-                {/* Option A: Dropzone for Upload */}
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex min-h-[90px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 p-4 text-center transition hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".safetensors,.ckpt,.pt,.bin"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) {
-                        setUploadedFile(f);
-                        setSelectedLocalFile(null);
-                      }
-                      e.target.value = "";
-                    }}
-                  />
-                  <div className="mb-1.5 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
-                    <Upload className="h-3.5 w-3.5" />
-                  </div>
-                  <p className="font-mono text-[11px] font-semibold text-[var(--ink)]">
-                    Upload .safetensors or .ckpt file
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
-                    Direct local storage upload into SoloTensor vault
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3 py-1">
-                  <div className="flex-1 h-px bg-[var(--line)]" />
-                  <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
-                    OR 1-CLICK INSTANT IMPORT
-                  </span>
-                  <div className="flex-1 h-px bg-[var(--line)]" />
-                </div>
-
-                {/* Option B: Local ComfyUI Directory Explorer */}
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-mono text-[11px] font-bold text-[var(--ink)]">
-                        Local ComfyUI Vault Explorer
-                      </p>
-                      <p className="text-[10px] text-[var(--ink-faint)]">
-                        Scan your local <span className="font-mono text-[var(--accent)]">{comfyCategory}/</span> folder
-                      </p>
+                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                        Recommended Prompts & Presets
+                      </span>
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                        Default prompt conditioning and inference presets applied when users load this model in Studio
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowLocalPicker((v) => !v)}
-                      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[10px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                    >
-                      <Search className="h-3 w-3" />
-                      <span>{showLocalPicker ? "Close Scanner" : "Scan ComfyUI"}</span>
-                    </button>
                   </div>
 
+                  {/* 1. Prompt Conditioning First */}
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                          Recommended Prompt Template
+                        </label>
+                        <span className="font-mono text-[9px] text-[var(--accent)] font-semibold">
+                          Default starter prompt
+                        </span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={recommendedPrompt}
+                        onChange={(e) => setRecommendedPrompt(e.target.value)}
+                        placeholder="Recommended prompt conditioning for best model fidelity…"
+                        className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Recommended Negative Prompt <span className="text-[var(--ink-faint)]">(Optional)</span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={recommendedNegative}
+                        onChange={(e) => setRecommendedNegative(e.target.value)}
+                        placeholder="Suggested negative embeddings or avoidance tokens…"
+                        className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2. Trigger Words */}
+                  <div className="pt-2 border-t border-[var(--line)]">
+                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Recommended Trigger Words{" "}
+                      {isAdapterModelType(modelType) ? (
+                        <span className="text-[var(--accent)] font-bold">
+                          (Recommended for {modelType})
+                        </span>
+                      ) : (
+                        <span className="text-[var(--ink-faint)]">(Optional)</span>
+                      )}
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Zap className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--accent)]" />
+                        <input
+                          type="text"
+                          value={triggerInput}
+                          onChange={(e) => setTriggerInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === ",") {
+                              e.preventDefault();
+                              addTriggerWord();
+                            }
+                          }}
+                          placeholder="e.g. anime girl, retro style, sora-cinematic..."
+                          className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] pl-8 pr-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addTriggerWord}
+                        className="h-8 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        Add Trigger
+                      </button>
+                    </div>
+                    {triggerWords.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {triggerWords.map((tw) => (
+                          <span
+                            key={tw}
+                            className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)]"
+                          >
+                            <span>⚡</span>
+                            {tw}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTriggerWords(triggerWords.filter((x) => x !== tw))
+                              }
+                              className="text-[var(--accent)]/60 hover:text-[var(--danger)] transition-colors ml-0.5"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Sampler & Clip Skip */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-[var(--line)]">
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Recommended Sampler
+                      </label>
+                      <CustomSelect
+                        value={sampler}
+                        onChange={setSampler}
+                        options={[
+                          "DPM++ 2M Karras",
+                          "Euler a",
+                          "Euler",
+                          "UniPC",
+                          "DPM++ SDE Karras",
+                          "LCM",
+                        ]}
+                        className="w-full"
+                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Clip Skip
+                      </label>
+                      <div className="flex gap-2">
+                        {[1, 2].map((cs) => (
+                          <button
+                            key={cs}
+                            type="button"
+                            onClick={() => setClipSkip(cs)}
+                            className={`h-8 flex-1 rounded-[5px] font-mono text-[11px] font-bold transition-colors ${
+                              clipSkip === cs
+                                ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                                : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                            }`}
+                          >
+                            Clip Skip {cs}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Steps & CFG Range */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div>
+                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Min Steps
+                      </label>
+                      <input
+                        type="number"
+                        value={stepsMin}
+                        onChange={(e) => setStepsMin(Number(e.target.value))}
+                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Max Steps
+                      </label>
+                      <input
+                        type="number"
+                        value={stepsMax}
+                        onChange={(e) => setStepsMax(Number(e.target.value))}
+                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Min CFG
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={cfgMin}
+                        onChange={(e) => setCfgMin(Number(e.target.value))}
+                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Max CFG
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={cfgMax}
+                        onChange={(e) => setCfgMax(Number(e.target.value))}
+                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: FILES & WEIGHTS */}
+            {step === 3 && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                  {/* Step Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                        <HardDrive className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                          Model Weights & Release Versions
+                        </span>
+                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                          Attach weights (.safetensors, .sft, .ckpt, .gguf), manage release branches, or link from ComfyUI
+                        </span>
+                      </div>
+                    </div>
+                    <span className="rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--accent)] font-semibold">
+                      {activeVersion.files.length} {activeVersion.files.length === 1 ? "file" : "files"} in {activeVersion.name}
+                    </span>
+                  </div>
+
+                  {/* Version Branching Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-faint)] mr-1">
+                        RELEASES:
+                      </span>
+                      {versions.map((v) => {
+                        const isActive = v.id === activeVersion.id;
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveVersionId(v.id);
+                              setVersionNameInput(v.name);
+                              setIsEditingVersionName(false);
+                            }}
+                            className={`flex items-center gap-1.5 rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-semibold transition-all ${
+                              isActive
+                                ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm font-bold"
+                                : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                            }`}
+                          >
+                            <span>{v.name}</span>
+                            <span
+                              className={`rounded px-1 text-[9px] ${
+                                isActive
+                                  ? "bg-[var(--accent)]/20 text-[var(--accent)]"
+                                  : "bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
+                              }`}
+                            >
+                              {v.files.length}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Inline Version Name Edit */}
+                      {isEditingVersionName ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={versionNameInput}
+                            onChange={(e) => setVersionNameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveVersionName();
+                              if (e.key === "Escape") setIsEditingVersionName(false);
+                            }}
+                            className="h-7 w-24 rounded-[4px] border border-[var(--accent)] bg-[var(--surface)] px-2 font-mono text-[11px] text-[var(--ink)] outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={saveVersionName}
+                            className="h-7 rounded-[4px] bg-[var(--accent)] px-2 font-mono text-[10px] font-bold text-[var(--accent-ink)]"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startRenameVersion}
+                          className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-[10px] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition-colors"
+                          title="Rename active release"
+                        >
+                          Rename
+                        </button>
+                      )}
+
+                      {/* Delete non-default version */}
+                      {versions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeVersion(activeVersion.id)}
+                          className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-2 font-mono text-[10px] text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors"
+                          title="Delete this release branch"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+
+                      {/* Add Version Button */}
+                      <button
+                        type="button"
+                        onClick={addVersion}
+                        className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Add Release</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dual Action Ingestion Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Upload Card */}
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDraggingFile(true);
+                      }}
+                      onDragLeave={() => setIsDraggingFile(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDraggingFile(false);
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) addUploadedFile(f);
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`flex min-h-[95px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-3.5 text-center transition ${
+                        isDraggingFile
+                          ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                          : "border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".safetensors,.sft,.ckpt,.pt,.bin,.gguf"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) addUploadedFile(f);
+                          e.target.value = "";
+                        }}
+                      />
+                      <Upload className="h-4 w-4 text-[var(--accent)] mb-1.5" />
+                      <p className="font-mono text-[11px] font-bold text-[var(--ink)]">
+                        Upload Raw Binary Weights
+                      </p>
+                      <p className="font-mono text-[9px] text-[var(--ink-faint)] mt-0.5">
+                        .safetensors, .sft, .ckpt, or .gguf to {activeVersion.name}
+                      </p>
+                    </div>
+
+                    {/* ComfyUI Vault Card */}
+                    <div className="flex flex-col justify-between rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)]/60 p-3.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <FolderDown className="h-3.5 w-3.5 text-[var(--accent)]" />
+                          <p className="font-mono text-[11px] font-bold text-[var(--ink)]">
+                            ComfyUI Local Vault
+                          </p>
+                        </div>
+                        <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                          Link instantly from <span className="text-[var(--accent)]">models/{comfyCategory}/</span> with zero disk copy
+                        </p>
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">Precision:</span>
+                          {(["FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
+                            <button
+                              key={prec}
+                              type="button"
+                              onClick={() => setSelectedPrecision(prec)}
+                              className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold transition-colors ${
+                                selectedPrecision === prec
+                                  ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                                  : "bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                              }`}
+                            >
+                              {prec}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowLocalPicker((v) => !v)}
+                          className="inline-flex h-6 items-center gap-1 rounded-[4px] border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 font-mono text-[9px] font-bold uppercase text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                        >
+                          <Search className="h-2.5 w-2.5" />
+                          <span>{showLocalPicker ? "Close Scanner" : "Scan Vault"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Local Scanner Drawer/Panel */}
                   {showLocalPicker && (
-                    <div className="space-y-2 pt-2 border-t border-[var(--line)]">
+                    <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2.5">
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)]" />
                         <input
                           type="search"
                           value={localSearch}
                           onChange={(e) => setLocalSearch(e.target.value)}
-                          placeholder={`Search ${comfyCategory} files…`}
-                          className="workspace-field h-7.5 w-full pl-8 pr-3 font-mono text-[11px] bg-[var(--surface)] border border-[var(--line)] rounded-md text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none"
+                          placeholder={`Search ${comfyCategory} files to add to ${activeVersion.name}…`}
+                          className="workspace-field h-8 w-full pl-8 pr-3 font-mono text-[11px] bg-[var(--surface)] border border-[var(--line)] rounded-[5px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none"
                         />
                       </div>
 
@@ -858,7 +1747,7 @@ export default function CreateModelDrawer({
                           Scanning ComfyUI model enclave…
                         </div>
                       ) : localError ? (
-                        <div className="p-3 rounded border border-[var(--danger-line)] bg-[var(--danger-surface)] font-mono text-[10px] text-[var(--danger)]">
+                        <div className="p-3 rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] font-mono text-[10px] text-[var(--danger)]">
                           {localError}
                         </div>
                       ) : localFiles.length === 0 ? (
@@ -866,31 +1755,46 @@ export default function CreateModelDrawer({
                           No files found in {comfyCategory}.
                         </div>
                       ) : (
-                        <div className="max-h-40 overflow-y-auto rounded border border-[var(--line)] bg-[var(--surface)] divide-y divide-[var(--line)]">
+                        <div className="max-h-48 overflow-y-auto rounded-[5px] border border-[var(--line)] bg-[var(--surface)] divide-y divide-[var(--line)]">
                           {localFiles.map((item) => {
-                            const isSelected =
-                              selectedLocalFile?.filename === item.filename &&
-                              selectedLocalFile?.category === item.category;
+                            const isAlreadyAttached = activeVersion.files.some(
+                              (f) =>
+                                f.kind === "local" &&
+                                f.local?.filename === item.filename &&
+                                f.local?.category === item.category,
+                            );
                             return (
                               <button
                                 key={`${item.category}/${item.filename}`}
                                 type="button"
-                                onClick={() => {
-                                  setSelectedLocalFile(item);
-                                  setUploadedFile(null);
-                                }}
-                                className={`flex w-full items-center justify-between p-2 text-left transition-colors ${
-                                  isSelected
-                                    ? "bg-[var(--accent)]/15 text-[var(--accent)] font-bold"
+                                disabled={isAlreadyAttached}
+                                onClick={() => addLocalFile(item)}
+                                className={`flex w-full items-center justify-between p-2.5 text-left transition-colors ${
+                                  isAlreadyAttached
+                                    ? "opacity-50 cursor-not-allowed bg-[var(--surface-sunken)]"
                                     : "hover:bg-[var(--surface-raised)] text-[var(--ink)]"
                                 }`}
                               >
-                                <span className="truncate font-mono text-[10px] mr-2">
-                                  {item.filename}
-                                </span>
-                                <span className="shrink-0 font-mono text-[9px] text-[var(--ink-faint)]">
-                                  {formatBytes(item.size)}
-                                </span>
+                                <div className="flex items-center gap-2 min-w-0 mr-2">
+                                  <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+                                  <span className="truncate font-mono text-[11px]">
+                                    {item.filename}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                                    {formatBytes(item.size)}
+                                  </span>
+                                  {isAlreadyAttached ? (
+                                    <span className="text-[9px] font-mono text-[var(--accent)] font-semibold">
+                                      Attached
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/20">
+                                      + Attach
+                                    </span>
+                                  )}
+                                </div>
                               </button>
                             );
                           })}
@@ -898,93 +1802,265 @@ export default function CreateModelDrawer({
                       )}
                     </div>
                   )}
+
+                  {/* Attached Files Registry for Active Version */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                        Attached Weights for {activeVersion.name} ({activeVersion.files.length})
+                      </span>
+                    </div>
+
+                    {activeVersion.files.length === 0 ? (
+                      <div className="rounded-[5px] border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-6 text-center">
+                        <FileArchive className="mx-auto h-6 w-6 text-[var(--ink-faint)] mb-2" />
+                        <p className="font-mono text-xs font-bold text-[var(--ink-soft)]">
+                          No binaries attached to release {activeVersion.name}
+                        </p>
+                        <p className="font-mono text-[10px] text-[var(--ink-faint)] mt-1">
+                          Upload weights above or link directly from your ComfyUI local vault.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)]">
+                        <table className="w-full text-left font-mono text-[11px]">
+                          <thead className="border-b border-[var(--line)] bg-[var(--surface)] text-[9px] text-[var(--ink-faint)] uppercase tracking-wider">
+                            <tr>
+                              <th className="px-3 py-2">FILE NAME</th>
+                              <th className="px-2.5 py-2">SOURCE</th>
+                              <th className="px-2.5 py-2">SIZE</th>
+                              <th className="px-2.5 py-2">PRECISION</th>
+                              <th className="px-3 py-2 text-right">ACTION</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--line)]">
+                            {activeVersion.files.map((file) => (
+                              <tr key={file.id} className="hover:bg-[var(--surface-soft)]/50 transition-colors">
+                                <td className="px-3 py-2.5">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+                                    <span className="truncate font-bold text-[var(--ink)]" title={file.filename}>
+                                      {file.filename}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="px-2.5 py-2.5">
+                                  <span
+                                    className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${
+                                      file.kind === "local"
+                                        ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]"
+                                        : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)]"
+                                    }`}
+                                  >
+                                    {file.kind === "local" ? "ComfyUI Vault" : "Direct Upload"}
+                                  </span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-[var(--ink-soft)] whitespace-nowrap">
+                                  {formatBytes(file.size)}
+                                </td>
+                                <td className="px-2.5 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    {(["FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
+                                      <button
+                                        key={prec}
+                                        type="button"
+                                        onClick={() => updateFilePrecision(file.id, prec)}
+                                        className={`rounded px-1.5 py-0.5 text-[9px] font-mono transition-colors ${
+                                          file.precision === prec
+                                            ? "bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                                            : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                                        }`}
+                                      >
+                                        {prec}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeFile(file.id)}
+                                    className="rounded p-1 text-[var(--ink-faint)] hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] transition-colors"
+                                    title="Remove this file"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* STEP 4: SHOWCASE & PUBLISHING */}
-          {step === 4 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Left: Thumbnail & Live Mockup */}
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3.5">
-                  <div className="flex items-center gap-2 pb-2 border-b border-[var(--line)]">
-                    <FileImage className="h-4 w-4 text-[var(--accent)]" />
-                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                      SHOWCASE COVER & CARD PREVIEW
-                    </span>
+            {/* STEP 4: SHOWCASE & PUBLISHING */}
+            {step === 4 && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--line)]">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                      <FileImage className="h-3.5 w-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                        Showcase Cover & Permissions
+                      </span>
+                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                        Add hero thumbnail and define open licensing terms
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Dropzone for Cover */}
-                  <div
-                    onClick={() => showcaseInputRef.current?.click()}
-                    className="flex min-h-[90px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 p-3 text-center transition hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
-                  >
-                    <input
-                      ref={showcaseInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) setShowcaseFile(f);
-                        e.target.value = "";
+                  {/* Showcase Images & Thumbnail Selection */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                        Showcase Images & Thumbnail ({showcaseFiles.length})
+                      </label>
+                      {activeThumbnail && (
+                        <span className="font-mono text-[9px] text-[var(--accent)] font-semibold flex items-center gap-1">
+                          <Star className="h-2.5 w-2.5 fill-[var(--accent)]" />
+                          <span>Cover: {activeThumbnail.file.name}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Multi-file Dropzone */}
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDraggingShowcase(true);
                       }}
-                    />
-                    <div className="mb-1 flex h-6 w-6 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
-                      <Upload className="h-3 w-3" />
-                    </div>
-                    <p className="font-mono text-[11px] font-semibold text-[var(--ink)]">
-                      {showcaseFile ? "Change Cover Image" : "Upload Hero Cover Image"}
-                    </p>
-                    <p className="text-[9px] text-[var(--ink-faint)]">
-                      PNG, JPG, WebP 3:4 or 16:9 sample
-                    </p>
-                  </div>
-
-                  {/* 1:1 Live Preview Card */}
-                  <div className="pt-2">
-                    <p className="mb-2 font-mono text-[9px] font-bold tracking-wider text-[var(--ink-faint)] uppercase text-center">
-                      GALLERY CARD LIVE MOCKUP
-                    </p>
-                    <div className="w-full max-w-[220px] mx-auto">
-                      <TensorModelCard
-                        item={{
-                          title: title.trim() || "Untitled model",
-                          model_type: modelType,
-                          category,
-                          base_model: baseModel,
-                          cover_url: showcasePreview,
-                          sample_count: showcasePreview ? 1 : 0,
+                      onDragLeave={() => setIsDraggingShowcase(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDraggingShowcase(false);
+                        const files = e.dataTransfer.files;
+                        if (files && files.length > 0) addShowcaseFiles(files);
+                      }}
+                      onClick={() => showcaseInputRef.current?.click()}
+                      className={`flex min-h-[90px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-3.5 text-center transition ${
+                        isDraggingShowcase
+                          ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                          : "border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)]"
+                      }`}
+                    >
+                      <input
+                        ref={showcaseInputRef}
+                        type="file"
+                        multiple
+                        accept="image/png,image/jpeg,image/webp"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files && files.length > 0) addShowcaseFiles(files);
+                          e.target.value = "";
                         }}
-                        isLink={false}
                       />
+                      <div className="mb-1.5 flex h-7 w-7 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
+                        <Upload className="h-3.5 w-3.5" />
+                      </div>
+                      <p className="font-mono text-xs font-bold text-[var(--ink)]">
+                        {showcaseFiles.length > 0
+                          ? "Upload more showcase images…"
+                          : "Upload Showcase Images (Select one or multiple)"}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[10px] text-[var(--ink-faint)]">
+                        PNG, JPG, WebP. Upload multiple sample images and click any image to pick it as the primary cover thumbnail.
+                      </p>
                     </div>
-                  </div>
-                </div>
 
-                {/* Right: Rights, Permissions & Recap */}
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3.5">
-                  <div className="flex items-center gap-2 pb-2 border-b border-[var(--line)]">
-                    <ShieldCheck className="h-4 w-4 text-[var(--accent)]" />
-                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                      RIGHTS & VISIBILITY
-                    </span>
+                    {/* Showcase Cards Grid with Thumbnail Selector */}
+                    {showcaseFiles.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                          Click any image to set it as the primary catalog thumbnail (marked with ★ Cover):
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                          {showcaseFiles.map((item) => {
+                            const isThumb = item.id === activeThumbnail?.id;
+                            return (
+                              <div
+                                key={item.id}
+                                onClick={() => setAsThumbnail(item.id)}
+                                className={`group relative cursor-pointer overflow-hidden rounded-[5px] border transition-all ${
+                                  isThumb
+                                    ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/30 bg-[var(--surface-raised)] shadow-md"
+                                    : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:shadow-sm"
+                                }`}
+                              >
+                                {/* Thumbnail Image Preview */}
+                                <div className="aspect-[3/4] w-full overflow-hidden bg-black/30">
+                                  <img
+                                    src={item.previewUrl}
+                                    alt={item.file.name}
+                                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                  />
+                                </div>
+
+                                {/* Active Cover Badge */}
+                                {isThumb && (
+                                  <div className="absolute top-1.5 left-1.5 flex items-center gap-1 rounded bg-[var(--accent)] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] shadow">
+                                    <Star className="h-2.5 w-2.5 fill-current" />
+                                    <span>Cover</span>
+                                  </div>
+                                )}
+
+                                {/* Make Cover Button on Hover if not active */}
+                                {!isThumb && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="rounded bg-[var(--surface-raised)] border border-[var(--line-strong)] px-2 py-1 font-mono text-[9px] font-bold text-[var(--ink)] shadow">
+                                      Set as Cover
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Delete Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeShowcaseItem(item.id);
+                                  }}
+                                  className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded bg-black/70 text-white/80 hover:bg-[var(--danger)] hover:text-white transition-colors"
+                                  title="Remove image"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+
+                                {/* File Name Footer */}
+                                <div className="p-1.5 border-t border-[var(--line)] bg-[var(--surface)]">
+                                  <p className="truncate font-mono text-[9px] text-[var(--ink)]" title={item.file.name}>
+                                    {item.file.name}
+                                  </p>
+                                  <p className="font-mono text-[8px] text-[var(--ink-faint)]">
+                                    {formatBytes(item.file.size)}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Visibility Setting */}
                   <div>
-                    <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Gallery Visibility
+                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Catalog Visibility
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setVisibility("Public")}
-                        className={`h-7.5 rounded-md font-mono text-[10px] font-bold transition-colors ${
+                        className={`h-8 rounded-[5px] font-mono text-[11px] font-bold uppercase tracking-wider transition-colors ${
                           visibility === "Public"
-                            ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                            ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
                             : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
                         }`}
                       >
@@ -993,9 +2069,9 @@ export default function CreateModelDrawer({
                       <button
                         type="button"
                         onClick={() => setVisibility("Private")}
-                        className={`h-7.5 rounded-md font-mono text-[10px] font-bold transition-colors ${
+                        className={`h-8 rounded-[5px] font-mono text-[11px] font-bold uppercase tracking-wider transition-colors ${
                           visibility === "Private"
-                            ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                            ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
                             : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
                         }`}
                       >
@@ -1006,64 +2082,159 @@ export default function CreateModelDrawer({
 
                   {/* Permissions Toggles */}
                   <div className="space-y-2 pt-2 border-t border-[var(--line)] font-mono text-[11px]">
-                    <label className="flex items-center justify-between cursor-pointer p-1.5 rounded hover:bg-[var(--surface-sunken)]">
-                      <span className="text-[var(--ink)]">Allow commercial use</span>
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-[5px] border border-transparent hover:border-[var(--line)] hover:bg-[var(--surface-sunken)] transition-colors">
+                      <span className="text-[var(--ink)] font-semibold">
+                        Allow commercial generation use
+                      </span>
                       <input
                         type="checkbox"
                         checked={commercial}
                         onChange={(e) => setCommercial(e.target.checked)}
-                        className="h-4 w-4 accent-[var(--accent)]"
+                        className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
                       />
                     </label>
 
-                    <label className="flex items-center justify-between cursor-pointer p-1.5 rounded hover:bg-[var(--surface-sunken)]">
-                      <span className="text-[var(--ink)]">Allow remix / merges</span>
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-[5px] border border-transparent hover:border-[var(--line)] hover:bg-[var(--surface-sunken)] transition-colors">
+                      <span className="text-[var(--ink)] font-semibold">
+                        Allow model remix & merges
+                      </span>
                       <input
                         type="checkbox"
                         checked={remix}
                         onChange={(e) => setRemix(e.target.checked)}
-                        className="h-4 w-4 accent-[var(--accent)]"
+                        className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
                       />
                     </label>
 
-                    <label className="flex items-center justify-between cursor-pointer p-1.5 rounded hover:bg-[var(--surface-sunken)]">
-                      <span className="text-[var(--ink)]">Attribution required</span>
+                    <label className="flex items-center justify-between cursor-pointer p-2 rounded-[5px] border border-transparent hover:border-[var(--line)] hover:bg-[var(--surface-sunken)] transition-colors">
+                      <span className="text-[var(--ink)] font-semibold">
+                        Attribution credit required
+                      </span>
                       <input
                         type="checkbox"
                         checked={creditRequired}
                         onChange={(e) => setCreditRequired(e.target.checked)}
-                        className="h-4 w-4 accent-[var(--accent)]"
+                        className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
                       />
                     </label>
                   </div>
+                </div>
+              </div>
+            )}
+          </div>
 
-                  {/* Specs Summary */}
-                  <div className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 font-mono text-[10px] space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-[var(--ink-faint)]">Type & Arch:</span>
-                      <span className="text-[var(--ink)]">{modelType} • {baseModel}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[var(--ink-faint)]">Weights File:</span>
-                      <span className="text-[var(--accent)] truncate max-w-[150px]">
-                        {selectedLocalFile ? selectedLocalFile.filename : uploadedFile ? uploadedFile.name : "None attached"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[var(--ink-faint)]">Trigger Words:</span>
-                      <span className="text-[var(--ink)]">
-                        {triggerWords.length ? triggerWords.join(", ") : "None"}
-                      </span>
-                    </div>
+          {/* RIGHT: Live Preview Inspector Panel (Always Visible) */}
+          <div className="w-[310px] shrink-0 bg-[var(--surface-sunken)] p-5 flex flex-col justify-between overflow-y-auto">
+            <div className="space-y-4">
+              {/* Preview Header Frame */}
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+                <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">
+                  <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+                  <span>Card Live Mockup</span>
+                </div>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--accent)] bg-[var(--accent)]/10 px-2 py-0.5 rounded-[5px] border border-[var(--accent)]/20">
+                  Step {step}/4
+                </span>
+              </div>
+
+              {/* Machined Card Container */}
+              <div className="relative rounded-[16px] border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-xl">
+                <TensorModelCard
+                  item={{
+                    title: currentDisplayTitle,
+                    model_type: modelType,
+                    category,
+                    base_model: resolvedBaseModel,
+                    cover_url: coverPreviewUrl,
+                    sample_count: showcaseFiles.length,
+                  }}
+                  isLink={false}
+                />
+              </div>
+
+              {/* Dynamic Telemetry Specs */}
+              <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-[11px] space-y-2">
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Model Type:</span>
+                  <span className="font-bold text-[var(--accent)]">{modelType}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Base Arch:</span>
+                  <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
+                    {resolvedBaseModel}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Target VAE:</span>
+                  <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
+                    {resolvedVae || "None"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">CLIP / Encoder:</span>
+                  <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
+                    {[resolvedEncoder, resolvedClipType].filter(Boolean).join(" · ") || "None"}
+                  </span>
+                </div>
+                {recommendedPrompt && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Prompt:</span>
+                    <span
+                      className="font-semibold text-[var(--accent)] truncate max-w-[140px]"
+                      title={recommendedPrompt}
+                    >
+                      {recommendedPrompt}
+                    </span>
                   </div>
+                )}
+                {selectedBaseKey && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Base Enclave:</span>
+                    <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
+                      {baseOptions.find((b) => `${b.model_id}:${b.version_id}:${b.file_id}` === selectedBaseKey)?.title || "Linked Checkpoint"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Weights File:</span>
+                  <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
+                    {totalFilesCount > 0
+                      ? totalFilesCount === 1
+                        ? versions[0]?.files[0]?.filename || "1 attached"
+                        : `${totalFilesCount} files (${versions.length} release${versions.length > 1 ? "s" : ""})`
+                      : "Pending…"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Trigger Words:</span>
+                  <span className="font-semibold text-[var(--accent)]">
+                    {triggerWords.length ? `${triggerWords.length} active` : "None"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-[var(--ink-faint)]">Visibility:</span>
+                  <span
+                    className={`font-semibold ${
+                      visibility === "Public"
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--ink-soft)]"
+                    }`}
+                  >
+                    {visibility}
+                  </span>
                 </div>
               </div>
             </div>
-          )}
+
+            {/* Micro Hint */}
+            <p className="mt-4 text-center font-mono text-[9px] text-[var(--ink-faint)]">
+              Updates in real-time as you complete wizard parameters
+            </p>
+          </div>
         </div>
 
-        {/* Footer Actions */}
-        <footer className="flex items-center justify-between border-t border-[var(--line)] bg-[var(--surface-raised)] px-5 py-3">
+        {/* Footer Actions Bar */}
+        <footer className="flex h-14 shrink-0 items-center justify-between border-t border-[var(--line)] bg-[var(--surface-raised)] px-6">
           <button
             type="button"
             disabled={busy}
@@ -1071,7 +2242,7 @@ export default function CreateModelDrawer({
               if (step === 1) onClose();
               else setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
             }}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2.5 font-mono text-[11px] font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[11px] font-bold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
           >
             {step === 1 ? (
               <span>Cancel</span>
@@ -1083,13 +2254,13 @@ export default function CreateModelDrawer({
             )}
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {step < 4 ? (
               <button
                 type="button"
                 disabled={step === 1 && !title.trim()}
                 onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[5px] bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
               >
                 <span>Next Step</span>
                 <ArrowRight className="h-3 w-3" />
@@ -1099,7 +2270,7 @@ export default function CreateModelDrawer({
                 type="button"
                 disabled={busy || !title.trim()}
                 onClick={() => void submit()}
-                className="inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)] disabled:opacity-40"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[5px] bg-[var(--accent)] px-4 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.25)] disabled:opacity-40"
               >
                 <Zap className="h-3.5 w-3.5" />
                 <span>{busy ? "Publishing Pipeline…" : "Publish Model ⚡"}</span>

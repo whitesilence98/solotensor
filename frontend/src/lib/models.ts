@@ -6,7 +6,7 @@ import type { InstalledGalleryModel, PublicModelSummary } from "./api";
 function cleanIdentifier(value: string): string {
   const base = value.split(/[/\\]/).pop() || value;
   return base
-    .replace(/\.(safetensors|ckpt|pt|pth|bin|gguf)$/i, "")
+    .replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "")
     .trim()
     .toLowerCase();
 }

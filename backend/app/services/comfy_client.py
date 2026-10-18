@@ -333,7 +333,7 @@ class ComfyClient:
         height: int = 1344,
         loras: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
-        if model_type == "Checkpoint":
+        if model_type in ("Checkpoint", "SVD"):
             if loras:
                 active_loras = [item for item in loras if item.get("on", True)]
                 if active_loras:
@@ -430,8 +430,8 @@ class ComfyClient:
                 width=width,
                 height=height,
             )
-        if base_model_type != "Checkpoint":
-            raise ComfyClientError("LoRA bases must be Checkpoint or Diffusion Model gallery files")
+        if base_model_type not in ("Checkpoint", "SVD"):
+            raise ComfyClientError("LoRA bases must be Checkpoint, SVD, or Diffusion Model gallery files")
         return self._build_builtin_lora_workflow(
             prompt=prompt,
             negative_prompt=negative_prompt,

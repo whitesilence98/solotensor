@@ -22,14 +22,29 @@ import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard
 import CreateModelDrawer from "@/components/CreateModelDrawer";
 import CustomSelect from "@/components/CustomSelect";
 
-type ModelTypeFilter = "all" | "Checkpoint" | "LoRA" | "Diffusion Model";
+import type { CreatorModelType } from "@/lib/api";
+
+type ModelTypeFilter = "all" | CreatorModelType;
 type SortOption = "latest" | "samples" | "title";
 
 const TYPE_FILTERS: Array<{ value: ModelTypeFilter; label: string }> = [
   { value: "all", label: "All Types" },
-  { value: "Checkpoint", label: "Checkpoints" },
-  { value: "LoRA", label: "LoRAs" },
-  { value: "Diffusion Model", label: "Diffusion" },
+  { value: "Checkpoint", label: "Checkpoint" },
+  { value: "Hyper Network", label: "Hyper Network" },
+  { value: "Embedding", label: "Embedding" },
+  { value: "Aesthetic Gradient", label: "Aesthetic Gradient" },
+  { value: "LoRA", label: "LoRA" },
+  { value: "LoKr", label: "LoKr" },
+  { value: "LoCon", label: "LoCon" },
+  { value: "ControlNet", label: "ControlNet" },
+  { value: "Poses", label: "Poses" },
+  { value: "Wildcards", label: "Wildcards" },
+  { value: "LyCORIS", label: "LyCORIS" },
+  { value: "SVD", label: "SVD" },
+  { value: "Motion LoRA", label: "Motion LoRA" },
+  { value: "VAE", label: "VAE" },
+  { value: "DoRA", label: "DoRA" },
+  { value: "StyleModel", label: "StyleModel" },
 ];
 
 const CATEGORY_FILTERS = [
@@ -53,7 +68,7 @@ const BASE_MODEL_FILTERS = [
 const SORT_OPTIONS = [
   { value: "latest", label: "Recently Published" },
   { value: "samples", label: "Most Showcase Samples" },
-  { value: "title", label: "Name (A–Z)" },
+  { value: "title", label: "Name (A-Z)" },
 ];
 
 export default function ModelsPage() {
@@ -174,66 +189,70 @@ export default function ModelsPage() {
     >
       {/* 1. Main Content Grid & Integrated Controls */}
       <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-        {/* Integrated In-Grid Toolbar: Search + Base Model + Sort + Publish CTA */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
-          {/* Search Input */}
-          <div className="relative flex-1 max-w-lg group">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search models, tags, trigger words, architectures…"
-              aria-label="Search creator models"
-              className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-14 text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
-            />
-            {query ? (
+        {/* Command Bar Toolbar: Search + Base Model + Sort + Publish CTA */}
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[260px] max-w-xl group">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search models, tags, trigger words, architectures..."
+                aria-label="Search creator models"
+                className="h-9 w-full rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] pl-9 pr-14 text-xs font-normal text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear model search"
+                  className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : (
+                <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none">
+                  /
+                </kbd>
+              )}
+            </div>
+
+            {/* Selects & Actions */}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <CustomSelect
+                value={baseModelFilter}
+                onChange={setBaseModelFilter}
+                options={BASE_MODEL_FILTERS}
+                ariaLabel="Filter by Base Model"
+                icon={<Layers className="h-3.5 w-3.5 text-[var(--ink-faint)]" />}
+                buttonClassName="h-9 rounded-lg font-medium text-xs text-[var(--ink)]"
+              />
+
+              <CustomSelect
+                value={sortBy}
+                onChange={(val) => setSortBy(val as SortOption)}
+                options={SORT_OPTIONS}
+                ariaLabel="Sort models"
+                icon={<ArrowUpDown className="h-3.5 w-3.5 text-[var(--ink-faint)]" />}
+                buttonClassName="h-9 rounded-lg font-medium text-xs text-[var(--ink)]"
+              />
+
               <button
                 type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear model search"
-                className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
+                onClick={() => setStudioOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] hover:brightness-105 active:scale-[0.98] transition-all shadow-sm hover:shadow-md"
               >
-                <X className="h-3 w-3" />
+                <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                <span>Publish Model</span>
               </button>
-            ) : (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none">
-                /
-              </kbd>
-            )}
-          </div>
-
-          {/* Selects & Actions */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <CustomSelect
-              value={baseModelFilter}
-              onChange={setBaseModelFilter}
-              options={BASE_MODEL_FILTERS}
-              ariaLabel="Filter by Base Model"
-              buttonClassName="h-8.5"
-            />
-
-            <CustomSelect
-              value={sortBy}
-              onChange={(val) => setSortBy(val as SortOption)}
-              options={SORT_OPTIONS}
-              ariaLabel="Sort models"
-              buttonClassName="h-8.5"
-            />
-
-            <button
-              type="button"
-              onClick={() => setStudioOpen(true)}
-              className="inline-flex h-8.5 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_14px_rgba(213,240,111,0.22)]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Publish Model ⚡</span>
-            </button>
+            </div>
           </div>
         </div>
 
         {/* Filter Pills Sub-Row: Types + Categories + Reset */}
-        <div className="flex items-center justify-between gap-3 overflow-x-auto w-full py-2.5 no-scrollbar">
+        <div className="flex items-center justify-between gap-3 overflow-x-auto w-full py-1.5 no-scrollbar mb-2">
           <div className="flex items-center gap-1.5">
             {TYPE_FILTERS.map((tf) => {
               const active = typeFilter === tf.value;
@@ -242,9 +261,9 @@ export default function ModelsPage() {
                   key={tf.value}
                   type="button"
                   onClick={() => setTypeFilter(tf.value)}
-                  className={`min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] uppercase font-semibold transition ${
+                  className={`min-h-6 shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
                     active
-                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-sm"
                       : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
                   }`}
                 >
@@ -263,9 +282,9 @@ export default function ModelsPage() {
                   key={cat}
                   type="button"
                   onClick={() => setCategoryFilter(cat)}
-                  className={`capitalize min-h-5 shrink-0 rounded-md border px-2 py-0.5 font-mono text-[9px] transition ${
+                  className={`capitalize min-h-6 shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
                     active
-                      ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-bold shadow-sm"
+                      ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-semibold shadow-sm"
                       : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
                   }`}
                 >
@@ -279,7 +298,7 @@ export default function ModelsPage() {
             <button
               type="button"
               onClick={clearAllFilters}
-              className="workspace-action-quiet min-h-5 shrink-0 whitespace-nowrap px-1.5 text-[9px] font-mono text-[var(--danger)] hover:underline"
+              className="workspace-action-quiet min-h-6 shrink-0 whitespace-nowrap px-2 text-[11px] font-medium text-[var(--danger)] hover:underline"
             >
               Reset filters
             </button>
@@ -288,11 +307,21 @@ export default function ModelsPage() {
         {/* Count Bar */}
         <div className="mb-4 flex items-center justify-between text-xs text-[var(--ink-faint)]">
           <p>
-            {loading
-              ? "Loading models…"
-              : `Showing ${filteredItems.length} of ${items.length} creator model${
-                  items.length === 1 ? "" : "s"
-                }`}
+            {loading ? (
+              "Loading models..."
+            ) : (
+              <>
+                Showing{" "}
+                <span className="font-mono text-[var(--ink)]">
+                  {filteredItems.length}
+                </span>{" "}
+                of{" "}
+                <span className="font-mono text-[var(--ink)]">
+                  {items.length}
+                </span>{" "}
+                creator model{items.length === 1 ? "" : "s"}
+              </>
+            )}
           </p>
         </div>
 

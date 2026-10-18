@@ -22,7 +22,7 @@ SoloTensor is a local, privacy-first generative AI studio connecting directly to
 | `/` | **Workspace** | `Operate` & `Experience` | Primary creation studio. Enter prompt, select aspect ratio/visual preset, configure seeds/LoRAs, and generate onto live canvas. |
 | `/tools` | **Tools Suite** | `Operate` | Browse and execute specialized single-purpose pipeline tools (Upscale, Inpaint, Remove BG). |
 | `/tools/create` | **Tool Builder** | `Operate` | Author and save custom pipeline presets with pinned parameters. |
-| `/models` | **Model Manager** | `Operate` | Inspect local checkpoints, LoRAs, and embeddings; trigger downloads and configure triggers. |
+| `/models` | **Model Manager** | `Operate` | Full catalog supporting 16 standardized model types (Checkpoints, Adapters, VAEs, Guidance, Inversions, Wildcards). Dual `.safetensors` & `.sft` support. |
 | `/assets` | **Asset Library** | `Operate` | Search, filter, and inspect generated assets. Lightbox view, copy metadata/prompt, download originals. |
 | `/assist` | **AI Assist** | `Read` & `Operate` | Conversational persona-based assistant to optimize prompts and troubleshoot workflow issues. |
 | `/settings` | **Settings** | `Operate` | Engine connectivity (FastAPI :8000, ComfyUI :8188), storage paths, and default generation parameters. |
@@ -33,3 +33,5 @@ SoloTensor is a local, privacy-first generative AI studio connecting directly to
 - **Honest Attribution**: All local generations are authored by `"You"`. No fabricated user metrics, public upvotes, or fake social feeds.
 - **Local Runtime Guarantee**: Frontend runs on `:3000`, communicating exclusively with local FastAPI `:8000` via typed endpoints.
 - **Hardware Awareness**: Generation parameters enforce hardware bounds (dimensions divisible by 8, steps 1–100, CFG 0–30, LoRA strength -10.0 to 10.0).
+- **Architecture & Technical Contracts**: See [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/docs/ARCHITECTURE.md) and [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/DESIGN.md).
+

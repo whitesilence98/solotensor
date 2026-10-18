@@ -395,11 +395,21 @@ class ModelCategory(str, Enum):
 
 class CreatorModelType(str, Enum):
     CHECKPOINT = "Checkpoint"
-    DIFFUSION_MODEL = "Diffusion Model"
-    LORA = "LoRA"
-    LYCORIS = "LyCORIS"
-    VAE = "VAE"
+    HYPER_NETWORK = "Hyper Network"
     EMBEDDING = "Embedding"
+    AESTHETIC_GRADIENT = "Aesthetic Gradient"
+    LORA = "LoRA"
+    LOKR = "LoKr"
+    LOCON = "LoCon"
+    CONTROLNET = "ControlNet"
+    POSES = "Poses"
+    WILDCARDS = "Wildcards"
+    LYCORIS = "LyCORIS"
+    SVD = "SVD"
+    MOTION_LORA = "Motion LoRA"
+    VAE = "VAE"
+    DORA = "DoRA"
+    STYLE_MODEL = "StyleModel"
 
 
 class ModelVisibility(str, Enum):
@@ -513,6 +523,13 @@ class ModelCreateRequest(BaseModel):
     visibility: ModelVisibility = ModelVisibility.PRIVATE
     user_id: str | None = None
 
+    @field_validator("model_type", mode="before")
+    @classmethod
+    def normalize_model_type(cls, value: Any) -> Any:
+        if value in ("Diffusion Model", "UNET"):
+            return CreatorModelType.CHECKPOINT
+        return value
+
     @field_validator("title")
     @classmethod
     def title_not_blank(cls, value: str) -> str:
@@ -543,6 +560,13 @@ class ModelUpdateRequest(BaseModel):
     generation: ModelGenerationSettings | None = None
     permissions: ModelPermissions | None = None
     visibility: ModelVisibility | None = None
+
+    @field_validator("model_type", mode="before")
+    @classmethod
+    def normalize_update_model_type(cls, value: Any) -> Any:
+        if value in ("Diffusion Model", "UNET"):
+            return CreatorModelType.CHECKPOINT
+        return value
 
     @field_validator("title")
     @classmethod
@@ -634,6 +658,13 @@ class PublicModelSummary(BaseModel):
     file_count: int
     sample_count: int
 
+    @field_validator("model_type", mode="before")
+    @classmethod
+    def normalize_summary_model_type(cls, value: Any) -> Any:
+        if value in ("Diffusion Model", "UNET"):
+            return CreatorModelType.CHECKPOINT
+        return value
+
 
 class PublicModelResponse(BaseModel):
     model_id: str
@@ -647,6 +678,13 @@ class PublicModelResponse(BaseModel):
     published_at: str
     updated_at: str
     versions: list[ModelVersionResponse]
+
+    @field_validator("model_type", mode="before")
+    @classmethod
+    def normalize_response_model_type(cls, value: Any) -> Any:
+        if value in ("Diffusion Model", "UNET"):
+            return CreatorModelType.CHECKPOINT
+        return value
 
 
 class PublicModelListResponse(BaseModel):

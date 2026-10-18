@@ -239,11 +239,13 @@ export default function UserProfilePage({
         return false;
       }
       if (modelTypeFilter !== "all") {
-        const isLora =
-          m.model_type?.toLowerCase().includes("lora") ||
-          m.category?.toLowerCase().includes("lora");
-        if (modelTypeFilter === "LoRA" && !isLora) return false;
-        if (modelTypeFilter === "CHECKPOINT" && isLora) return false;
+        if (modelTypeFilter === "Checkpoint") {
+          if (m.model_type !== "Checkpoint" && m.model_type !== "SVD") return false;
+        } else if (modelTypeFilter === "LoRA") {
+          if (!["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(m.model_type)) return false;
+        } else if (m.model_type !== modelTypeFilter) {
+          return false;
+        }
       }
       return true;
     });
@@ -896,13 +898,13 @@ export default function UserProfilePage({
                 </div>
 
                 {/* Model Type Filters */}
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  {["all", "CHECKPOINT", "LoRA"].map((type) => (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                  {["all", "Checkpoint", "LoRA", "ControlNet", "VAE", "Embedding", "LyCORIS", "DoRA", "SVD"].map((type) => (
                     <button
                       key={type}
                       type="button"
                       onClick={() => setModelTypeFilter(type)}
-                      className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
                         modelTypeFilter === type
                           ? "border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
                           : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-white"

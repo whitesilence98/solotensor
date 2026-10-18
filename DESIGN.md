@@ -79,9 +79,57 @@ All UI elements must consume semantic CSS variables or Tailwind tokens. Hardcode
 
 ---
 
-## 5. Absolute Anti-Patterns & Bans
+## 5. Model Architecture & Compatibility Stack (Polymorphic Design)
+
+The creation studio organizes AI assets into 16 standardized model types categorized into 6 functional tiers.
+
+### Layout Stability Principle: Persistent Container
+The **Compatibility & Conditioning Stack** panel in creation forms (`CreateModelDrawer`) must **always remain visible** to prevent cumulative layout shift (CLS) and maintain visual muscle memory. Instead of hiding the panel, the **internal components adapt polymorphically** to the active model type:
+
+```mermaid
+graph TD
+    Panel["Compatibility & Conditioning Stack (Persistent Container)"]
+    Panel --> T1["Core Base (Checkpoint, SVD)"]
+    Panel --> T2["Adapters (LoRA, LoKr, LoCon, LyCORIS, DoRA, Motion LoRA)"]
+    Panel --> T3["Autoencoders (VAE)"]
+    Panel --> T4["Spatial Guidance (ControlNet, Poses, StyleModel)"]
+    Panel --> T5["Textual Inversions (Embedding, Aesthetic Gradient, Hyper Network)"]
+    Panel --> T6["Prompt Assets (Wildcards)"]
+
+    T1 --> C1["Recommended VAE (.safetensors/.sft) + Text Encoders + CLIP Protocol"]
+    T2 --> C2["Base Checkpoint Link + Auto-Inherited Stack Status + Optional Override"]
+    T3 --> C3["Latent Channel Profile + Pixel-to-Latent Bridge Info"]
+    T4 --> C4["Preprocessor Modality Selector (Canny/Depth/Pose) + Latent Injection Info"]
+    T5 --> C5["Text Vector Dimension Target + Prompt Token Syntax Preview"]
+    T6 --> C6["Universal Compatibility Badge + Wildcard Tag Expansion (__name__)"]
+```
+
+### Component Hierarchy by Model Tier
+
+| Tier | Model Types | Internal Component Pattern | File Types Accepted |
+| :--- | :--- | :--- | :--- |
+| **Core Base** | `Checkpoint`, `SVD` | **Modular Conditioning Stack**: Dual-source VAE Selector + Text Encoder Dropdown + CLIP Architecture Selector | `.safetensors`, `.sft`, `.ckpt`, `.gguf` |
+| **Adapters** | `LoRA`, `LoKr`, `LoCon`, `LyCORIS`, `DoRA`, `Motion LoRA` | **Enclave Binding & Inheritance**: Base Model Gallery Link + Status Card indicating auto-inheritance of VAE/CLIP + Optional Manual Override Toggle | `.safetensors`, `.sft` |
+| **Autoencoders** | `VAE` | **Latent Space Profile**: Latent channel format indicator (16ch FLUX vs 4ch SDXL) + Standalone encoder/decoder profile (no redundant VAE selector) | `.safetensors`, `.sft`, `.pt` |
+| **Spatial Guidance** | `ControlNet`, `Poses`, `StyleModel` | **Preprocessor Mode Card**: Modality pill selector (Canny, Depth, OpenPose, Normal) + Tensor injection architecture info | `.safetensors`, `.pth`, `.bin` |
+| **Textual Inversions** | `Embedding`, `Aesthetic Gradient`, `Hyper Network` | **Text Vector Binding**: Target token dimension info (768 CLIP-L / 2048 SDXL / 4096 T5) + Syntax helper (`embedding:name`) | `.safetensors`, `.pt`, `.bin` |
+| **Prompt Assets** | `Wildcards` | **Universal Engine**: Universal compatibility badge + Wildcard token expansion format (`__name__`) | `.txt`, `.yaml`, `.json` |
+
+### Model Type Badge Tokens
+Model type badges in cards (`TensorModelCard`), filters, and drawers use distinct semantic pill tokens:
+- **Base Models (`Checkpoint`, `SVD`)**: Acid lime accent outline with solid pill fill (`bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]`).
+- **Adapters (`LoRA`, `LoKr`, `DoRA`, etc.)**: Obsidian raised with cyber-cyan or lilac accent (`text-cyan-400 border-cyan-800/40 bg-cyan-950/20`).
+- **VAEs (`VAE`)**: Warm amber border with sunken fill (`text-amber-400 border-amber-800/40 bg-amber-950/20`).
+- **Guidance (`ControlNet`, `Poses`, `StyleModel`)**: Emerald/green indicators (`text-emerald-400 border-emerald-800/40 bg-emerald-950/20`).
+- **Embeddings & Wildcards**: Monospace neutral outline (`text-neutral-300 border-[var(--line)] bg-[var(--surface-sunken)]`).
+
+---
+
+## 6. Absolute Anti-Patterns & Bans
 
 - ❌ **No generic gradients or glassmorphism**: Avoid rainbow/purple gradient buttons and heavy backdrop blurs.
 - ❌ **No hardcoded hex codes**: Never introduce arbitrary hex codes directly in components (`#ef8c79`, `#d5f06f`, etc.). Always reference semantic CSS variables (`var(--...)`) or Tailwind semantic color classes.
-- ❌ **No layout shifts (CLS)**: Always reserve image aspect ratio boxes prior to asset load.
+- ❌ **No layout shifts (CLS)**: Always reserve image aspect ratio boxes prior to asset load. Keep form panels mounted with polymorphic content rather than mounting/unmounting entire containers.
 - ❌ **No apologetic empty states**: Frame empty states as intentional, instructional moments (e.g. *"Give the model something to see"*).
+- ❌ **No self-referential inputs**: Never ask a user to select a VAE for a `VAE` model or a Text Encoder for `Wildcards`. Always adapt internal inputs to the active model type.
+

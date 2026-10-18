@@ -31,19 +31,23 @@ class ModelServiceTests(unittest.TestCase):
         self.service.publish(self.model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC))
         return file_id, data
 
-    def test_diffusion_model_install_category(self) -> None:
+    def test_install_categories(self) -> None:
+        self.assertEqual(self.service.install_category("ControlNet"), "controlnet")
+        self.assertEqual(self.service.install_category("Hyper Network"), "hypernetworks")
+        self.assertEqual(self.service.install_category("DoRA"), "loras")
+        self.assertEqual(self.service.install_category("SVD"), "checkpoints")
         self.assertEqual(self.service.install_category("Diffusion Model"), "diffusion_models")
 
     def test_resolves_installed_public_gallery_file(self) -> None:
-        file_id, data = self._published_file(CreatorModelType.DIFFUSION_MODEL)
-        target = Path(self.comfy.name) / "models" / "diffusion_models" / "demo.safetensors"
+        file_id, data = self._published_file(CreatorModelType.SVD)
+        target = Path(self.comfy.name) / "models" / "checkpoints" / "demo.safetensors"
         target.parent.mkdir(parents=True)
         target.write_bytes(data)
 
         resolved = self.service.resolve_installed_gallery_file(self.model.model_id, self.version.version_id, file_id)
 
-        self.assertEqual(resolved["model_type"], "Diffusion Model")
-        self.assertEqual(resolved["category"], "diffusion_models")
+        self.assertEqual(resolved["model_type"], "SVD")
+        self.assertEqual(resolved["category"], "checkpoints")
         self.assertEqual(resolved["filename"], "demo.safetensors")
         self.assertEqual(self.service.selectable_gallery_files(), [resolved])
 
@@ -103,14 +107,14 @@ class ModelServiceTests(unittest.TestCase):
         with self.assertRaises(ModelNotFound):
             self.service.resolve_installed_gallery_file(private_model.model_id, private_model.versions[0].version_id, private_file.file_id)
 
-    def test_legacy_unet_records_migrate_to_diffusion_model(self) -> None:
+    def test_legacy_unet_records_migrate_to_checkpoint(self) -> None:
         record = json.loads((Path(self.temp.name) / "definitions" / f"{self.model.model_id}.json").read_text(encoding="utf-8"))
         record["model_type"] = "UNET"
         (Path(self.temp.name) / "definitions" / f"{self.model.model_id}.json").write_text(json.dumps(record), encoding="utf-8")
 
         reloaded = ModelService(self.settings).get(self.model.model_id)
 
-        self.assertEqual(reloaded.model_type.value, "Diffusion Model")
+        self.assertEqual(reloaded.model_type.value, "Checkpoint")
 
     def test_metadata_survives_reload(self) -> None:
         updated = self.service.update(self.model.model_id, ModelUpdateRequest(title="Updated"))
@@ -261,6 +265,36 @@ class ModelServiceTests(unittest.TestCase):
         with self.assertRaises(ModelError):
             self.service.import_local_file(self.model.model_id, self.version.version_id, "checkpoints", "../secret.safetensors", ModelPrecision.FP16)
 
+    def test_local_search_and_import_accepts_sft_extension(self) -> None:
+        vae_dir = Path(self.comfy.name) / "models" / "vae"
+        vae_dir.mkdir(parents=True, exist_ok=True)
+        (vae_dir / "ae.sft").write_bytes(b"ae-sft-data")
+
+        local_vaes = self.service.local_models(category="vae")
+        filenames = [item["filename"] for item in local_vaes]
+        self.assertIn("ae.sft", filenames)
+
+        result = self.service.import_local_file(
+            self.model.model_id,
+            self.version.version_id,
+            "vae",
+            "ae.sft",
+            ModelPrecision.FP16,
+        )
+        imported_files = [f.filename for f in result.versions[0].files]
+        self.assertIn("ae.sft", imported_files)
+
+        uploaded = self.service.add_file(
+            self.model.model_id,
+            self.version.version_id,
+            "custom_encoder.sft",
+            b"custom-sft-bytes",
+            ModelPrecision.FP16,
+        )
+        uploaded_files = [f.filename for f in uploaded.versions[0].files]
+        self.assertIn("custom_encoder.sft", uploaded_files)
+
 
 if __name__ == "__main__":
     unittest.main()
+

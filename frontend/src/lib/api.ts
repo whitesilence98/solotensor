@@ -114,6 +114,20 @@ export interface ClipOptions {
   types: string[];
 }
 
+export interface WorkflowTemplateInfo {
+  has_template: boolean;
+  vae_name?: string | null;
+  clip_name?: string | null;
+  clip_type?: string | null;
+  unet_name?: string | null;
+  sampler_name?: string | null;
+  steps?: number | null;
+  cfg?: number | null;
+  base_architecture?: string | null;
+  prompt?: string | null;
+  negative_prompt?: string | null;
+}
+
 export interface UploadedAsset {
   filename: string;
   url: string;
@@ -566,7 +580,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type CreatorModelCategory = "Character" | "Style" | "Concept" | "Pose" | "Clothing" | "General";
-export type CreatorModelType = "Checkpoint" | "Diffusion Model" | "LoRA" | "LyCORIS" | "VAE" | "Embedding";
+export type CreatorModelType =
+  | "Checkpoint"
+  | "Hyper Network"
+  | "Embedding"
+  | "Aesthetic Gradient"
+  | "LoRA"
+  | "LoKr"
+  | "LoCon"
+  | "ControlNet"
+  | "Poses"
+  | "Wildcards"
+  | "LyCORIS"
+  | "SVD"
+  | "Motion LoRA"
+  | "VAE"
+  | "DoRA"
+  | "StyleModel";
 export type ModelVisibility = "Public" | "Unlisted" | "Private";
 export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
 
@@ -731,10 +761,10 @@ export interface InstalledGalleryModel {
   version_id: string;
   file_id: string;
   title: string;
-  model_type: "Checkpoint" | "Diffusion Model" | "LoRA" | "LyCORIS";
+  model_type: CreatorModelType;
   version_name: string;
   filename: string;
-  category: "checkpoints" | "diffusion_models" | "loras";
+  category: string;
   sha256: string;
   vae: string | null;
   text_encoder: string | null;
@@ -957,6 +987,10 @@ export const api = {
 
   async getClipOptions(): Promise<ClipOptions> {
     return request<ClipOptions>("/api/v1/clip-options");
+  },
+
+  async getWorkflowTemplateInfo(): Promise<WorkflowTemplateInfo> {
+    return request<WorkflowTemplateInfo>("/api/v1/workflow/template-info");
   },
 
   async generate(payload: GeneratePayload): Promise<GenerationResult> {

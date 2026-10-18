@@ -37,7 +37,8 @@ const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"]
 const DEFAULT_SAMPLE_PROMPT =
   "Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85mm lens, atmospheric haze, volumetric rim lighting, fine textures";
 
-
+const isBaseModel = (type?: string) => (type ? ["Checkpoint", "SVD"].includes(type) : false);
+const isAdapterModel = (type?: string) => (type ? ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(type) : false);
 
 interface ModelIdentity {
   modelId: string;
@@ -100,10 +101,8 @@ export default function StudioPage() {
         null
       );
     }
-    // Default to the first Checkpoint or Diffusion Model if available
-    const baseFirst = modelOptions.find(
-      (item) => item.model_type === "Checkpoint" || item.model_type === "Diffusion Model"
-    );
+    // Default to the first Checkpoint or base model if available
+    const baseFirst = modelOptions.find((item) => isBaseModel(item.model_type));
     return baseFirst ?? null;
   }, [modelOptions, selection]);
 
@@ -114,16 +113,14 @@ export default function StudioPage() {
         null
       );
     }
-    if (selectedModel && (selectedModel.model_type === "Checkpoint" || selectedModel.model_type === "Diffusion Model")) {
+    if (selectedModel && isBaseModel(selectedModel.model_type)) {
       return selectedModel;
     }
-    return modelOptions.find((item) => item.model_type === "Checkpoint" || item.model_type === "Diffusion Model") ?? null;
+    return modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
   }, [modelOptions, baseSelection, selectedModel]);
 
   const baseModelOptions = useMemo(() => {
-    return modelOptions.filter(
-      (item) => item.model_type === "Checkpoint" || item.model_type === "Diffusion Model"
-    );
+    return modelOptions.filter((item) => isBaseModel(item.model_type));
   }, [modelOptions]);
 
   const refreshGallery = useCallback(async () => {
@@ -272,15 +269,12 @@ export default function StudioPage() {
     let targetModel = selectedModel;
     let effectiveBase = baseModel;
 
-    const isPrimaryLora =
-      targetModel?.model_type === "LoRA" || targetModel?.model_type === "LyCORIS";
+    const isPrimaryLora = isAdapterModel(targetModel?.model_type);
 
     if (!targetModel) {
-      // Fallback: pick first available model if any
+      // Fallback: pick first available base model if any
       targetModel =
-        modelOptions.find(
-          (m) => m.model_type === "Checkpoint" || m.model_type === "Diffusion Model"
-        ) ?? modelOptions[0] ?? null;
+        modelOptions.find((m) => isBaseModel(m.model_type)) ?? modelOptions[0] ?? null;
     }
 
     if (!targetModel) {
@@ -432,7 +426,7 @@ export default function StudioPage() {
           ) || modelOptions.find((m) => m.model_id === urlModelId);
 
         if (target) {
-          if (target.model_type === "LoRA" || target.model_type === "LyCORIS") {
+          if (isAdapterModel(target.model_type)) {
             setLoras((prev) => {
               const alreadyExists = prev.some(
                 (l) => l.modelId === target.model_id && (!target.file_id || l.fileId === target.file_id)

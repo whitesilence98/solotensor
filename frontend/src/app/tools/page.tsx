@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Clock3, Film, ImageIcon, Plus, RefreshCw, Search, Sparkles, Trash2, Wrench, X, Zap } from "lucide-react";
 import { api, resolveMediaUrl, type ToolMode, type ToolSummary } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
@@ -166,6 +166,7 @@ export default function ToolStudioPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -174,6 +175,21 @@ export default function ToolStudioPage() {
         setIsCreateOpen(true);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement !== searchInputRef.current) {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const confirmDelete = async () => {
@@ -208,79 +224,101 @@ export default function ToolStudioPage() {
   return (
     <main id="main-content" className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]">
       <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-        {/* Integrated In-Grid Toolbar: Mode Filters + Search + Create Tool CTA */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
-          {/* Workflow Mode Filter Chips */}
-          <div className="flex items-center overflow-x-auto pb-0.5 sm:pb-0 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 shrink-0 no-scrollbar">
-            {MODE_FILTERS.map((filter) => (
-              <button
-                key={filter.value}
-                type="button"
-                aria-pressed={mode === filter.value}
-                onClick={() => setMode(filter.value)}
-                className={`rounded-md px-2.5 py-1 font-mono text-[10px] whitespace-nowrap transition-colors ${
-                  mode === filter.value
-                    ? "border border-[var(--accent)] bg-[var(--accent)]/10 font-bold text-[var(--accent)]"
-                    : "text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]"
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="ml-1 px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] hover:underline"
-              >
-                Reset
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-sm group">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search workflows by name or mode…"
-                aria-label="Search tools"
-                className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-8 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
-              />
-              {query && (
+        {/* Unified Tactile Command Bar Surface: Mode Filters + Search + Create Tool CTA */}
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+            {/* Workflow Mode Filter Segmented Control */}
+            <div className="flex items-center overflow-x-auto pb-0.5 sm:pb-0 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-1 shrink-0 no-scrollbar h-9">
+              {MODE_FILTERS.map((filter) => {
+                const active = mode === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setMode(filter.value)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+                      active
+                        ? "bg-[var(--accent)]/15 border border-[var(--accent)]/30 font-semibold text-[var(--accent)] shadow-xs"
+                        : "text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+              {hasActiveFilters && (
                 <button
                   type="button"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear search"
-                  className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
+                  onClick={clearFilters}
+                  className="ml-1 px-2 py-1 text-xs font-medium text-[var(--accent)] hover:underline"
                 >
-                  <X className="h-3 w-3" />
+                  Reset
                 </button>
               )}
             </div>
 
-            {/* Create New Tool CTA */}
-            <button
-              type="button"
-              onClick={() => setIsCreateOpen(true)}
-              className="inline-flex h-8.5 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_14px_rgba(213,240,111,0.22)]"
-            >
-              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
-              <span>Create New Tool ⚡</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 lg:justify-end">
+              {/* Ergonomic Search Input */}
+              <div className="relative flex-1 min-w-[240px] max-w-md group">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
+                <input
+                  ref={searchInputRef}
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search workflows by name or mode…"
+                  aria-label="Search tools"
+                  className="h-9 w-full rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] pl-9 pr-12 text-xs text-[var(--ink)] placeholder:text-[var(--ink-soft)]/60 outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 focus:bg-[var(--surface)]"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-[var(--line-strong)]/60 bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none">
+                    /
+                  </kbd>
+                )}
+              </div>
+
+              {/* Create New Tool CTA */}
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(true)}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-sm hover:shadow-md"
+              >
+                <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                <span>Create New Tool</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Count Bar */}
-        <div className="mb-4 mt-3 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
+        <div className="mb-4 mt-2 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
           <p aria-live="polite">
-            {loading ? "Loading tools…" : `Showing ${filteredTools.length} of ${tools.length} workflow${tools.length === 1 ? "" : "s"}`}
+            {loading ? (
+              "Loading tools…"
+            ) : (
+              <>
+                Showing <span className="font-mono text-[var(--ink)]">{filteredTools.length}</span> of{" "}
+                <span className="font-mono text-[var(--ink)]">{tools.length}</span> workflow
+                {tools.length === 1 ? "" : "s"}
+              </>
+            )}
           </p>
           {hasActiveFilters && (
-            <button type="button" onClick={clearFilters} className="workspace-action-quiet min-h-6 px-1.5 font-mono text-[10px] text-[var(--accent)] hover:underline">
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-[11px] font-medium text-[var(--danger)] hover:underline"
+            >
               Clear filters
             </button>
           )}
@@ -325,7 +363,7 @@ export default function ToolStudioPage() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="mt-4 rounded-md bg-[var(--accent)] px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-sm"
               >
                 Clear all filters
               </button>
@@ -333,9 +371,10 @@ export default function ToolStudioPage() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="mt-4 inline-block rounded-md bg-[var(--accent)] px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-sm"
               >
-                Create your first tool
+                <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                <span>Create your first tool</span>
               </button>
             )}
           </div>

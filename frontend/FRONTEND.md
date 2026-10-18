@@ -36,7 +36,21 @@ This document outlines the architecture, design system, and coding standards for
 
 ---
 
-## 4. Verification Commands
+## 4. Model Taxonomy & Compatibility Stack
+- **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/docs/ARCHITECTURE.md) and [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/DESIGN.md#L82).
+- **16 Standardized Types**: Strictly use the `CreatorModelType` union defined in `src/lib/api.ts` (e.g. `Checkpoint`, `LoRA`, `VAE`, `ControlNet`, etc.).
+- **Dual SafeTensors Extensions**: Always accept both `.safetensors` and `.sft` across all file inputs, drag-and-drop dropzones, and ComfyUI enclave model scanners.
+- **Persistent Compatibility Container**: In `CreateModelDrawer.tsx`, keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:
+  - *Core Base (`Checkpoint`, `SVD`)*: Dual-source VAE Selector + Text Encoders + CLIP protocol.
+  - *Adapters (`LoRA`, `DoRA`, etc.)*: Base Checkpoint gallery link + auto-inherited stack card + optional override.
+  - *VAE*: Latent channel profile (16ch / 4ch) with zero redundant VAE selectors.
+  - *Guidance (`ControlNet`, `Poses`)*: Preprocessor modality selector.
+  - *Embeddings / Inversions*: Target vector space info + invocation syntax.
+  - *Wildcards*: Universal engine badge + dynamic syntax expansion preview.
+
+---
+
+## 5. Verification Commands
 Run from `solotensor/frontend`:
 ```powershell
 cmd /c npx tsc --noEmit

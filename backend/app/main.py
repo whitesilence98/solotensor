@@ -13,7 +13,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -259,12 +259,17 @@ async def assist(req: AssistantRequest) -> AssistantResponse:
 
 
 MODEL_CATEGORIES = {
-    "diffusion_models",
-    "text_encoders",
-    "vae",
-    "loras",
     "checkpoints",
+    "diffusion_models",
+    "loras",
+    "vae",
+    "text_encoders",
     "embeddings",
+    "hypernetworks",
+    "controlnet",
+    "poses",
+    "wildcards",
+    "style_models",
 }
 
 
@@ -532,6 +537,121 @@ async def clip_options() -> dict[str, list[str]]:
         return {"encoders": await comfy.list_models("text_encoders"), "types": await comfy.clip_types()}
     except ComfyClientError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/workflow/template-info")
+async def workflow_template_info() -> dict[str, Any]:
+    try:
+        comfy = get_comfy_client()
+        template = comfy.load_workflow_template()
+        if not template or not isinstance(template, dict):
+            return {"has_template": False}
+
+        vae_name = None
+        clip_name = None
+        clip_type = None
+        unet_name = None
+        sampler_name = None
+        steps = None
+        cfg = None
+        base_architecture = None
+        prompt = None
+        negative_prompt = None
+
+        def resolve_text(val: Any, depth: int = 0) -> str | None:
+            if depth > 6:
+                return None
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+            if isinstance(val, list) and len(val) >= 1:
+                ref_id = str(val[0])
+                ref_node = template.get(ref_id)
+                if isinstance(ref_node, dict):
+                    ref_inputs = ref_node.get("inputs", {})
+                    if isinstance(ref_inputs, dict):
+                        return (
+                            resolve_text(ref_inputs.get("prompt"), depth + 1)
+                            or resolve_text(ref_inputs.get("text"), depth + 1)
+                            or resolve_text(ref_inputs.get("string"), depth + 1)
+                        )
+            return None
+
+        for _, node in template.items():
+            if not isinstance(node, dict):
+                continue
+            c_type = node.get("class_type", "")
+            inputs = node.get("inputs", {})
+            if not isinstance(inputs, dict):
+                continue
+
+            if c_type == "VAELoader" and not vae_name:
+                vae_name = inputs.get("vae_name")
+            elif c_type == "CLIPLoader" and not clip_name:
+                clip_name = inputs.get("clip_name")
+                clip_type = inputs.get("type")
+            elif c_type == "DualCLIPLoader" and not clip_name:
+                clip_name = inputs.get("clip_name1") or inputs.get("clip_name2")
+                clip_type = inputs.get("type")
+            elif c_type in ("UNETLoader", "CheckpointLoaderSimple") and not unet_name:
+                unet_name = inputs.get("unet_name") or inputs.get("ckpt_name")
+            elif "sampler" in c_type.lower() or c_type in ("KSampler", "KSamplerAdvanced"):
+                if "sampler_name" in inputs and not sampler_name:
+                    sampler_name = inputs.get("sampler_name")
+                if "steps" in inputs and steps is None and isinstance(inputs.get("steps"), (int, float)):
+                    steps = int(inputs.get("steps"))
+                if "cfg" in inputs and cfg is None and isinstance(inputs.get("cfg"), (int, float)):
+                    cfg = float(inputs.get("cfg"))
+                if not prompt and "positive" in inputs:
+                    prompt = resolve_text(inputs.get("positive"))
+                if not negative_prompt and "negative" in inputs:
+                    negative_prompt = resolve_text(inputs.get("negative"))
+
+        if not prompt:
+            for _, node in template.items():
+                if not isinstance(node, dict):
+                    continue
+                c_type = node.get("class_type", "")
+                inputs = node.get("inputs", {})
+                if not isinstance(inputs, dict):
+                    continue
+                if c_type in ("CR Prompt Text", "CLIPTextEncode") or "prompt" in c_type.lower():
+                    meta_title = str(node.get("_meta", {}).get("title", "")).lower()
+                    if "neg" in meta_title:
+                        if not negative_prompt:
+                            negative_prompt = resolve_text(inputs.get("text") or inputs.get("prompt"))
+                    else:
+                        if not prompt:
+                            prompt = resolve_text(inputs.get("prompt") or inputs.get("text"))
+
+        lower_ref = f"{unet_name or ''} {clip_name or ''} {vae_name or ''}".lower()
+        if "flux" in lower_ref:
+            base_architecture = "FLUX.1"
+        elif "krea" in lower_ref:
+            base_architecture = "Krea 2"
+        elif "wan" in lower_ref:
+            base_architecture = "Wan 2.1 / Wan 2.8"
+        elif "z-image" in lower_ref or "z_image" in lower_ref:
+            base_architecture = "Z-Image / Z-Image-Turbo"
+        elif "sdxl" in lower_ref or "pony" in lower_ref:
+            base_architecture = "Stable Diffusion XL (SDXL)"
+        elif "sd3" in lower_ref:
+            base_architecture = "Stable Diffusion 3.5"
+
+        return {
+            "has_template": True,
+            "vae_name": vae_name,
+            "clip_name": clip_name,
+            "clip_type": clip_type,
+            "unet_name": unet_name,
+            "sampler_name": sampler_name,
+            "steps": steps,
+            "cfg": cfg,
+            "base_architecture": base_architecture,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+        }
+    except Exception as exc:
+        return {"has_template": False, "error": str(exc)}
 
 
 # ---------------------------------------------------------------------- #

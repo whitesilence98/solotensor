@@ -29,7 +29,7 @@ from ..schemas import (
 )
 
 MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
-MODEL_EXTENSIONS = {".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf"}
+MODEL_EXTENSIONS = {".safetensors", ".sft", ".ckpt", ".pt", ".pth", ".bin", ".gguf"}
 SAMPLE_EXTENSIONS = {
     ".png": "image",
     ".jpg": "image",
@@ -47,7 +47,15 @@ LOCAL_MODEL_CATEGORIES = (
     "vae",
     "text_encoders",
     "embeddings",
+    "hypernetworks",
+    "controlnet",
+    "poses",
+    "wildcards",
+    "style_models",
 )
+ADAPTER_MODEL_TYPES = {"LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"}
+BASE_MODEL_TYPES = {"Checkpoint", "SVD", "Diffusion Model"}
+SUPPORTED_GENERATION_TYPES = BASE_MODEL_TYPES | ADAPTER_MODEL_TYPES
 
 
 class ModelError(RuntimeError):
@@ -140,8 +148,8 @@ class ModelService:
             raise ModelError("Stored model is unreadable") from exc
         if not isinstance(record, dict) or record.get("model_id") != model_id:
             raise ModelError("Stored model is invalid")
-        if record.get("model_type") == "UNET":
-            record["model_type"] = "Diffusion Model"
+        if record.get("model_type") in ("UNET", "Diffusion Model"):
+            record["model_type"] = "Checkpoint"
         compatibility = record.get("compatibility")
         if isinstance(compatibility, dict):
             legacy = compatibility.pop("text_encoders", None)
@@ -254,20 +262,20 @@ class ModelService:
         *,
         require_public: bool = False,
     ) -> None:
-        if model_type not in {"LoRA", "LyCORIS"}:
+        if model_type not in ADAPTER_MODEL_TYPES:
             return
         base_ids = tuple(compatibility.get(key) for key in ("base_model_id", "base_version_id", "base_file_id"))
         if any(value is None for value in base_ids):
-            raise ModelConflict("LoRA and LyCORIS models require a concrete base model")
+            raise ModelConflict("Adapter models require a concrete base model")
         base_record = self._read(base_ids[0])
         if require_public and (base_record.get("visibility") != "Public" or not base_record.get("published_at")):
-            raise ModelConflict("The LoRA base model must be public before publishing this adapter")
-        if base_record.get("model_type") not in {"Checkpoint", "Diffusion Model"}:
-            raise ModelConflict("LoRA base must be a Checkpoint or Diffusion Model")
+            raise ModelConflict("The adapter base model must be public before publishing this adapter")
+        if base_record.get("model_type") not in BASE_MODEL_TYPES:
+            raise ModelConflict("Adapter base must be a Checkpoint or SVD model")
         base_version = self._version(base_record, base_ids[1])
         base_file = next((item for item in base_version.get("files", []) if item.get("file_id") == base_ids[2]), None)
         if base_file is None or not base_file.get("visible", False):
-            raise ModelConflict("The configured LoRA base file is unavailable")
+            raise ModelConflict("The configured adapter base file is unavailable")
         if require_public:
             self.resolve_installed_gallery_file(*base_ids)
 
@@ -379,9 +387,9 @@ class ModelService:
         if record.get("visibility") != "Public" or not record.get("published_at"):
             raise ModelNotFound("Model not found")
         model_type = record.get("model_type")
-        if model_type not in {"Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"}:
+        if model_type not in SUPPORTED_GENERATION_TYPES:
             raise ModelConflict(
-                "Only Checkpoint, Diffusion Model, LoRA, and LyCORIS gallery models can generate"
+                "Only Checkpoint, SVD, LoRA, and adapter gallery models can generate"
             )
         version = self._version(record, version_id)
         item = next(
@@ -453,7 +461,7 @@ class ModelService:
     def selectable_gallery_files(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for model in self.public_list():
-            if model.model_type.value not in {"Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"}:
+            if model.model_type.value not in SUPPORTED_GENERATION_TYPES:
                 continue
             for version in model.versions:
                 for item in version.files:
@@ -471,11 +479,11 @@ class ModelService:
         base_keys = {
             (item["model_id"], item["version_id"], item["file_id"])
             for item in items
-            if item["model_type"] in {"Checkpoint", "Diffusion Model"}
+            if item["model_type"] in BASE_MODEL_TYPES
         }
         items = [
             item for item in items
-            if item["model_type"] in {"Checkpoint", "Diffusion Model"}
+            if item["model_type"] in BASE_MODEL_TYPES
             or (
                 item.get("base_model_id"),
                 item.get("base_version_id"),
@@ -485,7 +493,7 @@ class ModelService:
         return sorted(
             items,
             key=lambda item: (
-                item["model_type"] not in {"Checkpoint", "Diffusion Model"},
+                item["model_type"] not in BASE_MODEL_TYPES,
                 item["title"].lower(),
                 item["version_name"].lower(),
                 item["filename"].lower(),
@@ -496,11 +504,24 @@ class ModelService:
     def install_category(model_type: str) -> str:
         categories = {
             "Checkpoint": "checkpoints",
-            "Diffusion Model": "diffusion_models",
-            "LoRA": "loras",
-            "LyCORIS": "loras",
-            "VAE": "vae",
+            "Hyper Network": "hypernetworks",
             "Embedding": "embeddings",
+            "Aesthetic Gradient": "embeddings",
+            "LoRA": "loras",
+            "LoKr": "loras",
+            "LoCon": "loras",
+            "ControlNet": "controlnet",
+            "Poses": "poses",
+            "Wildcards": "wildcards",
+            "LyCORIS": "loras",
+            "SVD": "checkpoints",
+            "Motion LoRA": "loras",
+            "VAE": "vae",
+            "DoRA": "loras",
+            "StyleModel": "style_models",
+            # Legacy fallback
+            "Diffusion Model": "diffusion_models",
+            "UNET": "diffusion_models",
         }
         try:
             return categories[model_type]
