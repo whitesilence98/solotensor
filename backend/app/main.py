@@ -285,7 +285,7 @@ def _model_http_error(exc: Exception) -> HTTPException:
 @app.get("/api/v1/models/local", response_model=LocalModelListResponse)
 async def list_local_models(q: str | None = None, category: str | None = None, limit: int = 50) -> LocalModelListResponse:
     try:
-        return LocalModelListResponse(items=model_storage.local_models(q, category, limit))
+        return LocalModelListResponse(items=model_storage.list_local_models(q, category, limit))
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -709,10 +709,16 @@ async def generate(
     clip_name = base_model.get("text_encoder")
     clip_type = base_model.get("clip_type")
     vae_name = base_model.get("vae")
-    if base_model["model_type"] == "Diffusion Model" and (not clip_name or not clip_type or not vae_name):
+    base_category = base_model.get("category")
+    is_modular = (
+        base_category == "diffusion_models"
+        or base_model.get("model_type") == "Diffusion Model"
+    )
+
+    if is_modular and (not clip_name or not vae_name):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="Configure a text encoder, CLIP type, and VAE for the selected base model before generating",
+            detail="Modular UNET/DiT checkpoints require external VAE and text encoder",
         )
 
     comfy = get_comfy_client()
@@ -770,19 +776,19 @@ async def generate(
                     "file_id": adapter_file_id,
                 })
 
-        resolved_base = await comfy.resolve_model_name(base_model["category"], base_model["filename"])
         resolved_clip = ""
         resolved_clip_type = ""
         resolved_vae = ""
-        if base_model["model_type"] == "Diffusion Model":
-            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name)
-            resolved_clip_type = await comfy.resolve_clip_type(clip_type)
-            resolved_vae = await comfy.resolve_model_name("vae", vae_name)
-        elif clip_name and clip_type:
-            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name)
-            resolved_clip_type = await comfy.resolve_clip_type(clip_type)
-            if vae_name:
-                resolved_vae = await comfy.resolve_model_name("vae", vae_name)
+        if is_modular:
+            resolved_base = await comfy.resolve_model_name("diffusion_models", base_model["filename"])
+            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name) if clip_name else ""
+            resolved_clip_type = await comfy.resolve_clip_type(clip_type) if clip_type else ""
+            resolved_vae = await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
+        else:
+            resolved_base = await comfy.resolve_model_name("checkpoints", base_model["filename"])
+            resolved_clip = await comfy.resolve_model_name("text_encoders", clip_name) if clip_name else ""
+            resolved_clip_type = await comfy.resolve_clip_type(clip_type) if clip_type else ""
+            resolved_vae = await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
 
         if is_lora:
             graph = comfy.build_lora_workflow(
@@ -802,6 +808,8 @@ async def generate(
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
+                category=base_category or ("diffusion_models" if is_modular else "checkpoints"),
+                is_modular=is_modular,
             )
         else:
             graph = comfy.build_gallery_workflow(
@@ -820,6 +828,8 @@ async def generate(
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
+                category=selected_model.get("category") or ("diffusion_models" if is_modular else "checkpoints"),
+                is_modular=is_modular,
             )
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)

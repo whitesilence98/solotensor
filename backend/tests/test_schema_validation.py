@@ -126,6 +126,84 @@ class PromptValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ModelCompatibility(clip_type="krea2")
 
+    def test_tier_specific_compatibilities(self) -> None:
+        # VAE: standalone, no VAE or text encoder needed
+        vae_compat = ModelCompatibility(base_model="FLUX.1", vae=None, text_encoder=None, clip_type=None)
+        self.assertEqual(vae_compat.base_model, "FLUX.1")
+        self.assertIsNone(vae_compat.vae)
+
+        # Checkpoint: supports ae.sft and modular text encoder
+        ckpt_compat = ModelCompatibility(
+            base_model="FLUX.1",
+            vae="ae.sft",
+            text_encoder="t5xxl_fp8.sft",
+            clip_type="flux2",
+        )
+        self.assertEqual(ckpt_compat.vae, "ae.sft")
+        self.assertEqual(ckpt_compat.text_encoder, "t5xxl_fp8.sft")
+
+        # LoRA: binds to installed base model, no VAE/encoder required
+        lora_compat = ModelCompatibility(
+            base_model="Stable Diffusion XL (SDXL)",
+            base_model_id="a" * 32,
+            base_version_id="b" * 32,
+            base_file_id="c" * 32,
+            vae=None,
+            text_encoder=None,
+            clip_type=None,
+        )
+        self.assertEqual(lora_compat.base_model_id, "a" * 32)
+        self.assertIsNone(lora_compat.vae)
+
+        # Wildcards: universal base, no encoders
+        wildcard_compat = ModelCompatibility(base_model="Universal", vae=None, text_encoder=None, clip_type=None)
+        self.assertEqual(wildcard_compat.base_model, "Universal")
+
+
+class InstalledGalleryModelSchemaTests(unittest.TestCase):
+    def test_installed_gallery_model_category_acceptance(self) -> None:
+        from app.schemas import InstalledGalleryModel, ModelFileResponse, ModelPrecision
+
+        for cat in ("checkpoints", "diffusion_models", "loras", "custom_folder"):
+            model = InstalledGalleryModel(
+                model_id="a" * 32,
+                version_id="b" * 32,
+                file_id="c" * 32,
+                title="Title",
+                model_type="Checkpoint",
+                version_name="v1.0",
+                filename="model.safetensors",
+                category=cat,
+                sha256="d" * 64,
+            )
+            self.assertEqual(model.category, cat)
+
+    def test_model_file_response_category(self) -> None:
+        from app.schemas import ModelFileResponse, ModelPrecision
+
+        file_with_cat = ModelFileResponse(
+            file_id="c" * 32,
+            filename="model.safetensors",
+            size=1000,
+            sha256="d" * 64,
+            precision=ModelPrecision.FP16,
+            visible=True,
+            download_url="http://test",
+            category="diffusion_models",
+        )
+        self.assertEqual(file_with_cat.category, "diffusion_models")
+
+        file_without_cat = ModelFileResponse(
+            file_id="c" * 32,
+            filename="model.safetensors",
+            size=1000,
+            sha256="d" * 64,
+            precision=ModelPrecision.FP16,
+            visible=True,
+            download_url="http://test",
+        )
+        self.assertIsNone(file_without_cat.category)
+
 
 class CodeAssistantSchemaTests(unittest.TestCase):
     def test_accepts_backend_and_frontend_personas(self) -> None:

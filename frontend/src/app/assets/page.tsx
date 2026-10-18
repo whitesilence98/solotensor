@@ -13,6 +13,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import AssetCardList from "@/components/AssetCardList";
 import EmptyState from "@/components/EmptyState";
@@ -343,122 +344,125 @@ export default function AssetsPage() {
     <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
       {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
       <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
-        {/* Top Control Bar: Type Switcher + Search + Source Selector + New Render */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
-          {/* Segmented Type Switcher (Images / Videos / 3D) */}
-          <div
-            role="tablist"
-            aria-label="Asset type"
-            className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 gap-0.5 shrink-0"
-          >
-            {TABS.map(({ id, label, icon: Icon }) => {
-              const active = tab === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => {
-                    setTab(id);
-                    setVisible(PAGE_SIZE);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                    active
-                      ? "bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm border border-[var(--line-strong)]"
-                      : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  <Icon className={`h-3 w-3 ${active ? "text-[var(--accent)]" : ""}`} />
-                  <span>{label}</span>
-                  <span
-                    className={`font-mono text-[9px] tabular-nums rounded px-1 py-0.2 ${
-                      active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-bold" : "text-[var(--ink-faint)]"
+        {/* Command Bar Toolbar: Type Switcher + Search + Source Selector + New Render */}
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+            {/* Segmented Type Switcher (Images / Videos / 3D) */}
+            <div
+              role="tablist"
+              aria-label="Asset type"
+              className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1 shrink-0 h-9"
+            >
+              {TABS.map(({ id, label, icon: Icon }) => {
+                const active = tab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => {
+                      setTab(id);
+                      setVisible(PAGE_SIZE);
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition ${
+                      active
+                        ? "bg-[var(--surface-raised)] text-[var(--ink)] shadow-xs border border-[var(--line-strong)]/40 font-medium"
+                        : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
                     }`}
                   >
-                    {formatCount(counts[id])}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 lg:justify-end">
-            {/* Search Field */}
-            <div className="relative flex-1 max-w-md group">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
-              <input
-                ref={searchRef}
-                type="search"
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitSearch();
-                }}
-                onBlur={commitSearch}
-                placeholder="Search local filenames…"
-                aria-label="Search local filenames"
-                className="h-8.5 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] pl-9 pr-14 text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/15 focus:bg-[var(--surface-raised)]"
-              />
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none sm:block">
-                /
-              </kbd>
-              {searchDraft && (
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  aria-label="Clear asset search"
-                  className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors sm:right-7 text-xs"
-                >
-                  <span aria-hidden>×</span>
-                </button>
-              )}
+                    <Icon className={`h-3.5 w-3.5 ${active ? "text-[var(--accent)]" : ""}`} />
+                    <span>{label}</span>
+                    <span
+                      className={`font-mono text-[10px] tabular-nums rounded px-1.5 py-0.5 ${
+                        active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-semibold" : "text-[var(--ink-faint)]"
+                      }`}
+                    >
+                      {formatCount(counts[id])}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Source Filter Group */}
-            <div
-              className="flex items-center shrink-0 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 gap-0.5"
-              aria-label="Asset source"
-            >
-              {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
-                <button
-                  key={source}
-                  type="button"
-                  aria-pressed={origin === source}
-                  onClick={() => {
-                    setOrigin(source);
-                    setVisible(PAGE_SIZE);
-                    setLoading(true);
-                    setError(null);
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 lg:justify-end">
+              {/* Ergonomic Search Field */}
+              <div className="relative flex-1 min-w-[240px] max-w-md group">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ink-faint)] group-focus-within:text-[var(--accent)] transition-colors duration-150" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitSearch();
                   }}
-                  className={`whitespace-nowrap rounded-md px-2 py-0.5 font-mono text-[9px] uppercase font-semibold transition ${
-                    origin === source
-                      ? "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--ink)] shadow-sm"
-                      : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  {source === "all" ? "All Sources" : source === "workspace" ? "Studio" : "Tools"}
-                </button>
-              ))}
-            </div>
+                  onBlur={commitSearch}
+                  placeholder="Search local filenames…"
+                  aria-label="Search local filenames"
+                  className="h-9 w-full rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] pl-9 pr-12 text-xs text-[var(--ink)] placeholder:text-[var(--ink-soft)]/60 outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 focus:bg-[var(--surface)]"
+                />
+                {searchDraft ? (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    aria-label="Clear asset search"
+                    className="absolute right-2.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors text-xs"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--line-strong)]/60 bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-faint)] group-focus-within:opacity-0 transition-opacity select-none sm:block">
+                    /
+                  </kbd>
+                )}
+              </div>
 
-            {/* New Render CTA */}
-            <Link
-              href="/"
-              className="inline-flex h-7.5 shrink-0 items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] px-3 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)]"
-            >
-              <Sparkles className="h-3 w-3" />
-              <span>New Render ⚡</span>
-            </Link>
+              {/* Source Filter Group */}
+              <div
+                className="flex items-center shrink-0 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-1 gap-1 h-9"
+                aria-label="Asset source"
+              >
+                {(["all", "workspace", "ai_tool_studio"] as const).map((source) => (
+                  <button
+                    key={source}
+                    type="button"
+                    aria-pressed={origin === source}
+                    onClick={() => {
+                      setOrigin(source);
+                      setVisible(PAGE_SIZE);
+                      setLoading(true);
+                      setError(null);
+                    }}
+                    className={`whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition ${
+                      origin === source
+                        ? "border border-[var(--line-strong)]/40 bg-[var(--surface-raised)] text-[var(--ink)] shadow-xs font-medium"
+                        : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    {source === "all" ? "All Sources" : source === "workspace" ? "Studio" : "Tools"}
+                  </button>
+                ))}
+              </div>
+
+              {/* New Render CTA */}
+              <Link
+                href="/"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-sm hover:shadow-md"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>New Render</span>
+              </Link>
+            </div>
           </div>
         </div>
 
         {/* Popular Tags Rail (if available) */}
         {popularTags.length > 0 && (
-          <div className="relative group/tags w-full pt-2.5">
+          <div className="relative group/tags w-full pt-1 pb-1">
             {/* Left Chevron Button & Edge Scrim */}
             {canScrollTagsLeft && (
-              <div className="absolute left-0 top-2.5 bottom-0 z-20 flex items-center pr-4 bg-gradient-to-r from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
+              <div className="absolute left-0 top-0 bottom-0 z-20 flex items-center pr-4 bg-gradient-to-r from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
                 <button
                   type="button"
                   onClick={() => scrollTags("left")}
@@ -472,7 +476,7 @@ export default function AssetsPage() {
 
             {/* Right Chevron Button & Edge Scrim */}
             {canScrollTagsRight && (
-              <div className="absolute right-0 top-2.5 bottom-0 z-20 flex items-center pl-4 bg-gradient-to-l from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
+              <div className="absolute right-0 top-0 bottom-0 z-20 flex items-center pl-4 bg-gradient-to-l from-[var(--ground)] via-[var(--ground)]/90 to-transparent">
                 <button
                   type="button"
                   onClick={() => scrollTags("right")}
@@ -494,9 +498,9 @@ export default function AssetsPage() {
               <button
                 type="button"
                 onClick={clearTags}
-                className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 font-mono text-[10px] font-semibold transition-all duration-150 select-none ${
+                className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 text-[11px] font-medium transition-all duration-150 select-none ${
                   selectedTags.length === 0
-                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-[0_0_10px_rgba(213,240,111,0.22)]"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-xs"
                     : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
                 }`}
               >
@@ -509,13 +513,13 @@ export default function AssetsPage() {
                     key={name}
                     type="button"
                     onClick={() => toggleTag(name)}
-                    className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 font-mono text-[10px] transition-all duration-150 select-none ${
+                    className={`h-6 shrink-0 rounded-md border px-2.5 py-0.5 text-[11px] font-medium transition-all duration-150 select-none ${
                       active
-                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-[0_0_10px_rgba(213,240,111,0.22)] scale-[1.02]"
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-xs scale-[1.01]"
                         : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
                     }`}
                   >
-                    <span className={active ? "text-[var(--accent-ink)] font-bold" : "text-[var(--accent)] mr-0.5"}>
+                    <span className={active ? "text-[var(--accent-ink)] font-bold mr-0.5" : "text-[var(--accent)] mr-0.5"}>
                       #
                     </span>
                     <span>{name}</span>
@@ -526,7 +530,7 @@ export default function AssetsPage() {
                 <button
                   type="button"
                   onClick={clearTags}
-                  className="h-6 shrink-0 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-2 py-0.5 font-mono text-[10px] text-[var(--danger)] hover:bg-[var(--danger)]/20 hover:border-[var(--danger)]/50 transition-colors whitespace-nowrap"
+                  className="h-6 shrink-0 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--danger)] hover:bg-[var(--danger)]/20 hover:border-[var(--danger)]/50 transition-colors whitespace-nowrap"
                 >
                   Clear tags ({selectedTags.length})
                 </button>

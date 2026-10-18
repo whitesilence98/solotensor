@@ -22,6 +22,7 @@ SUPPORTED_BASE_MODELS = (
     "CogVideoX",
     "Anima",
     "Realistic Vision",
+    "Universal",
 )
 
 
@@ -587,6 +588,7 @@ class ModelFileResponse(BaseModel):
     precision: ModelPrecision
     visible: bool
     download_url: str
+    category: Optional[str] = None
 
 
 class ModelSampleResponse(BaseModel):
@@ -711,7 +713,7 @@ class InstalledGalleryModel(BaseModel):
     model_type: Literal["Checkpoint", "Diffusion Model", "LoRA", "LyCORIS"]
     version_name: str
     filename: str
-    category: Literal["checkpoints", "diffusion_models", "loras"]
+    category: Literal["checkpoints", "diffusion_models", "loras"] | str
     sha256: str
     vae: str | None = None
     text_encoder: str | None = None

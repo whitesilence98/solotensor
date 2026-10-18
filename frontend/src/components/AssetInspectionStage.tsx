@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Box,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Copy,
   Download,
   ExternalLink,
@@ -108,7 +111,6 @@ export interface AssetInspectionStageProps {
   onSetReferenceImage?: (url: string) => void;
   onDeleteOutput?: (key: string) => void;
   backHref?: string;
-  backLabel?: string;
 }
 
 export default function AssetInspectionStage({
@@ -123,12 +125,20 @@ export default function AssetInspectionStage({
   onSetReferenceImage,
   onDeleteOutput,
   backHref = "/",
-  backLabel = "Back to Studio",
 }: AssetInspectionStageProps) {
   const router = useRouter();
   const [isZoomed, setIsZoomed] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Prompt Clamping & Expansion State (max 15 lines collapsed)
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [isPromptOverflowing, setIsPromptOverflowing] = useState(false);
+  const promptTextRef = useRef<HTMLDivElement>(null);
+
+  const [isNegExpanded, setIsNegExpanded] = useState(false);
+  const [isNegOverflowing, setIsNegOverflowing] = useState(false);
+  const negTextRef = useRef<HTMLDivElement>(null);
 
   // Tagging State
   const [tags, setTags] = useState<string[]>(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
@@ -266,6 +276,29 @@ export default function AssetInspectionStage({
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
   const rawMediaUrl = asset.url;
 
+  // Auto-measure prompt overflow against 15-line limit (approx 316px) & reset state on asset change
+  useEffect(() => {
+    setIsPromptExpanded(false);
+    setIsNegExpanded(false);
+
+    const checkOverflow = () => {
+      if (promptTextRef.current) {
+        setIsPromptOverflowing(promptTextRef.current.scrollHeight > 318);
+      }
+      if (negTextRef.current) {
+        setIsNegOverflowing(negTextRef.current.scrollHeight > 98);
+      }
+    };
+
+    checkOverflow();
+    const timer = setTimeout(checkOverflow, 60);
+    window.addEventListener("resize", checkOverflow);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", checkOverflow);
+    };
+  }, [asset.key, meta?.prompt, meta?.negative_prompt]);
+
   const effectiveItems = items.length > 0 ? items : [asset];
   const activeIndex =
     currentIndex !== undefined && currentIndex >= 0
@@ -345,15 +378,47 @@ export default function AssetInspectionStage({
     }
   };
 
+  const matchedBaseModel = modelOptions.find(
+    (m) =>
+      (meta?.model_id && m.model_id === meta.model_id) ||
+      (meta?.model_title && (m.title === meta.model_title || m.filename === meta.model_title)) ||
+      (meta?.model_filename && (m.filename === meta.model_filename || m.title === meta.model_filename))
+  );
+
+  const baseModelTitle = (() => {
+    if (meta?.model_title && meta.model_title.trim()) return meta.model_title.trim();
+    if (matchedBaseModel?.title) return matchedBaseModel.title;
+    const raw =
+      meta?.model_filename ||
+      meta?.unet_name ||
+      (meta as Record<string, unknown> | null | undefined)?.model ||
+      (meta as Record<string, unknown> | null | undefined)?.model_name;
+    if (typeof raw === "string" && raw.trim()) {
+      const base = raw.split(/[/\\]/).pop() || raw;
+      return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "").trim();
+    }
+    return null;
+  })();
+
+  const baseModelVersion = meta?.model_version || matchedBaseModel?.version_name || null;
+
   const modelUrl = resolveModelGalleryUrl(
     {
-      modelId: meta?.model_id,
-      title: meta?.model_title,
-      filename: meta?.model_filename,
-      fileId: meta?.file_id,
+      modelId: meta?.model_id || matchedBaseModel?.model_id,
+      title: meta?.model_title || baseModelTitle,
+      filename:
+        meta?.model_filename ||
+        meta?.unet_name ||
+        ((meta as Record<string, unknown> | null | undefined)?.model as string | undefined) ||
+        matchedBaseModel?.filename,
+      fileId: meta?.file_id || matchedBaseModel?.file_id,
     },
     modelOptions
   );
+
+  const activeLoras = Array.isArray(meta?.loras) ? meta.loras : [];
+  const hasBaseModel = Boolean(baseModelTitle);
+  const totalModelsCount = (hasBaseModel ? 1 : 0) + activeLoras.length;
 
   const containerClasses =
     mode === "modal"
@@ -401,24 +466,31 @@ export default function AssetInspectionStage({
           </span>
         </div>
 
-        {/* Top Floating Stage Controls */}
-        <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5">
+        {/* Top Floating Stage Darkroom Toolstrip */}
+        <div
+          className={`absolute top-3.5 z-20 flex items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1 backdrop-blur-md shadow-2xl transition-all ${
+            mode === "modal" && onClose ? "right-12 lg:right-3.5" : "right-3.5"
+          }`}
+        >
+          {/* Zoom Control */}
           {!isVideo && (
             <button
               type="button"
               onClick={() => setIsZoomed((z) => !z)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
               title={isZoomed ? "Fit to view (Esc)" : "100% 1:1 Pixel Scale"}
               aria-label={isZoomed ? "Fit to view" : "100% Pixel Scale"}
             >
               {isZoomed ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </button>
           )}
+
+          {/* Raw File Source */}
           <a
             href={rawMediaUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
             title="Open uncompressed raw file in new tab"
             aria-label="Open raw file"
           >
@@ -458,8 +530,11 @@ export default function AssetInspectionStage({
 
         {/* Active Stage Media */}
         <div
-          className={`relative z-10 flex h-full w-full items-center justify-center ${isZoomed ? "overflow-auto cursor-grab active:cursor-grabbing p-4" : "p-2"
-            }`}
+          className={`relative z-10 flex h-full w-full items-center justify-center ${
+            isZoomed
+              ? "overflow-auto cursor-grab active:cursor-grabbing p-4"
+              : "p-2 sm:p-4"
+          }`}
         >
           {isVideo ? (
             <video
@@ -476,19 +551,97 @@ export default function AssetInspectionStage({
               src={mediaUrl}
               alt={meta?.prompt ?? "Generated artwork"}
               onClick={() => setIsZoomed((z) => !z)}
-              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${isZoomed
-                ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
-                : "max-h-[78vh] max-w-full object-contain cursor-zoom-in"
-                }`}
+              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${
+                isZoomed
+                  ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
+                  : "max-h-[78vh] max-w-full object-contain cursor-zoom-in"
+              }`}
             />
+          )}
+        </div>
+
+        {/* Bottom-Right Media Viewport Action Controls */}
+        <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20 flex items-center gap-2 drop-shadow-md">
+          {/* Reference Image CTA */}
+          {onSetReferenceImage && (
+            <button
+              type="button"
+              onClick={() => {
+                onSetReferenceImage(mediaUrl);
+                onClose?.();
+              }}
+              className="p-1.5 rounded text-white/40 hover:text-white transition-all active:scale-95"
+              title="Use as reference"
+              aria-label="Use as reference"
+            >
+              <Layers className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Copy Prompt */}
+          <button
+            type="button"
+            onClick={() => copyText(meta?.prompt ?? "", "stage-prompt")}
+            className={`p-1.5 rounded transition-all active:scale-95 ${
+              copiedKey === "stage-prompt"
+                ? "text-[var(--accent)]"
+                : "text-white/40 hover:text-white"
+            }`}
+            title={copiedKey === "stage-prompt" ? "Prompt copied!" : "Copy prompt"}
+            aria-label={copiedKey === "stage-prompt" ? "Prompt copied" : "Copy prompt"}
+          >
+            {copiedKey === "stage-prompt" ? (
+              <Check className="h-4 w-4 text-[var(--accent)]" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </button>
+
+          {/* Download / Save */}
+          <a
+            href={mediaUrl}
+            download={meta?.source_filename || asset.key.split("/").pop() || "output.png"}
+            target="_blank"
+            rel="noreferrer"
+            className="p-1.5 rounded text-white/40 hover:text-white transition-all active:scale-95"
+            title="Download asset"
+            aria-label="Download asset"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+
+          {/* Delete Action with Safe Confirmation */}
+          {onDeleteOutput && (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmDelete) {
+                  onDeleteOutput(asset.key);
+                  onClose?.();
+                } else {
+                  setConfirmDelete(true);
+                  setTimeout(() => setConfirmDelete(false), 3500);
+                }
+              }}
+              className={`p-1.5 rounded transition-all active:scale-95 flex items-center ${
+                confirmDelete
+                  ? "gap-1 px-2 text-red-400 bg-red-500/20 hover:bg-red-500/30 font-mono text-[11px] font-medium animate-pulse"
+                  : "text-white/40 hover:text-red-400"
+              }`}
+              title={confirmDelete ? "Click again to permanently delete" : "Delete asset"}
+              aria-label={confirmDelete ? "Confirm delete asset" : "Delete asset"}
+            >
+              <Trash2 className="h-4 w-4" />
+              {confirmDelete && <span>Confirm?</span>}
+            </button>
           )}
         </div>
       </div>
 
       {/* Right Column: Parameter Inspector Panel */}
-      <div className="w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll">
+      <div className="w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll relative">
         {/* Header */}
-        <div className="relative p-5 border-b border-[var(--line)] pr-12">
+        <div className="sticky top-0 z-20 shrink-0 p-5 border-b border-[var(--line)] pr-12 bg-[var(--surface-raised)]/95 backdrop-blur-md">
           <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block mb-1">
             ASSET RECORD // INSPECTOR
           </span>
@@ -516,7 +669,7 @@ export default function AssetInspectionStage({
                   ? formatBytes(asset.size)
                   : "Standard"}
             </span>
-            {meta?.model_title && (
+            {(baseModelTitle || meta?.model_title) && (
               <>
                 <span>•</span>
                 {modelUrl ? (
@@ -525,13 +678,13 @@ export default function AssetInspectionStage({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[var(--ink)] hover:text-[var(--accent)] transition truncate max-w-[130px] inline-block align-bottom"
-                    title={`View ${meta.model_title} in gallery`}
+                    title={`View ${baseModelTitle || meta?.model_title} in gallery`}
                   >
-                    {meta.model_title}
+                    {baseModelTitle || meta?.model_title}
                   </a>
                 ) : (
                   <span className="text-[var(--ink)] truncate max-w-[130px] inline-block align-bottom">
-                    {meta.model_title}
+                    {baseModelTitle || meta?.model_title}
                   </span>
                 )}
               </>
@@ -621,60 +774,52 @@ export default function AssetInspectionStage({
             ) : mode === "standalone" ? (
               <Link
                 href={backHref}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-xs font-mono text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--line-strong)] transition-colors"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
+                aria-label="Back"
+                title="Back"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                <span>{backLabel}</span>
+                <ArrowLeft className="h-4 w-4" />
               </Link>
             ) : null}
           </div>
         </div>
 
         {/* Body Content */}
-        {meta?.prompt &&
-          <div className="p-5 space-y-4 flex-1">
-            {/* Prompt Section */}
+        <div className="p-5 space-y-4 flex-1 pb-6">
+          {/* Prompt Section */}
+          {meta?.prompt && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
                   PROMPT
                 </span>
-                <button
-                  type="button"
-                  onClick={() => copyText(meta.prompt ?? "", "positive-prompt")}
-                  className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
-                >
-                  {copiedKey === "positive-prompt" ? (
-                    <>
-                      <Check className="h-3 w-3 text-[var(--accent)]" />
-                      <span className="text-[var(--accent)]">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      <span>Copy</span>
-                    </>
+                <div className="flex items-center gap-2.5">
+                  {isPromptOverflowing && (
+                    <button
+                      type="button"
+                      onClick={() => setIsPromptExpanded((prev) => !prev)}
+                      className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                      title={isPromptExpanded ? "Collapse to 15 lines" : "Expand full prompt"}
+                    >
+                      {isPromptExpanded ? (
+                        <>
+                          <ChevronUp className="h-3 w-3" />
+                          <span>Collapse</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3 w-3" />
+                          <span>Expand</span>
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
-              </div>
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words">
-                {meta.prompt}
-              </div>
-            </div>
-
-            {/* Negative Prompt Section */}
-            {meta?.negative_prompt && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
-                    NEGATIVE PROMPT
-                  </span>
                   <button
                     type="button"
-                    onClick={() => copyText(meta.negative_prompt ?? "", "negative-prompt")}
+                    onClick={() => copyText(meta.prompt ?? "", "positive-prompt")}
                     className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
                   >
-                    {copiedKey === "negative-prompt" ? (
+                    {copiedKey === "positive-prompt" ? (
                       <>
                         <Check className="h-3 w-3 text-[var(--accent)]" />
                         <span className="text-[var(--accent)]">Copied</span>
@@ -687,7 +832,75 @@ export default function AssetInspectionStage({
                     )}
                   </button>
                 </div>
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words max-h-24 overflow-y-auto workspace-scroll">
+              </div>
+              <div
+                ref={promptTextRef}
+                className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words transition-[max-height] duration-200 ${
+                  isPromptExpanded
+                    ? "max-h-none"
+                    : "max-h-[316px] overflow-y-auto workspace-scroll"
+                }`}
+              >
+                {meta.prompt}
+              </div>
+            </div>
+          )}
+
+            {/* Negative Prompt Section */}
+            {meta?.negative_prompt && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
+                    NEGATIVE PROMPT
+                  </span>
+                  <div className="flex items-center gap-2.5">
+                    {isNegOverflowing && (
+                      <button
+                        type="button"
+                        onClick={() => setIsNegExpanded((prev) => !prev)}
+                        className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                        title={isNegExpanded ? "Collapse to compact view" : "Expand full negative prompt"}
+                      >
+                        {isNegExpanded ? (
+                          <>
+                            <ChevronUp className="h-3 w-3" />
+                            <span>Collapse</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-3 w-3" />
+                            <span>Expand</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => copyText(meta.negative_prompt ?? "", "negative-prompt")}
+                      className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                    >
+                      {copiedKey === "negative-prompt" ? (
+                        <>
+                          <Check className="h-3 w-3 text-[var(--accent)]" />
+                          <span className="text-[var(--accent)]">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  ref={negTextRef}
+                  className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words transition-[max-height] duration-200 ${
+                    isNegExpanded
+                      ? "max-h-none"
+                      : "max-h-24 overflow-y-auto workspace-scroll"
+                  }`}
+                >
                   {meta.negative_prompt}
                 </div>
               </div>
@@ -755,14 +968,50 @@ export default function AssetInspectionStage({
               </div>
             </div>
 
-            {/* LoRA Stack */}
-            {Array.isArray(meta?.loras) && meta.loras.length > 0 && (
+            {/* Models & LoRAs Stack */}
+            {totalModelsCount > 0 && (
               <div>
                 <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase block mb-2">
-                  ATTACHED LORAS ({meta.loras.length})
+                  MODELS ({totalModelsCount})
                 </span>
                 <div className="space-y-1.5">
-                  {meta.loras.map((item, idx) => {
+                  {/* Primary / Checkpoint Base Model */}
+                  {hasBaseModel && (
+                    <div className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Box className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                        {modelUrl ? (
+                          <a
+                            href={modelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="truncate font-medium text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
+                            title={`View ${baseModelTitle} in gallery`}
+                          >
+                            <span className="truncate">{baseModelTitle}</span>
+                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
+                          </a>
+                        ) : (
+                          <span className="truncate font-medium text-[var(--ink)]" title={baseModelTitle || undefined}>
+                            {baseModelTitle}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        {baseModelVersion && (
+                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-soft)] border border-[var(--line)]">
+                            {baseModelVersion}
+                          </span>
+                        )}
+                        <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--accent)]/20">
+                          Checkpoint
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Attached LoRAs */}
+                  {activeLoras.map((item, idx) => {
                     const loraUrl = resolveModelGalleryUrl(
                       {
                         modelId: (item as any).model_id || (item as any).modelId,
@@ -773,14 +1022,15 @@ export default function AssetInspectionStage({
                       modelOptions
                     );
 
+                    const matched = modelOptions.find(
+                      (m) =>
+                        m.filename === item.lora ||
+                        m.title === item.lora ||
+                        item.lora.includes(m.filename) ||
+                        m.filename.includes(item.lora)
+                    );
+
                     const displayTitle = (() => {
-                      const matched = modelOptions.find(
-                        (m) =>
-                          m.filename === item.lora ||
-                          m.title === item.lora ||
-                          item.lora.includes(m.filename) ||
-                          m.filename.includes(item.lora)
-                      );
                       if (matched?.title) return matched.title;
                       const base = item.lora.split(/[/\\]/).pop() || item.lora;
                       return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "");
@@ -789,27 +1039,35 @@ export default function AssetInspectionStage({
                     return (
                       <div
                         key={idx}
-                        className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono"
+                        className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors"
                       >
-                        <div className="flex items-center gap-2 truncate">
-                          <Layers className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Layers className="h-3.5 w-3.5 text-[var(--ink-soft)] group-hover:text-[var(--accent)] transition-colors shrink-0" />
                           {loraUrl ? (
                             <a
                               href={loraUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="truncate text-[var(--ink)] hover:text-[var(--accent)] transition"
+                              className="truncate text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
                               title={`View ${displayTitle} in gallery`}
                             >
-                              {displayTitle}
+                              <span className="truncate">{displayTitle}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
                             </a>
                           ) : (
-                            <span className="truncate text-[var(--ink)]">{displayTitle}</span>
+                            <span className="truncate text-[var(--ink)]" title={displayTitle}>
+                              {displayTitle}
+                            </span>
                           )}
                         </div>
-                        <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--line)] shrink-0 ml-2">
-                          {item.strength}x
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-faint)] border border-[var(--line)]">
+                            LoRA
+                          </span>
+                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--line)]">
+                            {item.strength}x
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
@@ -910,95 +1168,18 @@ export default function AssetInspectionStage({
               </div>
             </div>
           </div>
-        }
+
         {/* Action CTAs Footer */}
-        <div className="p-5 border-t border-[var(--line)] bg-[var(--surface)] space-y-2.5 mt-auto">
+        <div className="sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
           {/* Dominant Primary Remix CTA */}
           <button
             type="button"
             onClick={handleRemixClick}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(213,240,111,0.25)]"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(213,240,111,0.25)]"
           >
             <Zap className="h-4 w-4 fill-current stroke-current" />
             <span>REMIX</span>
           </button>
-
-          {/* Secondary Action Row */}
-          <div className="flex items-center gap-2">
-            {/* Use as Reference button */}
-            {onSetReferenceImage && (
-              <button
-                type="button"
-                onClick={() => {
-                  onSetReferenceImage(mediaUrl);
-                  onClose?.();
-                }}
-                className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] transition-colors"
-                title="Set as reference image"
-              >
-                <Layers className="h-3.5 w-3.5 text-[var(--accent)]" />
-                <span>Reference</span>
-              </button>
-            )}
-
-            {/* Copy Prompt */}
-            <button
-              type="button"
-              onClick={() => copyText(meta?.prompt ?? "", "footer-prompt")}
-              className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] transition-colors"
-              title="Copy prompt"
-            >
-              {copiedKey === "footer-prompt" ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" />
-                  <span>Prompt</span>
-                </>
-              )}
-            </button>
-
-            {/* Download Output */}
-            <a
-              href={mediaUrl}
-              download={meta?.source_filename || asset.key.split("/").pop() || "output.png"}
-              target="_blank"
-              rel="noreferrer"
-              className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] transition-colors text-center"
-              title="Download image"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>Save</span>
-            </a>
-
-            {/* Delete Output with Safe Inline Confirm */}
-            {onDeleteOutput && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirmDelete) {
-                    onDeleteOutput(asset.key);
-                    onClose?.();
-                  } else {
-                    setConfirmDelete(true);
-                    setTimeout(() => setConfirmDelete(false), 3500);
-                  }
-                }}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2.5 font-mono text-xs font-semibold transition-colors shrink-0 ${confirmDelete
-                  ? "border-[var(--danger)] bg-[var(--danger)] text-white shadow-md animate-pulse"
-                  : "border-[var(--danger-line)] bg-[var(--danger-surface)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white"
-                  }`}
-                title={confirmDelete ? "Click again to confirm delete" : "Delete output"}
-                aria-label="Delete output"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {confirmDelete && <span className="ml-1 font-bold">Confirm</span>}
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>

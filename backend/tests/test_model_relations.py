@@ -458,6 +458,50 @@ class ModelRelationsApiTests(unittest.TestCase):
         self.assertEqual(data_f["total"], 2)
         self.assertEqual(len(data_f["items"]), 2)
 
+    def test_api_create_non_promptable_models_without_presets(self) -> None:
+        target_types = ["VAE", "Wildcards", "Poses", "ControlNet", "StyleModel"]
+        for m_type in target_types:
+            # 1. POST /api/v1/models without prompt preset or generation field
+            resp = self.client.post(
+                "/api/v1/models",
+                json={
+                    "title": f"Studio {m_type}",
+                    "model_type": m_type,
+                    "category": "General",
+                    "compatibility": {
+                        "base_model": "Stable Diffusion XL (SDXL)",
+                        "vae": "irrelevant_vae.safetensors",
+                    },
+                },
+            )
+            self.assertEqual(resp.status_code, 201)
+            data = resp.json()
+            self.assertEqual(data["model_type"], m_type)
+            self.assertEqual(data["generation"]["prompt"], "")
+            self.assertEqual(data["generation"]["negative_prompt"], "")
+            self.assertEqual(data["generation"]["trigger_words"], [])
+            # Backend sanitizes compatibility fields (e.g. vae must be None)
+            self.assertIsNone(data["compatibility"]["vae"])
+
+            model_id = data["model_id"]
+
+            # 2. Check persistence via GET endpoint
+            get_resp = self.client.get(f"/api/v1/models/id/{model_id}")
+            self.assertEqual(get_resp.status_code, 200)
+            get_data = get_resp.json()
+            self.assertEqual(get_data["title"], f"Studio {m_type}")
+            self.assertEqual(get_data["model_type"], m_type)
+            self.assertEqual(get_data["generation"]["prompt"], "")
+
+            # 3. Check SQLite DB persistence
+            with self.db.get_connection() as conn:
+                row = conn.execute("SELECT * FROM models WHERE id = ?", (model_id,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["model_type"], m_type)
+            raw = json.loads(row["raw_json"])
+            self.assertEqual(raw["generation"]["prompt"], "")
+            self.assertIsNone(raw["compatibility"]["vae"])
+
 
 if __name__ == "__main__":
     unittest.main()

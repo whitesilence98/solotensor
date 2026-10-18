@@ -5,7 +5,18 @@ import unittest
 from pathlib import Path
 
 from app.config import Settings
-from app.schemas import CreatorModelType, ModelCreateRequest, ModelFilePatchRequest, ModelPrecision, ModelPublishRequest, ModelUpdateRequest, ModelVisibility, ModelVersionCreateRequest
+from app.schemas import (
+    CreatorModelType,
+    ModelCompatibility,
+    ModelCreateRequest,
+    ModelFilePatchRequest,
+    ModelGenerationSettings,
+    ModelPrecision,
+    ModelPublishRequest,
+    ModelUpdateRequest,
+    ModelVisibility,
+    ModelVersionCreateRequest,
+)
 from app.services.models import ModelConflict, ModelError, ModelNotFound, ModelService
 
 
@@ -293,6 +304,183 @@ class ModelServiceTests(unittest.TestCase):
         )
         uploaded_files = [f.filename for f in uploaded.versions[0].files]
         self.assertIn("custom_encoder.sft", uploaded_files)
+
+    def test_local_search_comma_separated_categories_and_deduplication(self) -> None:
+        ckpt_dir = Path(self.comfy.name) / "models" / "checkpoints"
+        diff_dir = Path(self.comfy.name) / "models" / "diffusion_models"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        diff_dir.mkdir(parents=True, exist_ok=True)
+
+        (ckpt_dir / "monolith.safetensors").write_bytes(b"monolith")
+        (diff_dir / "modular.safetensors").write_bytes(b"modular")
+        # Duplicate filename in both folders
+        (ckpt_dir / "duplicate.safetensors").write_bytes(b"dup-ckpt")
+        (diff_dir / "duplicate.safetensors").write_bytes(b"dup-diff")
+
+        results = self.service.list_local_models(category="checkpoints,diffusion_models")
+        filenames = [item["filename"] for item in results]
+        categories_by_fn = {item["filename"]: item["category"] for item in results}
+
+        self.assertIn("monolith.safetensors", filenames)
+        self.assertIn("modular.safetensors", filenames)
+        self.assertEqual(categories_by_fn["monolith.safetensors"], "checkpoints")
+        self.assertEqual(categories_by_fn["modular.safetensors"], "diffusion_models")
+        # duplicate.safetensors should only appear once (deduplicated), taking category "checkpoints"
+        self.assertEqual(filenames.count("duplicate.safetensors"), 1)
+        self.assertEqual(categories_by_fn["duplicate.safetensors"], "checkpoints")
+
+    def test_local_category_resilience_and_aliases(self) -> None:
+        self.assertEqual(self.service._local_category("CHECKPOINTS "), "checkpoints")
+        self.assertEqual(self.service._local_category("checkpoint"), "checkpoints")
+        self.assertEqual(self.service._local_category("svd"), "checkpoints")
+        self.assertEqual(self.service._local_category("lora"), "loras")
+        self.assertEqual(self.service._local_category("LOKr"), "loras")
+        self.assertEqual(self.service._local_category("Diffusion Model"), "diffusion_models")
+        self.assertEqual(self.service._local_category("diffusion_model"), "diffusion_models")
+        self.assertEqual(self.service._local_category("vae"), "vae")
+        self.assertEqual(self.service._local_category("controlnet"), "controlnet")
+        self.assertEqual(self.service._local_category("pose"), "poses")
+        self.assertEqual(self.service._local_category("wildcard"), "wildcards")
+        self.assertEqual(self.service._local_category("stylemodel"), "style_models")
+        self.assertEqual(self.service._local_category("embedding"), "embeddings")
+        self.assertEqual(self.service._local_category("hypernetwork"), "hypernetworks")
+        with self.assertRaises(ModelError):
+            self.service._local_category("unknown_category_xyz")
+
+    def test_local_models_comma_separated_resilience(self) -> None:
+        ckpt_dir = Path(self.comfy.name) / "models" / "checkpoints"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        (ckpt_dir / "resilient.safetensors").write_bytes(b"resilient")
+
+        # Mixed cases, aliases, and an invalid category ignored
+        results = self.service.list_local_models(category=" Checkpoint, non_existent_cat ")
+        self.assertTrue(any(item["filename"] == "resilient.safetensors" for item in results))
+
+        # All invalid categories should raise ModelError
+        with self.assertRaises(ModelError):
+            self.service.list_local_models(category="invalid_cat1, invalid_cat2")
+
+    def test_import_local_file_persists_category(self) -> None:
+        diff_dir = Path(self.comfy.name) / "models" / "diffusion_models"
+        diff_dir.mkdir(parents=True, exist_ok=True)
+        (diff_dir / "dit.safetensors").write_bytes(b"dit-bytes")
+
+        res = self.service.import_local_file(
+            self.model.model_id,
+            self.version.version_id,
+            "diffusion_models",
+            "dit.safetensors",
+            ModelPrecision.FP16,
+        )
+        file_obj = res.versions[0].files[0]
+        self.assertEqual(file_obj.category, "diffusion_models")
+
+        # Verify persisted record on disk
+        stored_rec = self.service._read(self.model.model_id)
+        self.assertEqual(stored_rec["versions"][0]["files"][0]["category"], "diffusion_models")
+
+    def test_resolve_installed_gallery_file_dual_folder_probing(self) -> None:
+        # Create a Checkpoint model whose file is located in diffusion_models
+        data = b"modular weights"
+        diff_dir = Path(self.comfy.name) / "models" / "diffusion_models"
+        diff_dir.mkdir(parents=True, exist_ok=True)
+        (diff_dir / "modular_ckpt.safetensors").write_bytes(data)
+
+        res = self.service.import_local_file(
+            self.model.model_id,
+            self.version.version_id,
+            "diffusion_models",
+            "modular_ckpt.safetensors",
+            ModelPrecision.FP16,
+        )
+        self.service.publish(self.model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC))
+        file_id = res.versions[0].files[0].file_id
+
+        resolved = self.service.resolve_installed_gallery_file(
+            self.model.model_id, self.version.version_id, file_id
+        )
+        self.assertEqual(resolved["model_type"], "Checkpoint")
+        self.assertEqual(resolved["category"], "diffusion_models")
+        self.assertEqual(resolved["filename"], "modular_ckpt.safetensors")
+
+        # Now test fallback probing: file record has category None or checkpoints, but file is in diffusion_models
+        rec = self.service._read(self.model.model_id)
+        rec["versions"][0]["files"][0]["category"] = None
+        self.service._write(rec)
+
+        resolved_fallback = self.service.resolve_installed_gallery_file(
+            self.model.model_id, self.version.version_id, file_id
+        )
+        self.assertEqual(resolved_fallback["category"], "diffusion_models")
+
+    def test_install_file_diffusion_models_destination(self) -> None:
+        # Uploaded file registered with category diffusion_models installs to models/diffusion_models
+        data = b"raw diffusion bytes"
+        uploaded = self.service.add_file(
+            self.model.model_id,
+            self.version.version_id,
+            "unet_upload.safetensors",
+            data,
+            ModelPrecision.FP16,
+        )
+        file_id = uploaded.versions[0].files[0].file_id
+        rec = self.service._read(self.model.model_id)
+        rec["versions"][0]["files"][0]["category"] = "diffusion_models"
+        self.service._write(rec)
+        self.service.publish(self.model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC))
+
+        install = self.service.install_file(self.model.model_id, self.version.version_id, file_id)
+        self.assertEqual(install["category"], "diffusion_models")
+        expected_dest = Path(self.comfy.name) / "models" / "diffusion_models" / "unet_upload.safetensors"
+        self.assertTrue(expected_dest.is_file())
+ 
+    def test_create_non_promptable_models_without_presets(self) -> None:
+        target_types = [
+            CreatorModelType.VAE,
+            CreatorModelType.WILDCARDS,
+            CreatorModelType.POSES,
+            CreatorModelType.CONTROLNET,
+            CreatorModelType.STYLE_MODEL,
+        ]
+        for m_type in target_types:
+            # 1. Created without explicit generation settings (omitted / default)
+            created = self.service.create(
+                ModelCreateRequest(
+                    title=f"Test {m_type.value}",
+                    model_type=m_type,
+                    compatibility=ModelCompatibility(
+                        vae="extraneous_vae.safetensors",
+                        text_encoder="extraneous_te.safetensors",
+                        clip_type="sdxl",
+                    ),
+                )
+            )
+            self.assertEqual(created.model_type, m_type)
+            self.assertEqual(created.generation.prompt, "")
+            self.assertEqual(created.generation.negative_prompt, "")
+            self.assertEqual(created.generation.trigger_words, [])
+            # Sanitization strips VAE decoder and text encoders for non-supporting tiers
+            self.assertIsNone(created.compatibility.vae)
+            self.assertIsNone(created.compatibility.text_encoder)
+            self.assertIsNone(created.compatibility.clip_type)
+
+            # Persisted cleanly on disk and reloadable
+            reloaded = self.service.get(created.model_id)
+            self.assertEqual(reloaded.model_type, m_type)
+            self.assertEqual(reloaded.generation.prompt, "")
+            self.assertIsNone(reloaded.compatibility.vae)
+
+            # 2. Created with explicit empty generation presets
+            empty_gen_model = self.service.create(
+                ModelCreateRequest(
+                    title=f"Test Empty {m_type.value}",
+                    model_type=m_type,
+                    generation=ModelGenerationSettings(prompt="", negative_prompt="", trigger_words=[]),
+                )
+            )
+            self.assertEqual(empty_gen_model.generation.prompt, "")
+            self.assertEqual(empty_gen_model.generation.negative_prompt, "")
+            self.assertEqual(empty_gen_model.generation.trigger_words, [])
 
 
 if __name__ == "__main__":

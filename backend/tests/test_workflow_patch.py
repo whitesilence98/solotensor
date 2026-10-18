@@ -234,6 +234,71 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(graph["1043"]["inputs"]["lora_1"], {"on": True, "lora": "style\\anime.safetensors", "strength": 0.8})
         self.assertEqual(graph["1043"]["inputs"]["lora_2"], {"on": True, "lora": "concept\\lighting.safetensors", "strength": 0.6})
 
+    def test_checkpoint_gallery_workflow_custom_vae_wires_vae_loader(self) -> None:
+        graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="sd15.safetensors",
+            prompt="test prompt",
+            vae_name="custom_vae.safetensors",
+            is_modular=False,
+        )
+        self.assertEqual(graph["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertIn("vae_loader", graph)
+        self.assertEqual(graph["vae_loader"]["class_type"], "VAELoader")
+        self.assertEqual(graph["vae_loader"]["inputs"]["vae_name"], "custom_vae.safetensors")
+        self.assertEqual(graph["6"]["inputs"]["vae"], ["vae_loader", 0])
+
+    def test_checkpoint_gallery_workflow_default_vae_wires_checkpoint_loader(self) -> None:
+        graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="sd15.safetensors",
+            prompt="test prompt",
+            is_modular=False,
+        )
+        self.assertEqual(graph["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertNotIn("vae_loader", graph)
+        self.assertEqual(graph["6"]["inputs"]["vae"], ["1", 2])
+
+    def test_checkpoint_lora_workflow_custom_vae_wires_vae_loader(self) -> None:
+        graph = self.client.build_lora_workflow(
+            base_model_type="Checkpoint",
+            base_filename="sd15.safetensors",
+            lora_filename="style.safetensors",
+            prompt="test prompt",
+            vae_name="custom_vae.safetensors",
+            is_modular=False,
+        )
+        self.assertEqual(graph["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertIn("vae_loader", graph)
+        self.assertEqual(graph["vae_loader"]["class_type"], "VAELoader")
+        self.assertEqual(graph["vae_loader"]["inputs"]["vae_name"], "custom_vae.safetensors")
+        self.assertEqual(graph["7"]["inputs"]["vae"], ["vae_loader", 0])
+
+    def test_checkpoint_lora_workflow_default_vae_wires_checkpoint_loader(self) -> None:
+        graph = self.client.build_lora_workflow(
+            base_model_type="Checkpoint",
+            base_filename="sd15.safetensors",
+            lora_filename="style.safetensors",
+            prompt="test prompt",
+            is_modular=False,
+        )
+        self.assertEqual(graph["1"]["class_type"], "CheckpointLoaderSimple")
+        self.assertNotIn("vae_loader", graph)
+        self.assertEqual(graph["7"]["inputs"]["vae"], ["1", 2])
+
+    def test_checkpoint_modular_workflow_by_category(self) -> None:
+        graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            category="diffusion_models",
+            filename="flux_unet.safetensors",
+            clip_name="clip_l.safetensors",
+            clip_type="flux",
+            vae_name="ae.safetensors",
+            prompt="test",
+        )
+        self.assertEqual(graph["618:615"]["inputs"]["unet_name"], "flux_unet.safetensors")
+        self.assertEqual(graph["618:616"]["inputs"]["clip_name"], "clip_l.safetensors")
+        self.assertEqual(graph["618:617"]["inputs"]["vae_name"], "ae.safetensors")
 
 
 if __name__ == "__main__":

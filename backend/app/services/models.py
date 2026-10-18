@@ -27,6 +27,7 @@ from ..schemas import (
     ModelVersionCreateRequest,
     ModelVersionResponse,
 )
+from app.services.model_factory import ModelHandlerFactory, ModelTier
 
 MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 MODEL_EXTENSIONS = {".safetensors", ".sft", ".ckpt", ".pt", ".pth", ".bin", ".gguf"}
@@ -53,9 +54,13 @@ LOCAL_MODEL_CATEGORIES = (
     "wildcards",
     "style_models",
 )
-ADAPTER_MODEL_TYPES = {"LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"}
+ADAPTER_MODEL_TYPES = {
+    m for m in ModelHandlerFactory.all_types() if ModelHandlerFactory.is_adapter(m)
+}
 BASE_MODEL_TYPES = {"Checkpoint", "SVD", "Diffusion Model"}
-SUPPORTED_GENERATION_TYPES = BASE_MODEL_TYPES | ADAPTER_MODEL_TYPES
+SUPPORTED_GENERATION_TYPES = {
+    m for m in ModelHandlerFactory.all_types() if ModelHandlerFactory.is_generation_supported(m)
+} | {"Diffusion Model"}
 
 
 class ModelError(RuntimeError):
@@ -199,6 +204,7 @@ class ModelService:
                             "visible",
                         )
                     },
+                    category=item.get("category"),
                     download_url=(
                         self._public_file_url(
                             record["model_id"], version["version_id"], item["file_id"]
@@ -262,7 +268,7 @@ class ModelService:
         *,
         require_public: bool = False,
     ) -> None:
-        if model_type not in ADAPTER_MODEL_TYPES:
+        if not ModelHandlerFactory.is_adapter(model_type):
             return
         base_ids = tuple(compatibility.get(key) for key in ("base_model_id", "base_version_id", "base_file_id"))
         if any(value is None for value in base_ids):
@@ -270,7 +276,7 @@ class ModelService:
         base_record = self._read(base_ids[0])
         if require_public and (base_record.get("visibility") != "Public" or not base_record.get("published_at")):
             raise ModelConflict("The adapter base model must be public before publishing this adapter")
-        if base_record.get("model_type") not in BASE_MODEL_TYPES:
+        if not ModelHandlerFactory.is_base_model(base_record.get("model_type", "")):
             raise ModelConflict("Adapter base must be a Checkpoint or SVD model")
         base_version = self._version(base_record, base_ids[1])
         base_file = next((item for item in base_version.get("files", []) if item.get("file_id") == base_ids[2]), None)
@@ -284,8 +290,12 @@ class ModelService:
         now = self._now()
         version_id = uuid.uuid4().hex
         effective_user_id = user_id or getattr(payload, "user_id", None)
+        dumped = payload.model_dump(mode="json")
+        if "compatibility" in dumped and dumped["compatibility"]:
+            m_type = payload.model_type.value if hasattr(payload.model_type, "value") else str(payload.model_type)
+            dumped["compatibility"] = ModelHandlerFactory.sanitize_compatibility(m_type, dumped["compatibility"])
         record = {
-            **payload.model_dump(mode="json"),
+            **dumped,
             "model_id": model_id,
             "created_at": now,
             "updated_at": now,
@@ -354,6 +364,11 @@ class ModelService:
                 record[key] = {**record[key], **value}
             else:
                 record[key] = value
+        if "compatibility" in record and record["compatibility"]:
+            record["compatibility"] = ModelHandlerFactory.sanitize_compatibility(
+                record.get("model_type", ""),
+                record["compatibility"],
+            )
         self._validate_base_association(record.get("model_type", ""), record.get("compatibility", {}))
         record["updated_at"] = self._now()
         self._write(record)
@@ -402,22 +417,46 @@ class ModelService:
         )
         if item is None or not item.get("visible", False):
             raise ModelNotFound("Model file not found")
-        category = self.install_category(model_type)
-        root = self._comfy_root()
-        category_path = root / "models" / category
-        category_root = category_path.resolve()
-        if category_root != category_path or not category_root.is_dir():
-            raise ModelConflict("Gallery model file is not installed")
         filename = self._clean_relative_filename(item["filename"])
-        destination = (category_root / filename).resolve()
-        if destination != category_root and category_root not in destination.parents:
-            raise ModelError("Unsafe ComfyUI model path")
-        if not destination.is_file() or destination.is_symlink():
+        root = self._comfy_root()
+
+        candidate_folders: list[str] = []
+        item_cat = item.get("category")
+        if item_cat:
+            candidate_folders.append(item_cat)
+
+        if model_type == "Checkpoint":
+            for cat in ("checkpoints", "diffusion_models"):
+                if cat not in candidate_folders:
+                    candidate_folders.append(cat)
+        else:
+            default_cat = self.install_category(model_type)
+            if default_cat not in candidate_folders:
+                candidate_folders.append(default_cat)
+
+        found_category: str | None = None
+        found_destination: Path | None = None
+
+        for cat in candidate_folders:
+            cat_path = root / "models" / cat
+            cat_root = cat_path.resolve()
+            if cat_root != cat_path or not cat_root.is_dir():
+                continue
+            cand_dest = (cat_root / filename).resolve()
+            if cand_dest != cat_root and cat_root not in cand_dest.parents:
+                raise ModelError("Unsafe ComfyUI model path")
+            if cand_dest.is_file() and not cand_dest.is_symlink():
+                found_category = cat
+                found_destination = cand_dest
+                break
+
+        if found_category is None or found_destination is None:
             raise ModelConflict("Gallery model file is not installed")
+
         if verify_hash:
             digest = hashlib.sha256()
             try:
-                with destination.open("rb") as source:
+                with found_destination.open("rb") as source:
                     while chunk := source.read(1024 * 1024):
                         digest.update(chunk)
             except OSError as exc:
@@ -426,7 +465,7 @@ class ModelService:
                 raise ModelConflict(
                     "Installed model file does not match the gallery version"
                 )
-        elif destination.stat().st_size != item.get("size"):
+        elif found_destination.stat().st_size != item.get("size"):
             raise ModelConflict("Gallery model file is not installed")
         compatibility = record.get("compatibility", {})
         cover_url = None
@@ -447,7 +486,7 @@ class ModelService:
             "model_type": model_type,
             "version_name": version["name"],
             "filename": filename,
-            "category": category,
+            "category": found_category,
             "sha256": item["sha256"],
             "vae": compatibility.get("vae"),
             "text_encoder": compatibility.get("text_encoder"),
@@ -502,29 +541,8 @@ class ModelService:
 
     @staticmethod
     def install_category(model_type: str) -> str:
-        categories = {
-            "Checkpoint": "checkpoints",
-            "Hyper Network": "hypernetworks",
-            "Embedding": "embeddings",
-            "Aesthetic Gradient": "embeddings",
-            "LoRA": "loras",
-            "LoKr": "loras",
-            "LoCon": "loras",
-            "ControlNet": "controlnet",
-            "Poses": "poses",
-            "Wildcards": "wildcards",
-            "LyCORIS": "loras",
-            "SVD": "checkpoints",
-            "Motion LoRA": "loras",
-            "VAE": "vae",
-            "DoRA": "loras",
-            "StyleModel": "style_models",
-            # Legacy fallback
-            "Diffusion Model": "diffusion_models",
-            "UNET": "diffusion_models",
-        }
         try:
-            return categories[model_type]
+            return ModelHandlerFactory.install_category(model_type)
         except KeyError as exc:
             raise ModelError("Unsupported creator model type") from exc
 
@@ -541,20 +559,66 @@ class ModelService:
 
     @staticmethod
     def _local_category(category: str) -> str:
-        if category not in LOCAL_MODEL_CATEGORIES:
+        clean = category.strip().lower()
+        if clean not in LOCAL_MODEL_CATEGORIES:
+            # If it matches any alias or model type, map it cleanly
+            mapping = {
+                "checkpoint": "checkpoints",
+                "svd": "checkpoints",
+                "lora": "loras",
+                "lokr": "loras",
+                "locon": "loras",
+                "lycoris": "loras",
+                "dora": "loras",
+                "motion lora": "loras",
+                "motion_lora": "loras",
+                "vae": "vae",
+                "controlnet": "controlnet",
+                "poses": "poses",
+                "pose": "poses",
+                "wildcard": "wildcards",
+                "wildcards": "wildcards",
+                "stylemodel": "style_models",
+                "style_model": "style_models",
+                "style_models": "style_models",
+                "embedding": "embeddings",
+                "embeddings": "embeddings",
+                "aesthetic gradient": "embeddings",
+                "aesthetic_gradient": "embeddings",
+                "hyper network": "hypernetworks",
+                "hypernetwork": "hypernetworks",
+                "hypernetworks": "hypernetworks",
+                "diffusion model": "diffusion_models",
+                "diffusion_model": "diffusion_models",
+                "diffusion_models": "diffusion_models",
+            }
+            if clean in mapping:
+                return mapping[clean]
             raise ModelError("Unsupported ComfyUI model category")
-        return category
+        return clean
 
     def local_models(
         self, query: str | None = None, category: str | None = None, limit: int = 50
     ) -> list[dict[str, Any]]:
         root = self._comfy_root()
-        categories = (
-            [self._local_category(category)] if category else LOCAL_MODEL_CATEGORIES
-        )
+        if category:
+            cat_list = [c.strip() for c in category.split(",") if c.strip()]
+            categories = []
+            for c in cat_list:
+                try:
+                    valid_cat = self._local_category(c)
+                    if valid_cat not in categories:
+                        categories.append(valid_cat)
+                except ModelError:
+                    continue
+            if not categories:
+                raise ModelError("Unsupported ComfyUI model category")
+        else:
+            categories = list(LOCAL_MODEL_CATEGORIES)
         needle = (query or "").strip().lower()
         limit = max(1, min(limit, 100))
         items: list[dict[str, Any]] = []
+        seen_candidates: set[str] = set()
         for name in categories:
             base = (root / "models" / name).resolve()
             if not base.is_dir() or base != root / "models" / name:
@@ -572,6 +636,10 @@ class ModelService:
                 relative = path.relative_to(base).as_posix()
                 if needle and needle not in relative.lower():
                     continue
+                if len(categories) > 1 and category is not None:
+                    if relative in seen_candidates:
+                        continue
+                    seen_candidates.add(relative)
                 items.append(
                     {
                         "category": name,
@@ -582,6 +650,11 @@ class ModelService:
         return sorted(
             items, key=lambda item: (item["category"], item["filename"].lower())
         )[:limit]
+
+    def list_local_models(
+        self, query: str | None = None, category: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        return self.local_models(query=query, category=category, limit=limit)
 
     def import_local_file(
         self,
@@ -639,6 +712,7 @@ class ModelService:
                 "precision": precision.value,
                 "visible": True,
                 "stored_name": "",
+                "category": category,
             }
         )
         record["updated_at"] = self._now()
@@ -673,7 +747,10 @@ class ModelService:
         root = Path(root_value).expanduser().resolve()
         if not root.is_dir():
             raise ModelError("Configured COMFY_MODEL_ROOT does not exist")
-        category = self.install_category(record["model_type"])
+        if item.get("category") == "diffusion_models":
+            category = "diffusion_models"
+        else:
+            category = self.install_category(record["model_type"])
         destination_root = (root / "models" / category).resolve()
         destination_root.mkdir(parents=True, exist_ok=True)
         filename = self._clean_relative_filename(item["filename"])
@@ -966,12 +1043,25 @@ class ModelService:
     def _registered_path(self, record: dict[str, Any], item: dict[str, Any]) -> Path:
         """Locate an in-place-registered file inside its ComfyUI category folder."""
         root = self._comfy_root()
-        category = self.install_category(record["model_type"])
+        category = item.get("category")
+        if not category:
+            category = self.install_category(record["model_type"])
         category_path = root / "models" / category
         category_root = category_path.resolve()
+        filename = self._clean_relative_filename(item["filename"])
+        if record.get("model_type") == "Checkpoint":
+            candidate_cats = [category]
+            for c in ("checkpoints", "diffusion_models"):
+                if c not in candidate_cats:
+                    candidate_cats.append(c)
+            for c in candidate_cats:
+                c_root = (root / "models" / c).resolve()
+                if c_root.is_dir():
+                    cand = (c_root / filename).resolve()
+                    if (cand == c_root or c_root in cand.parents) and cand.is_file() and not cand.is_symlink():
+                        return cand
         if category_root != category_path or not category_root.is_dir():
             raise ModelConflict("Local ComfyUI model category not found")
-        filename = self._clean_relative_filename(item["filename"])
         candidate = (category_root / filename).resolve()
         if candidate != category_root and category_root not in candidate.parents:
             raise ModelError("Unsafe ComfyUI model path")

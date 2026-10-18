@@ -215,6 +215,7 @@ export const BASE_MODEL_ARCHITECTURES: BaseArchitectureNode[] = [
       { label: "Z-Image-Omni", value: "Z-Image-Omni" },
     ],
   },
+  { label: "Universal", value: "Universal" },
 ];
 
 /**

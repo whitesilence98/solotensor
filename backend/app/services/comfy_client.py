@@ -317,13 +317,13 @@ class ComfyClient:
     def build_gallery_workflow(
         self,
         *,
-        model_type: str,
+        model_type: str = "Checkpoint",
         filename: str,
         prompt: str,
         negative_prompt: str = "",
-        clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
-        clip_type: str = "krea2",
-        vae_name: str = "wan_2.1_vae.safetensors",
+        clip_name: str = "",
+        clip_type: str = "",
+        vae_name: str = "",
         seed: Optional[int] = None,
         steps: int = 10,
         image_count: int = 1,
@@ -332,40 +332,13 @@ class ComfyClient:
         width: int = 768,
         height: int = 1344,
         loras: Optional[list[dict[str, Any]]] = None,
+        category: Optional[str] = None,
+        is_modular: Optional[bool] = None,
     ) -> dict[str, Any]:
-        if model_type in ("Checkpoint", "SVD"):
-            if loras:
-                active_loras = [item for item in loras if item.get("on", True)]
-                if active_loras:
-                    return self._build_builtin_lora_workflow(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        seed=seed,
-                        steps=steps,
-                        image_count=image_count,
-                        cfg=cfg,
-                        denoise=denoise,
-                        width=width,
-                        height=height,
-                        checkpoint_name=filename,
-                        lora_name=active_loras[0]["lora"],
-                        loras=active_loras,
-                    )
-            return self._build_builtin_workflow(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                seed=seed,
-                steps=steps,
-                image_count=image_count,
-                cfg=cfg,
-                denoise=denoise,
-                width=width,
-                height=height,
-                checkpoint_name=filename,
-                clip_name=clip_name,
-                clip_type=clip_type,
-            )
-        if model_type == "Diffusion Model":
+        if is_modular is None:
+            is_modular = (category == "diffusion_models" or model_type == "Diffusion Model")
+
+        if is_modular:
             template = self.load_workflow_template()
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -379,14 +352,53 @@ class ComfyClient:
                 cfg=cfg,
                 denoise=denoise,
                 unet_name=filename,
-                clip_name=clip_name,
-                clip_type=clip_type,
-                vae_name=vae_name,
+                clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                clip_type=clip_type or "krea2",
+                vae_name=vae_name or "wan_2.1_vae.safetensors",
                 loras=loras or [],
                 width=width,
                 height=height,
             )
-        raise ComfyClientError("Unsupported gallery model type")
+
+        if model_type not in ("Checkpoint", "SVD"):
+            raise ComfyClientError("Unsupported gallery model type")
+
+        if loras:
+            active_loras = [item for item in loras if item.get("on", True)]
+            if active_loras:
+                return self._build_builtin_lora_workflow(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    seed=seed,
+                    steps=steps,
+                    image_count=image_count,
+                    cfg=cfg,
+                    denoise=denoise,
+                    width=width,
+                    height=height,
+                    checkpoint_name=filename,
+                    lora_name=active_loras[0]["lora"],
+                    loras=active_loras,
+                    vae_name=vae_name,
+                    clip_name=clip_name,
+                    clip_type=clip_type,
+                )
+
+        return self._build_builtin_workflow(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            image_count=image_count,
+            cfg=cfg,
+            denoise=denoise,
+            width=width,
+            height=height,
+            checkpoint_name=filename,
+            clip_name=clip_name,
+            clip_type=clip_type,
+            vae_name=vae_name,
+        )
 
     def build_lora_workflow(
         self,
@@ -407,9 +419,14 @@ class ComfyClient:
         width: int = 768,
         height: int = 1344,
         loras: Optional[list[dict[str, Any]]] = None,
+        category: Optional[str] = None,
+        is_modular: Optional[bool] = None,
     ) -> dict[str, Any]:
+        if is_modular is None:
+            is_modular = (category == "diffusion_models" or base_model_type == "Diffusion Model")
+
         active_loras = loras if loras is not None else [{"lora": lora_filename, "on": True, "strength": 1.0}]
-        if base_model_type == "Diffusion Model":
+        if is_modular:
             template = self.load_workflow_template()
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -445,6 +462,9 @@ class ComfyClient:
             checkpoint_name=base_filename,
             lora_name=lora_filename,
             loras=active_loras,
+            vae_name=vae_name,
+            clip_name=clip_name,
+            clip_type=clip_type,
         )
 
     def _build_builtin_lora_workflow(
@@ -462,6 +482,9 @@ class ComfyClient:
         checkpoint_name: str,
         lora_name: str = "",
         loras: Optional[list[dict[str, Any]]] = None,
+        vae_name: str = "",
+        clip_name: str = "",
+        clip_type: str = "",
     ) -> dict[str, Any]:
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
         active_loras = [item for item in (loras or []) if item.get("on", True)]
@@ -473,7 +496,14 @@ class ComfyClient:
         }
 
         last_model_ref = ["1", 0]
-        last_clip_ref = ["1", 1]
+        if clip_name:
+            graph["clip_loader"] = {
+                "class_type": "CLIPLoader",
+                "inputs": {"clip_name": clip_name, "type": clip_type or "krea2", "device": "default"},
+            }
+            last_clip_ref = ["clip_loader", 0]
+        else:
+            last_clip_ref = ["1", 1]
 
         if active_loras:
             for idx, item in enumerate(active_loras, start=1):
@@ -497,7 +527,7 @@ class ComfyClient:
                 "class_type": "LoraLoader",
                 "inputs": {
                     "model": ["1", 0],
-                    "clip": ["1", 1],
+                    "clip": last_clip_ref,
                     "lora_name": lora_name or "none",
                     "strength_model": 1.0,
                     "strength_clip": 1.0,
@@ -505,6 +535,15 @@ class ComfyClient:
             }
             last_model_ref = [node_id, 0]
             last_clip_ref = [node_id, 1]
+
+        if vae_name:
+            graph["vae_loader"] = {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": vae_name},
+            }
+            vae_ref = ["vae_loader", 0]
+        else:
+            vae_ref = ["1", 2]
 
         graph.update({
             "3": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": last_clip_ref}},
@@ -525,7 +564,7 @@ class ComfyClient:
                     "latent_image": ["5", 0],
                 },
             },
-            "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+            "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": vae_ref}},
             "8": {"class_type": "SaveImage", "inputs": {"filename_prefix": "comfy_studio", "images": ["7", 0]}},
         })
         return graph
@@ -546,8 +585,9 @@ class ComfyClient:
         width: int = 768,
         height: int = 1344,
         checkpoint_name: str | None = None,
-        clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
-        clip_type: str = "krea2",
+        clip_name: str = "",
+        clip_type: str = "",
+        vae_name: str = "",
     ) -> dict[str, Any]:
         preset = MODEL_PRESETS.get(model, MODEL_PRESETS["sdxl"])
         checkpoint = checkpoint_name or preset["checkpoint"]
@@ -560,17 +600,25 @@ class ComfyClient:
                 "class_type": "CheckpointLoaderSimple",
                 "inputs": {"ckpt_name": checkpoint},
             },
-            "8": {
+        }
+
+        if clip_name:
+            graph["8"] = {
                 "class_type": "CLIPLoader",
-                "inputs": {"clip_name": clip_name, "type": clip_type, "device": "default"},
-            },
+                "inputs": {"clip_name": clip_name, "type": clip_type or "krea2", "device": "default"},
+            }
+            clip_ref = ["8", 0]
+        else:
+            clip_ref = ["1", 1]
+
+        graph.update({
             "2": {
                 "class_type": "CLIPTextEncode",
-                "inputs": {"text": full_prompt, "clip": ["8", 0]},
+                "inputs": {"text": full_prompt, "clip": clip_ref},
             },
             "3": {
                 "class_type": "CLIPTextEncode",
-                "inputs": {"text": negative_prompt or "worst quality, low quality, blurry", "clip": ["8", 0]},
+                "inputs": {"text": negative_prompt or "worst quality, low quality, blurry", "clip": clip_ref},
             },
             "4": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}},
             "5": {
@@ -588,11 +636,21 @@ class ComfyClient:
                     "latent_image": ["4", 0],
                 },
             },
-            "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
-            "7": {
-                "class_type": "SaveImage",
-                "inputs": {"filename_prefix": "comfy_studio", "images": ["6", 0]},
-            },
+        })
+
+        if vae_name:
+            graph["vae_loader"] = {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": vae_name},
+            }
+            vae_ref = ["vae_loader", 0]
+        else:
+            vae_ref = ["1", 2]
+
+        graph["6"] = {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": vae_ref}}
+        graph["7"] = {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": "comfy_studio", "images": ["6", 0]},
         }
         return graph
 

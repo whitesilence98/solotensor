@@ -55,6 +55,8 @@ backend/models/
 models/
 backend/tool_data/
 tool_data/
+backend/tool_data_backup/
+tool_data_backup/
 *.zip
 *.tar.gz
 

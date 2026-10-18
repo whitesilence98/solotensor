@@ -29,12 +29,15 @@ import {
   ShieldCheck,
   Plus,
   Sliders,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Trash2,
   Upload,
   X,
   Zap,
+  CheckCheck,
+  Copy,
 } from "lucide-react";
 import {
   api,
@@ -71,6 +74,60 @@ const modelTypes: CreatorModelType[] = [
   "DoRA",
   "StyleModel",
 ];
+
+export type ModelTierType =
+  | "Core Base"
+  | "Adapter"
+  | "Autoencoder"
+  | "Guidance"
+  | "Inversion"
+  | "Prompt Asset";
+
+export function getModelTier(t: string): ModelTierType {
+  switch (t) {
+    case "Checkpoint":
+    case "SVD":
+    case "Diffusion Model":
+    case "UNET":
+      return "Core Base";
+    case "LoRA":
+    case "LoKr":
+    case "LoCon":
+    case "LyCORIS":
+    case "DoRA":
+    case "Motion LoRA":
+      return "Adapter";
+    case "VAE":
+      return "Autoencoder";
+    case "ControlNet":
+    case "Poses":
+    case "StyleModel":
+      return "Guidance";
+    case "Embedding":
+    case "Aesthetic Gradient":
+    case "Hyper Network":
+      return "Inversion";
+    case "Wildcards":
+      return "Prompt Asset";
+    default:
+      return "Core Base";
+  }
+}
+
+export const isPromptableModelType = (t: string) =>
+  [
+    "Checkpoint",
+    "SVD",
+    "LoRA",
+    "LoKr",
+    "LoCon",
+    "LyCORIS",
+    "DoRA",
+    "Motion LoRA",
+    "Embedding",
+    "Aesthetic Gradient",
+    "Hyper Network",
+  ].includes(t);
 
 const isAdapterModelType = (t: string) =>
   ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(t);
@@ -128,6 +185,15 @@ export default function CreateModelDrawer({
   // Step 1: Identity & Architecture
   const [title, setTitle] = useState("");
   const [modelType, setModelType] = useState<CreatorModelType>("Checkpoint");
+
+  const promptable = isPromptableModelType(modelType);
+
+  // Auto-skip step 2 if switching to a non-promptable model while on step 2
+  useEffect(() => {
+    if (!promptable && step === 2) {
+      setStep(3);
+    }
+  }, [promptable, step]);
   const [category, setCategory] = useState<CreatorModelCategory>("General");
   const [baseModel, setBaseModel] = useState("Allegro");
   const [customBaseModel, setCustomBaseModel] = useState("");
@@ -158,6 +224,21 @@ export default function CreateModelDrawer({
   const [clipTypes, setClipTypes] = useState<string[]>([]);
   const [clipTypesLoading, setClipTypesLoading] = useState(false);
 
+  // Polymorphic conditioning stack state
+  const [showAdapterOverride, setShowAdapterOverride] = useState(false);
+  const [latentProfile, setLatentProfile] = useState("16-Channel Latent (FLUX.1 / SD3.5 / SD3 - ae.sft, ae.safetensors)");
+  const [preprocessorModality, setPreprocessorModality] = useState("Canny Edge");
+  const [inversionDimension, setInversionDimension] = useState("4096-dim (FLUX.1 / SD3 T5-XXL)");
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  const handleCopyToken = (text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedToken(text);
+      setTimeout(() => setCopiedToken(null), 2000);
+    }
+  };
+
   // Backend reference info from active template
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowTemplateInfo | null>(null);
 
@@ -187,6 +268,7 @@ export default function CreateModelDrawer({
   const [selectedPrecision, setSelectedPrecision] = useState<ModelPrecision>("FP16");
 
   const [showLocalPicker, setShowLocalPicker] = useState(false);
+  const [vaultFilter, setVaultFilter] = useState<"all" | "checkpoints" | "diffusion_models">("all");
   const [localSearch, setLocalSearch] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalModelSummary[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
@@ -196,6 +278,21 @@ export default function CreateModelDrawer({
   const activeVersion = useMemo(() => {
     return versions.find((v) => v.id === activeVersionId) || versions[0];
   }, [versions, activeVersionId]);
+
+  const isModularBackbone = useMemo(() => {
+    if (!activeVersion?.files?.length) return false;
+    return activeVersion.files.some((file) => {
+      if (file.local?.category === "diffusion_models") return true;
+      const lower = file.filename.toLowerCase();
+      return (
+        lower.includes("unet") ||
+        /(?:^|[^a-z0-9])dit(?:[^a-z0-9]|$)/i.test(lower) ||
+        lower.includes("transformer") ||
+        lower.includes("diffusion_pytorch_model") ||
+        lower.includes("diffusion_model")
+      );
+    });
+  }, [activeVersion?.files]);
 
   const totalFilesCount = useMemo(() => {
     return versions.reduce((sum, v) => sum + v.files.length, 0);
@@ -433,15 +530,40 @@ export default function CreateModelDrawer({
     let cancelled = false;
     setLocalLoading(true);
     setLocalError(null);
-    api
-      .listLocalModels(localSearch, comfyCategory)
-      .then((res) => {
-        if (!cancelled) setLocalFiles(res.items || []);
+    const fetchPromises =
+      modelType === "Checkpoint"
+        ? [
+            api.listLocalModels(localSearch, "checkpoints"),
+            api.listLocalModels(localSearch, "diffusion_models"),
+          ]
+        : [api.listLocalModels(localSearch, comfyCategory)];
+
+    Promise.allSettled(fetchPromises)
+      .then((results) => {
+        if (!cancelled) {
+          const combinedItems: LocalModelSummary[] = [];
+          for (const res of results) {
+            if (res.status === "fulfilled" && res.value.items) {
+              combinedItems.push(...res.value.items);
+            }
+          }
+          // Deduplicate by category + filename
+          const seen = new Set<string>();
+          const deduped = combinedItems.filter((item) => {
+            const key = `${item.category}/${item.filename}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setLocalFiles(deduped);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
           setLocalFiles([]);
-          setLocalError(err instanceof Error ? err.message : "Could not scan ComfyUI files");
+          setLocalError(
+            err instanceof Error ? err.message : "Could not scan ComfyUI files",
+          );
         }
       })
       .finally(() => {
@@ -450,7 +572,7 @@ export default function CreateModelDrawer({
     return () => {
       cancelled = true;
     };
-  }, [showLocalPicker, localSearch, comfyCategory, open]);
+  }, [showLocalPicker, localSearch, comfyCategory, modelType, open]);
 
   // Load ComfyUI local models & workflow info when drawer opens
   const refreshComfyEnclave = () => {
@@ -729,6 +851,38 @@ export default function CreateModelDrawer({
       (item) => `${item.model_id}:${item.version_id}:${item.file_id}` === selectedBaseKey,
     );
 
+    const currentTier = getModelTier(modelType);
+    let resolvedVaePayload: string | null = null;
+    let resolvedEncoderPayload: string | null = null;
+    let resolvedClipPayload: string | null = null;
+
+    if (currentTier === "Core Base") {
+      resolvedVaePayload = resolvedVae;
+      resolvedEncoderPayload = resolvedEncoder;
+      resolvedClipPayload = resolvedClipType;
+    } else if (currentTier === "Adapter") {
+      if (showAdapterOverride) {
+        resolvedVaePayload = resolvedVae;
+        resolvedEncoderPayload = resolvedEncoder;
+        resolvedClipPayload = resolvedClipType;
+      } else {
+        resolvedVaePayload = selectedBase?.vae || null;
+        resolvedEncoderPayload = selectedBase?.text_encoder || null;
+        resolvedClipPayload = selectedBase?.clip_type || null;
+      }
+    } else {
+      // Autoencoder, Guidance, Inversion, Prompt Asset
+      resolvedVaePayload = null;
+      resolvedEncoderPayload = null;
+      resolvedClipPayload = null;
+    }
+
+    // Co-dependency rule: text_encoder and clip_type must either both be non-null or both be null
+    if (!resolvedEncoderPayload || !resolvedClipPayload) {
+      resolvedEncoderPayload = null;
+      resolvedClipPayload = null;
+    }
+
     try {
       const payload: CreatorModelPayload = {
         title: modelTitle,
@@ -736,13 +890,16 @@ export default function CreateModelDrawer({
         model_type: modelType,
         tags: [],
         compatibility: {
-          base_model: resolvedBaseModel,
+          base_model:
+            modelType === "Wildcards" && (baseModel === "Allegro" || !baseModel)
+              ? "Universal"
+              : resolvedBaseModel,
           base_model_id: selectedBase?.model_id ?? null,
           base_version_id: selectedBase?.version_id ?? null,
           base_file_id: selectedBase?.file_id ?? null,
-          vae: resolvedVae,
-          text_encoder: resolvedEncoder,
-          clip_type: resolvedClipType,
+          vae: resolvedVaePayload,
+          text_encoder: resolvedEncoderPayload,
+          clip_type: resolvedClipPayload,
           parent_model: null,
         },
         generation: {
@@ -855,12 +1012,22 @@ export default function CreateModelDrawer({
 
   const currentDisplayTitle = title.trim() || "Untitled model";
 
-  const stepsList = [
-    { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
-    { s: 2 as const, label: "Prompt & Presets", num: "02", icon: Sparkles },
-    { s: 3 as const, label: "Weights", num: "03", icon: HardDrive },
-    { s: 4 as const, label: "Showcase", num: "04", icon: FileImage },
-  ];
+  const stepsList = promptable
+    ? [
+        { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
+        { s: 2 as const, label: "Prompts & Presets (Optional)", num: "02", icon: Sparkles },
+        { s: 3 as const, label: "Weights & Versions", num: "03", icon: HardDrive },
+        { s: 4 as const, label: "Showcase & Permissions", num: "04", icon: FileImage },
+      ]
+    : [
+        { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
+        { s: 3 as const, label: "Weights & Versions", num: "02", icon: HardDrive },
+        { s: 4 as const, label: "Showcase & Permissions", num: "03", icon: FileImage },
+      ];
+
+  const activeStepIndex = stepsList.findIndex((item) => item.s === step);
+  const currentStepNumber = activeStepIndex !== -1 ? activeStepIndex + 1 : 1;
+  const totalSteps = stepsList.length;
 
   return (
     <div
@@ -914,10 +1081,10 @@ export default function CreateModelDrawer({
 
         {/* Step Stepper Navigation Bar */}
         <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
-          <div className="grid w-full grid-cols-4 gap-2 font-mono text-[11px]">
-            {stepsList.map(({ s, label, num, icon: Icon }) => {
+          <div className={`grid w-full ${promptable ? "grid-cols-4" : "grid-cols-3"} gap-2 font-mono text-[11px]`}>
+            {stepsList.map(({ s, label, num, icon: Icon }, index) => {
               const isActive = step === s;
-              const isPast = step > s;
+              const isPast = activeStepIndex > index;
               return (
                 <button
                   key={s}
@@ -1010,6 +1177,41 @@ export default function CreateModelDrawer({
                       placeholder="e.g. Cyberpunk Cinematic Lighting, RealVisV5..."
                       className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-[12px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 outline-none transition-colors"
                     />
+                    {modelType === "Wildcards" && (
+                      <div className="mt-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-1.5 animate-in fade-in duration-150">
+                        {(() => {
+                          const cleanToken = (title.trim() || "wildcard")
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_-]/g, "_");
+                          const syntax = `__${cleanToken}__`;
+                          const isCopied = copiedToken === syntax;
+
+                          return (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                                  Wildcard Invocation Syntax Preview
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyToken(syntax)}
+                                  className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--accent)] hover:underline"
+                                >
+                                  {isCopied ? <CheckCheck className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                  <span>{isCopied ? "Copied" : "Copy Token"}</span>
+                                </button>
+                              </div>
+                              <div className="rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-1.5 font-mono text-xs font-bold text-[var(--accent)] flex items-center justify-between">
+                                <code>{syntax}</code>
+                              </div>
+                              <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                                Attach text files (.txt, .yaml, .json) with list items. Each prompt evaluation will randomly substitute this tag with an entry from the file.
+                              </p>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
 
                   {/* Type & Category 2-Column */}
@@ -1064,251 +1266,603 @@ export default function CreateModelDrawer({
                   </div>
                 </div>
 
-                {/* Panel 1B: Compatibility Stack (VAE, CLIP, Parent Model) */}
-                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
-                        <Network className="h-3.5 w-3.5" />
-                      </div>
-                      <div>
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
-                          Compatibility & Conditioning Stack
-                        </span>
-                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                          Dynamically detected from environment
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={refreshComfyEnclave}
-                      disabled={vaeLoading || encoderLoading}
-                      title="Re-scan local ComfyUI models folder"
-                      className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
-                    >
-                      <RefreshCw className={`h-3 w-3 ${vaeLoading || encoderLoading ? "animate-spin" : ""}`} />
-                      <span>Rescan</span>
-                    </button>
-                  </div>
-
-                  {/* Adapter / LoRA Base Model Enclave Binding */}
-                  {isAdapterModelType(modelType) && (
-                    <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                          Exact Base Checkpoint / Diffusion Enclave{" "}
-                          <span className="text-[var(--accent)]">(Installed in Gallery)</span>
-                        </label>
-                        {baseOptionsLoading && (
-                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
-                            Scanning gallery…
+                {/* Panel 1B: Compatibility Stack (Polymorphic Tiers 1-5, omitted for Wildcards & Poses) */}
+                {modelType !== "Wildcards" && modelType !== "Poses" && (
+                  <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                          <Network className="h-3.5 w-3.5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                              Compatibility & Conditioning Stack
+                            </span>
+                            <span className="inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
+                              {getModelTier(modelType)}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                            {getModelTier(modelType) === "Core Base" && "Base Architecture Conditioning & Decoders"}
+                            {getModelTier(modelType) === "Adapter" && "Upstream Enclave Binding & Conditioning Inheritance"}
+                            {getModelTier(modelType) === "Autoencoder" && "Latent Space Compression & Channel Encoding"}
+                            {getModelTier(modelType) === "Guidance" && "Spatial Conditioners & Preprocessor Modalities"}
+                            {getModelTier(modelType) === "Inversion" && "Textual Inversion & Cross-Attention Vectors"}
                           </span>
-                        )}
+                        </div>
                       </div>
-                      <CustomSelect
-                        value={selectedBaseKey}
-                        onChange={onSelectBaseModel}
-                        options={[
-                          { value: "", label: "Universal / Any Base Architecture" },
-                          ...baseOptions.map((opt) => ({
-                            value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
-                            label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
-                          })),
-                        ]}
-                        className="w-full"
-                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
-                      />
-                      <p className="font-mono text-[9px] text-[var(--ink-faint)]">
-                        Binding to an installed base model auto-inherits its verified architecture, VAE, and text encoder.
-                      </p>
-                    </div>
-                  )}
 
-                  {/* Recommended VAE Selection */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        VAE{" "}
-                        <span className="text-[var(--accent)] font-semibold">
-                          ({vaeFiles.length} detected)
-                        </span>
-                      </label>
-                      {vaeLoading && (
-                        <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
-                          Scanning VAEs…
-                        </span>
-                      )}
-                    </div>
-
-                    <CustomSelect
-                      value={isCustomVae ? "__custom__" : vae}
-                      onChange={(val) => {
-                        if (val === "__custom__") {
-                          setIsCustomVae(true);
-                          setVae(customVae);
-                        } else {
-                          setIsCustomVae(false);
-                          setVae(val);
-                        }
-                      }}
-                      options={[
-                        ...vaeOptions.map((vp) => ({
-                          value: vp,
-                          label: vp,
-                        })),
-                        {
-                          value: "__custom__",
-                          label: "Custom VAE filename (.safetensors, .sft)…",
-                        },
-                      ]}
-                      className="w-full"
-                      buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
-                    />
-
-                    {isCustomVae && (
-                      <input
-                        type="text"
-                        value={customVae}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setCustomVae(val);
-                          setVae(val);
-                        }}
-                        placeholder="e.g. ae.sft, ae.safetensors, or custom_vae.sft…"
-                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
-                      />
-                    )}
-
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {vaeOptions.map((vp) => {
-                        const isSel = !isCustomVae && vae === vp;
-                        return (
-                          <button
-                            key={vp}
-                            type="button"
-                            onClick={() => {
-                              setIsCustomVae(false);
-                              setVae(vp);
-                            }}
-                            className={`rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-bold transition-all ${
-                              isSel
-                                ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                                : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                            }`}
-                          >
-                            <span>{vp}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {vaeError && (
-                      <div className="flex items-center justify-between rounded-[4px] border border-[var(--danger-line)] bg-[var(--danger-surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--danger)]">
-                        <span>{vaeError}</span>
+                      {(getModelTier(modelType) === "Core Base" || getModelTier(modelType) === "Adapter") && (
                         <button
                           type="button"
                           onClick={refreshComfyEnclave}
-                          className="font-bold underline hover:no-underline"
+                          disabled={vaeLoading || encoderLoading}
+                          title="Re-scan local ComfyUI models folder"
+                          className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
                         >
-                          Retry
+                          <RefreshCw className={`h-3 w-3 ${vaeLoading || encoderLoading ? "animate-spin" : ""}`} />
+                          <span>Rescan</span>
                         </button>
+                      )}
+                    </div>
+
+                    {/* TIER 1: CORE BASE (Checkpoint, SVD) */}
+                    {getModelTier(modelType) === "Core Base" && (
+                      <div className="space-y-4 animate-in fade-in duration-150">
+                        {/* Contextual Architecture Banner */}
+                        {isModularBackbone ? (
+                          <div className="flex items-start gap-3 rounded-[5px] border border-purple-500/30 bg-purple-500/5 p-3">
+                            <Layers3 className="h-4 w-4 shrink-0 text-purple-400 mt-0.5" />
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="rounded border border-purple-500/40 bg-purple-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider uppercase text-purple-300">
+                                  [MODULAR DIFFUSION BACKBONE DETECTED]
+                                </span>
+                              </div>
+                              <p className="font-mono text-[10px] leading-relaxed text-[var(--ink-soft)]">
+                                This checkpoint uses a modular UNET/DiT backbone (<code className="text-purple-300">models/diffusion_models/</code>). External VAE decoder and Text Encoder / CLIP protocol configured below are active and required for generation.
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-3 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+                            <Box className="h-4 w-4 shrink-0 text-[var(--ink-soft)] mt-0.5" />
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="rounded border border-[var(--line-strong)] bg-[var(--surface)] px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider uppercase text-[var(--ink-soft)]">
+                                  [MONOLITHIC CHECKPOINT]
+                                </span>
+                              </div>
+                              <p className="font-mono text-[10px] leading-relaxed text-[var(--ink-faint)]">
+                                Standard all-in-one checkpoint (<code className="text-[var(--ink-soft)]">models/checkpoints/</code>). Bundled CLIP and VAE will be used during inference unless overridden below.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Recommended VAE Selection */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                              Recommended VAE{" "}
+                              <span className="text-[var(--accent)] font-semibold">
+                                ({vaeFiles.length} detected · .safetensors, .sft)
+                              </span>
+                            </label>
+                            {vaeLoading && (
+                              <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                                Scanning VAEs…
+                              </span>
+                            )}
+                          </div>
+
+                          <CustomSelect
+                            value={isCustomVae ? "__custom__" : vae}
+                            onChange={(val) => {
+                              if (val === "__custom__") {
+                                setIsCustomVae(true);
+                                setVae(customVae);
+                              } else {
+                                setIsCustomVae(false);
+                                setVae(val);
+                              }
+                            }}
+                            options={[
+                              ...vaeOptions.map((vp) => ({
+                                value: vp,
+                                label: vp,
+                              })),
+                              {
+                                value: "__custom__",
+                                label: "Custom VAE filename (.safetensors, .sft)…",
+                              },
+                            ]}
+                            className="w-full"
+                            buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                          />
+
+                          {isCustomVae && (
+                            <input
+                              type="text"
+                              value={customVae}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCustomVae(val);
+                                setVae(val);
+                              }}
+                              placeholder="e.g. ae.sft, ae.safetensors, or custom_vae.sft…"
+                              className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                            />
+                          )}
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {vaeOptions.map((vp) => {
+                              const isSel = !isCustomVae && vae === vp;
+                              return (
+                                <button
+                                  key={vp}
+                                  type="button"
+                                  onClick={() => {
+                                    setIsCustomVae(false);
+                                    setVae(vp);
+                                  }}
+                                  className={`rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-bold transition-all ${
+                                    isSel
+                                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                                  }`}
+                                >
+                                  <span>{vp}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {vaeError && (
+                            <div className="flex items-center justify-between rounded-[4px] border border-[var(--danger-line)] bg-[var(--danger-surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--danger)]">
+                              <span>{vaeError}</span>
+                              <button
+                                type="button"
+                                onClick={refreshComfyEnclave}
+                                className="font-bold underline hover:no-underline"
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* CLIP & Text Encoder 2-Column Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                          {/* Text Encoder Model */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                Text Encoder / CLIP{" "}
+                                <span className="text-[var(--ink-faint)]">
+                                  ({encoderFiles.length} detected)
+                                </span>
+                              </label>
+                              {encoderLoading && (
+                                <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                                  Scanning…
+                                </span>
+                              )}
+                            </div>
+
+                            <CustomSelect
+                              value={isCustomEncoder ? "__custom__" : textEncoder}
+                              onChange={(val) => {
+                                if (val === "__custom__") {
+                                  setIsCustomEncoder(true);
+                                  setTextEncoder(customEncoder);
+                                } else {
+                                  setIsCustomEncoder(false);
+                                  setTextEncoder(val);
+                                }
+                              }}
+                              options={[
+                                { value: "", label: "None / Not Required" },
+                                ...encoderOptions.map((enc) => ({
+                                  value: enc,
+                                  label: enc,
+                                })),
+                                {
+                                  value: "__custom__",
+                                  label: "Custom Encoder filename (.safetensors, .sft)…",
+                                },
+                              ]}
+                              className="w-full"
+                              buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                            />
+
+                            {isCustomEncoder && (
+                              <input
+                                type="text"
+                                value={customEncoder}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setCustomEncoder(val);
+                                  setTextEncoder(val);
+                                }}
+                                placeholder="e.g. t5xxl_fp8_e4m3fn.sft or clip_l.safetensors…"
+                                className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                              />
+                            )}
+
+                            {encoderError && (
+                              <p className="font-mono text-[9px] text-[var(--danger)]">
+                                {encoderError}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* CLIP Type / Protocol */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                CLIP Type Protocol
+                              </label>
+                              {clipTypesLoading && (
+                                <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                                  Loading…
+                                </span>
+                              )}
+                            </div>
+
+                            <CustomSelect
+                              value={clipType}
+                              onChange={(val) => setClipType(val)}
+                              options={clipTypeOptions.map((c) => ({
+                                value: c,
+                                label: c,
+                              }))}
+                              className="w-full"
+                              buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TIER 2: ADAPTER (LoRA, LoKr, LoCon, LyCORIS, DoRA, Motion LoRA) */}
+                    {getModelTier(modelType) === "Adapter" && (
+                      <div className="space-y-3.5 animate-in fade-in duration-150">
+                        {/* Base Model Enclave Binding */}
+                        <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                              Exact Base Checkpoint / Diffusion Enclave{" "}
+                              <span className="text-[var(--accent)]">(Installed in Gallery)</span>
+                            </label>
+                            {baseOptionsLoading && (
+                              <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
+                                Scanning gallery…
+                              </span>
+                            )}
+                          </div>
+                          <CustomSelect
+                            value={selectedBaseKey}
+                            onChange={onSelectBaseModel}
+                            options={[
+                              { value: "", label: "Universal / Any Base Architecture" },
+                              ...baseOptions.map((opt) => ({
+                                value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
+                                label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                              })),
+                            ]}
+                            className="w-full"
+                            buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                          />
+                          <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                            Binding to an installed base model auto-inherits its verified architecture, VAE, and text encoder.
+                          </p>
+                        </div>
+
+                        {/* Auto-Inheritance Summary Card */}
+                        <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldCheck className="h-3.5 w-3.5 text-[var(--accent)]" />
+                              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">
+                                Conditioning Auto-Inheritance
+                              </span>
+                            </div>
+                            <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20 font-bold">
+                              {selectedBaseKey ? "Enclave Synced" : "Dynamic Runtime"}
+                            </span>
+                          </div>
+                          {selectedBaseKey ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 font-mono text-[10px]">
+                              <div className="rounded border border-[var(--line)] bg-[var(--surface-raised)] p-2">
+                                <span className="text-[var(--ink-faint)] block text-[9px] uppercase">Base Architecture</span>
+                                <span className="text-[var(--ink)] font-bold truncate block">{baseModel}</span>
+                              </div>
+                              <div className="rounded border border-[var(--line)] bg-[var(--surface-raised)] p-2">
+                                <span className="text-[var(--ink-faint)] block text-[9px] uppercase">Inherited VAE</span>
+                                <span className="text-[var(--ink)] font-bold truncate block">{vae || "Auto-resolved"}</span>
+                              </div>
+                              <div className="rounded border border-[var(--line)] bg-[var(--surface-raised)] p-2">
+                                <span className="text-[var(--ink-faint)] block text-[9px] uppercase">CLIP Protocol</span>
+                                <span className="text-[var(--ink)] font-bold truncate block">{clipType || "Auto-resolved"}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="font-mono text-[10px] text-[var(--ink-soft)] leading-relaxed">
+                              Universal adapter configuration: weight modifications and rank decompositions are applied dynamically across compatible diffusion backbones during inference.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Advanced Conditioning Override Toggle */}
+                        <div className="pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowAdapterOverride(!showAdapterOverride)}
+                            className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:text-[var(--accent)] transition-colors"
+                          >
+                            <SlidersHorizontal className="h-3 w-3" />
+                            <span>{showAdapterOverride ? "Hide Conditioning Override" : "Specialized Conditioning Override (Optional)"}</span>
+                            <ChevronDown className={`h-3 w-3 transition-transform ${showAdapterOverride ? "rotate-180" : ""}`} />
+                          </button>
+                        </div>
+
+                        {showAdapterOverride && (
+                          <div className="rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] p-3.5 space-y-3.5 animate-in fade-in duration-150">
+                            <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                              Override inherited VAE or text encoder if this adapter was fine-tuned on specialized conditioning.
+                            </p>
+
+                            {/* Override VAE */}
+                            <div className="space-y-1.5">
+                              <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                Override VAE (.safetensors, .sft)
+                              </label>
+                              <CustomSelect
+                                value={isCustomVae ? "__custom__" : vae}
+                                onChange={(val) => {
+                                  if (val === "__custom__") {
+                                    setIsCustomVae(true);
+                                    setVae(customVae);
+                                  } else {
+                                    setIsCustomVae(false);
+                                    setVae(val);
+                                  }
+                                }}
+                                options={[
+                                  ...vaeOptions.map((vp) => ({ value: vp, label: vp })),
+                                  { value: "__custom__", label: "Custom VAE filename (.safetensors, .sft)…" },
+                                ]}
+                                className="w-full"
+                                buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                              />
+                              {isCustomVae && (
+                                <input
+                                  type="text"
+                                  value={customVae}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomVae(val);
+                                    setVae(val);
+                                  }}
+                                  placeholder="e.g. ae.sft, ae.safetensors…"
+                                  className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                                />
+                              )}
+                            </div>
+
+                            {/* Override Text Encoder & CLIP */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                  Override CLIP
+                                </label>
+                                <CustomSelect
+                                  value={isCustomEncoder ? "__custom__" : textEncoder}
+                                  onChange={(val) => {
+                                    if (val === "__custom__") {
+                                      setIsCustomEncoder(true);
+                                      setTextEncoder(customEncoder);
+                                    } else {
+                                      setIsCustomEncoder(false);
+                                      setTextEncoder(val);
+                                    }
+                                  }}
+                                  options={[
+                                    { value: "", label: "None / Not Required" },
+                                    ...encoderOptions.map((enc) => ({ value: enc, label: enc })),
+                                    { value: "__custom__", label: "Custom Encoder filename (.safetensors, .sft)…" },
+                                  ]}
+                                  className="w-full"
+                                  buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                  CLIP Type Protocol
+                                </label>
+                                <CustomSelect
+                                  value={clipType}
+                                  onChange={(val) => setClipType(val)}
+                                  options={clipTypeOptions.map((c) => ({ value: c, label: c }))}
+                                  className="w-full"
+                                  buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TIER 3: AUTOENCODER (VAE) */}
+                    {modelType === "VAE" && (
+                      <div className="space-y-3 animate-in fade-in duration-150">
+                        <div className="space-y-1.5">
+                          <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                            Latent Space Profile & Channel Depth
+                          </label>
+                          <CustomSelect
+                            value={latentProfile}
+                            onChange={setLatentProfile}
+                            options={[
+                              {
+                                value: "16-Channel Latent (FLUX.1 / SD3.5 / SD3 - ae.sft, ae.safetensors)",
+                                label: "16-Channel Latent (FLUX.1 / SD3.5 / SD3 - ae.sft, ae.safetensors)",
+                              },
+                              {
+                                value: "4-Channel Latent (SDXL / SD 1.5 - sdxl_vae, vae-ft-mse)",
+                                label: "4-Channel Latent (SDXL / SD 1.5 - sdxl_vae, vae-ft-mse)",
+                              },
+                              {
+                                value: "8-Channel Video Latent (Wan2.1 / SVD / VideoVAE)",
+                                label: "8-Channel Video Latent (Wan2.1 / SVD / VideoVAE)",
+                              },
+                              { value: "Custom Latent Space", label: "Custom Latent Space" },
+                            ]}
+                            className="w-full"
+                            buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                          />
+                        </div>
+
+                        <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Cpu className="h-3.5 w-3.5 text-[var(--accent)]" />
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">
+                              Pixel-to-Latent Autoencoder Bridge
+                            </span>
+                          </div>
+                          <p className="font-mono text-[10px] text-[var(--ink-soft)] leading-relaxed">
+                            This asset functions directly as the continuous autoencoder, transforming spatial RGB pixel arrays into compressed latent representations and reconstructing latent tensors back to image canvas. Downstream VAE decoders, text encoders, and CLIP protocols are inactive for this tier.
+                          </p>
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <span className="font-mono text-[9px] text-[var(--ink-faint)]">Supported file extensions:</span>
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--surface-raised)] border border-[var(--line)] text-[var(--accent)]">
+                              .safetensors
+                            </span>
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--surface-raised)] border border-[var(--line)] text-[var(--accent)]">
+                              .sft
+                            </span>
+                            <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--surface-raised)] border border-[var(--line)] text-[var(--accent)]">
+                              .pt
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TIER 4: GUIDANCE (ControlNet, StyleModel) */}
+                    {(modelType === "ControlNet" || modelType === "StyleModel") && (
+                      <div className="space-y-3 animate-in fade-in duration-150">
+                        <div className="space-y-1.5">
+                          <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                            Preprocessor Modality & Vision Encoding
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              "Canny Edge",
+                              "Depth (Z-Buffer)",
+                              "OpenPose Body",
+                              "Normal Map",
+                              "LineArt",
+                              "Style / IP-Adapter",
+                              "MLSD Wireframe",
+                              "Tile / Upscale",
+                            ].map((mod) => {
+                              const isSel = preprocessorModality === mod;
+                              return (
+                                <button
+                                  key={mod}
+                                  type="button"
+                                  onClick={() => setPreprocessorModality(mod)}
+                                  className={`rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-bold transition-all ${
+                                    isSel
+                                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                                  }`}
+                                >
+                                  <span>{mod}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Layers3 className="h-3.5 w-3.5 text-[var(--accent)]" />
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">
+                              Spatial Guidance Conditioning
+                            </span>
+                          </div>
+                          <p className="font-mono text-[10px] text-[var(--ink-soft)] leading-relaxed">
+                            Guidance tensors inject structural edge, depth, or vision conditioning cues directly into diffusion transformer blocks (DiT / U-Net zero-convolutions), maintaining geometric fidelity without altering prompt conditioning or requiring external VAE/CLIP decoders.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TIER 5: INVERSION (Embedding, Aesthetic Gradient, Hyper Network) */}
+                    {getModelTier(modelType) === "Inversion" && (
+                      <div className="space-y-3 animate-in fade-in duration-150">
+                        <div className="space-y-1.5">
+                          <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                            Target Vector Dimension & Cross-Attention Space
+                          </label>
+                          <CustomSelect
+                            value={inversionDimension}
+                            onChange={setInversionDimension}
+                            options={[
+                              { value: "4096-dim (FLUX.1 / SD3 T5-XXL)", label: "4096-dim (FLUX.1 / SD3 T5-XXL Tokenizer)" },
+                              { value: "2048-dim (SDXL OpenCLIP ViT-bigG + CLIP-ViT/L)", label: "2048-dim (SDXL OpenCLIP ViT-bigG + CLIP-ViT/L)" },
+                              { value: "768-dim (SD 1.5 CLIP ViT-L/14)", label: "768-dim (SD 1.5 CLIP ViT-L/14)" },
+                              { value: "Custom Dimension", label: "Custom Dimension" },
+                            ]}
+                            className="w-full"
+                            buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                          />
+                        </div>
+
+                        {/* Dynamic Prompt Token Syntax Preview */}
+                        {(() => {
+                          const cleanToken = (title.trim() || "concept")
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_-]/g, "_");
+                          const syntax =
+                            modelType === "Hyper Network"
+                              ? `<hypernet:${cleanToken}:1.0>`
+                              : `embedding:${cleanToken}`;
+                          const isCopied = copiedToken === syntax;
+
+                          return (
+                            <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                                  Prompt Token Syntax Preview
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyToken(syntax)}
+                                  className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--accent)] hover:underline"
+                                >
+                                  {isCopied ? <CheckCheck className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                  <span>{isCopied ? "Copied" : "Copy Token"}</span>
+                                </button>
+                              </div>
+                              <div className="rounded border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 font-mono text-xs font-bold text-[var(--accent)] flex items-center justify-between">
+                                <code>{syntax}</code>
+                              </div>
+                              <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                                Injects learned concept vectors directly into the text conditioning embedding space during generation.
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
-
-                  {/* CLIP & Text Encoder 2-Column Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    {/* Text Encoder Model */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                          CLIP{" "}
-                          <span className="text-[var(--ink-faint)]">
-                            ({encoderFiles.length} detected)
-                          </span>
-                        </label>
-                        {encoderLoading && (
-                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
-                            Scanning…
-                          </span>
-                        )}
-                      </div>
-
-                      <CustomSelect
-                        value={isCustomEncoder ? "__custom__" : textEncoder}
-                        onChange={(val) => {
-                          if (val === "__custom__") {
-                            setIsCustomEncoder(true);
-                            setTextEncoder(customEncoder);
-                          } else {
-                            setIsCustomEncoder(false);
-                            setTextEncoder(val);
-                          }
-                        }}
-                        options={[
-                          { value: "", label: "None / Not Required" },
-                          ...encoderOptions.map((enc) => ({
-                            value: enc,
-                            label: enc,
-                          })),
-                          {
-                            value: "__custom__",
-                            label: "Custom Encoder filename (.safetensors, .sft)…",
-                          },
-                        ]}
-                        className="w-full"
-                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
-                      />
-
-                      {isCustomEncoder && (
-                        <input
-                          type="text"
-                          value={customEncoder}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setCustomEncoder(val);
-                            setTextEncoder(val);
-                          }}
-                          placeholder="e.g. t5xxl_fp8_e4m3fn.sft or clip_l.safetensors…"
-                          className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
-                        />
-                      )}
-
-                      {encoderError && (
-                        <p className="font-mono text-[9px] text-[var(--danger)]">
-                          {encoderError}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* CLIP Type / Protocol */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                          CLIP Type
-                        </label>
-                        {clipTypesLoading && (
-                          <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
-                            Loading…
-                          </span>
-                        )}
-                      </div>
-
-                      <CustomSelect
-                        value={clipType}
-                        onChange={(val) => setClipType(val)}
-                        options={clipTypeOptions.map((c) => ({
-                          value: c,
-                          label: c,
-                        }))}
-                        className="w-full"
-                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1316,18 +1870,34 @@ export default function CreateModelDrawer({
             {step === 2 && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--line)]">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
-                      <Sparkles className="h-3.5 w-3.5" />
+                  <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                        <Sparkles className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                            Recommended Prompts & Presets
+                          </span>
+                          <span className="inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
+                            Optional
+                          </span>
+                        </div>
+                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                          Default prompt conditioning and inference presets applied when users load this model in Studio
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
-                        Recommended Prompts & Presets
-                      </span>
-                      <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                        Default prompt conditioning and inference presets applied when users load this model in Studio
-                      </span>
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                    >
+                      <span>Skip / Keep Defaults</span>
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
                   </div>
 
                   {/* 1. Prompt Conditioning First */}
@@ -1538,7 +2108,7 @@ export default function CreateModelDrawer({
                           Model Weights & Release Versions
                         </span>
                         <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                          Attach weights (.safetensors, .sft, .ckpt, .gguf), manage release branches, or link from ComfyUI
+                          Attach weights, manage release branches
                         </span>
                       </div>
                     </div>
@@ -1695,7 +2265,13 @@ export default function CreateModelDrawer({
                           </p>
                         </div>
                         <p className="font-mono text-[9px] text-[var(--ink-faint)]">
-                          Link instantly from <span className="text-[var(--accent)]">models/{comfyCategory}/</span> with zero disk copy
+                          Link instantly from{" "}
+                          <span className="text-[var(--accent)]">
+                            {modelType === "Checkpoint"
+                              ? "models/checkpoints/ & models/diffusion_models/"
+                              : `models/${comfyCategory}/`}
+                          </span>{" "}
+                          with zero disk copy
                         </p>
                       </div>
                       <div className="mt-2.5 flex items-center justify-between">
@@ -1737,69 +2313,137 @@ export default function CreateModelDrawer({
                           type="search"
                           value={localSearch}
                           onChange={(e) => setLocalSearch(e.target.value)}
-                          placeholder={`Search ${comfyCategory} files to add to ${activeVersion.name}…`}
+                          placeholder={
+                            modelType === "Checkpoint"
+                              ? `Search checkpoints & modular UNET/DiT files to add to ${activeVersion.name}…`
+                              : `Search ${comfyCategory} files to add to ${activeVersion.name}…`
+                          }
                           className="workspace-field h-8 w-full pl-8 pr-3 font-mono text-[11px] bg-[var(--surface)] border border-[var(--line)] rounded-[5px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none"
                         />
                       </div>
 
-                      {localLoading ? (
-                        <div className="p-4 text-center font-mono text-[11px] text-[var(--ink-faint)] animate-pulse">
-                          Scanning ComfyUI model enclave…
-                        </div>
-                      ) : localError ? (
-                        <div className="p-3 rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] font-mono text-[10px] text-[var(--danger)]">
-                          {localError}
-                        </div>
-                      ) : localFiles.length === 0 ? (
-                        <div className="p-4 text-center font-mono text-[11px] text-[var(--ink-faint)]">
-                          No files found in {comfyCategory}.
-                        </div>
-                      ) : (
-                        <div className="max-h-48 overflow-y-auto rounded-[5px] border border-[var(--line)] bg-[var(--surface)] divide-y divide-[var(--line)]">
-                          {localFiles.map((item) => {
-                            const isAlreadyAttached = activeVersion.files.some(
-                              (f) =>
-                                f.kind === "local" &&
-                                f.local?.filename === item.filename &&
-                                f.local?.category === item.category,
-                            );
+                      {/* Quick filter button bar inside the picker header when modelType === "Checkpoint" */}
+                      {modelType === "Checkpoint" && (
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)] mr-0.5">
+                            Filter:
+                          </span>
+                          {(
+                            [
+                              { id: "all", label: "All" },
+                              { id: "checkpoints", label: "Monolithic Checkpoints" },
+                              { id: "diffusion_models", label: "Modular UNET / DiT" },
+                            ] as const
+                          ).map((tab) => {
+                            const isSelected = vaultFilter === tab.id;
+                            const count =
+                              tab.id === "all"
+                                ? localFiles.length
+                                : localFiles.filter((f) => f.category === tab.id).length;
                             return (
                               <button
-                                key={`${item.category}/${item.filename}`}
+                                key={tab.id}
                                 type="button"
-                                disabled={isAlreadyAttached}
-                                onClick={() => addLocalFile(item)}
-                                className={`flex w-full items-center justify-between p-2.5 text-left transition-colors ${
-                                  isAlreadyAttached
-                                    ? "opacity-50 cursor-not-allowed bg-[var(--surface-sunken)]"
-                                    : "hover:bg-[var(--surface-raised)] text-[var(--ink)]"
+                                onClick={() => setVaultFilter(tab.id)}
+                                className={`rounded px-2 py-0.5 font-mono text-[9px] font-semibold transition-colors ${
+                                  isSelected
+                                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                                    : "bg-[var(--surface)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
                                 }`}
                               >
-                                <div className="flex items-center gap-2 min-w-0 mr-2">
-                                  <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
-                                  <span className="truncate font-mono text-[11px]">
-                                    {item.filename}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-mono text-[9px] text-[var(--ink-faint)]">
-                                    {formatBytes(item.size)}
-                                  </span>
-                                  {isAlreadyAttached ? (
-                                    <span className="text-[9px] font-mono text-[var(--accent)] font-semibold">
-                                      Attached
-                                    </span>
-                                  ) : (
-                                    <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/20">
-                                      + Attach
-                                    </span>
-                                  )}
-                                </div>
+                                {tab.label}
+                                <span className="ml-1 opacity-70">({count})</span>
                               </button>
                             );
                           })}
                         </div>
                       )}
+
+                      {(() => {
+                        const displayedFiles =
+                          modelType === "Checkpoint" && vaultFilter !== "all"
+                            ? localFiles.filter((f) => f.category === vaultFilter)
+                            : localFiles;
+                        return localLoading ? (
+                          <div className="p-4 text-center font-mono text-[11px] text-[var(--ink-faint)] animate-pulse">
+                            Scanning ComfyUI model enclave…
+                          </div>
+                        ) : localError ? (
+                          <div className="p-3 rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] font-mono text-[10px] text-[var(--danger)]">
+                            {localError}
+                          </div>
+                        ) : displayedFiles.length === 0 ? (
+                          <div className="p-4 text-center font-mono text-[11px] text-[var(--ink-faint)]">
+                            {modelType === "Checkpoint"
+                              ? vaultFilter === "checkpoints"
+                                ? "No monolithic checkpoints found."
+                                : vaultFilter === "diffusion_models"
+                                ? "No modular UNET / DiT models found."
+                                : "No checkpoints or diffusion models found."
+                              : `No files found in ${comfyCategory}.`}
+                          </div>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto rounded-[5px] border border-[var(--line)] bg-[var(--surface)] divide-y divide-[var(--line)]">
+                            {displayedFiles.map((item) => {
+                              const isAlreadyAttached = activeVersion.files.some(
+                                (f) =>
+                                  f.kind === "local" &&
+                                  f.local?.filename === item.filename &&
+                                  f.local?.category === item.category,
+                              );
+                              return (
+                                <button
+                                  key={`${item.category}/${item.filename}`}
+                                  type="button"
+                                  disabled={isAlreadyAttached}
+                                  onClick={() => addLocalFile(item)}
+                                  className={`flex w-full items-center justify-between p-2.5 text-left transition-colors ${
+                                    isAlreadyAttached
+                                      ? "opacity-50 cursor-not-allowed bg-[var(--surface-sunken)]"
+                                      : "hover:bg-[var(--surface-raised)] text-[var(--ink)]"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 mr-2">
+                                    <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+                                    <span className="truncate font-mono text-[11px]">
+                                      {item.filename}
+                                    </span>
+                                    <span
+                                      className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider border ${
+                                        item.category === "diffusion_models"
+                                          ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                                          : item.category === "checkpoints"
+                                          ? "border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--ink-soft)]"
+                                          : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)]"
+                                      }`}
+                                    >
+                                      {item.category === "diffusion_models"
+                                        ? "MODULAR UNET"
+                                        : item.category === "checkpoints"
+                                        ? "MONOLITHIC"
+                                        : item.category}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                                      {formatBytes(item.size)}
+                                    </span>
+                                    {isAlreadyAttached ? (
+                                      <span className="text-[9px] font-mono text-[var(--accent)] font-semibold">
+                                        Attached
+                                      </span>
+                                    ) : (
+                                      <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/20">
+                                        + Attach
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -1842,6 +2486,21 @@ export default function CreateModelDrawer({
                                     <span className="truncate font-bold text-[var(--ink)]" title={file.filename}>
                                       {file.filename}
                                     </span>
+                                    {(modelType === "Checkpoint" ||
+                                      file.local?.category === "diffusion_models" ||
+                                      file.local?.category === "checkpoints") && (
+                                      <span
+                                        className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold ${
+                                          file.local?.category === "diffusion_models"
+                                            ? "border-purple-500/40 bg-purple-500/15 text-purple-300"
+                                            : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-soft)]"
+                                        }`}
+                                      >
+                                        {file.local?.category === "diffusion_models"
+                                          ? "Modular UNET (diffusion_models)"
+                                          : "Checkpoint (checkpoints)"}
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 <td className="px-2.5 py-2.5">
@@ -2133,7 +2792,7 @@ export default function CreateModelDrawer({
                   <span>Card Live Mockup</span>
                 </div>
                 <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--accent)] bg-[var(--accent)]/10 px-2 py-0.5 rounded-[5px] border border-[var(--accent)]/20">
-                  Step {step}/4
+                  Step {currentStepNumber}/{totalSteps}
                 </span>
               </div>
 
@@ -2164,19 +2823,23 @@ export default function CreateModelDrawer({
                     {resolvedBaseModel}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-[var(--ink-faint)]">Target VAE:</span>
-                  <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
-                    {resolvedVae || "None"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-[var(--ink-faint)]">CLIP / Encoder:</span>
-                  <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
-                    {[resolvedEncoder, resolvedClipType].filter(Boolean).join(" · ") || "None"}
-                  </span>
-                </div>
-                {recommendedPrompt && (
+                {resolvedVae && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Target VAE:</span>
+                    <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
+                      {resolvedVae}
+                    </span>
+                  </div>
+                )}
+                {[resolvedEncoder, resolvedClipType].filter(Boolean).length > 0 && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">CLIP / Encoder:</span>
+                    <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
+                      {[resolvedEncoder, resolvedClipType].filter(Boolean).join(" · ")}
+                    </span>
+                  </div>
+                )}
+                {promptable && recommendedPrompt && (
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-[var(--ink-faint)]">Prompt:</span>
                     <span
@@ -2205,12 +2868,14 @@ export default function CreateModelDrawer({
                       : "Pending…"}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-[var(--ink-faint)]">Trigger Words:</span>
-                  <span className="font-semibold text-[var(--accent)]">
-                    {triggerWords.length ? `${triggerWords.length} active` : "None"}
-                  </span>
-                </div>
+                {promptable && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Trigger Words:</span>
+                    <span className="font-semibold text-[var(--accent)]">
+                      {triggerWords.length ? `${triggerWords.length} active` : "None"}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-[var(--ink-faint)]">Visibility:</span>
                   <span
@@ -2239,8 +2904,15 @@ export default function CreateModelDrawer({
             type="button"
             disabled={busy}
             onClick={() => {
-              if (step === 1) onClose();
-              else setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
+              if (step === 1) {
+                onClose();
+              } else if (step === 2) {
+                setStep(1);
+              } else if (step === 3) {
+                setStep(promptable ? 2 : 1);
+              } else if (step === 4) {
+                setStep(3);
+              }
             }}
             className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[11px] font-bold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
           >
@@ -2255,11 +2927,31 @@ export default function CreateModelDrawer({
           </button>
 
           <div className="flex items-center gap-2.5">
+            {step === 2 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setStep(3)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-3 font-mono text-[11px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+              >
+                <span>Skip / Keep Defaults</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            )}
+
             {step < 4 ? (
               <button
                 type="button"
                 disabled={step === 1 && !title.trim()}
-                onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
+                onClick={() => {
+                  if (step === 1) {
+                    setStep(promptable ? 2 : 3);
+                  } else if (step === 2) {
+                    setStep(3);
+                  } else if (step === 3) {
+                    setStep(4);
+                  }
+                }}
                 className="inline-flex h-8 items-center gap-1.5 rounded-[5px] bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
               >
                 <span>Next Step</span>

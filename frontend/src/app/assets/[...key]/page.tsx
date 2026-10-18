@@ -178,7 +178,6 @@ export default function AssetDetailPage() {
             items={[asset]}
             modelOptions={modelOptions}
             backHref="/assets"
-            backLabel="Library"
             onDeleteOutput={handleDelete}
           />
         ) : null}
