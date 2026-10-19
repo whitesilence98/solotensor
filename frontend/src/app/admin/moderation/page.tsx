@@ -62,6 +62,7 @@ export default function ModerationDashboardPage() {
     isAdmin,
     hasPermission,
     switchRoleDemo,
+    refreshPendingReviewCount,
   } = useAuth();
 
   const canAccess =
@@ -94,14 +95,20 @@ export default function ModerationDashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [items, logs, pendingRes] = await Promise.all([
+      const [itemsRes, logsRes, pendingRes] = await Promise.allSettled([
         api.getModerationQueue(),
         api.getSecurityAuditLogs(),
-        api.getPendingModelsReviewQueue().catch(() => ({ items: [], total: 0 })),
+        api.getPendingModelsReviewQueue(),
       ]);
-      setQueueItems(items || []);
-      setAuditLogs(logs || []);
-      setPendingModels(pendingRes?.items || []);
+      if (itemsRes.status === "fulfilled") {
+        setQueueItems(itemsRes.value || []);
+      }
+      if (logsRes.status === "fulfilled") {
+        setAuditLogs(logsRes.value || []);
+      }
+      if (pendingRes.status === "fulfilled") {
+        setPendingModels(pendingRes.value?.items || []);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -227,6 +234,7 @@ export default function ModerationDashboardPage() {
         setShowRejectModal(false);
         setRejectFeedback("");
         await loadData();
+        void refreshPendingReviewCount();
       } catch (err) {
         setActionToast(err instanceof Error ? err.message : "Review action failed");
         setTimeout(() => setActionToast(null), 3500);
@@ -234,7 +242,7 @@ export default function ModerationDashboardPage() {
         setActionLoading(false);
       }
     },
-    [selectedPendingModel, loadData]
+    [selectedPendingModel, loadData, refreshPendingReviewCount]
   );
 
   // Directly install a specific file to ComfyUI vault

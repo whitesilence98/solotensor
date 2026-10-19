@@ -28,6 +28,7 @@ export default function UserNavProfile() {
     primaryRole,
     isMod,
     isAdmin,
+    pendingReviewCount,
   } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [claimFeedback, setClaimFeedback] = useState<string | null>(null);
@@ -285,10 +286,17 @@ export default function UserNavProfile() {
               <Link
                 href="/admin/moderation"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-2 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--surface-soft)] hover:text-white"
+                className="flex items-center justify-between rounded-lg border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-2 text-xs font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--surface-soft)] hover:text-white"
               >
-                <ShieldCheck className="h-3.5 w-3.5 text-[var(--accent)]" />
-                <span>Moderation Darkroom</span>
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-[var(--accent)]" />
+                  <span>Moderation Darkroom</span>
+                </div>
+                {pendingReviewCount > 0 && (
+                  <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-mono font-bold text-amber-300 border border-amber-500/40 animate-pulse">
+                    {pendingReviewCount}
+                  </span>
+                )}
               </Link>
             )}
 

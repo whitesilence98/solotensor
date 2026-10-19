@@ -31,6 +31,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   api,
   resolveMediaUrl,
+  type CreatorModel,
   type GalleryItem,
   type GenerationRecord,
   type PublicModelSummary,
@@ -66,6 +67,39 @@ function formatMetric(n: number): string {
     return formatted.endsWith(".0") ? `${Math.floor(n / 1_000)}K` : `${formatted}K`;
   }
   return (n ?? 0).toLocaleString("en-US");
+}
+
+function creatorModelToSummary(m: CreatorModel, author?: UserPublicProfile | null): PublicModelSummary {
+  let coverUrl: string | null = null;
+  let sampleCount = 0;
+  let fileCount = 0;
+  for (const v of m.versions || []) {
+    fileCount += v.files?.length || 0;
+    sampleCount += v.samples?.length || 0;
+    if (!coverUrl && v.samples?.length) {
+      coverUrl = v.samples[0].url;
+    }
+  }
+  return {
+    model_id: m.model_id,
+    title: m.title,
+    description: m.description,
+    category: m.category,
+    model_type: m.model_type,
+    tags: m.tags || [],
+    base_model: m.compatibility?.base_model || "SDXL",
+    published_at: m.published_at || m.created_at,
+    updated_at: m.updated_at,
+    cover_url: coverUrl,
+    version_count: (m.versions || []).length,
+    file_count: fileCount,
+    sample_count: sampleCount,
+    author_id: m.user_id || undefined,
+    author_username: author?.username || undefined,
+    author_display_name: author?.display_name || undefined,
+    author_avatar_url: author?.avatar_url || undefined,
+    moderation_status: m.moderation_status,
+  };
 }
 
 export default function UserProfilePage({
@@ -151,7 +185,12 @@ export default function UserProfilePage({
         try {
           const [toolsRes, modelsRes, galleryRes] = await Promise.all([
             api.listTools(data.id).catch(() => []),
-            api.getPublicModels("", data.id).catch(() => ({ items: [] })),
+            (isSelf
+              ? api.listCreatorModels({ user_id: data.id })
+                  .then((items) => ({ items: items.map((m) => creatorModelToSummary(m, data)) }))
+                  .catch(() => api.getPublicModels("", data.id))
+              : api.getPublicModels("", data.id)
+            ).catch(() => ({ items: [] })),
             api.getGalleryPaginated({ user_id: data.id, limit: 60 }).catch(() => ({ items: [], total: 0 })),
           ]);
 

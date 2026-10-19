@@ -845,6 +845,12 @@ export default function CreateModelDrawer({
         ? firstStagedFile.filename.replace(/\.[^/.]+$/, "")
         : "Untitled model");
 
+    if (!isAuthenticated) {
+      openAuthModal("create_model");
+      setError("Please sign in before publishing your model.");
+      return;
+    }
+
     if (totalFilesCount === 0) {
       setError("Please attach at least one weights file (.safetensors / .sft / .ckpt) before creating the model.");
       setStep(3);

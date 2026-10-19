@@ -7,6 +7,7 @@ import {
   Box,
   Check,
   ChevronDown,
+  Clock,
   Filter,
   Layers,
   Plus,
@@ -83,6 +84,7 @@ export default function ModelsPage() {
   const [baseModelFilter, setBaseModelFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
   const [studioOpen, setStudioOpen] = useState(false);
+  const [createdBanner, setCreatedBanner] = useState<{ id: string; title: string } | null>(null);
 
   const load = (searchVal = query) => {
     setLoading(true);
@@ -189,6 +191,39 @@ export default function ModelsPage() {
     >
       {/* 1. Main Content Grid & Integrated Controls */}
       <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        {/* Model Submission Pending Review Alert */}
+        {createdBanner && (
+          <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-200 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2.5">
+              <Clock className="h-4 w-4 shrink-0 text-amber-400 animate-pulse" />
+              <div>
+                <p className="font-bold text-amber-300">
+                  Model &ldquo;{createdBanner.title}&rdquo; Submitted for Moderator Review
+                </p>
+                <p className="text-[11px] text-amber-200/80">
+                  Your model has been submitted to the moderation queue. It will appear in this public gallery once approved by a moderator.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href={`/models/${createdBanner.id}`}
+                className="rounded border border-amber-500/50 bg-amber-500/20 px-3 py-1 font-mono text-[10px] font-bold text-amber-100 hover:bg-amber-500/30 transition-colors"
+              >
+                View Model &rarr;
+              </Link>
+              <button
+                type="button"
+                onClick={() => setCreatedBanner(null)}
+                className="rounded p-1 text-amber-400/70 hover:text-amber-200 transition-colors"
+                aria-label="Dismiss banner"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Command Bar Toolbar: Search + Base Model + Sort + Publish CTA */}
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5">
@@ -408,8 +443,14 @@ export default function ModelsPage() {
       <CreateModelDrawer
         open={studioOpen}
         onClose={() => setStudioOpen(false)}
-        onCreated={() => {
+        onCreated={(model) => {
           load();
+          if (model?.title) {
+            setCreatedBanner({
+              id: model.model_id,
+              title: model.title,
+            });
+          }
         }}
       />
     </main>

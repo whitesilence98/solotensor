@@ -30,7 +30,7 @@ export default function WorkspaceNavbar({
   children,
   maxWidth = "max-w-[1600px]",
 }: WorkspaceNavbarProps) {
-  const { isMod, isAdmin } = useAuth();
+  const { isMod, isAdmin, pendingReviewCount } = useAuth();
   const statusDotClass =
     statusVariant === "warning"
       ? "bg-amber-400"
@@ -67,10 +67,15 @@ export default function WorkspaceNavbar({
               <Link
                 href="/admin/moderation"
                 className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors"
-                title="SoloTensor Moderation Darkroom"
+                title={pendingReviewCount > 0 ? `${pendingReviewCount} pending model reviews` : "SoloTensor Moderation Darkroom"}
               >
                 <Shield className="h-3 w-3" />
                 <span>MOD DARKROOM</span>
+                {pendingReviewCount > 0 && (
+                  <span className="flex h-3.5 min-w-[15px] items-center justify-center rounded-full bg-amber-500/20 px-1 font-mono text-[9px] font-black text-amber-300 border border-amber-500/50 animate-pulse">
+                    {pendingReviewCount}
+                  </span>
+                )}
               </Link>
             )}
             {actions}

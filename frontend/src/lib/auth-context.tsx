@@ -68,6 +68,8 @@ export interface AuthContextType {
   ) => Promise<{ success: boolean; message: string }>;
   openAuthModal: (reason?: string | unknown) => void;
   closeAuthModal: () => void;
+  pendingReviewCount: number;
+  refreshPendingReviewCount: () => Promise<void>;
 }
 
 const DEFAULT_CREDITS: CreditStatus = {
@@ -437,6 +439,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const [pendingReviewCount, setPendingReviewCount] = useState<number>(0);
+
+  const refreshPendingReviewCount = useCallback(async () => {
+    if (!isMod && !isAdmin) {
+      setPendingReviewCount(0);
+      return;
+    }
+    try {
+      const res = await api.getPendingModelsReviewQueue();
+      setPendingReviewCount(res?.total ?? res?.items?.length ?? 0);
+    } catch {
+      /* ignore */
+    }
+  }, [isMod, isAdmin]);
+
+  useEffect(() => {
+    if (isMod || isAdmin) {
+      void refreshPendingReviewCount();
+      const interval = setInterval(() => {
+        void refreshPendingReviewCount();
+      }, 30000);
+      return () => clearInterval(interval);
+    } else {
+      setPendingReviewCount(0);
+    }
+  }, [isMod, isAdmin, refreshPendingReviewCount]);
+
   const value = useMemo<AuthContextType>(
     () => ({
       user,
@@ -467,6 +496,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resendVerification,
       openAuthModal,
       closeAuthModal,
+      pendingReviewCount,
+      refreshPendingReviewCount,
     }),
     [
       user,
@@ -496,6 +527,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resendVerification,
       openAuthModal,
       closeAuthModal,
+      pendingReviewCount,
+      refreshPendingReviewCount,
     ]
   );
 

@@ -35,7 +35,7 @@ function isActive(pathname: string, href: string): boolean {
 
 export default function SidebarNav() {
   const pathname = usePathname();
-  const { isMod, isAdmin } = useAuth();
+  const { isMod, isAdmin, pendingReviewCount } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const moreSheetRef = useRef<HTMLDivElement>(null);
@@ -91,11 +91,12 @@ export default function SidebarNav() {
 
   const item = ({ id, icon: Icon, label, href, primary }: NavItem) => {
     const active = isActive(pathname, href);
+    const hasPending = id === "moderation" && pendingReviewCount > 0;
     return (
       <Link
         key={id}
         href={href}
-        aria-label={label}
+        aria-label={hasPending ? `${label} (${pendingReviewCount} pending)` : label}
         aria-current={active ? "page" : undefined}
         className={`group relative flex h-11 w-11 items-center justify-center transition-all duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] active:translate-y-px ${primary ? "" : "hidden md:flex"} ${active ? "text-[var(--accent-ink)]" : "text-[var(--ink-faint)] hover:text-[var(--ink)]"}`}
       >
@@ -106,8 +107,13 @@ export default function SidebarNav() {
           <span className="absolute inset-1 rounded-lg hover:bg-[var(--surface-soft)] transition-colors duration-[200ms]" aria-hidden="true" />
         )}
         <Icon className="relative z-10 h-5 w-5" strokeWidth={1.5} />
+        {hasPending && (
+          <span className="absolute top-1 right-1 z-20 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500/25 px-1 font-mono text-[9px] font-black text-amber-300 border border-amber-500/60 shadow-sm animate-pulse">
+            {pendingReviewCount}
+          </span>
+        )}
         <span className="pointer-events-none absolute left-[calc(100%+.85rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 text-xs font-semibold tracking-wide text-[var(--ink)] opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-[opacity] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
-          {label}
+          {hasPending ? `${label} (${pendingReviewCount} pending review)` : label}
         </span>
       </Link>
     );

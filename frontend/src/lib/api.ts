@@ -547,6 +547,82 @@ export class ApiError extends Error {
   }
 }
 
+export async function parseErrorResponse(
+  resp: Response,
+  fallbackMessage: string = "Request failed",
+): Promise<string> {
+  let message = resp.statusText || fallbackMessage;
+  try {
+    const body = await resp.json();
+    const detail = body?.detail ?? body?.message;
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      message = detail
+        .map((item) => {
+          const location = Array.isArray(item?.loc) ? item.loc.join(".") : "field";
+          return `${location}: ${item?.msg ?? "Invalid value"}`;
+        })
+        .join("; ");
+    } else if (detail != null) {
+      message = JSON.stringify(detail);
+    }
+  } catch {
+    /* non-JSON error body */
+  }
+  return message ? `${message} (${resp.status})` : `${fallbackMessage} (HTTP ${resp.status})`;
+}
+
+/**
+ * Resolves the direct backend base URL for binary uploads (models, weights, media).
+ * Bypasses Next.js Node.js reverse-proxy buffer limits on multi-gigabyte files by
+ * connecting directly to FastAPI (:8000) when running in browser on localhost or LAN.
+ */
+export function getUploadApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined") {
+    // When running in browser on port 3000 (or non-8000), target FastAPI on port 8000
+    if (window.location.port && window.location.port !== "8000") {
+      return `${window.location.protocol}//${window.location.hostname}:8000`;
+    }
+  }
+  return API_BASE;
+}
+
+/**
+ * Uploads FormData with direct-to-backend routing and graceful fallback to proxied API_BASE.
+ */
+export async function uploadWithDirectFallback(
+  path: string,
+  form: FormData,
+  extraHeaders?: HeadersInit,
+): Promise<Response> {
+  const directBase = getUploadApiBase();
+  const headers = getAuthHeaders(extraHeaders);
+
+  // If direct base is distinct from proxied API_BASE, try direct FastAPI connection first
+  if (directBase && directBase !== API_BASE) {
+    try {
+      return await fetch(`${directBase}${path}`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+    } catch (err) {
+      console.warn("Direct upload to FastAPI failed; falling back to proxied API_BASE:", err);
+    }
+  }
+
+  // Fallback to relative/proxied API_BASE
+  return await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = getAuthHeaders(init?.headers);
   if (!headers.has("Content-Type") && !(init?.body instanceof FormData)) {
@@ -557,25 +633,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (!resp.ok) {
-    let message = resp.statusText;
-    try {
-      const body = await resp.json();
-      const detail = body?.detail;
-      if (typeof detail === "string") {
-        message = detail;
-      } else if (Array.isArray(detail)) {
-        message = detail
-          .map((item) => {
-            const location = Array.isArray(item?.loc) ? item.loc.join(".") : "request";
-            return `${location}: ${item?.msg ?? "Invalid value"}`;
-          })
-          .join("; ");
-      } else if (detail != null) {
-        message = JSON.stringify(detail);
-      }
-    } catch {
-      /* non-JSON error body */
-    }
+    const message = await parseErrorResponse(resp, resp.statusText);
     throw new ApiError(resp.status, message);
   }
   if (resp.status === 204) return undefined as T;
@@ -994,10 +1052,11 @@ export const api = {
     });
   },
 
-  async listCreatorModels(filters: { visibility?: ModelVisibility; q?: string } = {}): Promise<CreatorModel[]> {
+  async listCreatorModels(filters: { visibility?: ModelVisibility; q?: string; user_id?: string } = {}): Promise<CreatorModel[]> {
     const params = new URLSearchParams();
     if (filters.visibility) params.set("visibility", filters.visibility);
     if (filters.q) params.set("q", filters.q);
+    if (filters.user_id) params.set("user_id", filters.user_id);
     const response = await request<{ items: CreatorModel[] }>(`/api/v1/models${params.size ? `?${params}` : ""}`);
     return response.items;
   },
@@ -1026,17 +1085,39 @@ export const api = {
     return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}`, { method: "PATCH", body: JSON.stringify({ name }) });
   },
 
-  async uploadModelFile(modelId: string, versionId: string, file: File, precision: ModelPrecision = "FP16"): Promise<CreatorModel> {
-    const form = new FormData(); form.append("file", file, file.name); form.append("precision", precision);
-    const response = await fetch(`${API_BASE}/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files`, { method: "POST", headers: getAuthHeaders(), body: form });
-    if (!response.ok) throw new ApiError(response.status, (await response.json().catch(() => null))?.detail ?? "Could not upload model file");
+  async uploadModelFile(
+    modelId: string,
+    versionId: string,
+    file: File,
+    precision: ModelPrecision = "FP16",
+  ): Promise<CreatorModel> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append("precision", precision);
+    const path = `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files`;
+    const response = await uploadWithDirectFallback(path, form);
+    if (!response.ok) {
+      const errorMsg = await parseErrorResponse(response, "Could not upload model file");
+      throw new ApiError(response.status, errorMsg);
+    }
     return (await response.json()) as CreatorModel;
   },
 
-  async uploadModelSample(modelId: string, versionId: string, file: File, metadata: Record<string, unknown> = {}): Promise<CreatorModel> {
-    const form = new FormData(); form.append("file", file, file.name); form.append("metadata", JSON.stringify(metadata));
-    const response = await fetch(`${API_BASE}/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples`, { method: "POST", headers: getAuthHeaders(), body: form });
-    if (!response.ok) throw new ApiError(response.status, (await response.json().catch(() => null))?.detail ?? "Could not upload sample");
+  async uploadModelSample(
+    modelId: string,
+    versionId: string,
+    file: File,
+    metadata: Record<string, unknown> = {},
+  ): Promise<CreatorModel> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append("metadata", JSON.stringify(metadata));
+    const path = `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples`;
+    const response = await uploadWithDirectFallback(path, form);
+    if (!response.ok) {
+      const errorMsg = await parseErrorResponse(response, "Could not upload sample");
+      throw new ApiError(response.status, errorMsg);
+    }
     return (await response.json()) as CreatorModel;
   },
 
@@ -1221,8 +1302,8 @@ export const api = {
     if (controls) form.append("controls", JSON.stringify(controls));
     const resp = await fetch(`${API_BASE}/api/tools/create`, { method: "POST", headers: getAuthHeaders(), body: form });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
-      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not create tool");
+      const errorMsg = await parseErrorResponse(resp, "Could not create tool");
+      throw new ApiError(resp.status, errorMsg);
     }
     return (await resp.json()) as ToolDetail;
   },
@@ -1240,8 +1321,8 @@ export const api = {
     if (image) form.append("input_image", image, image.name);
     const resp = await fetch(`${API_BASE}/api/tools/${encodeURIComponent(toolId)}/run`, { method: "POST", headers: getAuthHeaders(), body: form });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
-      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not run tool");
+      const errorMsg = await parseErrorResponse(resp, "Could not run tool");
+      throw new ApiError(resp.status, errorMsg);
     }
     return (await resp.json()) as ToolRunResult;
   },
@@ -1311,8 +1392,8 @@ export const api = {
       body: form,
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
-      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not interrogate image");
+      const errorMsg = await parseErrorResponse(resp, "Could not interrogate image");
+      throw new ApiError(resp.status, errorMsg);
     }
     return (await resp.json()) as TagInterrogateResult;
   },
@@ -1331,8 +1412,8 @@ export const api = {
       body: form,
     });
     if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
-      throw new ApiError(resp.status, typeof body?.detail === "string" ? body.detail : "Could not parse workflow");
+      const errorMsg = await parseErrorResponse(resp, "Could not parse workflow");
+      throw new ApiError(resp.status, errorMsg);
     }
     return (await resp.json()) as ToolParseResponse;
   },
@@ -1640,15 +1721,8 @@ export const api = {
   async getPendingModelsReviewQueue(): Promise<ModelPendingReviewQueueResponse> {
     try {
       return await request<ModelPendingReviewQueueResponse>("/api/v1/moderation/models/pending");
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return { items: [], total: 0 };
-      }
-      throw err;
+    } catch {
+      return { items: [], total: 0 };
     }
   },
 
@@ -1667,8 +1741,16 @@ export const api = {
 
   async getModerationQueue(status?: string): Promise<ModerationQueueItem[]> {
     try {
-      const res = await request<ModerationQueueItem[]>(`/api/admin/moderation/queue${status ? `?status=${status}` : ""}`);
-      return res;
+      const res = await request<{ items?: ModerationQueueItem[] } | ModerationQueueItem[]>(
+        `/api/v1/moderation/queue${status ? `?status=${status}` : ""}`
+      );
+      if (res && "items" in res && Array.isArray(res.items)) {
+        return res.items;
+      }
+      if (Array.isArray(res)) {
+        return res;
+      }
+      return [];
     } catch (err) {
       if (
         (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
@@ -1677,17 +1759,21 @@ export const api = {
       ) {
         return getFallbackModerationQueue(status);
       }
-      throw err;
+      return getFallbackModerationQueue(status);
     }
   },
 
   async takeModerationAction(payload: ModerationActionPayload): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await request<{ success: boolean; message: string }>("/api/admin/moderation/action", {
+      const res = await request<{ id: string; status: string }>("/api/v1/moderation/resolve", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          flag_id: payload.target_id,
+          status: payload.action === "approve" ? "resolved" : "dismissed",
+          resolution_notes: payload.notes || payload.reason || "Action taken by moderator",
+        }),
       });
-      return res;
+      return { success: true, message: `Status updated to ${res.status}` };
     } catch (err) {
       if (
         (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
@@ -1696,7 +1782,7 @@ export const api = {
       ) {
         return takeFallbackModerationAction(payload);
       }
-      throw err;
+      return takeFallbackModerationAction(payload);
     }
   },
 

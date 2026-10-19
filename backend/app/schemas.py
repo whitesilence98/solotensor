@@ -583,6 +583,15 @@ class ModelPrecision(str, Enum):
     BF16 = "BF16"
     QUANTIZED = "Quantized"
 
+    @classmethod
+    def _missing_(cls, value: object) -> Any:
+        if isinstance(value, str):
+            val_upper = value.upper()
+            for member in cls:
+                if member.value.upper() == val_upper:
+                    return member
+        return None
+
 
 class ModelCompatibility(BaseModel):
     model_config = {"extra": "forbid"}

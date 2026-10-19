@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Box, Flame, Layers, Star } from "lucide-react";
+import { Box, Clock, Flame, Layers, Star } from "lucide-react";
 import { resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
 import RoleBadge from "@/components/RoleBadge";
 import UserAvatar from "@/components/UserAvatar";
@@ -23,6 +23,7 @@ export interface TensorModelCardData {
   author_username?: string;
   author_display_name?: string;
   author_role?: string;
+  moderation_status?: string;
 }
 
 export interface TensorModelCardProps {
@@ -228,7 +229,12 @@ export function TensorModelCard({
           </span>
         </div>
 
-        {isExclusive ? (
+        {("moderation_status" in item && item.moderation_status === "pending_review") ? (
+          <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/50 bg-amber-500/25 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wide text-amber-300 backdrop-blur-md shadow-sm animate-pulse">
+            <Clock className="h-2.5 w-2.5" />
+            <span>PENDING REVIEW</span>
+          </span>
+        ) : isExclusive ? (
           <span className="inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wide text-amber-300 backdrop-blur-md shadow-sm">
             EXCLUSIVE
           </span>
