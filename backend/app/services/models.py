@@ -461,6 +461,7 @@ class ModelService:
 
     def list_pending_review(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
+        author_cache: dict[str, Any] = {}
         for path in self.definitions.glob("*.json"):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
@@ -474,15 +475,20 @@ class ModelService:
                 author_avatar_url = None
                 author_role = None
                 if author_id:
-                    try:
-                        u = get_db().get_user_by_id(author_id)
-                        if u:
-                            author_username = u.get("username")
-                            author_display_name = u.get("display_name") or u.get("username")
-                            author_avatar_url = u.get("avatar_url")
-                            author_role = u.get("role")
-                    except Exception as exc:
-                        logger.warning("Could not resolve author info for user %s: %s", author_id, exc)
+                    if author_id in author_cache:
+                        u = author_cache[author_id]
+                    else:
+                        try:
+                            u = get_db().get_user_by_id(author_id)
+                            author_cache[author_id] = u
+                        except Exception as exc:
+                            logger.warning("Could not resolve author info for user %s: %s", author_id, exc)
+                            u = None
+                    if u:
+                        author_username = u.get("username")
+                        author_display_name = u.get("display_name") or u.get("username")
+                        author_avatar_url = u.get("avatar_url")
+                        author_role = u.get("role")
 
                 resp = self._response(record)
                 cover_url = None

@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import secrets
 import sqlite3
+import threading
 from typing import Any, Generator, Optional
 import uuid
 
@@ -56,6 +57,8 @@ class Database:
             path = (backend_root / path).resolve()
         self.db_path = path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._pg_pool: list[Any] = []
+        self._pg_pool_lock = threading.Lock()
 
     @property
     def is_postgres(self) -> bool:
@@ -79,12 +82,30 @@ class Database:
                 from psycopg.rows import dict_row
 
                 conn_url = getattr(self.settings, "effective_database_url", self.settings.DATABASE_URL)
-                pg_conn = psycopg.connect(conn_url, row_factory=dict_row, autocommit=True, connect_timeout=4)
+                pg_conn = None
+                with self._pg_pool_lock:
+                    while self._pg_pool:
+                        cand = self._pg_pool.pop()
+                        if not cand.closed:
+                            pg_conn = cand
+                            break
+
+                if pg_conn is None:
+                    pg_conn = psycopg.connect(conn_url, row_factory=dict_row, autocommit=True, connect_timeout=4)
+
                 wrapped = PostgresConnectionWrapper(pg_conn)
                 try:
                     yield wrapped
                 finally:
-                    wrapped.close()
+                    if not pg_conn.closed:
+                        with self._pg_pool_lock:
+                            if len(self._pg_pool) < 8:
+                                self._pg_pool.append(pg_conn)
+                            else:
+                                try:
+                                    pg_conn.close()
+                                except Exception:
+                                    pass
                 return
             except Exception as exc:
                 logger.warning(
