@@ -53,6 +53,8 @@ backend/generated/
 /generated/
 backend/models/
 /models/
+backend/models_backup*/
+/models_backup*/
 backend/tool_data/
 /tool_data/
 backend/tool_data_backup/
