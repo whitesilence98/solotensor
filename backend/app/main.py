@@ -55,9 +55,12 @@ from .schemas import (
     ModelFilePatchRequest,
     ModelInstallResponse,
     ModelListResponse,
+    ModelPendingReviewQueueResponse,
     ModelPrecision,
     ModelPublishRequest,
     ModelResponse,
+    ModelReviewRequest,
+    ModelReviewResponse,
     ModelSampleResponse,
     ModelUpdateRequest,
     ModelVersionCreateRequest,
@@ -417,12 +420,28 @@ async def get_public_model(model_id: str) -> ModelResponse:
     response_model=ModelInstallResponse,
 )
 async def install_public_model_file(
-    model_id: str, version_id: str, file_id: str
+    model_id: str,
+    version_id: str,
+    file_id: str,
+    current_user: UserResponse = Depends(RequirePermission("model:install_vault")),
+    rbac: RBACService = Depends(get_rbac_service),
 ) -> ModelInstallResponse:
     try:
-        return ModelInstallResponse(
-            **model_storage.install_file(model_id, version_id, file_id)
+        result = model_storage.install_file(model_id, version_id, file_id)
+        await rbac.log_audit(
+            actor_id=current_user.id,
+            action="model:install_vault",
+            resource_type="model",
+            resource_id=model_id,
+            details={
+                "version_id": version_id,
+                "file_id": file_id,
+                "filename": result.get("filename"),
+                "destination": result.get("destination"),
+                "installed": result.get("installed"),
+            },
         )
+        return ModelInstallResponse(**result)
     except ModelConflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ModelError as exc:
@@ -448,10 +467,15 @@ async def list_creator_models(
 async def create_creator_model(
     req: ModelCreateRequest,
     current_user: UserResponse = Depends(RequirePermission("model:publish")),
+    rbac: RBACService = Depends(get_rbac_service),
 ) -> ModelResponse:
     try:
         user_id = current_user.id
-        return model_storage.create(req, user_id=user_id)
+        is_mod = (
+            getattr(current_user, "role", None) in ("admin", "moderator")
+            or any(r in ("admin", "moderator") for r in (getattr(current_user, "roles", []) or []))
+        )
+        return model_storage.create(req, user_id=user_id, is_moderator=is_mod)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -694,7 +718,57 @@ async def publish_creator_model(
         await RequireOwnerOrPermission("model:publish").enforce(
             existing.user_id, current_user, rbac
         )
-        return model_storage.publish(model_id, req)
+        is_mod = (
+            getattr(current_user, "role", None) in ("admin", "moderator")
+            or any(r in ("admin", "moderator") for r in (getattr(current_user, "roles", []) or []))
+        )
+        return model_storage.publish(model_id, req, is_moderator=is_mod)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.get(
+    "/api/v1/models/moderation/pending",
+    response_model=ModelPendingReviewQueueResponse,
+)
+async def list_pending_review_models(
+    current_user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+) -> ModelPendingReviewQueueResponse:
+    items = model_storage.list_pending_review()
+    return ModelPendingReviewQueueResponse(items=items, total=len(items))
+
+
+@app.post(
+    "/api/v1/models/id/{model_id}/review",
+    response_model=ModelReviewResponse,
+)
+async def review_creator_model(
+    model_id: str,
+    req: ModelReviewRequest,
+    current_user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelReviewResponse:
+    try:
+        result = model_storage.review_model(
+            model_id=model_id,
+            action=req.action.value if hasattr(req.action, "value") else str(req.action),
+            notes=req.notes,
+            install_to_comfy=req.install_to_comfy,
+            version_id=req.version_id,
+            file_id=req.file_id,
+        )
+        await rbac.log_audit(
+            actor_id=current_user.id,
+            action=f"model:review_{req.action.value if hasattr(req.action, 'value') else str(req.action)}",
+            resource_type="model",
+            resource_id=model_id,
+            details={
+                "action": req.action.value if hasattr(req.action, "value") else str(req.action),
+                "notes": req.notes,
+                "moderation_status": result["moderation_status"],
+            },
+        )
+        return ModelReviewResponse(**result)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 

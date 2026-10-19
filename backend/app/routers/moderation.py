@@ -16,8 +16,19 @@ from ..schemas import (
     ContentFlagCreateRequest,
     ContentFlagResolveRequest,
     ContentFlagResponse,
+    ModelPendingReviewItem,
+    ModelPendingReviewQueueResponse,
+    ModelReviewRequest,
+    ModelReviewResponse,
     ModerationQueueResponse,
     UserResponse,
+)
+from ..services.models import (
+    ModelConflict,
+    ModelError,
+    ModelNotFound,
+    ModelService,
+    get_model_service,
 )
 from ..services.rbac_service import RBACService, get_rbac_service
 
@@ -143,3 +154,81 @@ async def resolve_content_flag(
 
     logger.info("User %s resolved flag %s as %s", user.id, target_id, req.status)
     return ContentFlagResponse(**resolved)
+
+
+@router.get(
+    "/models/pending",
+    response_model=ModelPendingReviewQueueResponse,
+    summary="List models pending moderation review",
+)
+async def get_pending_models(
+    user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+    model_storage: ModelService = Depends(get_model_service),
+) -> ModelPendingReviewQueueResponse:
+    """Access the model moderation review queue (restricted to moderators and admins)."""
+    items = model_storage.list_pending_review()
+    return ModelPendingReviewQueueResponse(
+        items=items,
+        total=len(items),
+    )
+
+
+@router.post(
+    "/models/{model_id}/review",
+    response_model=ModelReviewResponse,
+    summary="Review a creator model",
+)
+async def review_model_endpoint(
+    model_id: str,
+    req: ModelReviewRequest,
+    user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+    rbac: RBACService = Depends(get_rbac_service),
+    model_storage: ModelService = Depends(get_model_service),
+) -> ModelReviewResponse:
+    """Submit a moderation review decision for a model."""
+    try:
+        res = model_storage.review_model(
+            model_id=model_id,
+            action=req.action.value,
+            notes=req.notes,
+            install_to_comfy=req.install_to_comfy,
+            version_id=req.version_id,
+            file_id=req.file_id,
+        )
+    except ModelNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ModelConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ModelError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    details = {
+        "action": req.action.value,
+        "notes": req.notes,
+        "install_to_comfy": req.install_to_comfy,
+        "version_id": req.version_id,
+        "file_id": req.file_id,
+    }
+    if isinstance(res, dict):
+        details["moderation_status"] = res.get("moderation_status")
+        details["installed"] = res.get("installed", False)
+        details["installed_file"] = res.get("installed_file")
+    else:
+        details["moderation_status"] = res.moderation_status
+        details["installed"] = res.installed
+        details["installed_file"] = res.installed_file
+
+    await rbac.log_audit(
+        actor_id=user.id,
+        action=f"model:moderation_{req.action.value}",
+        resource_type="model",
+        resource_id=model_id,
+        details=details,
+    )
+
+    if isinstance(res, ModelReviewResponse):
+        return res
+    return ModelReviewResponse(**res)
+

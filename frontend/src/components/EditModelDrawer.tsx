@@ -998,6 +998,16 @@ export default function EditModelDrawer({
                     Private (Draft)
                   </button>
                 </div>
+                {visibility === "Public" ? (
+                  <p className="mt-1.5 text-[10px] text-[var(--accent)] flex items-start gap-1 font-mono">
+                    <span>ℹ️</span>
+                    <span>Public models are submitted to the Darkroom moderation queue for review before appearing in the public gallery.</span>
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[10px] text-[var(--ink-faint)] font-mono">
+                    Private models are saved as drafts and visible only to you.
+                  </p>
+                )}
               </div>
 
               {/* Licensing Terms & Creator Governance */}

@@ -570,6 +570,13 @@ class ModelVisibility(str, Enum):
     PRIVATE = "Private"
 
 
+class ModelModerationStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class ModelPrecision(str, Enum):
     FP16 = "FP16"
     FP32 = "FP32"
@@ -790,6 +797,8 @@ class ModelResponse(ModelCreateRequest):
     updated_at: str
     published_at: str | None = None
     versions: list[ModelVersionResponse] = Field(default_factory=list)
+    moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
+    moderation_notes: Optional[str] = None
 
 
 class ModelListResponse(BaseModel):
@@ -854,6 +863,7 @@ class PublicModelSummary(BaseModel):
     version_count: int
     file_count: int
     sample_count: int
+    moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
 
     @field_validator("model_type", mode="before")
     @classmethod
@@ -882,6 +892,8 @@ class PublicModelResponse(BaseModel):
     published_at: str
     updated_at: str
     versions: list[ModelVersionResponse]
+    moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
+    moderation_notes: Optional[str] = None
 
     @field_validator("model_type", mode="before")
     @classmethod
@@ -905,6 +917,62 @@ class ModelInstallResponse(BaseModel):
     installed: bool
     already_present: bool
     sha256: str
+
+
+class ModelReviewAction(str, Enum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_CHANGES = "request_changes"
+
+
+class ModelReviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    action: ModelReviewAction
+    notes: Optional[str] = Field(None, max_length=2000)
+    install_to_comfy: bool = False
+    version_id: Optional[str] = None
+    file_id: Optional[str] = None
+
+
+class ModelReviewResponse(BaseModel):
+    model_id: str
+    moderation_status: ModelModerationStatus
+    moderation_notes: Optional[str] = None
+    action_taken: str
+    installed: bool = False
+    installed_file: Optional[str] = None
+    reviewed_at: str
+
+
+class ModelPendingReviewItem(BaseModel):
+    model_id: str
+    title: str
+    category: ModelCategory
+    model_type: CreatorModelType
+    description: str = Field("", max_length=5000)
+    author_id: str
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    author_avatar_url: Optional[str] = None
+    author_role: Optional[str] = None
+    created_at: str
+    updated_at: str
+    tags: list[str] = Field(default_factory=list)
+    base_model: str
+    permissions: ModelPermissions
+    version_count: int
+    file_count: int
+    sample_count: int
+    cover_url: Optional[str] = None
+    versions: list[ModelVersionResponse] = Field(default_factory=list)
+    moderation_status: ModelModerationStatus = ModelModerationStatus.PENDING_REVIEW
+    moderation_notes: Optional[str] = None
+
+
+class ModelPendingReviewQueueResponse(BaseModel):
+    items: list[ModelPendingReviewItem]
+    total: int
 
 
 class InstalledGalleryModel(BaseModel):

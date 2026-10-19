@@ -246,5 +246,31 @@ class CodeAssistantSchemaTests(unittest.TestCase):
                 AssistantRequest(**payload)
 
 
+class ModelModerationSchemaTests(unittest.TestCase):
+    def test_model_moderation_status_enum(self) -> None:
+        from app.schemas import ModelModerationStatus
+
+        self.assertEqual(ModelModerationStatus.DRAFT.value, "draft")
+        self.assertEqual(ModelModerationStatus.PENDING_REVIEW.value, "pending_review")
+        self.assertEqual(ModelModerationStatus.APPROVED.value, "approved")
+        self.assertEqual(ModelModerationStatus.REJECTED.value, "rejected")
+
+    def test_model_review_request_validation(self) -> None:
+        from app.schemas import ModelReviewRequest, ModelReviewAction
+
+        req = ModelReviewRequest(
+            action=ModelReviewAction.APPROVE,
+            notes="Looks solid and compliant.",
+            install_to_comfy=True,
+            version_id="b" * 32,
+            file_id="c" * 32,
+        )
+        self.assertEqual(req.action, ModelReviewAction.APPROVE)
+        self.assertTrue(req.install_to_comfy)
+
+        with self.assertRaises(ValidationError):
+            ModelReviewRequest(action="invalid_action")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,8 @@ import {
   Heart,
   CornerDownRight,
   AlertTriangle,
+  AlertCircle,
+  Clock,
   CheckCircle2,
   XCircle,
   Play,
@@ -781,6 +783,51 @@ export default function PublicModelDetailPage({
       id="main-content"
       className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] text-[var(--ink-soft)]"
     >
+      {/* Moderation Status Alert Banners */}
+      {model.moderation_status === "pending_review" && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 sm:px-6">
+          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-amber-300">
+              <Clock className="h-4 w-4 shrink-0 text-amber-400 animate-pulse" />
+              <span>
+                <strong>Pending Moderator Approval:</strong> This model has been submitted for review. It will become visible in the public gallery and search once approved by a moderator.
+              </span>
+            </div>
+            {(isAdmin || isMod) && (
+              <Link
+                href="/admin/moderation"
+                className="shrink-0 rounded bg-amber-500/20 px-2.5 py-1 font-mono text-[10px] font-bold text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+              >
+                Review in Darkroom &rarr;
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      {model.moderation_status === "rejected" && (
+        <div className="border-b border-rose-500/30 bg-rose-500/10 px-4 py-2.5 sm:px-6">
+          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-rose-300">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>
+                <strong>Moderation Feedback (Action Required):</strong>{" "}
+                {model.moderation_notes || "The model requires adjustments before it can be published to the public gallery."}
+              </span>
+            </div>
+            <Can do="model:edit" ownerId={model.user_id}>
+              <button
+                type="button"
+                onClick={handleOpenEdit}
+                className="shrink-0 rounded bg-rose-500/20 px-2.5 py-1 font-mono text-[10px] font-bold text-rose-200 border border-rose-500/40 hover:bg-rose-500/30 transition-colors"
+              >
+                Edit & Resubmit
+              </button>
+            </Can>
+          </div>
+        </div>
+      )}
+
       {/* 1. TOP HEADER & IDENTITY BAR */}
       <header className="z-30 border-b border-[var(--line)] bg-[var(--ground)]/95">
         <div className="mx-auto max-w-[1400px] px-4 py-3 sm:px-6">
@@ -1593,7 +1640,7 @@ export default function PublicModelDetailPage({
                   );
                 })()
               )}
-              {primaryFile && activeVersion && (
+              {primaryFile && activeVersion && (isAdmin || isMod) && (
                 <button
                   type="button"
                   onClick={() =>
@@ -1601,12 +1648,16 @@ export default function PublicModelDetailPage({
                   }
                   disabled={installing === primaryFile.file_id}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--accent)]/60 bg-[var(--accent)]/10 py-2 text-xs font-bold text-[var(--accent)] transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
+                  title="Install weight file into ComfyUI vault (Moderator Tool)"
                 >
                   <HardDriveDownload className="h-3.5 w-3.5" />
                   <span>
                     {installing === primaryFile.file_id
                       ? "Installing…"
                       : "ComfyUI"}
+                  </span>
+                  <span className="rounded bg-[var(--accent)]/20 px-1 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
+                    Mod
                   </span>
                 </button>
               )}
@@ -1806,16 +1857,18 @@ export default function PublicModelDetailPage({
                                   <span>Get</span>
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => void install(file, activeVersion.version_id)}
-                                disabled={installing === file.file_id}
-                                className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                                title={`Install ${file.filename} into ComfyUI`}
-                              >
-                                <HardDriveDownload className="h-3 w-3" />
-                                <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
-                              </button>
+                              {(isAdmin || isMod) && (
+                                <button
+                                  type="button"
+                                  onClick={() => void install(file, activeVersion.version_id)}
+                                  disabled={installing === file.file_id}
+                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                                  title={`Install ${file.filename} into ComfyUI (Moderator Tool)`}
+                                >
+                                  <HardDriveDownload className="h-3 w-3" />
+                                  <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         );

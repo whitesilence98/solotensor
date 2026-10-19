@@ -531,6 +531,7 @@ class Database:
                     ("model:edit_any", "model", "Moderator update of categories or tags"),
                     ("model:delete_own", "model", "Soft delete / unpublish owned model"),
                     ("model:delete_any", "model", "Moderator takedown of violating model"),
+                    ("model:install_vault", "model", "Install verified model into local ComfyUI storage vault"),
 
                     # AI Tools
                     ("tool:execute", "tool", "Run visual pipelines"),
@@ -593,6 +594,7 @@ class Database:
                     "generation:delete_any",
                     "model:edit_any",
                     "model:delete_any",
+                    "model:install_vault",
                     "tool:delete_any",
                     "moderation:review_queue",
                     "moderation:ban_user",

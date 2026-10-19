@@ -601,6 +601,7 @@ export type CreatorModelType =
   | "DoRA"
   | "StyleModel";
 export type ModelVisibility = "Public" | "Unlisted" | "Private";
+export type ModelModerationStatus = "draft" | "pending_review" | "approved" | "rejected";
 export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
 
 export interface CreatorModelCompatibility {
@@ -680,6 +681,8 @@ export interface CreatorModel {
   updated_at: string;
   published_at: string | null;
   versions: CreatorModelVersion[];
+  moderation_status?: ModelModerationStatus;
+  moderation_notes?: string | null;
 }
 
 export interface CreatorModelPayload {
@@ -715,6 +718,7 @@ export interface PublicModelSummary {
   author_display_name?: string | null;
   author_avatar_url?: string | null;
   author_role?: string;
+  moderation_status?: ModelModerationStatus;
 }
 
 export type ModerationTargetType = "model" | "post" | "comment" | "user";
@@ -767,6 +771,56 @@ export interface ModelInstallResponse {
   installed: boolean;
   already_present: boolean;
   sha256: string;
+}
+
+export type ModelReviewActionType = "approve" | "reject" | "request_changes";
+
+export interface ModelReviewRequest {
+  action: ModelReviewActionType;
+  notes?: string;
+  install_to_comfy?: boolean;
+  version_id?: string;
+  file_id?: string;
+}
+
+export interface ModelReviewResponse {
+  model_id: string;
+  moderation_status: ModelModerationStatus;
+  moderation_notes: string | null;
+  action_taken: string;
+  installed: boolean;
+  installed_file: string | null;
+  reviewed_at: string;
+}
+
+export interface ModelPendingReviewItem {
+  model_id: string;
+  title: string;
+  category: CreatorModelCategory;
+  model_type: CreatorModelType;
+  description?: string;
+  author_id: string;
+  author_username?: string | null;
+  author_display_name?: string | null;
+  author_avatar_url?: string | null;
+  author_role?: string;
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+  base_model: string;
+  permissions: CreatorModelPermissions;
+  version_count: number;
+  file_count: number;
+  sample_count: number;
+  cover_url: string | null;
+  versions: CreatorModelVersion[];
+  moderation_status: ModelModerationStatus;
+  moderation_notes?: string | null;
+}
+
+export interface ModelPendingReviewQueueResponse {
+  items: ModelPendingReviewItem[];
+  total: number;
 }
 
 export interface InstalledGalleryModel {
@@ -1581,6 +1635,34 @@ export const api = {
       }
       throw err;
     }
+  },
+
+  async getPendingModelsReviewQueue(): Promise<ModelPendingReviewQueueResponse> {
+    try {
+      return await request<ModelPendingReviewQueueResponse>("/api/v1/moderation/models/pending");
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return { items: [], total: 0 };
+      }
+      throw err;
+    }
+  },
+
+  async reviewModelPublication(
+    modelId: string,
+    payload: ModelReviewRequest
+  ): Promise<ModelReviewResponse> {
+    return request<ModelReviewResponse>(
+      `/api/v1/moderation/models/${encodeURIComponent(modelId)}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
   },
 
   async getModerationQueue(status?: string): Promise<ModerationQueueItem[]> {

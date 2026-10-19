@@ -16,16 +16,26 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..schemas import (
+    ModelCompatibility,
     ModelCreateRequest,
     ModelFilePatchRequest,
     ModelFileResponse,
+    ModelGenerationSettings,
+    ModelModerationStatus,
+    ModelPendingReviewItem,
+    ModelPendingReviewQueueResponse,
+    ModelPermissions,
     ModelPrecision,
     ModelPublishRequest,
     ModelResponse,
+    ModelReviewAction,
+    ModelReviewRequest,
+    ModelReviewResponse,
     ModelSampleResponse,
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
+    ModelVisibility,
 )
 from app.services.model_factory import ModelHandlerFactory, ModelTier
 
@@ -166,6 +176,16 @@ class ModelService:
                 compatibility["text_encoder"] = legacy[0]
             compatibility.setdefault("text_encoder", None)
             compatibility.setdefault("clip_type", None)
+        if "compatibility" not in record or not isinstance(record.get("compatibility"), dict):
+            record["compatibility"] = ModelCompatibility().model_dump()
+        if "generation" not in record or not isinstance(record.get("generation"), dict):
+            record["generation"] = ModelGenerationSettings().model_dump()
+        if "permissions" not in record or not isinstance(record.get("permissions"), dict):
+            record["permissions"] = ModelPermissions().model_dump()
+        if "moderation_status" not in record:
+            record["moderation_status"] = ModelModerationStatus.APPROVED.value
+        if "moderation_notes" not in record:
+            record["moderation_notes"] = None
         return record
 
     def _version(self, record: dict[str, Any], version_id: str) -> dict[str, Any]:
@@ -278,6 +298,8 @@ class ModelService:
             updated_at=record["updated_at"],
             published_at=record.get("published_at"),
             versions=versions,
+            moderation_status=record.get("moderation_status", ModelModerationStatus.APPROVED.value),
+            moderation_notes=record.get("moderation_notes"),
         )
 
     def _validate_base_association(
@@ -304,7 +326,12 @@ class ModelService:
         if require_public:
             self.resolve_installed_gallery_file(*base_ids)
 
-    def create(self, payload: ModelCreateRequest, user_id: str | None = None) -> ModelResponse:
+    def create(
+        self,
+        payload: ModelCreateRequest,
+        user_id: str | None = None,
+        is_moderator: bool = False,
+    ) -> ModelResponse:
         model_id = uuid.uuid4().hex
         now = self._now()
         version_id = uuid.uuid4().hex
@@ -313,12 +340,32 @@ class ModelService:
         if "compatibility" in dumped and dumped["compatibility"]:
             m_type = payload.model_type.value if hasattr(payload.model_type, "value") else str(payload.model_type)
             dumped["compatibility"] = ModelHandlerFactory.sanitize_compatibility(m_type, dumped["compatibility"])
+
+        raw_vis = payload.visibility
+        is_public = (
+            raw_vis == ModelVisibility.PUBLIC
+            or raw_vis == ModelVisibility.PUBLIC.value
+            or str(raw_vis).lower() == "public"
+        )
+        if is_public:
+            if is_moderator:
+                mod_status = ModelModerationStatus.APPROVED.value
+                published_at = now
+            else:
+                mod_status = ModelModerationStatus.PENDING_REVIEW.value
+                published_at = None
+        else:
+            mod_status = ModelModerationStatus.DRAFT.value
+            published_at = None
+
         record = {
             **dumped,
             "model_id": model_id,
             "created_at": now,
             "updated_at": now,
-            "published_at": None,
+            "published_at": published_at,
+            "moderation_status": mod_status,
+            "moderation_notes": None,
             "versions": [
                 {
                     "version_id": version_id,
@@ -409,6 +456,127 @@ class ModelService:
 
     def public_list(self, query: str | None = None, user_id: str | None = None) -> list[ModelResponse]:
         return self.list(query=query, public=True, user_id=user_id)
+
+    list_public = public_list
+
+    def list_pending_review(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for path in self.definitions.glob("*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(record, dict):
+                    continue
+                if record.get("moderation_status") != ModelModerationStatus.PENDING_REVIEW.value:
+                    continue
+                author_id = record.get("user_id") or ""
+                author_username = None
+                author_display_name = None
+                author_avatar_url = None
+                author_role = None
+                if author_id:
+                    try:
+                        u = get_db().get_user_by_id(author_id)
+                        if u:
+                            author_username = u.get("username")
+                            author_display_name = u.get("display_name") or u.get("username")
+                            author_avatar_url = u.get("avatar_url")
+                            author_role = u.get("role")
+                    except Exception as exc:
+                        logger.warning("Could not resolve author info for user %s: %s", author_id, exc)
+
+                resp = self._response(record)
+                cover_url = None
+                for v in resp.versions:
+                    if v.samples:
+                        cover_url = v.samples[0].url
+                        break
+
+                compat = record.get("compatibility") or {}
+                base_model = compat.get("base_model") or "Stable Diffusion XL (SDXL)"
+
+                item = ModelPendingReviewItem(
+                    model_id=record["model_id"],
+                    title=record.get("title", ""),
+                    category=record.get("category", "Checkpoints"),
+                    model_type=record.get("model_type", "Checkpoint"),
+                    description=record.get("description", "") or "",
+                    author_id=author_id,
+                    author_username=author_username,
+                    author_display_name=author_display_name,
+                    author_avatar_url=author_avatar_url,
+                    author_role=author_role,
+                    created_at=record.get("created_at", self._now()),
+                    updated_at=record.get("updated_at", self._now()),
+                    tags=record.get("tags", []),
+                    base_model=base_model,
+                    permissions=record.get("permissions", {}),
+                    version_count=len(resp.versions),
+                    file_count=sum(len(v.files) for v in resp.versions),
+                    sample_count=sum(len(v.samples) for v in resp.versions),
+                    cover_url=cover_url,
+                    versions=resp.versions,
+                    moderation_status=record.get("moderation_status", ModelModerationStatus.PENDING_REVIEW.value),
+                    moderation_notes=record.get("moderation_notes"),
+                )
+                items.append(item.model_dump(mode="json"))
+            except Exception as exc:
+                logger.warning("Could not parse pending model from %s: %s", path, exc)
+                continue
+        return sorted(items, key=lambda x: x.get("created_at", ""), reverse=True)
+
+    def review_model(
+        self,
+        model_id: str,
+        action: str,
+        notes: str | None = None,
+        install_to_comfy: bool = False,
+        version_id: str | None = None,
+        file_id: str | None = None,
+    ) -> dict[str, Any]:
+        record = self._read(model_id)
+        action_lower = action.lower()
+        reviewed_at = datetime.now(timezone.utc).isoformat()
+        now_str = self._now()
+
+        if action_lower == "approve":
+            new_status = ModelModerationStatus.APPROVED.value
+            record["visibility"] = "Public"
+            record["published_at"] = reviewed_at
+        elif action_lower == "reject":
+            new_status = ModelModerationStatus.REJECTED.value
+            record["visibility"] = "Private"
+            record["published_at"] = None
+        elif action_lower == "request_changes":
+            new_status = ModelModerationStatus.DRAFT.value
+            record["visibility"] = "Private"
+            record["published_at"] = None
+        else:
+            raise ModelConflict(f"Invalid review action: {action}")
+
+        record["moderation_status"] = new_status
+        record["moderation_notes"] = notes
+        record["reviewed_at"] = reviewed_at
+        record["updated_at"] = now_str
+        self._write(record)
+        self._sync_to_db(record)
+
+        installed = False
+        installed_file = None
+
+        if install_to_comfy and action_lower == "approve" and version_id and file_id:
+            install_res = self.install_file(model_id, version_id, file_id)
+            installed = install_res.get("installed", False)
+            installed_file = install_res.get("destination") or install_res.get("filename")
+
+        return {
+            "model_id": model_id,
+            "moderation_status": new_status,
+            "moderation_notes": notes,
+            "action_taken": action,
+            "installed": installed,
+            "installed_file": installed_file,
+            "reviewed_at": reviewed_at,
+        }
 
     def resolve_installed_gallery_file(
         self,
@@ -1070,9 +1238,31 @@ class ModelService:
                 return
         raise ModelNotFound("Model sample not found")
 
-    def publish(self, model_id: str, payload: ModelPublishRequest) -> ModelResponse:
+    def publish(
+        self,
+        model_id: str,
+        payload: ModelPublishRequest | dict[str, Any] | None = None,
+        is_moderator: bool = True,
+        *,
+        req: ModelPublishRequest | dict[str, Any] | None = None,
+    ) -> ModelResponse:
+        effective_req = payload if req is None else req
+        if effective_req is None:
+            raise ModelError("Publish request payload is required")
+
         record = self._read(model_id)
-        if payload.visibility == "Public":
+        raw_vis = (
+            effective_req.visibility
+            if hasattr(effective_req, "visibility")
+            else (effective_req.get("visibility") if isinstance(effective_req, dict) else effective_req)
+        )
+        is_public = (
+            raw_vis == ModelVisibility.PUBLIC
+            or raw_vis == ModelVisibility.PUBLIC.value
+            or str(raw_vis).lower() == "public"
+        )
+
+        if is_public:
             if not record.get("title", "").strip():
                 raise ModelConflict("A title is required before publishing")
             if not any(version.get("files") for version in record.get("versions", [])):
@@ -1083,10 +1273,19 @@ class ModelService:
                 compatibility,
                 require_public=True,
             )
-            record["published_at"] = self._now()
+            if is_moderator:
+                record["moderation_status"] = ModelModerationStatus.APPROVED.value
+                record["published_at"] = self._now()
+            else:
+                record["moderation_status"] = ModelModerationStatus.PENDING_REVIEW.value
+                record["published_at"] = None
+            record["visibility"] = ModelVisibility.PUBLIC.value
         else:
             record["published_at"] = None
-        record["visibility"] = payload.visibility.value
+            record["moderation_status"] = ModelModerationStatus.DRAFT.value
+            vis_val = raw_vis.value if hasattr(raw_vis, "value") else str(raw_vis)
+            record["visibility"] = vis_val
+
         record["updated_at"] = self._now()
         self._write(record)
         self._sync_to_db(record)
