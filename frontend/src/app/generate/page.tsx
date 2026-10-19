@@ -21,6 +21,8 @@ import {
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 import { STORAGE_KEYS } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
+import { ProtectedRoute } from "@/components/rbac";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
 
@@ -59,6 +61,7 @@ function galleryModelKey(model: InstalledGalleryModel): string {
 }
 
 export default function StudioPage() {
+  const { user } = useAuth();
   const [mode] = useState<GenerationMode>("text-to-image");
   const [prompt, setPrompt] = useState(DEFAULT_SAMPLE_PROMPT);
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -125,7 +128,7 @@ export default function StudioPage() {
 
   const refreshGallery = useCallback(async () => {
     try {
-      setGallery(await api.getGallery());
+      setGallery(await api.getMyGallery());
     } catch {
       /* gallery is non-critical */
     }
@@ -241,7 +244,7 @@ export default function StudioPage() {
 
   useEffect(() => {
     void refreshGallery();
-  }, [refreshGallery]);
+  }, [refreshGallery, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -532,89 +535,95 @@ export default function StudioPage() {
   }, [refreshGallery]);
 
   return (
-    <div className="workspace-bezel relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-transparent p-2 sm:p-3 lg:flex-row lg:gap-3 lg:overflow-hidden">
-      {/* Left Control Panel (Collapsible) */}
-      <div
-        className={`min-h-0 shrink-0 ${
-          isSidebarCollapsed ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none" : "h-auto w-full lg:h-full lg:w-[24.5rem]"
-        }`}
-      >
-        <ControlPanel
-          prompt={prompt}
-          onPromptChange={setPrompt}
-          selectedModel={selectedModel}
-          modelOptions={modelOptions}
-          onModelChange={(key) => {
-            const model = modelOptions.find((item) => galleryModelKey(item) === key) ?? null;
-            const next = model
-              ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-              : null;
-            setSelection(next);
-            setModelsError(null);
-          }}
-          baseModel={baseModel}
-          baseModelOptions={baseModelOptions}
-          onBaseModelChange={(key) => {
-            const model = baseModelOptions.find((item) => galleryModelKey(item) === key) ?? null;
-            setBaseSelection(
-              model
+    <ProtectedRoute
+      requireAuth={true}
+      title="Studio Access"
+      description="Sign in to generate assets, adjust parametric samplers, and view your private creative history."
+    >
+      <div className="workspace-bezel relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-transparent p-2 sm:p-3 lg:flex-row lg:gap-3 lg:overflow-hidden">
+        {/* Left Control Panel (Collapsible) */}
+        <div
+          className={`min-h-0 shrink-0 ${
+            isSidebarCollapsed ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none" : "h-auto w-full lg:h-full lg:w-[24.5rem]"
+          }`}
+        >
+          <ControlPanel
+            prompt={prompt}
+            onPromptChange={setPrompt}
+            selectedModel={selectedModel}
+            modelOptions={modelOptions}
+            onModelChange={(key) => {
+              const model = modelOptions.find((item) => galleryModelKey(item) === key) ?? null;
+              const next = model
                 ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-                : null
-            );
-          }}
-          loras={loras}
-          onLorasChange={setLoras}
-          embeddings={embeddings}
-          onEmbeddingsChange={setEmbeddings}
-          seed={seed}
-          onSeedChange={setSeed}
-          steps={steps}
-          onStepsChange={setSteps}
-          cfg={cfg}
-          onCfgChange={setCfg}
-          denoise={denoise}
-          onDenoiseChange={setDenoise}
-          negativePrompt={negativePrompt}
-          onNegativePromptChange={setNegativePrompt}
-          customWidth={customWidth}
-          onCustomWidthChange={setCustomWidth}
-          customHeight={customHeight}
-          onCustomHeightChange={setCustomHeight}
-          format={format}
-          onFormatChange={setFormat}
-          busy={busy}
+                : null;
+              setSelection(next);
+              setModelsError(null);
+            }}
+            baseModel={baseModel}
+            baseModelOptions={baseModelOptions}
+            onBaseModelChange={(key) => {
+              const model = baseModelOptions.find((item) => galleryModelKey(item) === key) ?? null;
+              setBaseSelection(
+                model
+                  ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
+                  : null
+              );
+            }}
+            loras={loras}
+            onLorasChange={setLoras}
+            embeddings={embeddings}
+            onEmbeddingsChange={setEmbeddings}
+            seed={seed}
+            onSeedChange={setSeed}
+            steps={steps}
+            onStepsChange={setSteps}
+            cfg={cfg}
+            onCfgChange={setCfg}
+            denoise={denoise}
+            onDenoiseChange={setDenoise}
+            negativePrompt={negativePrompt}
+            onNegativePromptChange={setNegativePrompt}
+            customWidth={customWidth}
+            onCustomWidthChange={setCustomWidth}
+            customHeight={customHeight}
+            onCustomHeightChange={setCustomHeight}
+            format={format}
+            onFormatChange={setFormat}
+            busy={busy}
+            canGenerate={canGenerate}
+            onGenerate={handleGenerate}
+            progress={progress}
+            progressLabel={progressLabel}
+            imageCount={imageCount}
+            onImageCountChange={setImageCount}
+            modelsLoading={modelsLoading}
+            modelsError={modelsError}
+            onResetDefaults={resetStudioDefaults}
+          />
+        </div>
+
+        {/* Main Canvas Area */}
+        <CanvasPreview
           canGenerate={canGenerate}
           onGenerate={handleGenerate}
+          busy={busy}
           progress={progress}
           progressLabel={progressLabel}
-          imageCount={imageCount}
-          onImageCountChange={setImageCount}
-          modelsLoading={modelsLoading}
-          modelsError={modelsError}
-          onResetDefaults={resetStudioDefaults}
+          gallery={gallery}
+          error={error}
+          outputWidth={outputDimensions.width}
+          outputHeight={outputDimensions.height}
+          referenceImage={referenceImage}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebarCollapse={() => setIsSidebarCollapsed((v) => !v)}
+          onReload={refreshGallery}
+          onRemix={handleRemix}
+          onSetReferenceImage={setReferenceImage}
+          onDeleteOutput={handleDeleteOutput}
+          modelOptions={modelOptions}
         />
       </div>
-
-      {/* Main Canvas Area */}
-      <CanvasPreview
-        canGenerate={canGenerate}
-        onGenerate={handleGenerate}
-        busy={busy}
-        progress={progress}
-        progressLabel={progressLabel}
-        gallery={gallery}
-        error={error}
-        outputWidth={outputDimensions.width}
-        outputHeight={outputDimensions.height}
-        referenceImage={referenceImage}
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebarCollapse={() => setIsSidebarCollapsed((v) => !v)}
-        onReload={refreshGallery}
-        onRemix={handleRemix}
-        onSetReferenceImage={setReferenceImage}
-        onDeleteOutput={handleDeleteOutput}
-        modelOptions={modelOptions}
-      />
-    </div>
+    </ProtectedRoute>
   );
 }

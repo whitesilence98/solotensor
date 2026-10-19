@@ -96,11 +96,11 @@ export interface AssetCardListProps {
 }
 
 function getMasonryColumns(width: number): number {
-  if (width < 600) return 1;
-  if (width < 900) return 2;
-  if (width < 1400) return 3;
-  if (width < 1850) return 4;
-  if (width < 2300) return 5;
+  if (width < 520) return 1;
+  if (width < 768) return 2;
+  if (width < 1080) return 3;
+  if (width < 1440) return 4;
+  if (width < 1780) return 5;
   return 6;
 }
 

@@ -129,7 +129,7 @@ export default function AssetInspectionStage({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Prompt Clamping & Expansion State (max 15 lines collapsed)
+  // Prompt Clamping & Expansion State (compact 5-6 lines collapsed)
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [isPromptOverflowing, setIsPromptOverflowing] = useState(false);
   const promptTextRef = useRef<HTMLDivElement>(null);
@@ -273,17 +273,17 @@ export default function AssetInspectionStage({
   const meta = asset.metadata;
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
 
-  // Auto-measure prompt overflow against 15-line limit (approx 316px) & reset state on asset change
+  // Auto-measure prompt overflow against compact limit (~5-6 lines, 130px) & reset state on asset change
   useEffect(() => {
     setIsPromptExpanded(false);
     setIsNegExpanded(false);
 
     const checkOverflow = () => {
       if (promptTextRef.current) {
-        setIsPromptOverflowing(promptTextRef.current.scrollHeight > 318);
+        setIsPromptOverflowing(promptTextRef.current.scrollHeight > 132);
       }
       if (negTextRef.current) {
-        setIsNegOverflowing(negTextRef.current.scrollHeight > 98);
+        setIsNegOverflowing(negTextRef.current.scrollHeight > 132);
       }
     };
 
@@ -301,8 +301,8 @@ export default function AssetInspectionStage({
     currentIndex !== undefined && currentIndex >= 0
       ? currentIndex
       : effectiveItems.findIndex(
-          (item) => item.key === asset.key || (item.url && item.url === asset.url)
-        );
+        (item) => item.key === asset.key || (item.url && item.url === asset.url)
+      );
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
   const hasCarousel = effectiveItems.length > 1;
 
@@ -486,11 +486,10 @@ export default function AssetInspectionStage({
 
         {/* Active Stage Media */}
         <div
-          className={`relative z-10 flex h-full w-full items-center justify-center ${
-            isZoomed
+          className={`relative z-10 flex h-full w-full items-center justify-center ${isZoomed
               ? "overflow-auto cursor-grab active:cursor-grabbing p-4"
               : "p-2 sm:p-4"
-          }`}
+            }`}
         >
           {isVideo ? (
             <video
@@ -507,11 +506,10 @@ export default function AssetInspectionStage({
               src={mediaUrl}
               alt={meta?.prompt ?? "Generated artwork"}
               onClick={() => setIsZoomed((z) => !z)}
-              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${
-                isZoomed
+              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${isZoomed
                   ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
                   : "max-h-[78vh] max-w-full object-contain cursor-zoom-in"
-              }`}
+                }`}
             />
           )}
         </div>
@@ -561,11 +559,10 @@ export default function AssetInspectionStage({
                   setTimeout(() => setConfirmDelete(false), 3500);
                 }
               }}
-              className={`p-1.5 rounded transition-all active:scale-95 flex items-center ${
-                confirmDelete
+              className={`p-1.5 rounded transition-all active:scale-95 flex items-center ${confirmDelete
                   ? "gap-1 px-2 text-red-400 bg-red-500/20 hover:bg-red-500/30 font-mono text-[11px] font-medium animate-pulse"
                   : "text-white/40 hover:text-red-400"
-              }`}
+                }`}
               title={confirmDelete ? "Click again to permanently delete" : "Delete asset"}
               aria-label={confirmDelete ? "Confirm delete asset" : "Delete asset"}
             >
@@ -724,6 +721,206 @@ export default function AssetInspectionStage({
 
         {/* Body Content */}
         <div className="p-5 space-y-4 flex-1 pb-6">
+          {/* Models & LoRAs Stack */}
+          {totalModelsCount > 0 && (
+            <div>
+              <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase block mb-2">
+                MODELS ({totalModelsCount})
+              </span>
+              <div className="space-y-1.5">
+                {/* Primary / Checkpoint Base Model */}
+                {hasBaseModel && (
+                  <div className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Box className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                      {modelUrl ? (
+                        <a
+                          href={modelUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate font-medium text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
+                          title={`View ${baseModelTitle} in gallery`}
+                        >
+                          <span className="truncate">{baseModelTitle}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
+                        </a>
+                      ) : (
+                        <span className="truncate font-medium text-[var(--ink)]" title={baseModelTitle || undefined}>
+                          {baseModelTitle}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {baseModelVersion && (
+                        <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-soft)] border border-[var(--line)]">
+                          {baseModelVersion}
+                        </span>
+                      )}
+                      <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--accent)]/20">
+                        Checkpoint
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Attached LoRAs */}
+                {activeLoras.map((item, idx) => {
+                  const loraUrl = resolveModelGalleryUrl(
+                    {
+                      modelId: (item as any).model_id || (item as any).modelId,
+                      fileId: (item as any).file_id || (item as any).fileId,
+                      filename: item.lora,
+                      title: item.lora,
+                    },
+                    modelOptions
+                  );
+
+                  const matched = modelOptions.find(
+                    (m) =>
+                      m.filename === item.lora ||
+                      m.title === item.lora ||
+                      item.lora.includes(m.filename) ||
+                      m.filename.includes(item.lora)
+                  );
+
+                  const displayTitle = (() => {
+                    if (matched?.title) return matched.title;
+                    const base = item.lora.split(/[/\\]/).pop() || item.lora;
+                    return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "");
+                  })();
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Layers className="h-3.5 w-3.5 text-[var(--ink-soft)] group-hover:text-[var(--accent)] transition-colors shrink-0" />
+                        {loraUrl ? (
+                          <a
+                            href={loraUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="truncate text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
+                            title={`View ${displayTitle} in gallery`}
+                          >
+                            <span className="truncate">{displayTitle}</span>
+                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
+                          </a>
+                        ) : (
+                          <span className="truncate text-[var(--ink)]" title={displayTitle}>
+                            {displayTitle}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-faint)] border border-[var(--line)]">
+                          LoRA
+                        </span>
+                        <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--line)]">
+                          {item.strength}x
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Tags Deck (WD14 Interrogation & Curation) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Tag className="h-3 w-3 text-[var(--accent)]" />
+                <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
+                  TAGS ({tags.length})
+                </span>
+                {tagToast && (
+                  <span className="font-mono text-[9px] text-[var(--accent)] animate-pulse">
+                    {tagToast}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleAutoTag}
+                disabled={isTagging}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition disabled:opacity-50"
+                title="Run WD14 Tagger workflow to auto-detect tags"
+              >
+                {isTagging ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3 w-3" />
+                )}
+                <span>{isTagging ? "Detecting…" : "Auto-tag (WD14)"}</span>
+              </button>
+            </div>
+
+            {tagError && (
+              <p className="mb-2 text-[10px] font-mono text-[var(--danger)]" role="alert">
+                {tagError}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto workspace-scroll rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="group inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] hover:border-[var(--line-strong)] transition"
+                >
+                  <a
+                    href={`/assets?tags=${encodeURIComponent(tag)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-[var(--accent)] transition"
+                    title={`Browse assets with #${tag}`}
+                  >
+                    <span className="text-[var(--accent)]">#</span>
+                    <span>{tag}</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTag(tag)}
+                    title="Remove tag"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+
+              {isAddingTag ? (
+                <div className="inline-flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newTagDraft}
+                    onChange={(e) => setNewTagDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddTagSubmit();
+                      if (e.key === "Escape") setIsAddingTag(false);
+                    }}
+                    onBlur={handleAddTagSubmit}
+                    autoFocus
+                    placeholder="tag name…"
+                    className="h-5 w-24 rounded border border-[var(--accent)] bg-[var(--surface-raised)] px-1.5 text-[10px] font-mono text-[var(--ink)] outline-none"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingTag(true)}
+                  className="inline-flex items-center gap-0.5 rounded-md border border-dashed border-[var(--line)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition"
+                  title="Add tag"
+                >
+                  <Plus className="h-2.5 w-2.5" />
+                  <span>tag</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Prompt Section */}
           {meta?.prompt && (
             <div>
@@ -737,7 +934,7 @@ export default function AssetInspectionStage({
                       type="button"
                       onClick={() => setIsPromptExpanded((prev) => !prev)}
                       className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
-                      title={isPromptExpanded ? "Collapse to 15 lines" : "Expand full prompt"}
+                      title={isPromptExpanded ? "Collapse prompt" : "Expand full prompt"}
                     >
                       {isPromptExpanded ? (
                         <>
@@ -773,339 +970,137 @@ export default function AssetInspectionStage({
               </div>
               <div
                 ref={promptTextRef}
-                className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words transition-[max-height] duration-200 ${
-                  isPromptExpanded
+                className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words transition-[max-height] duration-200 ${isPromptExpanded
                     ? "max-h-none"
-                    : "max-h-[316px] overflow-y-auto workspace-scroll"
-                }`}
+                    : "max-h-[130px] overflow-y-auto workspace-scroll"
+                  }`}
               >
                 {meta.prompt}
               </div>
             </div>
           )}
 
-            {/* Negative Prompt Section */}
-            {meta?.negative_prompt && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
-                    NEGATIVE PROMPT
-                  </span>
-                  <div className="flex items-center gap-2.5">
-                    {isNegOverflowing && (
-                      <button
-                        type="button"
-                        onClick={() => setIsNegExpanded((prev) => !prev)}
-                        className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
-                        title={isNegExpanded ? "Collapse to compact view" : "Expand full negative prompt"}
-                      >
-                        {isNegExpanded ? (
-                          <>
-                            <ChevronUp className="h-3 w-3" />
-                            <span>Collapse</span>
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="h-3 w-3" />
-                            <span>Expand</span>
-                          </>
-                        )}
-                      </button>
-                    )}
+          {/* Negative Prompt Section */}
+          {meta?.negative_prompt && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
+                  NEGATIVE PROMPT
+                </span>
+                <div className="flex items-center gap-2.5">
+                  {isNegOverflowing && (
                     <button
                       type="button"
-                      onClick={() => copyText(meta.negative_prompt ?? "", "negative-prompt")}
+                      onClick={() => setIsNegExpanded((prev) => !prev)}
                       className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                      title={isNegExpanded ? "Collapse negative prompt" : "Expand full negative prompt"}
                     >
-                      {copiedKey === "negative-prompt" ? (
+                      {isNegExpanded ? (
                         <>
-                          <Check className="h-3 w-3 text-[var(--accent)]" />
-                          <span className="text-[var(--accent)]">Copied</span>
+                          <ChevronUp className="h-3 w-3" />
+                          <span>Collapse</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="h-3 w-3" />
-                          <span>Copy</span>
+                          <ChevronDown className="h-3 w-3" />
+                          <span>Expand</span>
                         </>
                       )}
                     </button>
-                  </div>
-                </div>
-                <div
-                  ref={negTextRef}
-                  className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words transition-[max-height] duration-200 ${
-                    isNegExpanded
-                      ? "max-h-none"
-                      : "max-h-24 overflow-y-auto workspace-scroll"
-                  }`}
-                >
-                  {meta.negative_prompt}
-                </div>
-              </div>
-            )}
-
-            {/* Inference Parameters Matrix */}
-            <div>
-              <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase block mb-2">
-                INFERENCE SPECS
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
-                  <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
-                    SEED
-                  </span>
-                  <div className="mt-0.5 flex items-center justify-between">
-                    <span className="font-mono text-xs font-semibold text-[var(--ink)] truncate">
-                      {meta?.seed !== undefined && meta.seed !== null ? meta.seed : "Random"}
-                    </span>
-                    {meta?.seed !== undefined && meta.seed !== null && (
-                      <button
-                        type="button"
-                        onClick={() => copyText(String(meta.seed), "seed")}
-                        className="text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors ml-1"
-                        title="Copy seed"
-                      >
-                        {copiedKey === "seed" ? (
-                          <Check className="h-3 w-3 text-[var(--accent)]" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
-                  <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
-                    RESOLUTION
-                  </span>
-                  <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
-                    {meta?.width && meta?.height
-                      ? `${meta.width} × ${meta.height}`
-                      : meta?.format_name ?? "Standard"}
-                  </span>
-                </div>
-
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
-                  <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
-                    STEPS
-                  </span>
-                  <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
-                    {meta?.steps ?? "25"}
-                  </span>
-                </div>
-
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
-                  <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
-                    CFG SCALE
-                  </span>
-                  <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
-                    {meta?.cfg !== undefined && meta.cfg !== null ? meta.cfg : "7.0"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Models & LoRAs Stack */}
-            {totalModelsCount > 0 && (
-              <div>
-                <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase block mb-2">
-                  MODELS ({totalModelsCount})
-                </span>
-                <div className="space-y-1.5">
-                  {/* Primary / Checkpoint Base Model */}
-                  {hasBaseModel && (
-                    <div className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Box className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
-                        {modelUrl ? (
-                          <a
-                            href={modelUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate font-medium text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
-                            title={`View ${baseModelTitle} in gallery`}
-                          >
-                            <span className="truncate">{baseModelTitle}</span>
-                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
-                          </a>
-                        ) : (
-                          <span className="truncate font-medium text-[var(--ink)]" title={baseModelTitle || undefined}>
-                            {baseModelTitle}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                        {baseModelVersion && (
-                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-soft)] border border-[var(--line)]">
-                            {baseModelVersion}
-                          </span>
-                        )}
-                        <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--accent)]/20">
-                          Checkpoint
-                        </span>
-                      </div>
-                    </div>
                   )}
-
-                  {/* Attached LoRAs */}
-                  {activeLoras.map((item, idx) => {
-                    const loraUrl = resolveModelGalleryUrl(
-                      {
-                        modelId: (item as any).model_id || (item as any).modelId,
-                        fileId: (item as any).file_id || (item as any).fileId,
-                        filename: item.lora,
-                        title: item.lora,
-                      },
-                      modelOptions
-                    );
-
-                    const matched = modelOptions.find(
-                      (m) =>
-                        m.filename === item.lora ||
-                        m.title === item.lora ||
-                        item.lora.includes(m.filename) ||
-                        m.filename.includes(item.lora)
-                    );
-
-                    const displayTitle = (() => {
-                      if (matched?.title) return matched.title;
-                      const base = item.lora.split(/[/\\]/).pop() || item.lora;
-                      return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "");
-                    })();
-
-                    return (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono group hover:border-[var(--line-strong)] transition-colors"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Layers className="h-3.5 w-3.5 text-[var(--ink-soft)] group-hover:text-[var(--accent)] transition-colors shrink-0" />
-                          {loraUrl ? (
-                            <a
-                              href={loraUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="truncate text-[var(--ink)] hover:text-[var(--accent)] transition-colors inline-flex items-center gap-1.5"
-                              title={`View ${displayTitle} in gallery`}
-                            >
-                              <span className="truncate">{displayTitle}</span>
-                              <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-70 transition-opacity" />
-                            </a>
-                          ) : (
-                            <span className="truncate text-[var(--ink)]" title={displayTitle}>
-                              {displayTitle}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-faint)] border border-[var(--line)]">
-                            LoRA
-                          </span>
-                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--line)]">
-                            {item.strength}x
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Tags Deck (WD14 Interrogation & Curation) */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Tag className="h-3 w-3 text-[var(--accent)]" />
-                  <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
-                    TAGS ({tags.length})
-                  </span>
-                  {tagToast && (
-                    <span className="font-mono text-[9px] text-[var(--accent)] animate-pulse">
-                      {tagToast}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAutoTag}
-                  disabled={isTagging}
-                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition disabled:opacity-50"
-                  title="Run WD14 Tagger workflow to auto-detect tags"
-                >
-                  {isTagging ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3 w-3" />
-                  )}
-                  <span>{isTagging ? "Detecting…" : "Auto-tag (WD14)"}</span>
-                </button>
-              </div>
-
-              {tagError && (
-                <p className="mb-2 text-[10px] font-mono text-[var(--danger)]" role="alert">
-                  {tagError}
-                </p>
-              )}
-
-              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto workspace-scroll rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="group inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] hover:border-[var(--line-strong)] transition"
-                  >
-                    <a
-                      href={`/assets?tags=${encodeURIComponent(tag)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-[var(--accent)] transition"
-                      title={`Browse assets with #${tag}`}
-                    >
-                      <span className="text-[var(--accent)]">#</span>
-                      <span>{tag}</span>
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      title="Remove tag"
-                      className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-
-                {isAddingTag ? (
-                  <div className="inline-flex items-center gap-1">
-                    <input
-                      type="text"
-                      value={newTagDraft}
-                      onChange={(e) => setNewTagDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleAddTagSubmit();
-                        if (e.key === "Escape") setIsAddingTag(false);
-                      }}
-                      onBlur={handleAddTagSubmit}
-                      autoFocus
-                      placeholder="tag name…"
-                      className="h-5 w-24 rounded border border-[var(--accent)] bg-[var(--surface-raised)] px-1.5 text-[10px] font-mono text-[var(--ink)] outline-none"
-                    />
-                  </div>
-                ) : (
                   <button
                     type="button"
-                    onClick={() => setIsAddingTag(true)}
-                    className="inline-flex items-center gap-0.5 rounded-md border border-dashed border-[var(--line)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition"
-                    title="Add tag"
+                    onClick={() => copyText(meta.negative_prompt ?? "", "negative-prompt")}
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
                   >
-                    <Plus className="h-2.5 w-2.5" />
-                    <span>tag</span>
+                    {copiedKey === "negative-prompt" ? (
+                      <>
+                        <Check className="h-3 w-3 text-[var(--accent)]" />
+                        <span className="text-[var(--accent)]">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
                   </button>
-                )}
+                </div>
+              </div>
+              <div
+                ref={negTextRef}
+                className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words transition-[max-height] duration-200 ${isNegExpanded
+                    ? "max-h-none"
+                    : "max-h-[130px] overflow-y-auto workspace-scroll"
+                  }`}
+              >
+                {meta.negative_prompt}
+              </div>
+            </div>
+          )}
+
+          {/* Inference Parameters Matrix */}
+          <div>
+            <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase block mb-2">
+              INFERENCE SPECS
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  SEED
+                </span>
+                <div className="mt-0.5 flex items-center justify-between">
+                  <span className="font-mono text-xs font-semibold text-[var(--ink)] truncate">
+                    {meta?.seed !== undefined && meta.seed !== null ? meta.seed : "Random"}
+                  </span>
+                  {meta?.seed !== undefined && meta.seed !== null && (
+                    <button
+                      type="button"
+                      onClick={() => copyText(String(meta.seed), "seed")}
+                      className="text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors ml-1"
+                      title="Copy seed"
+                    >
+                      {copiedKey === "seed" ? (
+                        <Check className="h-3 w-3 text-[var(--accent)]" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  RESOLUTION
+                </span>
+                <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
+                  {meta?.width && meta?.height
+                    ? `${meta.width} × ${meta.height}`
+                    : meta?.format_name ?? "Standard"}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  STEPS
+                </span>
+                <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
+                  {meta?.steps ?? "25"}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  CFG SCALE
+                </span>
+                <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
+                  {meta?.cfg !== undefined && meta.cfg !== null ? meta.cfg : "7.0"}
+                </span>
               </div>
             </div>
           </div>
+        </div>
 
         {/* Action CTAs Footer */}
         <div className="sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">

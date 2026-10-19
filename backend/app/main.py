@@ -12,7 +12,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 from fastapi import (
     Depends,
@@ -1758,8 +1758,8 @@ async def ws_progress(websocket: WebSocket, client_id: str) -> None:
 # ---------------------------------------------------------------------- #
 
 
-@app.get("/api/v1/gallery", response_model=GalleryResponse)
-async def gallery(
+@app.get("/api/v1/gallery/me", response_model=GalleryResponse)
+async def my_gallery(
     limit: int = 60,
     origin: str | None = None,
     tool_id: str | None = None,
@@ -1767,7 +1767,7 @@ async def gallery(
     tag: str | None = None,
     tags: str | None = None,
     tag_mode: str = "all",
-    user_id: str | None = None,
+    current_user: UserResponse = Depends(get_current_user),
 ) -> GalleryResponse:
     if limit < 1 or limit > settings.GALLERY_LIMIT:
         limit = settings.GALLERY_LIMIT
@@ -1787,7 +1787,54 @@ async def gallery(
                 tag=tag,
                 tags=parsed_tags,
                 tag_mode=tag_mode,
-                user_id=user_id,
+                user_id=current_user.id,
+            ),
+        )
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return GalleryResponse(items=items)
+
+
+@app.get("/api/v1/gallery", response_model=GalleryResponse)
+async def gallery(
+    limit: int = 60,
+    origin: str | None = None,
+    tool_id: str | None = None,
+    tool_type: str | None = None,
+    tag: str | None = None,
+    tags: str | None = None,
+    tag_mode: str = "all",
+    user_id: str | None = None,
+    user: Optional[UserResponse] = Depends(get_optional_user),
+) -> GalleryResponse:
+    if limit < 1 or limit > settings.GALLERY_LIMIT:
+        limit = settings.GALLERY_LIMIT
+    if user_id == "me":
+        if not user:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for user_id='me'",
+            )
+        effective_user_id = user.id
+    else:
+        effective_user_id = user_id
+    try:
+        import asyncio
+
+        parsed_tags = (
+            [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        )
+        items = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: storage.list_recent(
+                limit=limit,
+                origin=origin,
+                tool_id=tool_id,
+                tool_type=tool_type,
+                tag=tag,
+                tags=parsed_tags,
+                tag_mode=tag_mode,
+                user_id=effective_user_id,
             ),
         )
     except StorageError as exc:

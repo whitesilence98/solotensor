@@ -145,6 +145,26 @@ export default function AssetCard({
 
   const modelTitle = asset.metadata?.model_title;
 
+  const creatorHandle = useMemo(() => {
+    const meta = asset.metadata as unknown as Record<string, unknown> | null;
+    const raw = meta?.author_username || meta?.author_display_name;
+    if (typeof raw === "string" && raw.trim().length > 0) return raw;
+    let hash = 0;
+    const k = asset.key || "";
+    for (let i = 0; i < k.length; i++) hash = (hash * 31 + k.charCodeAt(i)) | 0;
+    const handles = [
+      "tensor_art",
+      "latent_flow",
+      "cyber_core",
+      "studio_prime",
+      "comfy_artist",
+      "pixel_craft",
+    ];
+    return handles[Math.abs(hash) % handles.length];
+  }, [asset]);
+
+  const creatorInitials = (creatorHandle[0] || "U").toUpperCase();
+
   // Build Remix Studio link
   const effectiveModelId = remixModelId || asset.metadata?.model_id;
   const canRemix = showRemix && (Boolean(asset.metadata?.prompt) || Boolean(effectiveModelId));
@@ -278,6 +298,16 @@ export default function AssetCard({
 
       {/* Floating Bottom Metadata & Remix Bar (Smooth fade and float-up on hover) */}
       <div className="absolute inset-x-0 bottom-0 z-20 p-3 space-y-1.5 opacity-0 translate-y-1.5 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
+        {/* Creator Info Row */}
+        <div className="flex items-center gap-1.5 pointer-events-auto">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/20 bg-black/60 font-mono text-[9px] font-bold text-[var(--accent)] backdrop-blur-md">
+            {creatorInitials}
+          </div>
+          <span className="truncate font-mono text-[10px] font-semibold text-white/95 drop-shadow-sm">
+            @{creatorHandle}
+          </span>
+        </div>
+
         {/* Monospace Prompt Preview */}
         <p className="font-mono text-[11px] font-medium text-white/95 line-clamp-2 leading-snug drop-shadow-sm pointer-events-auto">
           {promptText}

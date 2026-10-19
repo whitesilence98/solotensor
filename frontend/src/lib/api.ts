@@ -261,6 +261,7 @@ export interface GalleryItem {
   size: number;
   last_modified: string;
   metadata: GalleryMetadata | null;
+  thumbnail_url?: string;
 }
 
 export type AssetType = "image" | "video" | "3d";
@@ -1013,6 +1014,7 @@ export const api = {
       tag?: string;
       tags?: string[];
       tag_mode?: "all" | "any";
+      user_id?: string;
     } = {}
   ): Promise<GalleryItem[]> {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -1028,6 +1030,34 @@ export const api = {
     return (resp.items || []).map((item) => ({
       ...item,
       url: resolveMediaUrl(item.url) || item.url,
+    }));
+  },
+
+  async getMyGallery(
+    limit = 60,
+    filters: {
+      origin?: string;
+      tool_id?: string;
+      tool_type?: string;
+      tag?: string;
+      tags?: string[];
+      tag_mode?: "all" | "any";
+    } = {}
+  ): Promise<GalleryItem[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (!value) return;
+      if (key === "tags" && Array.isArray(value)) {
+        if (value.length > 0) params.set("tags", value.join(","));
+      } else if (typeof value === "string") {
+        params.set(key, value);
+      }
+    });
+    const resp = await request<{ items: GalleryItem[] }>(`/api/v1/gallery/me?${params}`);
+    return (resp.items || []).map((item) => ({
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+      thumbnail_url: resolveMediaUrl(item.thumbnail_url) || item.thumbnail_url,
     }));
   },
 
