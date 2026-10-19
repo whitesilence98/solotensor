@@ -519,6 +519,219 @@ class ModelRelationsApiTests(unittest.TestCase):
             self.assertEqual(raw["generation"]["prompt"], "")
             self.assertIsNone(raw["compatibility"]["vae"])
 
+    def test_api_model_description_lifecycle(self) -> None:
+        # 1. Create model with description
+        create_res = self.client.post(
+            "/api/v1/models",
+            json={
+                "title": "Model With Rich Docs",
+                "description": "Comprehensive prompt guide and usage instructions.",
+                "category": "Character",
+                "model_type": "Checkpoint",
+                "visibility": "Private",
+            },
+        )
+        self.assertEqual(create_res.status_code, 201)
+        data = create_res.json()
+        self.assertEqual(data["description"], "Comprehensive prompt guide and usage instructions.")
+        model_id = data["model_id"]
+
+        # 2. Fetch via GET /id
+        get_res = self.client.get(f"/api/v1/models/id/{model_id}")
+        self.assertEqual(get_res.status_code, 200)
+        self.assertEqual(get_res.json()["description"], "Comprehensive prompt guide and usage instructions.")
+
+        # 3. Check SQLite DB
+        with self.db.get_connection() as conn:
+            row = conn.execute("SELECT description FROM models WHERE id = ?", (model_id,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["description"], "Comprehensive prompt guide and usage instructions.")
+
+        # 4. Update description via PATCH
+        patch_res = self.client.patch(
+            f"/api/v1/models/id/{model_id}",
+            json={"description": "Updated prompt guide with negative triggers."},
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        self.assertEqual(patch_res.json()["description"], "Updated prompt guide with negative triggers.")
+
+        # 5. Check SQLite DB after update
+        with self.db.get_connection() as conn:
+            row = conn.execute("SELECT description FROM models WHERE id = ?", (model_id,)).fetchone()
+        self.assertEqual(row["description"], "Updated prompt guide with negative triggers.")
+
+    def test_api_author_fields_populated(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+
+        # Insert user into SQLite database
+        author_id = "author_profile_test_1"
+        with self.db.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO users (id, email, username, display_name, avatar_url, hashed_password)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (author_id, "alice@studio.ai", "alice_creator", "Alice W.", "https://solo.ai/alice.png", "hash123"),
+            )
+
+        app.dependency_overrides[get_current_user] = lambda: UserResponse(
+            id=author_id,
+            username="alice_creator",
+            email="alice@studio.ai",
+            display_name="Alice W.",
+            avatar_url="https://solo.ai/alice.png",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+
+        create_res = self.client.post(
+            "/api/v1/models",
+            json={
+                "title": "Alice Special Model",
+                "category": "General",
+                "model_type": "Checkpoint",
+                "visibility": "Public",
+            },
+        )
+        self.assertEqual(create_res.status_code, 201)
+        data = create_res.json()
+        self.assertEqual(data["author_username"], "alice_creator")
+        self.assertEqual(data["author_display_name"], "Alice W.")
+        self.assertEqual(data["author_avatar_url"], "https://solo.ai/alice.png")
+
+        # GET by ID
+        get_res = self.client.get(f"/api/v1/models/id/{data['model_id']}")
+        self.assertEqual(get_res.status_code, 200)
+        get_data = get_res.json()
+        self.assertEqual(get_data["author_username"], "alice_creator")
+        self.assertEqual(get_data["author_display_name"], "Alice W.")
+        self.assertEqual(get_data["author_avatar_url"], "https://solo.ai/alice.png")
+
+    def test_api_version_lifecycle_and_conflict_guard(self) -> None:
+        # Create model
+        create_res = self.client.post(
+            "/api/v1/models",
+            json={"title": "Version Lifecycle Model", "category": "General", "model_type": "Checkpoint"},
+        )
+        self.assertEqual(create_res.status_code, 201)
+        model_data = create_res.json()
+        model_id = model_data["model_id"]
+        v1_id = model_data["versions"][0]["version_id"]
+
+        # 1. Attempt to delete the only version -> 409 Conflict
+        del_only = self.client.delete(f"/api/v1/models/id/{model_id}/versions/{v1_id}")
+        self.assertEqual(del_only.status_code, 409)
+        self.assertIn("only version", del_only.json()["detail"])
+
+        # 2. Add version 2 -> 201
+        v2_res = self.client.post(
+            f"/api/v1/models/id/{model_id}/versions",
+            json={"name": "v2.0-Alpha"},
+        )
+        self.assertEqual(v2_res.status_code, 201)
+        v2_id = v2_res.json()["version_id"]
+
+        # 3. Rename version 2 via PATCH
+        patch_res = self.client.patch(
+            f"/api/v1/models/id/{model_id}/versions/{v2_id}",
+            json={"name": "v2.0-Final"},
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        v_names = [v["name"] for v in patch_res.json()["versions"]]
+        self.assertIn("v2.0-Final", v_names)
+
+        # Verify DB updated
+        with self.db.get_connection() as conn:
+            v_row = conn.execute("SELECT name FROM model_versions WHERE id = ?", (v2_id,)).fetchone()
+        self.assertEqual(v_row["name"], "v2.0-Final")
+
+        # 4. Delete version 2 -> 200 OK
+        del_res = self.client.delete(f"/api/v1/models/id/{model_id}/versions/{v2_id}")
+        self.assertEqual(del_res.status_code, 200)
+        remaining_ids = [v["version_id"] for v in del_res.json()["versions"]]
+        self.assertEqual(remaining_ids, [v1_id])
+
+        # Verify DB row deleted
+        with self.db.get_connection() as conn:
+            v_row = conn.execute("SELECT name FROM model_versions WHERE id = ?", (v2_id,)).fetchone()
+        self.assertIsNone(v_row)
+
+    def test_api_import_local_rbacs_ownership(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+        from app.services.rbac_service import get_rbac_service
+
+        # Prepare local Comfy file
+        comfy_root = Path(self.temp_dir.name) / "comfy"
+        checkpoint_dir = comfy_root / "models" / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        (checkpoint_dir / "test_import_weights.safetensors").write_bytes(b"local weights content 123456")
+
+        orig_comfy = model_storage.settings.COMFY_MODEL_ROOT
+        model_storage.settings.COMFY_MODEL_ROOT = str(comfy_root)
+
+        try:
+            # Create model owned by self.mock_user
+            create_res = self.client.post(
+                "/api/v1/models",
+                json={"title": "Local Import Model", "category": "General", "model_type": "Checkpoint"},
+            )
+            self.assertEqual(create_res.status_code, 201)
+            model_id = create_res.json()["model_id"]
+            version_id = create_res.json()["versions"][0]["version_id"]
+
+            import_payload = {
+                "category": "checkpoints",
+                "filename": "test_import_weights.safetensors",
+                "precision": "FP16",
+            }
+
+            # 1. Unauthenticated -> 401
+            app.dependency_overrides.pop(get_current_user, None)
+            res_unauth = self.client.post(
+                f"/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local",
+                json=import_payload,
+            )
+            self.assertEqual(res_unauth.status_code, 401)
+
+            # 2. Authenticated as non-owner without edit_any -> 403
+            stranger = UserResponse(
+                id="stranger_id_999",
+                username="stranger_dan",
+                email="dan@stranger.com",
+                role="creator",
+                created_at="2026-10-18T00:00:00Z",
+            )
+            mock_rbac_deny = MagicMock()
+            mock_rbac_deny.has_permission = AsyncMock(return_value=False)
+            app.dependency_overrides[get_current_user] = lambda: stranger
+            app.dependency_overrides[get_rbac_service] = lambda: mock_rbac_deny
+
+            res_forbidden = self.client.post(
+                f"/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local",
+                json=import_payload,
+            )
+            self.assertEqual(res_forbidden.status_code, 403)
+
+            # 3. Authenticated as owner -> 200 OK
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+            app.dependency_overrides[get_rbac_service] = lambda: self.mock_rbac
+
+            res_owner = self.client.post(
+                f"/api/v1/models/id/{model_id}/versions/{version_id}/files/import-local",
+                json=import_payload,
+            )
+            self.assertEqual(res_owner.status_code, 200)
+            data = res_owner.json()
+            imported_file = data["versions"][0]["files"][0]
+            self.assertEqual(imported_file["filename"], "test_import_weights.safetensors")
+            self.assertEqual(imported_file["category"], "checkpoints")
+
+        finally:
+            model_storage.settings.COMFY_MODEL_ROOT = orig_comfy
+
 
 if __name__ == "__main__":
     unittest.main()

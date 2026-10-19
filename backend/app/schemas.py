@@ -680,6 +680,7 @@ class ModelCreateRequest(BaseModel):
     title: str = Field("Untitled model", min_length=1, max_length=160)
     category: ModelCategory = ModelCategory.GENERAL
     model_type: CreatorModelType = CreatorModelType.CHECKPOINT
+    description: str = Field("", max_length=5000)
     tags: list[str] = Field(default_factory=list, max_length=32)
     compatibility: ModelCompatibility = Field(default_factory=ModelCompatibility)
     generation: ModelGenerationSettings = Field(default_factory=ModelGenerationSettings)
@@ -713,12 +714,16 @@ class ModelCreateRequest(BaseModel):
         return value
 
 
+CreatorModelCreateRequest = ModelCreateRequest
+
+
 class ModelUpdateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     title: str | None = Field(None, min_length=1, max_length=160)
     category: ModelCategory | None = None
     model_type: CreatorModelType | None = None
+    description: Optional[str] = Field(None, max_length=5000)
     tags: list[str] | None = Field(None, max_length=32)
     compatibility: ModelCompatibility | None = None
     generation: ModelGenerationSettings | None = None
@@ -741,6 +746,9 @@ class ModelUpdateRequest(BaseModel):
         if not value:
             raise ValueError("Model title cannot be blank")
         return value
+
+
+CreatorModelUpdateRequest = ModelUpdateRequest
 
 
 class ModelFileResponse(BaseModel):
@@ -772,6 +780,10 @@ class ModelVersionResponse(BaseModel):
 
 class ModelResponse(ModelCreateRequest):
     model_id: str
+    description: str = Field("", max_length=5000)
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    author_avatar_url: Optional[str] = None
     created_at: str
     updated_at: str
     published_at: str | None = None
@@ -786,6 +798,20 @@ class ModelVersionCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(..., min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def version_name_not_blank(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Version name cannot be blank")
+        return value
+
+
+class ModelVersionUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=64)
 
     @field_validator("name")
     @classmethod
@@ -814,6 +840,10 @@ class PublicModelSummary(BaseModel):
     title: str
     category: ModelCategory
     model_type: CreatorModelType
+    description: str = Field("", max_length=5000)
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    author_avatar_url: Optional[str] = None
     tags: list[str]
     base_model: str
     published_at: str
@@ -831,11 +861,18 @@ class PublicModelSummary(BaseModel):
         return value
 
 
+ModelSummary = PublicModelSummary
+
+
 class PublicModelResponse(BaseModel):
     model_id: str
     title: str
     category: ModelCategory
     model_type: CreatorModelType
+    description: str = Field("", max_length=5000)
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    author_avatar_url: Optional[str] = None
     tags: list[str]
     compatibility: ModelCompatibility
     generation: ModelGenerationSettings

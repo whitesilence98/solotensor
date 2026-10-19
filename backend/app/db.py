@@ -211,6 +211,7 @@ class Database:
                     title TEXT NOT NULL,
                     category TEXT NOT NULL,
                     model_type TEXT NOT NULL,
+                    description TEXT DEFAULT '',
                     visibility TEXT DEFAULT 'Private',
                     published_at TIMESTAMP,
                     created_at TIMESTAMP,
@@ -220,6 +221,14 @@ class Database:
                 );
                 """
             )
+            if is_pg:
+                conn.execute("ALTER TABLE models ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';")
+            else:
+                cursor = conn.execute("PRAGMA table_info(models);")
+                model_cols = [r["name"] for r in cursor.fetchall()]
+                if "description" not in model_cols:
+                    conn.execute("ALTER TABLE models ADD COLUMN description TEXT DEFAULT '';")
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS model_versions (
@@ -1197,6 +1206,7 @@ class Database:
         visibility = str(visibility or "Private")
 
         title = str(record.get("title") or "Untitled model")
+        description = str(record.get("description") or "")
         published_at = record.get("published_at")
         created_at = record.get("created_at") or datetime.now(timezone.utc).isoformat()
         updated_at = record.get("updated_at") or datetime.now(timezone.utc).isoformat()
@@ -1219,13 +1229,14 @@ class Database:
             conn.execute("BEGIN IMMEDIATE;")
             conn.execute(
                 """
-                INSERT INTO models (id, user_id, title, category, model_type, visibility, published_at, created_at, updated_at, raw_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO models (id, user_id, title, category, model_type, description, visibility, published_at, created_at, updated_at, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id = COALESCE(excluded.user_id, models.user_id),
                     title = excluded.title,
                     category = excluded.category,
                     model_type = excluded.model_type,
+                    description = excluded.description,
                     visibility = excluded.visibility,
                     published_at = excluded.published_at,
                     updated_at = excluded.updated_at,
@@ -1237,6 +1248,7 @@ class Database:
                     title,
                     category,
                     model_type,
+                    description,
                     visibility,
                     published_at,
                     created_at,

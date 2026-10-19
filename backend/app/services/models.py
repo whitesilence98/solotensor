@@ -244,12 +244,31 @@ class ModelService:
                     samples=samples,
                 )
             )
+
+        user_id = record.get("user_id")
+        author_username = None
+        author_display_name = None
+        author_avatar_url = None
+        if user_id:
+            try:
+                user = get_db().get_user_by_id(user_id)
+                if user:
+                    author_username = user.get("username")
+                    author_display_name = user.get("display_name") or user.get("username")
+                    author_avatar_url = user.get("avatar_url")
+            except Exception as exc:
+                logger.warning("Could not resolve author info for user %s: %s", user_id, exc)
+
         return ModelResponse(
             model_id=record["model_id"],
-            user_id=record.get("user_id"),
+            user_id=user_id,
             title=record["title"],
             category=record["category"],
             model_type=record["model_type"],
+            description=record.get("description", "") or "",
+            author_username=author_username,
+            author_display_name=author_display_name,
+            author_avatar_url=author_avatar_url,
             tags=record.get("tags", []),
             compatibility=record["compatibility"],
             generation=record["generation"],
@@ -863,6 +882,68 @@ class ModelService:
         return ModelVersionResponse(
             version_id=version_id, name=payload.name, created_at=now
         )
+
+    def remove_version(self, model_id: str, version_id: str) -> ModelResponse:
+        record = self._read(model_id)
+        versions = record.get("versions", [])
+        if len(versions) <= 1:
+            raise ModelConflict("Cannot delete the only version of a model")
+
+        target_version = next((v for v in versions if v.get("version_id") == version_id), None)
+        if target_version is None:
+            raise ModelNotFound("Model version not found")
+
+        version_dir = self.root / model_id / version_id
+        if version_dir.exists():
+            shutil.rmtree(version_dir, ignore_errors=True)
+
+        record["versions"] = [v for v in versions if v.get("version_id") != version_id]
+        record["updated_at"] = self._now()
+        self._write(record)
+
+        try:
+            with get_db().get_connection() as conn:
+                conn.execute(
+                    "DELETE FROM model_versions WHERE id = ? AND model_id = ?",
+                    (version_id, model_id),
+                )
+        except Exception as exc:
+            logger.warning("Could not delete model version from database: %s", exc)
+
+        self._sync_to_db(record)
+        return self._response(record)
+
+    def update_version(
+        self, model_id: str, version_id: str, name: str
+    ) -> ModelResponse:
+        clean_name = " ".join((name or "").split())
+        if not clean_name or len(clean_name) > 64:
+            raise ModelError("Invalid version name")
+
+        record = self._read(model_id)
+        version = self._version(record, version_id)
+
+        if any(
+            v.get("version_id") != version_id and v.get("name") == clean_name
+            for v in record.get("versions", [])
+        ):
+            raise ModelConflict("Version name already exists")
+
+        version["name"] = clean_name
+        record["updated_at"] = self._now()
+        self._write(record)
+
+        try:
+            with get_db().get_connection() as conn:
+                conn.execute(
+                    "UPDATE model_versions SET name = ? WHERE id = ? AND model_id = ?",
+                    (clean_name, version_id, model_id),
+                )
+        except Exception as exc:
+            logger.warning("Could not update model version in database: %s", exc)
+
+        self._sync_to_db(record)
+        return self._response(record)
 
     def add_file(
         self,

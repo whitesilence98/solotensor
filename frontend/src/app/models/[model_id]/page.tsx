@@ -25,6 +25,8 @@ import {
   Play,
   Edit3,
   Trash2,
+  Sparkles,
+  Layers,
 } from "lucide-react";
 import { api, type CreatorModel, type CreatorModelFile, type GalleryItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -32,6 +34,8 @@ import { Can } from "@/components/rbac";
 import ModelGenerationsGrid from "@/components/ModelGenerationsGrid";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
+import EditModelDrawer from "@/components/EditModelDrawer";
+import UserAvatar from "@/components/UserAvatar";
 
 interface CommentItem {
   id: string;
@@ -101,10 +105,25 @@ export default function PublicModelDetailPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  const [showEditDrawer, setShowEditDrawer] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedNegative, setCopiedNegative] = useState(false);
+
+  const handleCopyPrompt = (text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
+
+  const handleCopyNegative = (text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedNegative(true);
+      setTimeout(() => setCopiedNegative(false), 2000);
+    }
+  };
 
   const handleDeleteModel = async () => {
     if (!model) return;
@@ -121,30 +140,7 @@ export default function PublicModelDetailPage({
 
   const handleOpenEdit = () => {
     if (!model) return;
-    setEditTitle(model.title);
-    setEditError(null);
-    setShowEditModal(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!model) return;
-    if (!editTitle.trim()) {
-      setEditError("Title cannot be blank");
-      return;
-    }
-    setEditing(true);
-    setEditError(null);
-    try {
-      const updated = await api.updateCreatorModel(model.model_id, {
-        title: editTitle.trim(),
-      });
-      setModel(updated);
-      setShowEditModal(false);
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Failed to update model");
-    } finally {
-      setEditing(false);
-    }
+    setShowEditDrawer(true);
   };
 
   const load = useCallback(() => {
@@ -632,12 +628,19 @@ export default function PublicModelDetailPage({
               ORIGINAL · SOLOTENSOR MODEL
             </span>
             <span className="text-[var(--line-strong)]">|</span>
-            <span className="inline-flex items-center gap-1.5 text-[var(--ink)]">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--surface-soft)] border border-[var(--line)] text-[9px] font-bold text-[var(--accent)]">
-                {model.category.slice(0, 1)}
-              </span>
-              <span>Arleth 🎓</span>
-            </span>
+            <Link
+              href={`/user/${encodeURIComponent(model.author_username || model.user_id || "creator")}`}
+              className="inline-flex items-center gap-1.5 text-[var(--ink)] hover:text-[var(--accent)] transition-colors"
+            >
+              <UserAvatar
+                src={model.author_avatar_url}
+                username={model.author_username || model.user_id}
+                name={model.author_display_name || model.author_username || "SoloTensor Creator"}
+                size="xs"
+                shape="circle"
+              />
+              <span>{model.author_display_name || model.author_username || "SoloTensor Creator"}</span>
+            </Link>
             <span className="text-[var(--line-strong)]">|</span>
             <span>UPDATED: {updatedDate}</span>
           </div>
@@ -817,23 +820,19 @@ export default function PublicModelDetailPage({
 
             {/* Model Description & Prose */}
             <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-5">
-              <p className="text-sm leading-relaxed text-[var(--ink)]">
-                This {model.model_type} is designed to sit between{" "}
-                <span className="font-semibold text-[var(--accent)]">
-                  semi-realistic illustration
-                </span>{" "}
-                and{" "}
-                <span className="font-semibold text-[var(--accent)]">soft realism</span>
-                , blending a dreamy,{" "}
-                <span className="font-semibold text-[var(--accent)]">doll-like</span>{" "}
-                aesthetic with grounded facial structure and natural studio lighting.
-              </p>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--ink-soft)]">
-                It emphasizes porcelain-smooth skin, delicate facial features, and
-                subtle iris depth. The style leans toward an ethereal visual
-                rather than hyper-realism — eyes are luminous and expressive, skin
-                appears clean and refined, and overall tones remain gentle and airy.
-              </p>
+              {model.description && model.description.trim() ? (
+                <div className="space-y-3 text-sm leading-relaxed text-[var(--ink)] whitespace-pre-line">
+                  {model.description.split("\n\n").map((para, i) => (
+                    <p key={i} className="text-sm leading-relaxed text-[var(--ink)]">
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm italic text-[var(--ink-faint)]">
+                  No description provided.
+                </p>
+              )}
 
               {/* Key Features Dropdown */}
               <div className="mt-4 border-t border-[var(--line)] pt-4">
@@ -857,7 +856,7 @@ export default function PublicModelDetailPage({
                         Sampler
                       </p>
                       <p className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
-                        {model.generation.sampler || "Euler a"}
+                        {model.generation?.sampler || "Euler a"}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
@@ -865,8 +864,8 @@ export default function PublicModelDetailPage({
                         Steps Range
                       </p>
                       <p className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
-                        {model.generation.steps_min || 20} –{" "}
-                        {model.generation.steps_max || 30}
+                        {model.generation?.steps_min || 20} –{" "}
+                        {model.generation?.steps_max || 30}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
@@ -874,8 +873,8 @@ export default function PublicModelDetailPage({
                         CFG Scale
                       </p>
                       <p className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
-                        {model.generation.cfg_min || 3.5} –{" "}
-                        {model.generation.cfg_max || 7.0}
+                        {model.generation?.cfg_min || 3.5} –{" "}
+                        {model.generation?.cfg_max || 7.0}
                       </p>
                     </div>
                     <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
@@ -883,7 +882,7 @@ export default function PublicModelDetailPage({
                         Clip Skip
                       </p>
                       <p className="mt-1 font-mono text-xs font-semibold text-[var(--ink)]">
-                        {model.generation.clip_skip || 1}
+                        {model.generation?.clip_skip || 1}
                       </p>
                     </div>
                   </div>
@@ -900,6 +899,150 @@ export default function PublicModelDetailPage({
                   <span>Buffet</span>
                   <span className="font-mono text-[10px] text-[var(--ink-faint)]">42</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Recommended Prompts & Presets Card */}
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[var(--accent)]" />
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+                    Recommended Prompts & Presets
+                  </h3>
+                </div>
+                <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[10px] text-[var(--accent)] font-semibold">
+                  Verified Parameters
+                </span>
+              </div>
+
+              {/* Starter Prompt */}
+              {model.generation?.prompt ? (
+                <div className="space-y-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                      Starter Prompt
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPrompt(model.generation.prompt)}
+                      className="inline-flex items-center gap-1.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors"
+                    >
+                      {copiedPrompt ? (
+                        <>
+                          <Check className="h-3 w-3 text-[var(--accent)]" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3 opacity-70" />
+                          <span>Copy Prompt</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="font-mono text-xs text-[var(--ink)] leading-relaxed select-all">
+                    {model.generation.prompt}
+                  </p>
+                </div>
+              ) : null}
+
+              {/* Negative Prompt */}
+              {model.generation?.negative_prompt ? (
+                <div className="space-y-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                      Negative Avoidance Prompt
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyNegative(model.generation.negative_prompt)}
+                      className="inline-flex items-center gap-1.5 rounded bg-[var(--surface-raised)] border border-[var(--line-strong)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                    >
+                      {copiedNegative ? (
+                        <>
+                          <Check className="h-3 w-3 text-[var(--accent)]" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3 opacity-70" />
+                          <span>Copy Negative</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="font-mono text-xs text-[var(--ink-soft)] leading-relaxed select-all">
+                    {model.generation.negative_prompt}
+                  </p>
+                </div>
+              ) : null}
+
+              {/* Trigger Words */}
+              <div className="space-y-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                  Trigger Words (Click to Copy)
+                </span>
+                {model.generation?.trigger_words && model.generation.trigger_words.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {model.generation.trigger_words.map((tw) => (
+                      <button
+                        key={tw}
+                        type="button"
+                        onClick={() => handleCopyTrigger(tw)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2.5 py-1 font-mono text-xs font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all hover:scale-[1.02]"
+                        title="Click to copy trigger word"
+                      >
+                        <span>{tw}</span>
+                        {copiedTrigger === tw ? (
+                          <Check className="h-3 w-3 text-[var(--accent)]" />
+                        ) : (
+                          <Copy className="h-3 w-3 opacity-60" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs text-[var(--ink-faint)]">
+                    No trigger words required for this model.
+                  </p>
+                )}
+              </div>
+
+              {/* Sampler, Steps, CFG Ranges Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-[var(--line)] font-mono">
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+                    Sampler
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[var(--ink)] truncate">
+                    {model.generation?.sampler || "Euler a"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+                    Steps Range
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[var(--ink)]">
+                    {model.generation?.steps_min || 20} – {model.generation?.steps_max || 30}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+                    CFG Scale
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[var(--ink)]">
+                    {model.generation?.cfg_min || 3.5} – {model.generation?.cfg_max || 7.0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+                    Clip Skip
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-[var(--ink)]">
+                    {model.generation?.clip_skip || 1}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1092,172 +1235,268 @@ export default function PublicModelDetailPage({
               </p>
             )}
 
-            {/* CARD 1: Version Detail */}
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-4">
-              <h4 className="font-bold text-[var(--ink)] text-xs font-mono uppercase tracking-wider">
-                Version Detail
-              </h4>
-              <div className="mt-3 space-y-2.5 text-xs">
+            {/* CARD 1: Full Compatibility & Conditioning Card */}
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-[var(--ink)] text-xs font-mono uppercase tracking-wider">
+                  Compatibility & Conditioning
+                </h4>
+                <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
+                  {model.model_type}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-xs border-t border-[var(--line)] pt-2.5">
+                {/* Uploaded / Updated Date */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[var(--ink-faint)]">Uploaded</span>
-                  <div className="text-right">
-                    <span className="font-mono text-[var(--ink)]">{updatedDate}</span>{" "}
-                    {/* <span className="font-mono text-[var(--accent)] text-[11px] font-medium">
-                      Trained by SoloTensor
-                    </span> */}
-                  </div>
+                  <span className="text-[var(--ink-faint)] font-mono text-[11px]">Updated</span>
+                  <span className="font-mono text-[var(--ink)]">{updatedDate}</span>
                 </div>
 
+                {/* Base Architecture Badge */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[var(--ink-faint)]">Base Model</span>
-                  <span className="font-mono font-semibold text-[var(--ink)]">
-                    {model.compatibility.base_model || "Illustrious"}
+                  <span className="text-[var(--ink-faint)] font-mono text-[11px]">Base Architecture</span>
+                  <span className="rounded-[4px] border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[11px] font-bold text-[var(--accent)]">
+                    {model.compatibility?.base_model || "Universal"}
                   </span>
                 </div>
 
+                {/* Paired VAE */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[var(--ink-faint)]">Epoch / Steps</span>
-                  <span className="font-mono text-[var(--ink)]">
-                    {model.generation.steps_max || 8}
-                  </span>
-                </div>
-
-                {primaryFile && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[var(--ink-faint)]">Precision & Size</span>
-                    <span className="font-mono text-[var(--ink)]">
-                      {primaryFile.precision} ·{" "}
-                      {(primaryFile.size / 1024 ** 2).toFixed(1)} MB
+                  <span className="text-[var(--ink-faint)] font-mono text-[11px]">Paired VAE</span>
+                  {model.compatibility?.vae ? (
+                    <span className="inline-flex items-center gap-1.5 font-mono text-xs text-[var(--ink)]">
+                      <span className="font-semibold truncate max-w-[140px]" title={model.compatibility.vae}>
+                        {model.compatibility.vae}
+                      </span>
+                      <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1 py-0.2 text-[9px] text-[var(--accent)] font-bold shrink-0">
+                        {model.compatibility.vae.endsWith(".sft") ? ".sft" : ".safetensors"}
+                      </span>
                     </span>
-                  </div>
-                )}
-
-                {/* Trigger Words Section */}
-                <div className="border-t border-[var(--line)] pt-2.5">
-                  <span className="text-[var(--ink-faint)] font-mono text-[11px] uppercase tracking-wider">
-                    Trigger Words
-                  </span>
-                  {model.generation.trigger_words &&
-                  model.generation.trigger_words.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {model.generation.trigger_words.map((tw) => (
-                        <button
-                          key={tw}
-                          type="button"
-                          onClick={() => handleCopyTrigger(tw)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[11px] text-[var(--accent)] transition hover:bg-[var(--accent)]/20"
-                          title="Click to copy trigger word"
-                        >
-                          <span>{tw}</span>
-                          {copiedTrigger === tw ? (
-                            <Check className="h-3 w-3 text-[var(--accent)]" />
-                          ) : (
-                            <Copy className="h-3 w-3 opacity-70" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
                   ) : (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {["semi-realistic", "realistic facial structure"].map(
-                        (tw) => (
-                          <button
-                            key={tw}
-                            type="button"
-                            onClick={() => handleCopyTrigger(tw)}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[11px] text-[var(--accent)] transition hover:bg-[var(--accent)]/20"
-                            title="Click to copy trigger word"
-                          >
-                            <span>{tw}</span>
-                            {copiedTrigger === tw ? (
-                              <Check className="h-3 w-3 text-[var(--accent)]" />
-                            ) : (
-                              <Copy className="h-3 w-3 opacity-70" />
-                            )}
-                          </button>
-                        ),
-                      )}
-                    </div>
+                    <span className="font-mono text-xs text-[var(--ink-faint)]">Bundled / None</span>
                   )}
                 </div>
+
+                {/* Text Encoder */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--ink-faint)] font-mono text-[11px]">Text Encoder</span>
+                  <span className="font-mono text-xs text-[var(--ink)] truncate max-w-[160px]" title={model.compatibility?.text_encoder || "Bundled / Auto"}>
+                    {model.compatibility?.text_encoder || "Bundled / Auto"}
+                  </span>
+                </div>
+
+                {/* CLIP Protocol */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[var(--ink-faint)] font-mono text-[11px]">CLIP Protocol</span>
+                  <span className="font-mono text-xs font-semibold text-[var(--accent)]">
+                    {model.compatibility?.clip_type || "Auto-detected"}
+                  </span>
+                </div>
+
+                {/* Linked Base Model ID (if adapter) */}
+                {model.compatibility?.base_model_id && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[var(--ink-faint)] font-mono text-[11px]">Linked Base Enclave</span>
+                    <Link
+                      href={`/models/${model.compatibility.base_model_id}`}
+                      className="font-mono text-xs font-semibold text-[var(--accent)] hover:underline truncate max-w-[150px]"
+                      title={model.compatibility.base_model_id}
+                    >
+                      {model.compatibility.base_model_id.slice(0, 12)}…
+                    </Link>
+                  </div>
+                )}
               </div>
+
+              {/* Full list of all files in active version (v.files) */}
+              {activeVersion && activeVersion.files && activeVersion.files.length > 0 && (
+                <div className="border-t border-[var(--line)] pt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                      Version Files ({activeVersion.files.length})
+                    </span>
+                    <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
+                      {activeVersion.name}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {activeVersion.files.map((file) => (
+                      <div
+                        key={file.file_id}
+                        className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
+                            {file.filename}
+                          </p>
+                          <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
+                            <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
+                              {file.precision}
+                            </span>
+                            <span>{(file.size / 1024 ** 2).toFixed(1)} MB</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a
+                            href={isAuthenticated ? file.download_url : "#"}
+                            target={isAuthenticated ? "_blank" : undefined}
+                            rel="noreferrer"
+                            onClick={(e) => {
+                              if (!isAuthenticated) {
+                                e.preventDefault();
+                                openAuthModal("download_weights");
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                            title={`Download ${file.filename}`}
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>Get</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => void install(file, activeVersion.version_id)}
+                            disabled={installing === file.file_id}
+                            className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                            title={`Install ${file.filename} into ComfyUI`}
+                          >
+                            <HardDriveDownload className="h-3 w-3" />
+                            <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* CARD 2: Project Permissions */}
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-4 text-xs">
+            {/* CARD 2: Real Permissions Card */}
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-4 text-xs space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-[var(--ink)] text-xs font-mono uppercase tracking-wider">
                   Project Permissions
                 </h4>
-              </div>
-              <p className="mt-1 flex items-center gap-1 font-mono text-[11px] font-medium text-[var(--warning)]">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>REPRINTING IS STRICTLY PROHIBITED</span>
-              </p>
-
-              {/* Use Permissions */}
-              <div className="mt-3 space-y-1.5 border-t border-[var(--line)] pt-2.5">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                  Use Permissions
-                </p>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  <span>Use in SoloTensor Online</span>
-                </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  <span>As an online training base model on SoloTensor</span>
-                </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  <span>Use without crediting me</span>
-                </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <XCircle className="h-3.5 w-3.5 text-[var(--danger)]" />
-                  <span>Share merges of this model</span>
-                </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <XCircle className="h-3.5 w-3.5 text-[var(--danger)]" />
-                  <span>Use different permissions on merges</span>
-                </div>
+                <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
+                  {model.visibility}
+                </span>
               </div>
 
-              {/* Commercial Use */}
-              <div className="mt-3 space-y-1.5 border-t border-[var(--line)] pt-2.5">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-faint)]">
-                  Commercial Use
-                </p>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <XCircle className="h-3.5 w-3.5 text-[var(--danger)]" />
-                  <span>Sell generated contents</span>
+              <div className="space-y-2.5 border-t border-[var(--line)] pt-3">
+                {/* Commercial Use */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.commercial ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-[var(--danger)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Commercial Use</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.commercial
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--danger)]"
+                    }`}
+                  >
+                    {model.permissions?.commercial ? "Allowed" : "Not Permitted"}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <XCircle className="h-3.5 w-3.5 text-[var(--danger)]" />
-                  <span>Use on generation services</span>
+
+                {/* Remix / Merges */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.remix ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-[var(--danger)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Remix / Merges</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.remix
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--danger)]"
+                    }`}
+                  >
+                    {model.permissions?.remix ? "Allowed" : "Prohibited"}
+                  </span>
                 </div>
-                <div className="flex items-center gap-2 text-[var(--ink-soft)]">
-                  <XCircle className="h-3.5 w-3.5 text-[var(--danger)]" />
-                  <span>Sell this model or merges</span>
+
+                {/* Generation Services */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.generation_services ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-[var(--danger)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Generation Services</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.generation_services
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--danger)]"
+                    }`}
+                  >
+                    {model.permissions?.generation_services ? "Permitted" : "Prohibited"}
+                  </span>
+                </div>
+
+                {/* Attribution */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.credit_required ? (
+                      <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)] shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--ink-faint)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Attribution</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.credit_required
+                        ? "text-[var(--warning)]"
+                        : "text-[var(--ink-soft)]"
+                    }`}
+                  >
+                    {model.permissions?.credit_required ? "Required" : "Optional"}
+                  </span>
                 </div>
               </div>
             </div>
 
             {/* CARD 3: Creator Profile Box */}
             <div className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-soft)] border border-[var(--line)] font-mono text-xs font-bold text-[var(--accent)] shadow">
-                  A
-                </div>
-                <div>
+              <Link
+                href={`/user/${encodeURIComponent(model.author_username || model.user_id || "creator")}`}
+                className="flex items-center gap-2.5 min-w-0 group"
+              >
+                <UserAvatar
+                  src={model.author_avatar_url}
+                  username={model.author_username || model.user_id}
+                  name={model.author_display_name || model.author_username || "Creator"}
+                  size="md"
+                  shape="circle"
+                />
+                <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-[var(--ink)]">Arleth</span>
-                    <span className="rounded border border-[var(--warning)]/40 bg-[var(--warning-surface)] px-1 py-0.2 font-mono text-[9px] font-bold text-[var(--warning)]">
-                      PRO
+                    <span className="font-bold text-[var(--ink)] truncate group-hover:text-[var(--accent)] transition-colors">
+                      {model.author_display_name || model.author_username || "SoloTensor Creator"}
+                    </span>
+                    <span className="shrink-0 rounded border border-[var(--warning)]/40 bg-[var(--warning-surface)] px-1 py-0.2 font-mono text-[9px] font-bold text-[var(--warning)]">
+                      CREATOR
                     </span>
                   </div>
-                  <p className="font-mono text-[10px] text-[var(--ink-faint)]">Creator</p>
+                  <p className="font-mono text-[10px] text-[var(--ink-faint)] truncate">
+                    @{model.author_username || (model.user_id ? model.user_id.slice(0, 12) : "creator")}
+                  </p>
                 </div>
-              </div>
+              </Link>
 
               <button
                 type="button"
@@ -1339,62 +1578,14 @@ export default function PublicModelDetailPage({
         </WorkspaceModal>
       )}
 
-      {/* Edit Model Modal */}
+      {/* Edit Model Drawer */}
       {model && (
-        <WorkspaceModal
-          open={showEditModal}
-          onClose={() => {
-            if (!editing) {
-              setShowEditModal(false);
-              setEditError(null);
-            }
-          }}
-          title="Edit Model Details"
-          description="Update metadata and title for this model."
-          eyebrow="Creator Settings"
-        >
-          <div className="space-y-4">
-            {editError && (
-              <p className="text-xs font-semibold text-[var(--danger)]" role="alert">
-                {editError}
-              </p>
-            )}
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)] mb-1.5">
-                Model Title
-              </label>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                disabled={editing}
-                className="w-full px-3 py-2 text-xs font-mono rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink)] focus:border-[var(--accent)] outline-none transition-colors"
-                placeholder="Enter model title"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditError(null);
-                }}
-                disabled={editing}
-                className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={editing || !editTitle.trim()}
-                className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
-              >
-                {editing ? "Saving…" : "Save Changes"}
-              </button>
-            </div>
-          </div>
-        </WorkspaceModal>
+        <EditModelDrawer
+          open={showEditDrawer}
+          model={model}
+          onClose={() => setShowEditDrawer(false)}
+          onUpdated={(updated) => setModel(updated)}
+        />
       )}
     </main>
   );

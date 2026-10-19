@@ -663,6 +663,9 @@ export interface CreatorModel {
   model_id: string;
   user_id?: string | null;
   author_username?: string | null;
+  author_display_name?: string | null;
+  author_avatar_url?: string | null;
+  description?: string;
   title: string;
   category: CreatorModelCategory;
   model_type: CreatorModelType;
@@ -679,6 +682,7 @@ export interface CreatorModel {
 
 export interface CreatorModelPayload {
   title: string;
+  description?: string;
   category: CreatorModelCategory;
   model_type: CreatorModelType;
   tags: string[];
@@ -693,6 +697,7 @@ export interface ModelPublishPayload { visibility: ModelVisibility; }
 export interface PublicModelSummary {
   model_id: string;
   title: string;
+  description?: string;
   category: CreatorModelCategory;
   model_type: CreatorModelType;
   tags: string[];
@@ -704,8 +709,9 @@ export interface PublicModelSummary {
   file_count: number;
   sample_count: number;
   author_id?: string;
-  author_username?: string;
-  author_display_name?: string;
+  author_username?: string | null;
+  author_display_name?: string | null;
+  author_avatar_url?: string | null;
   author_role?: string;
 }
 
@@ -954,6 +960,14 @@ export const api = {
 
   async createModelVersion(modelId: string, name: string): Promise<CreatorModelVersion> {
     return request<CreatorModelVersion>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions`, { method: "POST", body: JSON.stringify({ name }) });
+  },
+
+  async deleteModelVersion(modelId: string, versionId: string): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}`, { method: "DELETE" });
+  },
+
+  async updateModelVersion(modelId: string, versionId: string, name: string): Promise<CreatorModel> {
+    return request<CreatorModel>(`/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}`, { method: "PATCH", body: JSON.stringify({ name }) });
   },
 
   async uploadModelFile(modelId: string, versionId: string, file: File, precision: ModelPrecision = "FP16"): Promise<CreatorModel> {

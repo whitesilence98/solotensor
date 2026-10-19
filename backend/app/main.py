@@ -62,6 +62,7 @@ from .schemas import (
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
+    ModelVersionUpdateRequest,
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
     PublicModelListResponse,
@@ -335,9 +336,17 @@ async def list_local_models(
     response_model=ModelResponse,
 )
 async def import_local_model_file(
-    model_id: str, version_id: str, req: LocalModelImportRequest
+    model_id: str,
+    version_id: str,
+    req: LocalModelImportRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
 ) -> ModelResponse:
     try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
         return model_storage.import_local_file(
             model_id, version_id, req.category, req.filename, req.precision
         )
@@ -365,6 +374,10 @@ async def list_public_models(
                 "title": model.title,
                 "category": model.category,
                 "model_type": model.model_type,
+                "description": getattr(model, "description", "") or "",
+                "author_username": getattr(model, "author_username", None),
+                "author_display_name": getattr(model, "author_display_name", None),
+                "author_avatar_url": getattr(model, "author_avatar_url", None),
                 "tags": model.tags,
                 "base_model": model.compatibility.base_model,
                 "published_at": model.published_at,
@@ -501,6 +514,47 @@ async def create_model_version(
             existing.user_id, current_user, rbac
         )
         return model_storage.create_version(model_id, req)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.delete(
+    "/api/v1/models/id/{model_id}/versions/{version_id}",
+    response_model=ModelResponse,
+)
+async def delete_model_version(
+    model_id: str,
+    version_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
+    try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:delete_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        return model_storage.remove_version(model_id, version_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.patch(
+    "/api/v1/models/id/{model_id}/versions/{version_id}",
+    response_model=ModelResponse,
+)
+async def update_model_version(
+    model_id: str,
+    version_id: str,
+    req: ModelVersionUpdateRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
+    try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        return model_storage.update_version(model_id, version_id, req.name)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 

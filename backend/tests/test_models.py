@@ -482,6 +482,82 @@ class ModelServiceTests(unittest.TestCase):
             self.assertEqual(empty_gen_model.generation.negative_prompt, "")
             self.assertEqual(empty_gen_model.generation.trigger_words, [])
 
+    def test_description_create_and_update(self) -> None:
+        created = self.service.create(
+            ModelCreateRequest(
+                title="Model with Desc",
+                description="Initial model description text",
+            )
+        )
+        self.assertEqual(created.description, "Initial model description text")
+        reloaded = self.service.get(created.model_id)
+        self.assertEqual(reloaded.description, "Initial model description text")
+
+        updated = self.service.update(
+            created.model_id,
+            ModelUpdateRequest(description="Updated description text"),
+        )
+        self.assertEqual(updated.description, "Updated description text")
+        reloaded2 = self.service.get(created.model_id)
+        self.assertEqual(reloaded2.description, "Updated description text")
+
+    def test_version_deletion_guards_and_success(self) -> None:
+        # 1. Deleting only version raises ModelConflict
+        with self.assertRaises(ModelConflict) as ctx:
+            self.service.remove_version(self.model.model_id, self.version.version_id)
+        self.assertIn("only version", str(ctx.exception))
+
+        # 2. Adding a second version
+        v2 = self.service.create_version(
+            self.model.model_id,
+            ModelVersionCreateRequest(name="v2.0"),
+        )
+        self.assertEqual(len(self.service.get(self.model.model_id).versions), 2)
+
+        # 3. Deleting non-existent version raises ModelNotFound
+        with self.assertRaises(ModelNotFound):
+            self.service.remove_version(self.model.model_id, "nonexistent_version_id")
+
+        # 4. Deleting second version succeeds
+        resp = self.service.remove_version(self.model.model_id, v2.version_id)
+        self.assertEqual(len(resp.versions), 1)
+        self.assertEqual(resp.versions[0].version_id, self.version.version_id)
+
+        # 5. Reloaded model reflects deletion
+        reloaded = self.service.get(self.model.model_id)
+        self.assertEqual(len(reloaded.versions), 1)
+
+    def test_version_renaming(self) -> None:
+        # 1. Update version name cleanly
+        updated = self.service.update_version(
+            self.model.model_id,
+            self.version.version_id,
+            "v1.0-RC1",
+        )
+        self.assertEqual(updated.versions[0].name, "v1.0-RC1")
+        reloaded = self.service.get(self.model.model_id)
+        self.assertEqual(reloaded.versions[0].name, "v1.0-RC1")
+
+        # 2. Reject blank/empty name
+        with self.assertRaises(ModelError):
+            self.service.update_version(
+                self.model.model_id,
+                self.version.version_id,
+                "   ",
+            )
+
+        # 3. Reject duplicate name
+        self.service.create_version(
+            self.model.model_id,
+            ModelVersionCreateRequest(name="v2.0"),
+        )
+        with self.assertRaises(ModelConflict):
+            self.service.update_version(
+                self.model.model_id,
+                self.version.version_id,
+                "v2.0",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
