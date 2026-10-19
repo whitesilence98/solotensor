@@ -115,17 +115,25 @@ model_storage.ensure_root()
 code_assistant = get_code_assistant_service(settings)
 redis_service = get_redis_service(settings)
 
-# Auto-initialize database on application startup
 db = get_db()
-db.init_db()
-try:
-    db.sync_filesystem_to_db(
-        models_dir=model_storage.definitions, storage_dir=storage.root
-    )
-except Exception as exc:
-    logger.warning("Could not sync filesystem to SQLite on startup: %s", exc)
 
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
+
+
+@app.on_event("startup")
+async def _on_startup_bootstrap() -> None:
+    import threading
+
+    def _bg_bootstrap() -> None:
+        try:
+            db.init_db()
+            db.sync_filesystem_to_db(
+                models_dir=model_storage.definitions, storage_dir=storage.root
+            )
+        except Exception as exc:
+            logger.warning("Could not sync filesystem to database: %s", exc)
+
+    threading.Thread(target=_bg_bootstrap, daemon=True, name="bg-db-bootstrap").start()
 
 app.add_middleware(
     CORSMiddleware,

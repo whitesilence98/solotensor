@@ -6,6 +6,7 @@ after 24 hours. Users can also manually claim their daily recharge.
 
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any, Optional
 
 from ..config import Settings, get_settings

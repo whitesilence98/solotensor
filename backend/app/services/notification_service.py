@@ -7,6 +7,7 @@ fan-out (e.g. notifying all moderators/admins), and notification state managemen
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
 from ..db import Database, get_db
@@ -19,6 +20,7 @@ class NotificationService:
 
     def __init__(self, db: Optional[Database] = None) -> None:
         self.db: Database = db or get_db()
+        self._unread_cache: dict[str, tuple[float, int]] = {}
 
     def notify_user(
         self,
@@ -32,6 +34,7 @@ class NotificationService:
         metadata: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """Dispatch a single in-app notification to a specific user."""
+        self._unread_cache.pop(user_id, None)
         try:
             return self.db.create_notification(
                 user_id=user_id,
@@ -115,18 +118,28 @@ class NotificationService:
 
     def get_unread_count(self, user_id: str) -> int:
         """Fetch total unread notification count for a user."""
-        return self.db.get_unread_notification_count(user_id)
+        now = time.time()
+        if user_id in self._unread_cache:
+            cache_ts, count = self._unread_cache[user_id]
+            if now - cache_ts < 15.0:
+                return count
+        count = self.db.get_unread_notification_count(user_id)
+        self._unread_cache[user_id] = (now, count)
+        return count
 
     def mark_as_read(self, notification_id: str, user_id: str) -> bool:
         """Mark a notification as read if owned by the user."""
+        self._unread_cache.pop(user_id, None)
         return self.db.mark_notification_as_read(notification_id, user_id)
 
     def mark_all_as_read(self, user_id: str) -> int:
         """Mark all unread notifications for a user as read."""
+        self._unread_cache[user_id] = (time.time(), 0)
         return self.db.mark_all_notifications_as_read(user_id)
 
     def delete_notification(self, notification_id: str, user_id: str) -> bool:
         """Delete/dismiss a notification record."""
+        self._unread_cache.pop(user_id, None)
         return self.db.delete_notification(notification_id, user_id)
 
 

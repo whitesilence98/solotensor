@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import time
 import uuid
 from datetime import datetime, timezone
 import logging
@@ -95,6 +96,11 @@ class ModelService:
         self.root.mkdir(parents=True, exist_ok=True)
         self.definitions = self.root / "definitions"
         self.definitions.mkdir(parents=True, exist_ok=True)
+        self._public_models_cache: tuple[float, list[ModelResponse]] | None = None
+        self._public_cache_ttl: float = 30.0
+
+    def invalidate_public_cache(self) -> None:
+        self._public_models_cache = None
 
     def _sync_to_db(self, record: dict[str, Any]) -> None:
         try:
@@ -207,7 +213,11 @@ class ModelService:
         return f"{self.settings.FILES_PUBLIC_BASE}/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download"
 
     def _response(
-        self, record: dict[str, Any], *, public_urls: bool = False
+        self,
+        record: dict[str, Any],
+        *,
+        public_urls: bool = False,
+        author_cache: dict[str, Any] | None = None,
     ) -> ModelResponse:
         versions: list[ModelVersionResponse] = []
         for version in record.get("versions", []):
@@ -271,7 +281,12 @@ class ModelService:
         author_avatar_url = None
         if user_id:
             try:
-                user = get_db().get_user_by_id(user_id)
+                if author_cache is not None and user_id in author_cache:
+                    user = author_cache[user_id]
+                else:
+                    user = get_db().get_user_by_id(user_id)
+                    if author_cache is not None:
+                        author_cache[user_id] = user
                 if user:
                     author_username = user.get("username")
                     author_display_name = user.get("display_name") or user.get("username")
@@ -384,6 +399,7 @@ class ModelService:
         )
         self._write(record)
         self._sync_to_db(record)
+        self.invalidate_public_cache()
         return self._response(record)
 
     def get(self, model_id: str, *, public: bool = False) -> ModelResponse:
@@ -401,6 +417,7 @@ class ModelService:
         user_id: str | None = None,
     ) -> list[ModelResponse]:
         items: list[ModelResponse] = []
+        author_cache: dict[str, Any] = {}
         for path in self.definitions.glob("*.json"):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
@@ -417,12 +434,13 @@ class ModelService:
                     continue
                 if query and query.lower() not in str(record.get("title", "")).lower():
                     continue
-                items.append(self._response(record, public_urls=public))
+                items.append(self._response(record, public_urls=public, author_cache=author_cache))
             except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
         return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
     def update(self, model_id: str, payload: ModelUpdateRequest) -> ModelResponse:
+        self.invalidate_public_cache()
         record = self._read(model_id)
         changes = payload.model_dump(mode="json", exclude_unset=True)
         for key, value in changes.items():
@@ -455,6 +473,15 @@ class ModelService:
         return response
 
     def public_list(self, query: str | None = None, user_id: str | None = None) -> list[ModelResponse]:
+        if not query and not user_id:
+            now = time.time()
+            if self._public_models_cache is not None:
+                cached_ts, cached_items = self._public_models_cache
+                if now - cached_ts < self._public_cache_ttl:
+                    return cached_items
+            items = self.list(query=None, public=True, user_id=None)
+            self._public_models_cache = (time.time(), items)
+            return items
         return self.list(query=query, public=True, user_id=user_id)
 
     list_public = public_list
@@ -490,7 +517,7 @@ class ModelService:
                         author_avatar_url = u.get("avatar_url")
                         author_role = u.get("role")
 
-                resp = self._response(record)
+                resp = self._response(record, author_cache=author_cache)
                 cover_url = None
                 for v in resp.versions:
                     if v.samples:
@@ -565,6 +592,7 @@ class ModelService:
         record["updated_at"] = now_str
         self._write(record)
         self._sync_to_db(record)
+        self.invalidate_public_cache()
 
         installed = False
         installed_file = None
@@ -1062,6 +1090,7 @@ class ModelService:
         }
 
     def delete(self, model_id: str) -> None:
+        self.invalidate_public_cache()
         record = self._read(model_id)
         if record.get("visibility") == "Public":
             raise ModelConflict("Unpublish the model before deleting it")
@@ -1094,6 +1123,7 @@ class ModelService:
         )
         self._write(record)
         self._sync_to_db(record)
+        self.invalidate_public_cache()
         return ModelVersionResponse(
             version_id=version_id, name=payload.name, created_at=now
         )
@@ -1115,6 +1145,7 @@ class ModelService:
         record["versions"] = [v for v in versions if v.get("version_id") != version_id]
         record["updated_at"] = self._now()
         self._write(record)
+        self.invalidate_public_cache()
 
         try:
             with get_db().get_connection() as conn:
@@ -1336,6 +1367,7 @@ class ModelService:
         record["updated_at"] = self._now()
         self._write(record)
         self._sync_to_db(record)
+        self.invalidate_public_cache()
         return self._response(record)
 
     def public_file_path(self, model_id: str, version_id: str, file_id: str) -> Path:

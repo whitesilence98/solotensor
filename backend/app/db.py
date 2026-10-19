@@ -8,6 +8,7 @@ from pathlib import Path
 import secrets
 import sqlite3
 import threading
+import time
 from typing import Any, Generator, Optional
 import uuid
 
@@ -59,6 +60,11 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._pg_pool: list[Any] = []
         self._pg_pool_lock = threading.Lock()
+        self._user_cache: dict[str, tuple[float, Optional[dict[str, Any]]]] = {}
+        self._user_roles_cache: dict[str, tuple[float, list[str]]] = {}
+        self._user_perms_cache: dict[str, tuple[float, set[str]]] = {}
+        self._credits_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._initialized: bool = False
 
     @property
     def is_postgres(self) -> bool:
@@ -91,7 +97,16 @@ class Database:
                             break
 
                 if pg_conn is None:
-                    pg_conn = psycopg.connect(conn_url, row_factory=dict_row, autocommit=True, connect_timeout=4)
+                    pg_conn = psycopg.connect(
+                        conn_url,
+                        row_factory=dict_row,
+                        autocommit=True,
+                        connect_timeout=5,
+                        keepalives=1,
+                        keepalives_idle=30,
+                        keepalives_interval=10,
+                        keepalives_count=3,
+                    )
 
                 wrapped = PostgresConnectionWrapper(pg_conn)
                 try:
@@ -99,7 +114,7 @@ class Database:
                 finally:
                     if not pg_conn.closed:
                         with self._pg_pool_lock:
-                            if len(self._pg_pool) < 8:
+                            if len(self._pg_pool) < 16:
                                 self._pg_pool.append(pg_conn)
                             else:
                                 try:
@@ -128,8 +143,10 @@ class Database:
         finally:
             conn.close()
 
-    def init_db(self) -> None:
+    def init_db(self, force: bool = False) -> None:
         """Create tables and indexes if they do not exist."""
+        if self._initialized and not force:
+            return
         with self.get_connection() as conn:
             conn.execute(
                 """
@@ -748,6 +765,7 @@ class Database:
                 logger.info("Initialized SoloTensor PostgreSQL schema from DATABASE_URL")
             else:
                 logger.info("Initialized SoloTensor SQLite schema at %s", self.db_path)
+        self._initialized = True
 
     # --- User operations ----------------------------------------------------
 
@@ -818,13 +836,28 @@ class Database:
             data["created_at"] = data["created_at"].isoformat()
         return data
 
+    def invalidate_user_cache(self, user_id: str) -> None:
+        """Invalidate all in-memory caches for a user."""
+        self._user_cache.pop(user_id, None)
+        self._user_roles_cache.pop(user_id, None)
+        self._user_perms_cache.pop(user_id, None)
+        self._credits_cache.pop(user_id, None)
+
     def get_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
+        now = time.time()
+        if user_id in self._user_cache:
+            exp, cached = self._user_cache[user_id]
+            if now < exp:
+                return dict(cached) if cached else None
+
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE id = ?",
                 (user_id,),
             )
-            return self._clean_user_row(cursor.fetchone())
+            res = self._clean_user_row(cursor.fetchone())
+            self._user_cache[user_id] = (now + 60.0, dict(res) if res else None)
+            return res
 
     def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -856,12 +889,14 @@ class Database:
 
     def verify_user(self, user_id: str) -> bool:
         """Mark user's email as verified."""
+        self.invalidate_user_cache(user_id)
         with self.get_connection() as conn:
             cursor = conn.execute("UPDATE users SET is_verified = 1 WHERE id = ?", (user_id,))
             return cursor.rowcount > 0
 
     def update_user_password(self, user_id: str, hashed_password: str) -> bool:
         """Update password hash for user."""
+        self.invalidate_user_cache(user_id)
         with self.get_connection() as conn:
             cursor = conn.execute("UPDATE users SET hashed_password = ? WHERE id = ?", (hashed_password, user_id))
             return cursor.rowcount > 0
@@ -874,6 +909,7 @@ class Database:
         bio: Optional[str] = None,
     ) -> bool:
         """Update display_name, avatar_url, or bio for a user."""
+        self.invalidate_user_cache(user_id)
         updates: list[str] = []
         params: list[Any] = []
         if display_name is not None:
@@ -1136,6 +1172,7 @@ class Database:
         last_claimed_at: Optional[str] = None,
         updated_at: Optional[str] = None,
     ) -> dict[str, Any]:
+        self._credits_cache.pop(user_id, None)
         now = datetime.now(timezone.utc).isoformat()
         ts_claim = last_claimed_at or now
         ts_update = updated_at or now
@@ -1147,15 +1184,23 @@ class Database:
                 """,
                 (user_id, balance, daily_allowance, ts_claim, ts_update),
             )
-        return {
+        data = {
             "user_id": user_id,
             "balance": balance,
             "daily_allowance": daily_allowance,
             "last_claimed_at": ts_claim,
             "updated_at": ts_update,
         }
+        self._credits_cache[user_id] = (time.time(), dict(data))
+        return data
 
     def get_credits(self, user_id: str) -> Optional[dict[str, Any]]:
+        now_ts = time.time()
+        if user_id in self._credits_cache:
+            cache_ts, cached = self._credits_cache[user_id]
+            if now_ts - cache_ts < 30.0:
+                return dict(cached)
+
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "SELECT user_id, balance, daily_allowance, last_claimed_at, updated_at FROM user_credits WHERE user_id = ?",
@@ -1169,6 +1214,7 @@ class Database:
                 data["last_claimed_at"] = data["last_claimed_at"].isoformat()
             if isinstance(data.get("updated_at"), datetime):
                 data["updated_at"] = data["updated_at"].isoformat()
+            self._credits_cache[user_id] = (time.time(), dict(data))
             return data
 
     def update_credits(
@@ -1179,6 +1225,7 @@ class Database:
         last_claimed_at: Optional[str] = None,
         updated_at: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
+        self._credits_cache.pop(user_id, None)
         now = updated_at or datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             # Fetch current
@@ -1198,16 +1245,19 @@ class Database:
                 """,
                 (new_balance, new_allowance, new_last_claim, now, user_id),
             )
-            return {
+            data = {
                 "user_id": user_id,
                 "balance": new_balance,
                 "daily_allowance": new_allowance,
                 "last_claimed_at": new_last_claim,
                 "updated_at": now,
             }
+            self._credits_cache[user_id] = (time.time(), dict(data))
+            return data
 
     def deduct_credits(self, user_id: str, amount: int = 2) -> bool:
         """Atomically deduct credits if balance >= amount. Returns True if successful, False otherwise."""
+        self._credits_cache.pop(user_id, None)
         now = datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -1218,6 +1268,7 @@ class Database:
                 """,
                 (amount, now, user_id, amount),
             )
+            self._credits_cache.pop(user_id, None)
             return cursor.rowcount > 0
 
     # --- API Keys operations ------------------------------------------------
@@ -1830,6 +1881,12 @@ class Database:
 
     def get_user_roles(self, user_id: str) -> list[str]:
         """Fetch all active roles assigned to a user, sorted by highest tier level."""
+        now_ts = time.time()
+        if user_id in self._user_roles_cache:
+            exp, cached = self._user_roles_cache[user_id]
+            if now_ts < exp:
+                return list(cached)
+
         now = datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             cursor = conn.execute(
@@ -1849,23 +1906,33 @@ class Database:
                     roles = [u_row["role"]]
                 else:
                     roles = ["creator"]
+            self._user_roles_cache[user_id] = (now_ts + 60.0, list(roles))
             return roles
 
     def get_user_permissions(self, user_id: str) -> set[str]:
         """Fetch unique permissions for all active roles of a user."""
+        now_ts = time.time()
+        if user_id in self._user_perms_cache:
+            exp, cached = self._user_perms_cache[user_id]
+            if now_ts < exp:
+                return set(cached)
+
         roles = self.get_user_roles(user_id)
         with self.get_connection() as conn:
             if "admin" in roles:
                 cursor = conn.execute("SELECT codename FROM permissions")
-                return {r["codename"] for r in cursor.fetchall()}
-            if not roles:
-                return set()
-            placeholders = ",".join("?" for _ in roles)
-            cursor = conn.execute(
-                f"SELECT DISTINCT permission_codename FROM role_permissions WHERE role_name IN ({placeholders})",
-                tuple(roles),
-            )
-            return {r["permission_codename"] for r in cursor.fetchall()}
+                perms = {r["codename"] for r in cursor.fetchall()}
+            elif not roles:
+                perms = set()
+            else:
+                placeholders = ",".join("?" for _ in roles)
+                cursor = conn.execute(
+                    f"SELECT DISTINCT permission_codename FROM role_permissions WHERE role_name IN ({placeholders})",
+                    tuple(roles),
+                )
+                perms = {r["permission_codename"] for r in cursor.fetchall()}
+            self._user_perms_cache[user_id] = (now_ts + 60.0, set(perms))
+            return perms
 
     def assign_user_role(
         self,
@@ -1875,6 +1942,7 @@ class Database:
         expires_at: Optional[str] = None,
     ) -> bool:
         """Assign or renew a role for a user."""
+        self.invalidate_user_cache(user_id)
         now = datetime.now(timezone.utc).isoformat()
         with self.get_connection() as conn:
             # Validate granted_by exists in users table (to satisfy FK)
@@ -1909,6 +1977,7 @@ class Database:
 
     def revoke_user_role(self, user_id: str, role_name: str) -> bool:
         """Revoke a role from a user."""
+        self.invalidate_user_cache(user_id)
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "DELETE FROM user_roles WHERE user_id = ? AND role_name = ?",
