@@ -654,6 +654,51 @@ class Database:
                 """
             )
 
+            # Seed Baseline Security Audit Logs if table is empty
+            audit_count_row = conn.execute("SELECT COUNT(*) AS count FROM security_audit_logs").fetchone()
+            if not audit_count_row or audit_count_row["count"] == 0:
+                baseline_audits = [
+                    (
+                        "audit-001",
+                        win_uid if u_win else None,
+                        "role:grant_verified",
+                        "user",
+                        "usr_cyber_artisan",
+                        json.dumps({"reason": "Promoted to Verified Creator with partner publishing download controls."}),
+                        "127.0.0.1",
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                    (
+                        "audit-002",
+                        None,
+                        "moderation:approve_model",
+                        "model",
+                        "mod_inversion_faces_v1",
+                        json.dumps({"reason": "Approved public gallery listing following safety check."}),
+                        "127.0.0.1",
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                    (
+                        "audit-003",
+                        win_uid if u_win else None,
+                        "system:vault_mount",
+                        "model_file",
+                        "safetensors-v1-base",
+                        json.dumps({"reason": "Mounted checkpoint weights into ComfyUI vault filesystem."}),
+                        "127.0.0.1",
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                ]
+                for audit_item in baseline_audits:
+                    conn.execute(
+                        """
+                        INSERT INTO security_audit_logs (id, actor_id, action, resource_type, resource_id, details, ip_address, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO NOTHING
+                        """,
+                        audit_item,
+                    )
+
             if is_pg:
                 logger.info("Initialized SoloTensor PostgreSQL schema from DATABASE_URL")
             else:
@@ -1869,6 +1914,73 @@ class Database:
             "ip_address": ip_address,
             "created_at": now,
         }
+
+    def get_audit_logs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        action: Optional[str] = None,
+        resource_type: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """Query recent security audit logs with user attribution."""
+        query = """
+            SELECT
+                l.id,
+                l.actor_id,
+                COALESCE(u.username, 'system') AS actor_username,
+                COALESCE(u.role, 'admin') AS actor_role,
+                l.action,
+                l.resource_type,
+                l.resource_id,
+                l.details,
+                l.ip_address,
+                l.created_at
+            FROM security_audit_logs l
+            LEFT JOIN users u ON l.actor_id = u.id
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if action:
+            query += " AND l.action = ?"
+            params.append(action)
+        if resource_type:
+            query += " AND l.resource_type = ?"
+            params.append(resource_type)
+
+        query += " ORDER BY l.created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with self.get_connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+
+        results = []
+        for row in rows:
+            details_val = row["details"]
+            if isinstance(details_val, dict):
+                details_str = json.dumps(details_val)
+            elif isinstance(details_val, str):
+                details_str = details_val
+            else:
+                details_str = str(details_val or "{}")
+
+            created_val = row["created_at"]
+            if isinstance(created_val, datetime):
+                created_str = created_val.isoformat()
+            else:
+                created_str = str(created_val)
+
+            results.append({
+                "id": row["id"],
+                "actor_username": row["actor_username"] or "system",
+                "actor_role": row["actor_role"] or "admin",
+                "action": row["action"],
+                "resource_type": row["resource_type"],
+                "resource_id": row["resource_id"],
+                "details": details_str,
+                "ip_address": row["ip_address"],
+                "created_at": created_str,
+            })
+        return results
 
     # --- Content Moderation & Reporting Operations --------------------------
 

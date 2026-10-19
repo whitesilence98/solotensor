@@ -489,6 +489,32 @@ class ModerationAndVaultEndpointsTests(unittest.TestCase):
             self.assertTrue(details["installed"])
             self.assertEqual(details["installed_file"], data["installed_file"])
 
+    def test_security_audit_logs_endpoints(self) -> None:
+        """Test GET /api/v1/moderation/audit-logs and /api/admin/moderation/audit-logs."""
+        # Unauthenticated request fails
+        unauth_resp = self.client.get("/api/v1/moderation/audit-logs")
+        self.assertEqual(unauth_resp.status_code, 401)
+
+        # Creator role without moderation:review_queue is forbidden (403)
+        creator_headers = {"Authorization": f"Bearer {self.creator_token}"}
+        forbidden_resp = self.client.get("/api/v1/moderation/audit-logs", headers=creator_headers)
+        self.assertEqual(forbidden_resp.status_code, 403)
+
+        # Moderator role can access audit-logs via /api/v1/moderation/audit-logs
+        mod_headers = {"Authorization": f"Bearer {self.mod_token}"}
+        resp_v1 = self.client.get("/api/v1/moderation/audit-logs", headers=mod_headers)
+        self.assertEqual(resp_v1.status_code, 200)
+        logs_v1 = resp_v1.json()
+        self.assertIsInstance(logs_v1, list)
+
+        # Admin role can access audit-logs via /api/admin/moderation/audit-logs
+        admin_headers = {"Authorization": f"Bearer {self.admin_token}"}
+        resp_admin = self.client.get("/api/admin/moderation/audit-logs", headers=admin_headers)
+        self.assertEqual(resp_admin.status_code, 200)
+        logs_admin = resp_admin.json()
+        self.assertIsInstance(logs_admin, list)
+        self.assertEqual(len(logs_v1), len(logs_admin))
+
 
 if __name__ == "__main__":
     unittest.main()

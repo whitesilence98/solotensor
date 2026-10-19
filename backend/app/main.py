@@ -139,6 +139,7 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(moderation_router, prefix="/api/v1/moderation")
 app.include_router(moderation_router, prefix="/api/moderation")
+app.include_router(moderation_router, prefix="/api/admin/moderation")
 
 
 # --- Creator Profiles & Social Endpoints ------------------------------------

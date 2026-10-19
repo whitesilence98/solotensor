@@ -1324,6 +1324,32 @@ class ModerationQueueResponse(BaseModel):
     has_more: bool
 
 
+class SecurityAuditLogEntry(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    id: str
+    actor_username: str = "system"
+    actor_role: str = "admin"
+    action: str
+    resource_type: str
+    resource_id: str
+    details: str = "{}"
+    ip_address: Optional[str] = None
+    created_at: str
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_datetime(cls, v: Any) -> Optional[str]:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else None
+
+
+class SecurityAuditLogsResponse(BaseModel):
+    items: list[SecurityAuditLogEntry]
+    total: int
+
+
 class ForgotPasswordRequest(BaseModel):
     model_config = {"extra": "forbid"}
 

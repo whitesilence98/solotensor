@@ -21,6 +21,7 @@ from ..schemas import (
     ModelReviewRequest,
     ModelReviewResponse,
     ModerationQueueResponse,
+    SecurityAuditLogEntry,
     UserResponse,
 )
 from ..services.models import (
@@ -231,4 +232,22 @@ async def review_model_endpoint(
     if isinstance(res, ModelReviewResponse):
         return res
     return ModelReviewResponse(**res)
+
+
+@router.get(
+    "/audit-logs",
+    response_model=list[SecurityAuditLogEntry],
+    summary="List security audit logs",
+)
+async def get_security_audit_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    action: Optional[str] = Query(None),
+    resource_type: Optional[str] = Query(None),
+    user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+    db: Database = Depends(get_db),
+) -> list[SecurityAuditLogEntry]:
+    """Inspect sensitive administrative and moderation security audit logs."""
+    logs = db.get_audit_logs(limit=limit, offset=offset, action=action, resource_type=resource_type)
+    return [SecurityAuditLogEntry(**entry) for entry in logs]
 

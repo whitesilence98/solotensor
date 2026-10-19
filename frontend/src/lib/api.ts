@@ -1791,7 +1791,7 @@ export const api = {
 
   async getSecurityAuditLogs(): Promise<SecurityAuditLogEntry[]> {
     try {
-      const res = await request<SecurityAuditLogEntry[]>("/api/admin/moderation/audit-logs");
+      const res = await request<SecurityAuditLogEntry[]>("/api/v1/moderation/audit-logs");
       return res;
     } catch (err) {
       if (
