@@ -574,6 +574,47 @@ class ModelService:
             installed = install_res.get("installed", False)
             installed_file = install_res.get("destination") or install_res.get("filename")
 
+        # In-App Notification Hook for Creator
+        user_id = record.get("user_id")
+        if user_id:
+            try:
+                from .notification_service import get_notification_service
+
+                service = get_notification_service()
+                m_name = record.get("name") or "Model"
+
+                if action_lower == "approve":
+                    if installed:
+                        n_type = "model_vault_installed"
+                        title = "Model Approved & Vault Installed"
+                        message = f"Your model '{m_name}' has been approved and installed into the local ComfyUI vault."
+                    else:
+                        n_type = "model_approved"
+                        title = "Model Approved!"
+                        message = f"Your model '{m_name}' has been approved and published to the Community Gallery."
+                elif action_lower == "reject":
+                    n_type = "model_rejected"
+                    title = "Model Submission Rejected"
+                    reason_msg = f" Reason: {notes}" if notes else ""
+                    message = f"Your model '{m_name}' was not approved.{reason_msg}"
+                else:  # request_changes
+                    n_type = "model_rejected"
+                    title = "Changes Requested for Model"
+                    reason_msg = f": {notes}" if notes else ". Please review your submission."
+                    message = f"A moderator requested changes on '{m_name}'{reason_msg}"
+
+                service.notify_user(
+                    user_id=user_id,
+                    title=title,
+                    message=message,
+                    category="moderation",
+                    type=n_type,
+                    link=f"/models/{model_id}",
+                    metadata={"model_id": model_id, "action": action_lower, "notes": notes},
+                )
+            except Exception as exc:
+                logger.warning("Could not dispatch notification for model review: %s", exc)
+
         return {
             "model_id": model_id,
             "moderation_status": new_status,

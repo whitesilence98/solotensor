@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Shield } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
 import CreditPill from "@/components/CreditPill";
+import NotificationBell from "@/components/NotificationBell";
 import { useAuth } from "@/lib/auth-context";
 
 export interface WorkspaceNavbarProps {
@@ -63,6 +64,7 @@ export default function WorkspaceNavbar({
               </div>
             )}
             {showCreditPill && <CreditPill />}
+            <NotificationBell />
             {(isMod || isAdmin) && (
               <Link
                 href="/admin/moderation"

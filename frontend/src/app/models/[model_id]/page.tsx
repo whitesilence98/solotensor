@@ -434,14 +434,14 @@ export default function PublicModelDetailPage({
       : allSamples.length > 0
         ? allSamples
         : [
-            {
-              sample_id: "placeholder-1",
-              filename: "sample-preview.jpg",
-              url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop",
-              kind: "image" as const,
-              metadata: {},
-            },
-          ];
+          {
+            sample_id: "placeholder-1",
+            filename: "sample-preview.jpg",
+            url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop",
+            kind: "image" as const,
+            metadata: {},
+          },
+        ];
 
   const activeSample =
     currentSamples[activeSampleIndex % currentSamples.length] || currentSamples[0];
@@ -867,16 +867,14 @@ export default function PublicModelDetailPage({
               <button
                 type="button"
                 onClick={toggleStar}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                  isStarred
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${isStarred
                     ? "border-[var(--warning)] bg-[var(--warning-surface)] text-[var(--warning)]"
                     : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                }`}
+                  }`}
               >
                 <Star
-                  className={`h-3.5 w-3.5 ${
-                    isStarred ? "fill-[var(--warning)] text-[var(--warning)]" : ""
-                  }`}
+                  className={`h-3.5 w-3.5 ${isStarred ? "fill-[var(--warning)] text-[var(--warning)]" : ""
+                    }`}
                 />
                 <span className="font-mono text-[11px]">
                   {(starCount / 1000).toFixed(1)}K star
@@ -987,11 +985,10 @@ export default function PublicModelDetailPage({
                         setSelectedVersionId(version.version_id);
                         setActiveSampleIndex(0);
                       }}
-                      className={`rounded-md px-3 py-1 font-mono text-xs transition ${
-                        isActive
+                      className={`rounded-md px-3 py-1 font-mono text-xs transition ${isActive
                           ? "border border-[var(--accent)] bg-[var(--accent)]/10 font-bold text-[var(--accent)] shadow-[0_0_10px_rgba(213,240,111,0.15)]"
                           : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                      }`}
+                        }`}
                     >
                       {version.name}
                     </button>
@@ -1042,11 +1039,10 @@ export default function PublicModelDetailPage({
                         setVersionActionError(null);
                         setShowDeleteVersionModal(true);
                       }}
-                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[11px] transition ${
-                        model.versions.length <= 1
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[11px] transition ${model.versions.length <= 1
                           ? "opacity-30 cursor-not-allowed text-[var(--ink-faint)]"
                           : "text-[var(--ink-soft)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10"
-                      }`}
+                        }`}
                       title={model.versions.length <= 1 ? "Cannot delete the only version" : "Delete this version"}
                     >
                       <Trash2 className="h-3 w-3" />
@@ -1067,8 +1063,8 @@ export default function PublicModelDetailPage({
           <section className="space-y-6">
             {/* Showcase Header with Add Media button for creators */}
             <div className="flex items-center justify-between pb-1">
-              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink-soft)]">
-                Showcase Previews ({currentSamples.length})
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink-soft)]" >
+                Showcase
               </span>
               <Can do="model:edit" ownerId={model.user_id}>
                 <button
@@ -1144,11 +1140,10 @@ export default function PublicModelDetailPage({
                       key={sampleKey}
                       onClick={() => handleSelectSample(idx)}
                       style={{ aspectRatio: cardRatio }}
-                      className={`group relative h-[440px] sm:h-[480px] md:h-[520px] w-auto max-w-[85vw] shrink-0 snap-start cursor-pointer overflow-hidden rounded-xl transition-all duration-300 select-none ${
-                        isSelected
+                      className={`group relative h-[440px] sm:h-[480px] md:h-[520px] w-auto max-w-[85vw] shrink-0 snap-start cursor-pointer overflow-hidden rounded-xl transition-all duration-300 select-none ${isSelected
                           ? "opacity-100 shadow-2xl scale-[1.005]"
                           : "opacity-85 hover:opacity-100"
-                      }`}
+                        }`}
                     >
                       {/* Media (Image or Video) */}
                       {sample.kind === "video" ? (
@@ -1273,9 +1268,8 @@ export default function PublicModelDetailPage({
                 >
                   <span>Key Features & Settings</span>
                   <ChevronDown
-                    className={`h-4 w-4 transition-transform duration-200 ${
-                      expandedDescription ? "rotate-180" : ""
-                    }`}
+                    className={`h-4 w-4 transition-transform duration-200 ${expandedDescription ? "rotate-180" : ""
+                      }`}
                   />
                 </button>
 
@@ -1486,22 +1480,20 @@ export default function PublicModelDetailPage({
                   <button
                     type="button"
                     onClick={() => setCommentTab("latest")}
-                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${
-                      commentTab === "latest"
+                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "latest"
                         ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
                         : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                    }`}
+                      }`}
                   >
                     Latest
                   </button>
                   <button
                     type="button"
                     onClick={() => setCommentTab("liked")}
-                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${
-                      commentTab === "liked"
+                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "liked"
                         ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
                         : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                    }`}
+                      }`}
                   >
                     Most Liked
                   </button>
@@ -1559,16 +1551,14 @@ export default function PublicModelDetailPage({
                         <button
                           type="button"
                           onClick={() => toggleCommentLike(comment.id)}
-                          className={`inline-flex items-center gap-1 transition ${
-                            comment.liked
+                          className={`inline-flex items-center gap-1 transition ${comment.liked
                               ? "text-[var(--danger)]"
                               : "hover:text-[var(--ink)]"
-                          }`}
+                            }`}
                         >
                           <Heart
-                            className={`h-3 w-3 ${
-                              comment.liked ? "fill-[var(--danger)]" : ""
-                            }`}
+                            className={`h-3 w-3 ${comment.liked ? "fill-[var(--danger)]" : ""
+                              }`}
                           />
                           <span className="font-mono text-[10px]">{comment.likes}</span>
                         </button>
@@ -1818,11 +1808,10 @@ export default function PublicModelDetailPage({
                                   type="button"
                                   onClick={() => void handleToggleFileVisibility(file)}
                                   disabled={togglingFileId === file.file_id}
-                                  className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-colors ${
-                                    file.visible
+                                  className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-colors ${file.visible
                                       ? "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
                                       : "border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20"
-                                  }`}
+                                    }`}
                                   title={file.visible ? "Visible in catalog (click to hide)" : "Hidden from catalog (click to show)"}
                                 >
                                   {file.visible ? (
@@ -1936,11 +1925,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Commercial Use</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.commercial
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.commercial
                         ? "text-[var(--accent)]"
                         : "text-[var(--danger)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.commercial ? "Allowed" : "Not Permitted"}
                   </span>
@@ -1957,11 +1945,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Weight Resale</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.sell_model
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.sell_model
                         ? "text-[var(--accent)]"
                         : "text-[var(--danger)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.sell_model ? "Allowed" : "Prohibited"}
                   </span>
@@ -1978,11 +1965,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Remix / Merges</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.remix
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.remix
                         ? "text-[var(--accent)]"
                         : "text-[var(--danger)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.remix ? "Allowed" : "Prohibited"}
                   </span>
@@ -1999,11 +1985,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Generation Services</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.generation_services
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.generation_services
                         ? "text-[var(--accent)]"
                         : "text-[var(--danger)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.generation_services ? "Permitted" : "Prohibited"}
                   </span>
@@ -2020,11 +2005,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Direct Download</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.allow_download !== false
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.allow_download !== false
                         ? "text-[var(--accent)]"
                         : "text-[var(--danger)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.allow_download !== false ? "Allowed" : "Disabled"}
                   </span>
@@ -2041,11 +2025,10 @@ export default function PublicModelDetailPage({
                     <span className="text-[var(--ink-soft)]">Attribution</span>
                   </div>
                   <span
-                    className={`font-mono text-[11px] font-bold ${
-                      model.permissions?.credit_required
+                    className={`font-mono text-[11px] font-bold ${model.permissions?.credit_required
                         ? "text-[var(--warning)]"
                         : "text-[var(--ink-soft)]"
-                    }`}
+                      }`}
                   >
                     {model.permissions?.credit_required ? "Required" : "Optional"}
                   </span>
@@ -2084,11 +2067,10 @@ export default function PublicModelDetailPage({
               <button
                 type="button"
                 onClick={() => setIsFollowed(!isFollowed)}
-                className={`rounded-lg px-3.5 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition ${
-                  isFollowed
+                className={`rounded-lg px-3.5 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition ${isFollowed
                     ? "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
                     : "bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
-                }`}
+                  }`}
               >
                 {isFollowed ? "Following" : "Follow"}
               </button>
@@ -2342,11 +2324,10 @@ export default function PublicModelDetailPage({
               <button
                 type="button"
                 onClick={() => setAddFileMode("upload")}
-                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${
-                  addFileMode === "upload"
+                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${addFileMode === "upload"
                     ? "border-[var(--accent)] text-[var(--accent)]"
                     : "border-transparent text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                }`}
+                  }`}
               >
                 <UploadCloud className="h-4 w-4" />
                 <span>Upload From Computer</span>
@@ -2359,11 +2340,10 @@ export default function PublicModelDetailPage({
                     void handleFetchLocalModels();
                   }
                 }}
-                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${
-                  addFileMode === "import"
+                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${addFileMode === "import"
                     ? "border-[var(--accent)] text-[var(--accent)]"
                     : "border-transparent text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                }`}
+                  }`}
               >
                 <HardDriveDownload className="h-4 w-4" />
                 <span>Import from ComfyUI Vault</span>
@@ -2400,11 +2380,10 @@ export default function PublicModelDetailPage({
                         key={prec}
                         type="button"
                         onClick={() => setSelectedFilePrecision(prec)}
-                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${
-                          selectedFilePrecision === prec
+                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
                             ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
                             : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                        }`}
+                          }`}
                       >
                         {prec}
                       </button>
@@ -2466,11 +2445,10 @@ export default function PublicModelDetailPage({
                         <div
                           key={`${item.category}/${item.filename}`}
                           onClick={() => setSelectedLocalModel(item)}
-                          className={`flex items-center justify-between rounded p-2 text-xs font-mono cursor-pointer transition ${
-                            isChosen
+                          className={`flex items-center justify-between rounded p-2 text-xs font-mono cursor-pointer transition ${isChosen
                               ? "bg-[var(--accent)]/15 border border-[var(--accent)] text-[var(--accent)] font-bold"
                               : "hover:bg-[var(--surface-raised)] text-[var(--ink)] border border-transparent"
-                          }`}
+                            }`}
                         >
                           <span className="truncate pr-2">{item.filename}</span>
                           <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--ink-faint)]">
@@ -2492,11 +2470,10 @@ export default function PublicModelDetailPage({
                         key={prec}
                         type="button"
                         onClick={() => setSelectedFilePrecision(prec)}
-                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${
-                          selectedFilePrecision === prec
+                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
                             ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
                             : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                        }`}
+                          }`}
                       >
                         {prec}
                       </button>

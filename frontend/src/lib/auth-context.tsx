@@ -70,6 +70,8 @@ export interface AuthContextType {
   closeAuthModal: () => void;
   pendingReviewCount: number;
   refreshPendingReviewCount: () => Promise<void>;
+  unreadNotificationCount: number;
+  refreshUnreadNotificationCount: () => Promise<void>;
 }
 
 const DEFAULT_CREDITS: CreditStatus = {
@@ -511,6 +513,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isMod, isAdmin, refreshPendingReviewCount]);
 
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
+
+  const refreshUnreadNotificationCount = useCallback(async () => {
+    if (!token && !user) {
+      setUnreadNotificationCount(0);
+      return;
+    }
+    try {
+      const res = await api.getUnreadNotificationCount();
+      setUnreadNotificationCount(res?.unread_count ?? 0);
+    } catch {
+      /* ignore */
+    }
+  }, [token, user]);
+
+  useEffect(() => {
+    if (token && user) {
+      void refreshUnreadNotificationCount();
+      const interval = setInterval(() => {
+        void refreshUnreadNotificationCount();
+      }, 30000);
+      return () => clearInterval(interval);
+    } else {
+      setUnreadNotificationCount(0);
+    }
+  }, [token, user, refreshUnreadNotificationCount]);
+
   const value = useMemo<AuthContextType>(
     () => ({
       user,
@@ -543,6 +572,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       closeAuthModal,
       pendingReviewCount,
       refreshPendingReviewCount,
+      unreadNotificationCount,
+      refreshUnreadNotificationCount,
     }),
     [
       user,
@@ -574,6 +605,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       closeAuthModal,
       pendingReviewCount,
       refreshPendingReviewCount,
+      unreadNotificationCount,
+      refreshUnreadNotificationCount,
     ]
   );
 

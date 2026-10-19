@@ -35,6 +35,7 @@ from .dependencies.permissions import RequireOwnerOrPermission, RequirePermissio
 from .routers.auth import get_current_user, get_optional_user
 from .routers.auth import router as auth_router
 from .routers.moderation import router as moderation_router
+from .routers.notifications import router as notifications_router
 from .schemas import (
     AssistantRequest,
     AssistantResponse,
@@ -140,6 +141,8 @@ app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(moderation_router, prefix="/api/v1/moderation")
 app.include_router(moderation_router, prefix="/api/moderation")
 app.include_router(moderation_router, prefix="/api/admin/moderation")
+app.include_router(notifications_router, prefix="/api/v1/notifications")
+app.include_router(notifications_router, prefix="/api/notifications")
 
 
 # --- Creator Profiles & Social Endpoints ------------------------------------
@@ -713,6 +716,7 @@ async def publish_creator_model(
     req: ModelPublishRequest,
     current_user: UserResponse = Depends(get_current_user),
     rbac: RBACService = Depends(get_rbac_service),
+    db: Database = Depends(get_db),
 ) -> ModelResponse:
     try:
         existing = model_storage.get(model_id)
@@ -723,7 +727,28 @@ async def publish_creator_model(
             getattr(current_user, "role", None) in ("admin", "moderator")
             or any(r in ("admin", "moderator") for r in (getattr(current_user, "roles", []) or []))
         )
-        return model_storage.publish(model_id, req, is_moderator=is_mod)
+        published = model_storage.publish(model_id, req, is_moderator=is_mod)
+        if published.moderation_status == "pending_review":
+            try:
+                from .services.notification_service import NotificationService
+
+                notif_svc = NotificationService(db=db)
+                creator_name = getattr(current_user, "username", "Creator")
+                m_title = published.title or "New Model"
+                for target_role in ("moderator", "admin"):
+                    notif_svc.notify_role(
+                        role=target_role,
+                        title="New Model Pending Review",
+                        message=f"@{creator_name} submitted '{m_title}' for moderation review.",
+                        category="moderation",
+                        type="model_submitted",
+                        actor_id=current_user.id,
+                        link="/admin/moderation",
+                        metadata={"model_id": model_id, "creator_id": current_user.id},
+                    )
+            except Exception as n_exc:
+                logger.warning("Could not dispatch mod notification on model submit: %s", n_exc)
+        return published
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 

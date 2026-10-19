@@ -1507,3 +1507,70 @@ class PaginatedSamplesResponse(PaginatedResponse[ModelSampleResponse]):
     pass
 
 
+# --- Notification System Schemas --------------------------------------------
+
+class NotificationCategory(str, Enum):
+    MODERATION = "moderation"
+    GENERATION = "generation"
+    SOCIAL = "social"
+    SYSTEM = "system"
+
+
+class NotificationType(str, Enum):
+    MODEL_SUBMITTED = "model_submitted"
+    MODEL_APPROVED = "model_approved"
+    MODEL_VAULT_INSTALLED = "model_vault_installed"
+    MODEL_REJECTED = "model_rejected"
+    CONTENT_FLAGGED = "content_flagged"
+    FLAG_RESOLVED = "flag_resolved"
+    GENERATION_COMPLETED = "generation_completed"
+    GENERATION_FAILED = "generation_failed"
+    CREDITS_REFILLED = "credits_refilled"
+    SYSTEM_ANNOUNCEMENT = "system_announcement"
+    GENERAL = "general"
+
+
+class NotificationItem(BaseModel):
+    id: str
+    user_id: str
+    actor_id: Optional[str] = None
+    actor_username: Optional[str] = None
+    actor_display_name: Optional[str] = None
+    actor_avatar_url: Optional[str] = None
+    actor_role: Optional[str] = None
+    category: str
+    type: str
+    title: str
+    message: str
+    link: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    is_read: bool = False
+    created_at: str
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+
+class NotificationListResponse(BaseModel):
+    items: list[NotificationItem]
+    total: int
+    unread_count: int
+    page: int = 1
+    limit: int = 20
+
+
+class NotificationUnreadCountResponse(BaseModel):
+    unread_count: int
+
+
+class NotificationReadResponse(BaseModel):
+    success: bool
+    id: Optional[str] = None
+    updated_count: Optional[int] = None
+
+
+

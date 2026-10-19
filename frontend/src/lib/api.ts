@@ -264,6 +264,57 @@ export interface GalleryItem {
   thumbnail_url?: string;
 }
 
+export type NotificationCategory = "moderation" | "generation" | "social" | "system";
+
+export type NotificationType =
+  | "model_submitted"
+  | "model_approved"
+  | "model_vault_installed"
+  | "model_rejected"
+  | "content_flagged"
+  | "flag_resolved"
+  | "generation_completed"
+  | "generation_failed"
+  | "credits_refilled"
+  | "system_announcement"
+  | "general";
+
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  actor_id?: string | null;
+  actor_username?: string | null;
+  actor_display_name?: string | null;
+  actor_avatar_url?: string | null;
+  actor_role?: string | null;
+  category: NotificationCategory | string;
+  type: NotificationType | string;
+  title: string;
+  message: string;
+  link?: string | null;
+  metadata?: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[];
+  total: number;
+  unread_count: number;
+  page: number;
+  limit: number;
+}
+
+export interface NotificationUnreadCountResponse {
+  unread_count: number;
+}
+
+export interface NotificationReadResponse {
+  success: boolean;
+  id?: string;
+  updated_count?: number;
+}
+
 export type AssetType = "image" | "video" | "3d";
 
 export interface AssetRecord extends GalleryItem {
@@ -1822,6 +1873,43 @@ export const api = {
       }
       throw err;
     }
+  },
+
+  async getNotifications(params?: {
+    unread_only?: boolean;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<NotificationListResponse> {
+    const search = new URLSearchParams();
+    if (params?.unread_only) search.set("unread_only", "true");
+    if (params?.category) search.set("category", params.category);
+    if (params?.page) search.set("page", String(params.page));
+    if (params?.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return request<NotificationListResponse>(`/api/v1/notifications${qs ? `?${qs}` : ""}`);
+  },
+
+  async getUnreadNotificationCount(): Promise<NotificationUnreadCountResponse> {
+    return request<NotificationUnreadCountResponse>("/api/v1/notifications/unread-count");
+  },
+
+  async markNotificationAsRead(id: string): Promise<NotificationReadResponse> {
+    return request<NotificationReadResponse>(`/api/v1/notifications/${encodeURIComponent(id)}/read`, {
+      method: "POST",
+    });
+  },
+
+  async markAllNotificationsAsRead(): Promise<NotificationReadResponse> {
+    return request<NotificationReadResponse>("/api/v1/notifications/read-all", {
+      method: "POST",
+    });
+  },
+
+  async deleteNotification(id: string): Promise<NotificationReadResponse> {
+    return request<NotificationReadResponse>(`/api/v1/notifications/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
 };
 

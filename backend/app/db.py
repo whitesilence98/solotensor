@@ -449,6 +449,30 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_content_flags_target ON content_flags(target_type, target_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_content_flags_user ON content_flags(user_id);")
 
+            # --- In-App Notifications Schema -----------------------------------
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    actor_id TEXT,
+                    category TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    link TEXT,
+                    metadata_json TEXT DEFAULT '{}',
+                    is_read INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(actor_id) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_date ON notifications(user_id, created_at DESC);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);")
+
             # Check if roles and permissions are already seeded
             roles_count_row = conn.execute("SELECT COUNT(*) as count FROM roles;").fetchone()
             already_seeded = bool(roles_count_row and roles_count_row["count"] >= 6)
@@ -2133,6 +2157,200 @@ class Database:
             if cursor.rowcount == 0:
                 return None
         return self.get_content_flag_by_id(flag_id)
+
+    # --- In-App Notifications API ---------------------------------------
+
+    def create_notification(
+        self,
+        user_id: str,
+        title: str,
+        message: str,
+        category: str = "system",
+        type: str = "general",
+        actor_id: Optional[str] = None,
+        link: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Insert and return a new notification record."""
+        nid = str(uuid.uuid4()).replace("-", "")
+        now = datetime.now(timezone.utc).isoformat()
+        metadata_json = json.dumps(metadata or {})
+
+        with self.get_connection() as conn:
+            effective_actor = actor_id
+            if effective_actor:
+                a_row = conn.execute("SELECT id FROM users WHERE id = ?", (effective_actor,)).fetchone()
+                if not a_row:
+                    effective_actor = None
+
+            conn.execute(
+                """
+                INSERT INTO notifications (id, user_id, actor_id, category, type, title, message, link, metadata_json, is_read, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (nid, user_id, effective_actor, category, type, title, message, link, metadata_json, now),
+            )
+        return self.get_notification_by_id(nid) or {
+            "id": nid,
+            "user_id": user_id,
+            "actor_id": effective_actor,
+            "category": category,
+            "type": type,
+            "title": title,
+            "message": message,
+            "link": link,
+            "metadata": metadata or {},
+            "is_read": False,
+            "created_at": now,
+        }
+
+    def get_notification_by_id(self, notification_id: str) -> Optional[dict[str, Any]]:
+        """Fetch a single notification by ID with actor info joined."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT n.id, n.user_id, n.actor_id, n.category, n.type, n.title, n.message, n.link,
+                       n.metadata_json, n.is_read, n.created_at,
+                       u.username as actor_username, u.display_name as actor_display_name,
+                       u.avatar_url as actor_avatar_url, u.role as actor_role
+                FROM notifications n
+                LEFT JOIN users u ON n.actor_id = u.id
+                WHERE n.id = ?
+                """,
+                (notification_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            data = dict(row)
+            data["is_read"] = bool(data.get("is_read", 0))
+            if isinstance(data.get("created_at"), datetime):
+                data["created_at"] = data["created_at"].isoformat()
+            try:
+                data["metadata"] = json.loads(data.get("metadata_json") or "{}")
+            except Exception:
+                data["metadata"] = {}
+            data.pop("metadata_json", None)
+            return data
+
+    def get_notifications(
+        self,
+        user_id: str,
+        unread_only: bool = False,
+        category: Optional[str] = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int, int]:
+        """Fetch paginated notifications and total/unread counts for a user."""
+        offset = (page - 1) * limit
+        where_clauses = ["n.user_id = ?"]
+        params: list[Any] = [user_id]
+
+        if unread_only:
+            where_clauses.append("n.is_read = 0")
+        if category:
+            where_clauses.append("n.category = ?")
+            params.append(category)
+
+        where_sql = " AND ".join(where_clauses)
+
+        with self.get_connection() as conn:
+            # Total count for filtered query
+            c_cur = conn.execute(
+                f"SELECT COUNT(*) as count FROM notifications n WHERE {where_sql}",
+                tuple(params),
+            )
+            c_row = c_cur.fetchone()
+            total = c_row["count"] if c_row else 0
+
+            # Total unread count for user across all categories
+            u_cur = conn.execute(
+                "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+                (user_id,),
+            )
+            u_row = u_cur.fetchone()
+            unread_count = u_row["count"] if u_row else 0
+
+            # Query items
+            query_sql = f"""
+                SELECT n.id, n.user_id, n.actor_id, n.category, n.type, n.title, n.message, n.link,
+                       n.metadata_json, n.is_read, n.created_at,
+                       u.username as actor_username, u.display_name as actor_display_name,
+                       u.avatar_url as actor_avatar_url, u.role as actor_role
+                FROM notifications n
+                LEFT JOIN users u ON n.actor_id = u.id
+                WHERE {where_sql}
+                ORDER BY n.created_at DESC
+                LIMIT ? OFFSET ?
+            """
+            cursor = conn.execute(query_sql, tuple(params + [limit, offset]))
+            rows = cursor.fetchall()
+
+            items = []
+            for r in rows:
+                data = dict(r)
+                data["is_read"] = bool(data.get("is_read", 0))
+                if isinstance(data.get("created_at"), datetime):
+                    data["created_at"] = data["created_at"].isoformat()
+                try:
+                    data["metadata"] = json.loads(data.get("metadata_json") or "{}")
+                except Exception:
+                    data["metadata"] = {}
+                data.pop("metadata_json", None)
+                items.append(data)
+
+            return items, total, unread_count
+
+    def get_unread_notification_count(self, user_id: str) -> int:
+        """Fetch quick unread notification count for badge rendering."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            return int(row["count"]) if row else 0
+
+    def mark_notification_as_read(self, notification_id: str, user_id: str) -> bool:
+        """Mark a single notification as read if owned by the user."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            )
+            return cursor.rowcount > 0
+
+    def mark_all_notifications_as_read(self, user_id: str) -> int:
+        """Mark all unread notifications for a user as read."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0",
+                (user_id,),
+            )
+            return cursor.rowcount
+
+    def delete_notification(self, notification_id: str, user_id: str) -> bool:
+        """Delete/dismiss a notification record."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM notifications WHERE id = ? AND user_id = ?",
+                (notification_id, user_id),
+            )
+            return cursor.rowcount > 0
+
+    def get_users_by_role(self, role: str) -> list[str]:
+        """Fetch list of user IDs that possess a given role (primary or assigned)."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT DISTINCT u.id
+                FROM users u
+                LEFT JOIN user_roles ur ON u.id = ur.user_id
+                WHERE lower(u.role) = lower(?) OR lower(ur.role_name) = lower(?)
+                """,
+                (role, role),
+            )
+            return [str(r["id"]) for r in cursor.fetchall()]
 
 
 _default_db: Optional[Database] = None

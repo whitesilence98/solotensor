@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  Bell,
   Key,
   LogOut,
   Settings,
@@ -29,6 +30,7 @@ export default function UserNavProfile() {
     isMod,
     isAdmin,
     pendingReviewCount,
+    unreadNotificationCount,
     switchRoleDemo,
   } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -331,6 +333,22 @@ export default function UserNavProfile() {
 
           {/* Navigation Links */}
           <div className="space-y-1">
+            <Link
+              href="/notifications"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
+            >
+              <div className="flex items-center gap-2.5">
+                <Bell className="h-3.5 w-3.5 text-[var(--accent)]" />
+                <span>Notifications</span>
+              </div>
+              {unreadNotificationCount > 0 && (
+                <span className="rounded-full bg-[var(--accent)] px-1.5 py-0.2 font-mono text-[9px] font-black text-[var(--accent-ink)]">
+                  {unreadNotificationCount}
+                </span>
+              )}
+            </Link>
+
             <Link
               href={`/user/${user?.username || "riiwa"}`}
               onClick={() => setMenuOpen(false)}

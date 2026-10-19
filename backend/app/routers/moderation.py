@@ -66,6 +66,24 @@ async def submit_content_flag(
         details={"flag_id": flag_dict["id"], "reason": req.reason},
     )
 
+    try:
+        from ..services.notification_service import NotificationService
+
+        notif_svc = NotificationService(db=db)
+        for target_role in ("moderator", "admin"):
+            notif_svc.notify_role(
+                role=target_role,
+                title="New Content Safety Report",
+                message=f"User reported {req.target_type} '{req.target_id}': {req.reason}",
+                category="moderation",
+                type="content_flagged",
+                actor_id=user.id,
+                link="/admin/moderation",
+                metadata={"flag_id": flag_dict["id"], "target_type": req.target_type, "target_id": req.target_id},
+            )
+    except Exception as n_exc:
+        logger.warning("Could not dispatch notification for content flag: %s", n_exc)
+
     logger.info("User %s flagged %s (%s): %s", user.id, req.target_type, req.target_id, req.reason)
     return ContentFlagResponse(**flag_dict)
 
@@ -152,6 +170,24 @@ async def resolve_content_flag(
             "target_id": resolved["target_id"],
         },
     )
+
+    reporter_id = resolved.get("user_id")
+    if reporter_id:
+        try:
+            from ..services.notification_service import NotificationService
+
+            notif_svc = NotificationService(db=db)
+            notif_svc.notify_user(
+                user_id=reporter_id,
+                title="Content Report Resolved",
+                message=f"Your report regarding {resolved.get('target_type')} has been resolved as '{req.status}'.",
+                category="moderation",
+                type="flag_resolved",
+                actor_id=user.id,
+                metadata={"flag_id": target_id, "status": req.status, "notes": req.resolution_notes},
+            )
+        except Exception as n_exc:
+            logger.warning("Could not dispatch notification for flag resolution: %s", n_exc)
 
     logger.info("User %s resolved flag %s as %s", user.id, target_id, req.status)
     return ContentFlagResponse(**resolved)
