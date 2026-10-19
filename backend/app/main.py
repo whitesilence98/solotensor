@@ -714,6 +714,16 @@ async def download_model_file(
     current_user: UserResponse = Depends(RequirePermission("model:download_weights")),
 ) -> FileResponse:
     try:
+        record = model_storage._read(model_id)
+        perms = record.get("permissions", {})
+        if not perms.get("allow_download", True):
+            user_roles = getattr(current_user, "roles", []) or []
+            is_admin_or_mod = any(r in ("admin", "moderator") for r in user_roles)
+            if current_user.id != record.get("user_id") and not is_admin_or_mod:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Direct weight download is disabled by the model creator",
+                )
         return FileResponse(
             model_storage.public_file_path(model_id, version_id, file_id)
         )

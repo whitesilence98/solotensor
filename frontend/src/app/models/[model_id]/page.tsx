@@ -115,7 +115,7 @@ export default function PublicModelDetailPage({
   const [selectedSample, setSelectedSample] = useState<GalleryItem | null>(null);
 
   // Authentication & RBAC Actions
-  const { isAuthenticated, openAuthModal } = useAuth();
+  const { isAuthenticated, openAuthModal, user, isAdmin, isMod } = useAuth();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1552,22 +1552,46 @@ export default function PublicModelDetailPage({
             {/* Quick Actions Row */}
             <div className="flex gap-2">
               {primaryFile && (
-                <a
-                  href={isAuthenticated ? primaryFile.download_url : "#"}
-                  target={isAuthenticated ? "_blank" : undefined}
-                  rel="noreferrer"
-                  onClick={(e) => {
-                    if (!isAuthenticated) {
-                      e.preventDefault();
-                      openAuthModal("download_weights");
-                    }
-                  }}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] py-2 text-xs font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                  title="Download"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>Download</span>
-                </a>
+                (() => {
+                  const isDownloadPermitted =
+                    model.permissions?.allow_download !== false ||
+                    user?.id === model.user_id ||
+                    isAdmin ||
+                    isMod;
+
+                  if (!isDownloadPermitted) {
+                    return (
+                      <button
+                        type="button"
+                        disabled
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] py-2 text-xs font-medium text-[var(--ink-faint)] cursor-not-allowed opacity-60"
+                        title="Direct download disabled by model creator"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Download Restricted</span>
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <a
+                      href={isAuthenticated ? primaryFile.download_url : "#"}
+                      target={isAuthenticated ? "_blank" : undefined}
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        if (!isAuthenticated) {
+                          e.preventDefault();
+                          openAuthModal("download_weights");
+                        }
+                      }}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] py-2 text-xs font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                      title="Download"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Download</span>
+                    </a>
+                  );
+                })()
               )}
               {primaryFile && activeVersion && (
                 <button
@@ -1694,88 +1718,108 @@ export default function PublicModelDetailPage({
 
                   {activeVersion.files && activeVersion.files.length > 0 ? (
                     <div className="space-y-1.5">
-                      {activeVersion.files.map((file) => (
-                        <div
-                          key={file.file_id}
-                          className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs"
-                        >
-                          <div className="min-w-0 pr-2">
-                            <div className="flex items-center gap-1.5">
-                              <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
-                                {file.filename}
-                              </p>
-                              {!file.visible && (
-                                <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 font-mono text-[9px] text-[var(--ink-faint)] uppercase">
-                                  Hidden
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
-                              <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
-                                {file.precision}
-                              </span>
-                              <span>{(file.size / 1024 ** 2).toFixed(1)} MB</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {/* Owner File Management Actions */}
-                            <Can do="model:edit" ownerId={model.user_id}>
-                              <button
-                                type="button"
-                                onClick={() => void handleToggleFileVisibility(file)}
-                                disabled={togglingFileId === file.file_id}
-                                className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-colors ${
-                                  file.visible
-                                    ? "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
-                                    : "border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20"
-                                }`}
-                                title={file.visible ? "Visible in catalog (click to hide)" : "Hidden from catalog (click to show)"}
-                              >
-                                {file.visible ? (
-                                  <Eye className="h-3 w-3" />
-                                ) : (
-                                  <EyeOff className="h-3 w-3" />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setFileToDelete(file)}
-                                className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--danger)] hover:border-[var(--danger)]/50 transition-colors"
-                                title="Delete file from version"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </Can>
+                      {activeVersion.files.map((file) => {
+                        const isDownloadPermitted =
+                          model.permissions?.allow_download !== false ||
+                          user?.id === model.user_id ||
+                          isAdmin ||
+                          isMod;
 
-                            <a
-                              href={isAuthenticated ? file.download_url : "#"}
-                              target={isAuthenticated ? "_blank" : undefined}
-                              rel="noreferrer"
-                              onClick={(e) => {
-                                if (!isAuthenticated) {
-                                  e.preventDefault();
-                                  openAuthModal("download_weights");
-                                }
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                              title={`Download ${file.filename}`}
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>Get</span>
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => void install(file, activeVersion.version_id)}
-                              disabled={installing === file.file_id}
-                              className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                              title={`Install ${file.filename} into ComfyUI`}
-                            >
-                              <HardDriveDownload className="h-3 w-3" />
-                              <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
-                            </button>
+                        return (
+                          <div
+                            key={file.file_id}
+                            className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
+                                  {file.filename}
+                                </p>
+                                {!file.visible && (
+                                  <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 font-mono text-[9px] text-[var(--ink-faint)] uppercase">
+                                    Hidden
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
+                                <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
+                                  {file.precision}
+                                </span>
+                                <span>{(file.size / 1024 ** 2).toFixed(1)} MB</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {/* Owner File Management Actions */}
+                              <Can do="model:edit" ownerId={model.user_id}>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleToggleFileVisibility(file)}
+                                  disabled={togglingFileId === file.file_id}
+                                  className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-colors ${
+                                    file.visible
+                                      ? "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
+                                      : "border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20"
+                                  }`}
+                                  title={file.visible ? "Visible in catalog (click to hide)" : "Hidden from catalog (click to show)"}
+                                >
+                                  {file.visible ? (
+                                    <Eye className="h-3 w-3" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3" />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setFileToDelete(file)}
+                                  className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--danger)] hover:border-[var(--danger)]/50 transition-colors"
+                                  title="Delete file from version"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </Can>
+
+                              {isDownloadPermitted ? (
+                                <a
+                                  href={isAuthenticated ? file.download_url : "#"}
+                                  target={isAuthenticated ? "_blank" : undefined}
+                                  rel="noreferrer"
+                                  onClick={(e) => {
+                                    if (!isAuthenticated) {
+                                      e.preventDefault();
+                                      openAuthModal("download_weights");
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                                  title={`Download ${file.filename}`}
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Get</span>
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-faint)] cursor-not-allowed opacity-50"
+                                  title="Direct download disabled by model creator"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Get</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => void install(file, activeVersion.version_id)}
+                                disabled={installing === file.file_id}
+                                className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                                title={`Install ${file.filename} into ComfyUI`}
+                              >
+                                <HardDriveDownload className="h-3 w-3" />
+                                <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="font-mono text-[11px] text-[var(--ink-faint)] italic py-1">
@@ -1837,6 +1881,27 @@ export default function PublicModelDetailPage({
                   </span>
                 </div>
 
+                {/* Weight Resale */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.sell_model ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-[var(--danger)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Weight Resale</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.sell_model
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--danger)]"
+                    }`}
+                  >
+                    {model.permissions?.sell_model ? "Allowed" : "Prohibited"}
+                  </span>
+                </div>
+
                 {/* Remix / Merges */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1876,6 +1941,27 @@ export default function PublicModelDetailPage({
                     }`}
                   >
                     {model.permissions?.generation_services ? "Permitted" : "Prohibited"}
+                  </span>
+                </div>
+
+                {/* Direct Download */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {model.permissions?.allow_download !== false ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-[var(--danger)] shrink-0" />
+                    )}
+                    <span className="text-[var(--ink-soft)]">Direct Download</span>
+                  </div>
+                  <span
+                    className={`font-mono text-[11px] font-bold ${
+                      model.permissions?.allow_download !== false
+                        ? "text-[var(--accent)]"
+                        : "text-[var(--danger)]"
+                    }`}
+                  >
+                    {model.permissions?.allow_download !== false ? "Allowed" : "Disabled"}
                   </span>
                 </div>
 

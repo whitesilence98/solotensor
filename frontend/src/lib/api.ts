@@ -628,8 +628,10 @@ export interface CreatorModelGeneration {
 
 export interface CreatorModelPermissions {
   commercial: boolean;
+  sell_model: boolean;
   remix: boolean;
   generation_services: boolean;
+  allow_download: boolean;
   credit_required: boolean;
 }
 

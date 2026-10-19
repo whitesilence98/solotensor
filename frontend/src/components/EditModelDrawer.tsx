@@ -127,8 +127,10 @@ export default function EditModelDrawer({
 
   // Tab 4: Licensing & Permissions
   const [commercial, setCommercial] = useState(model.permissions?.commercial ?? true);
+  const [sellModel, setSellModel] = useState(model.permissions?.sell_model ?? false);
   const [remix, setRemix] = useState(model.permissions?.remix ?? false);
   const [generationServices, setGenerationServices] = useState(model.permissions?.generation_services ?? true);
+  const [allowDownload, setAllowDownload] = useState(model.permissions?.allow_download ?? true);
   const [creditRequired, setCreditRequired] = useState(model.permissions?.credit_required ?? true);
 
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -172,8 +174,10 @@ export default function EditModelDrawer({
       setClipSkip(model.generation?.clip_skip ?? 1);
 
       setCommercial(model.permissions?.commercial ?? true);
+      setSellModel(model.permissions?.sell_model ?? false);
       setRemix(model.permissions?.remix ?? false);
       setGenerationServices(model.permissions?.generation_services ?? true);
+      setAllowDownload(model.permissions?.allow_download ?? true);
       setCreditRequired(model.permissions?.credit_required ?? true);
 
       refreshEnclave();
@@ -318,8 +322,10 @@ export default function EditModelDrawer({
         },
         permissions: {
           commercial,
+          sell_model: sellModel,
           remix,
           generation_services: generationServices,
+          allow_download: allowDownload,
           credit_required: creditRequired,
         },
         visibility,
@@ -364,82 +370,76 @@ export default function EditModelDrawer({
                 <span className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase">
                   MODEL SETTINGS
                 </span>
-                <span className="rounded-[3px] border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 py-0.2 font-mono text-[9px] text-[var(--ink-faint)]">
+                <span className="font-mono text-[9px] text-[var(--line-strong)]">/</span>
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
                   {model.model_type}
                 </span>
               </div>
-              <h2 className="truncate text-sm font-bold text-[var(--ink)]">
+              <h2 className="truncate font-mono text-xs font-bold tracking-wider text-[var(--ink)] uppercase">
                 {title || model.title}
               </h2>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="flex h-8 w-8 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition-colors disabled:opacity-40"
-            title="Close Drawer (Esc)"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] text-[var(--ink-soft)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+              Live Sync Ready
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              aria-label="Close panel"
+              className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink)] disabled:opacity-40"
+              title="Close Drawer (Esc)"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
-        {/* Tab Navigation Bar */}
-        <div className="flex shrink-0 border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6">
-          <nav className="flex space-x-1" aria-label="Tabs">
-            <button
-              type="button"
-              onClick={() => setActiveTab(1)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider transition-colors ${
-                activeTab === 1
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--surface)]"
-                  : "border-transparent text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-              }`}
-            >
-              <Tag className="h-3.5 w-3.5" />
-              <span>Identity & Metadata</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab(2)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider transition-colors ${
-                activeTab === 2
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--surface)]"
-                  : "border-transparent text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-              }`}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              <span>Architecture & Conditioning</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab(3)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider transition-colors ${
-                activeTab === 3
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--surface)]"
-                  : "border-transparent text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-              }`}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Prompts & Presets</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab(4)}
-              className={`flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold uppercase tracking-wider transition-colors ${
-                activeTab === 4
-                  ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--surface)]"
-                  : "border-transparent text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-              }`}
-            >
-              <Shield className="h-3.5 w-3.5" />
-              <span>Licensing & Permissions</span>
-            </button>
-          </nav>
+        {/* Step Stepper Navigation Bar */}
+        <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
+          <div className="grid w-full grid-cols-4 gap-2 font-mono text-[11px]">
+            {[
+              { s: 1 as const, label: "Identity & Metadata", num: "01" },
+              { s: 2 as const, label: "Architecture & Conditioning", num: "02" },
+              { s: 3 as const, label: "Prompts & Presets", num: "03" },
+              { s: 4 as const, label: "Licensing & Permissions", num: "04" },
+            ].map(({ s, label, num }) => {
+              const isActive = activeTab === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setActiveTab(s)}
+                  className={`group relative flex items-center justify-center gap-2 rounded-[5px] py-2 px-2 transition-all ${
+                    isActive
+                      ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm shadow-[var(--accent)]/5"
+                      : "border border-transparent text-[var(--ink-faint)] hover:border-[var(--line)] hover:bg-[var(--surface-raised)]/60 hover:text-[var(--ink-soft)]"
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 min-w-[18px] px-1 shrink-0 items-center justify-center rounded font-mono text-[9px] font-bold ${
+                      isActive
+                        ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                        : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+                    }`}
+                  >
+                    {num}
+                  </span>
+                  <span className="truncate font-semibold tracking-wide uppercase text-[10px]">
+                    {label}
+                  </span>
+                  {isActive && (
+                    <div className="absolute inset-x-2 -bottom-2 h-0.5 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Scrollable Content Body */}
@@ -478,11 +478,10 @@ export default function EditModelDrawer({
                     Model Description
                   </label>
                   <span
-                    className={`font-mono text-[10px] ${
-                      description.length >= 5000
-                        ? "text-[var(--danger)] font-bold"
-                        : "text-[var(--ink-faint)]"
-                    }`}
+                    className={`font-mono text-[10px] ${description.length >= 5000
+                      ? "text-[var(--danger)] font-bold"
+                      : "text-[var(--ink-faint)]"
+                      }`}
                   >
                     {description.length} / 5000
                   </span>
@@ -569,40 +568,6 @@ export default function EditModelDrawer({
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Visibility Toggle */}
-              <div className="space-y-2 pt-2 border-t border-[var(--line)]">
-                <label className="block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                  Visibility
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("Public")}
-                    className={`flex items-center justify-center gap-2 h-10 rounded-[5px] border font-mono text-xs font-bold uppercase tracking-wider transition-all ${
-                      visibility === "Public"
-                        ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
-                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    <Globe className="h-4 w-4" />
-                    <span>Public (Catalog)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setVisibility("Private")}
-                    className={`flex items-center justify-center gap-2 h-10 rounded-[5px] border font-mono text-xs font-bold uppercase tracking-wider transition-all ${
-                      visibility === "Private"
-                        ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
-                        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    <Lock className="h-4 w-4" />
-                    <span>Private (Draft)</span>
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -916,11 +881,10 @@ export default function EditModelDrawer({
                             key={cs}
                             type="button"
                             onClick={() => setClipSkip(cs)}
-                            className={`h-8 flex-1 rounded-[5px] font-mono text-xs font-bold transition-all ${
-                              clipSkip === cs
-                                ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                                : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                            }`}
+                            className={`h-8 flex-1 rounded-[5px] font-mono text-xs font-bold transition-all ${clipSkip === cs
+                              ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
+                              : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                              }`}
                           >
                             Clip Skip {cs}
                           </button>
@@ -994,87 +958,173 @@ export default function EditModelDrawer({
           {/* TAB 4: LICENSING & PERMISSIONS */}
           {activeTab === 4 && (
             <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="space-y-1">
-                <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
-                  Licensing Terms & Creator Governance
-                </h4>
-                <p className="font-mono text-xs text-[var(--ink-soft)] leading-relaxed">
-                  Control how the community may utilize, monetize, remix, and run inference with this model across SoloTensor and third-party environments.
-                </p>
+              {/* Catalog Visibility */}
+              <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3">
+                <div className="flex items-center gap-2.5 pb-2.5 border-b border-[var(--line)]">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                    <Globe className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                      Catalog Visibility & Access
+                    </span>
+                    <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                      Control whether this model is publicly discoverable in the gallery or kept private
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibility("Public")}
+                    className={`h-8 rounded-[5px] font-mono text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                      visibility === "Public"
+                        ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
+                        : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    Public (Gallery)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisibility("Private")}
+                    className={`h-8 rounded-[5px] font-mono text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                      visibility === "Private"
+                        ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
+                        : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    Private (Draft)
+                  </button>
+                </div>
               </div>
 
-              <div className="divide-y divide-[var(--line)] rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] font-mono text-xs">
-                {/* Commercial Use Toggle */}
-                <label className="flex items-center justify-between p-3.5 cursor-pointer hover:bg-[var(--surface-soft)]/50 transition-colors">
+              {/* Licensing Terms & Creator Governance */}
+              <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3">
+                <div className="flex items-center gap-2.5 pb-2.5 border-b border-[var(--line)]">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
+                    <Shield className="h-3.5 w-3.5" />
+                  </div>
                   <div>
-                    <span className="font-bold text-[var(--ink)] block">
-                      Commercial Generation & Content Sale
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
+                      Licensing Terms & Creator Governance
                     </span>
-                    <span className="text-[11px] text-[var(--ink-faint)]">
-                      Allow users to sell content generated by this model commercially
+                    <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                      Control how the community may utilize, monetize, remix, and run inference
                     </span>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={commercial}
-                    onChange={(e) => setCommercial(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
-                  />
-                </label>
+                </div>
 
-                {/* Remix / Merges Toggle */}
-                <label className="flex items-center justify-between p-3.5 cursor-pointer hover:bg-[var(--surface-soft)]/50 transition-colors">
-                  <div>
-                    <span className="font-bold text-[var(--ink)] block">
-                      Model Remix & Merges
-                    </span>
-                    <span className="text-[11px] text-[var(--ink-faint)]">
-                      Allow downstream creators to merge weights or share fine-tunes
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={remix}
-                    onChange={(e) => setRemix(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
-                  />
-                </label>
+                <div className="space-y-2 font-mono text-[11px]">
+                  {/* 1. Commercial Use */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        Commercial Generation & Content Sale
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Allow users to sell content generated by this model commercially
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={commercial}
+                      onChange={(e) => setCommercial(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
 
-                {/* SoloTensor Generation Services Toggle */}
-                <label className="flex items-center justify-between p-3.5 cursor-pointer hover:bg-[var(--surface-soft)]/50 transition-colors">
-                  <div>
-                    <span className="font-bold text-[var(--ink)] block">
-                      SoloTensor Generation Services
-                    </span>
-                    <span className="text-[11px] text-[var(--ink-faint)]">
-                      Allow hosting and running this model on SoloTensor online generation services
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={generationServices}
-                    onChange={(e) => setGenerationServices(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
-                  />
-                </label>
+                  {/* 2. Commercial Resale of Weights */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        Commercial Resale of Model Weights
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Allow third parties to sell this model checkpoint, fine-tunes, or merged weights
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={sellModel}
+                      onChange={(e) => setSellModel(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
 
-                {/* Attribution Credit Required Toggle */}
-                <label className="flex items-center justify-between p-3.5 cursor-pointer hover:bg-[var(--surface-soft)]/50 transition-colors">
-                  <div>
-                    <span className="font-bold text-[var(--ink)] block">
-                      Attribution & Credit Required
-                    </span>
-                    <span className="text-[11px] text-[var(--ink-faint)]">
-                      Require creators and downstream users to credit you as the original author
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={creditRequired}
-                    onChange={(e) => setCreditRequired(e.target.checked)}
-                    className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
-                  />
-                </label>
+                  {/* 3. Model Remix & Merges */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        Model Remix & Merges
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Allow downstream creators to merge weights or share fine-tunes
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={remix}
+                      onChange={(e) => setRemix(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
+
+                  {/* 4. SoloTensor Generation Services */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        SoloTensor Generation Services
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Allow hosting and running this model on SoloTensor online generation services
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={generationServices}
+                      onChange={(e) => setGenerationServices(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
+
+                  {/* 5. Direct Weights Download */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        Direct Weights Download
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Allow visitors to download raw model weight files to their local machine
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={allowDownload}
+                      onChange={(e) => setAllowDownload(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
+
+                  {/* 6. Attribution */}
+                  <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
+                    <div>
+                      <span className="text-[var(--ink)] font-bold block text-[11px]">
+                        Attribution & Credit Required
+                      </span>
+                      <span className="text-[9px] text-[var(--ink-faint)]">
+                        Require creators and downstream users to credit you as the original author
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={creditRequired}
+                      onChange={(e) => setCreditRequired(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--accent)] cursor-pointer"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}

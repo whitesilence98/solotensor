@@ -669,8 +669,10 @@ class ModelPermissions(BaseModel):
     model_config = {"extra": "forbid"}
 
     commercial: bool = True
+    sell_model: bool = False
     remix: bool = False
     generation_services: bool = True
+    allow_download: bool = True
     credit_required: bool = True
 
 
