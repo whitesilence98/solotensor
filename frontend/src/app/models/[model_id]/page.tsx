@@ -27,8 +27,23 @@ import {
   Trash2,
   Sparkles,
   Layers,
+  Plus,
+  Pencil,
+  Eye,
+  EyeOff,
+  UploadCloud,
+  FilePlus,
+  ImagePlus,
+  Loader2,
 } from "lucide-react";
-import { api, type CreatorModel, type CreatorModelFile, type GalleryItem } from "@/lib/api";
+import {
+  api,
+  type CreatorModel,
+  type CreatorModelFile,
+  type GalleryItem,
+  type ModelPrecision,
+  type LocalModelSummary,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Can } from "@/components/rbac";
 import ModelGenerationsGrid from "@/components/ModelGenerationsGrid";
@@ -141,6 +156,237 @@ export default function PublicModelDetailPage({
   const handleOpenEdit = () => {
     if (!model) return;
     setShowEditDrawer(true);
+  };
+
+  // Phase 4: Version Management State
+  const [showAddVersionModal, setShowAddVersionModal] = useState(false);
+  const [newVersionName, setNewVersionName] = useState("");
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [showRenameVersionModal, setShowRenameVersionModal] = useState(false);
+  const [renameVersionName, setRenameVersionName] = useState("");
+  const [renamingVersion, setRenamingVersion] = useState(false);
+  const [showDeleteVersionModal, setShowDeleteVersionModal] = useState(false);
+  const [deletingVersion, setDeletingVersion] = useState(false);
+  const [versionActionError, setVersionActionError] = useState<string | null>(null);
+
+  // Phase 4: File Management State
+  const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [addFileMode, setAddFileMode] = useState<"upload" | "import">("upload");
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [selectedFilePrecision, setSelectedFilePrecision] = useState<ModelPrecision>("FP16");
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [fileActionError, setFileActionError] = useState<string | null>(null);
+  const [localModelsList, setLocalModelsList] = useState<LocalModelSummary[]>([]);
+  const [loadingLocalModels, setLoadingLocalModels] = useState(false);
+  const [selectedLocalModel, setSelectedLocalModel] = useState<LocalModelSummary | null>(null);
+  const [importingLocalFile, setImportingLocalFile] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<CreatorModelFile | null>(null);
+  const [deletingFile, setDeletingFile] = useState(false);
+  const [togglingFileId, setTogglingFileId] = useState<string | null>(null);
+
+  // Phase 4: Sample Media Management State
+  const [showAddSampleModal, setShowAddSampleModal] = useState(false);
+  const [selectedSampleFile, setSelectedSampleFile] = useState<File | null>(null);
+  const [samplePreviewUrl, setSamplePreviewUrl] = useState<string | null>(null);
+  const [samplePromptInput, setSamplePromptInput] = useState("");
+  const [uploadingSample, setUploadingSample] = useState(false);
+  const [sampleActionError, setSampleActionError] = useState<string | null>(null);
+  const [sampleToDelete, setSampleToDelete] = useState<string | null>(null);
+  const [deletingSample, setDeletingSample] = useState(false);
+
+  // Phase 4 Handlers
+  const handleCreateVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!model || !newVersionName.trim()) return;
+    setCreatingVersion(true);
+    setVersionActionError(null);
+    try {
+      const createdVer = await api.createModelVersion(model.model_id, newVersionName.trim());
+      const updated = await api.getPublicModel(model.model_id);
+      setModel(updated);
+      setSelectedVersionId(createdVer.version_id);
+      setActiveSampleIndex(0);
+      setShowAddVersionModal(false);
+      setNewVersionName("");
+    } catch (err) {
+      setVersionActionError(err instanceof Error ? err.message : "Failed to create version");
+    } finally {
+      setCreatingVersion(false);
+    }
+  };
+
+  const handleRenameVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!model || !activeVersion || !renameVersionName.trim()) return;
+    setRenamingVersion(true);
+    setVersionActionError(null);
+    try {
+      const updated = await api.updateModelVersion(model.model_id, activeVersion.version_id, renameVersionName.trim());
+      setModel(updated);
+      setShowRenameVersionModal(false);
+    } catch (err) {
+      setVersionActionError(err instanceof Error ? err.message : "Failed to rename version");
+    } finally {
+      setRenamingVersion(false);
+    }
+  };
+
+  const handleDeleteVersion = async () => {
+    if (!model || !activeVersion || model.versions.length <= 1) return;
+    setDeletingVersion(true);
+    setVersionActionError(null);
+    try {
+      const updated = await api.deleteModelVersion(model.model_id, activeVersion.version_id);
+      setModel(updated);
+      if (updated.versions.length > 0) {
+        setSelectedVersionId(updated.versions[0].version_id);
+      }
+      setActiveSampleIndex(0);
+      setShowDeleteVersionModal(false);
+    } catch (err) {
+      setVersionActionError(err instanceof Error ? err.message : "Failed to delete version");
+    } finally {
+      setDeletingVersion(false);
+    }
+  };
+
+  const handleToggleFileVisibility = async (file: CreatorModelFile) => {
+    if (!model || !activeVersion) return;
+    setTogglingFileId(file.file_id);
+    try {
+      const updated = await api.patchModelFile(model.model_id, activeVersion.version_id, file.file_id, {
+        visible: !file.visible,
+      });
+      setModel(updated);
+    } catch (err) {
+      console.error("Failed to toggle file visibility:", err);
+    } finally {
+      setTogglingFileId(null);
+    }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!model || !activeVersion || !fileToDelete) return;
+    setDeletingFile(true);
+    try {
+      await api.deleteModelFile(model.model_id, activeVersion.version_id, fileToDelete.file_id);
+      const updated = await api.getPublicModel(model.model_id);
+      setModel(updated);
+      setFileToDelete(null);
+    } catch (err) {
+      console.error("Failed to delete model file:", err);
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
+  const handleUploadFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!model || !activeVersion || !selectedUploadFile) return;
+    setUploadingFile(true);
+    setFileActionError(null);
+    try {
+      const updated = await api.uploadModelFile(
+        model.model_id,
+        activeVersion.version_id,
+        selectedUploadFile,
+        selectedFilePrecision
+      );
+      setModel(updated);
+      setShowAddFileModal(false);
+      setSelectedUploadFile(null);
+    } catch (err) {
+      setFileActionError(err instanceof Error ? err.message : "Failed to upload model file");
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const handleFetchLocalModels = async () => {
+    setLoadingLocalModels(true);
+    try {
+      const res = await api.listLocalModels();
+      setLocalModelsList(res.items || []);
+      if (res.items && res.items.length > 0) {
+        setSelectedLocalModel(res.items[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load local models:", err);
+    } finally {
+      setLoadingLocalModels(false);
+    }
+  };
+
+  const handleImportLocalFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!model || !activeVersion || !selectedLocalModel) return;
+    setImportingLocalFile(true);
+    setFileActionError(null);
+    try {
+      const updated = await api.importLocalModelFile(
+        model.model_id,
+        activeVersion.version_id,
+        selectedLocalModel.category,
+        selectedLocalModel.filename,
+        selectedFilePrecision
+      );
+      setModel(updated);
+      setShowAddFileModal(false);
+      setSelectedLocalModel(null);
+    } catch (err) {
+      setFileActionError(err instanceof Error ? err.message : "Failed to import model file");
+    } finally {
+      setImportingLocalFile(false);
+    }
+  };
+
+  const handleSampleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedSampleFile(file);
+      setSamplePreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const handleUploadSample = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!model || !activeVersion || !selectedSampleFile) return;
+    setUploadingSample(true);
+    setSampleActionError(null);
+    try {
+      const metadata = samplePromptInput.trim() ? { prompt: samplePromptInput.trim() } : {};
+      const updated = await api.uploadModelSample(
+        model.model_id,
+        activeVersion.version_id,
+        selectedSampleFile,
+        metadata
+      );
+      setModel(updated);
+      setShowAddSampleModal(false);
+      setSelectedSampleFile(null);
+      setSamplePreviewUrl(null);
+      setSamplePromptInput("");
+    } catch (err) {
+      setSampleActionError(err instanceof Error ? err.message : "Failed to upload sample");
+    } finally {
+      setUploadingSample(false);
+    }
+  };
+
+  const handleDeleteSample = async () => {
+    if (!model || !activeVersion || !sampleToDelete) return;
+    setDeletingSample(true);
+    try {
+      await api.deleteModelSample(model.model_id, activeVersion.version_id, sampleToDelete);
+      const updated = await api.getPublicModel(model.model_id);
+      setModel(updated);
+      setSampleToDelete(null);
+      setActiveSampleIndex(0);
+    } catch (err) {
+      console.error("Failed to delete sample:", err);
+    } finally {
+      setDeletingSample(false);
+    }
   };
 
   const load = useCallback(() => {
@@ -663,13 +909,13 @@ export default function PublicModelDetailPage({
             ))}
           </div>
 
-          {/* Version Switcher Bar */}
+          {/* Version Switcher Bar & Management Controls */}
           {model.versions.length > 0 && (
-            <div className="mt-3 flex items-center gap-2 border-t border-[var(--line)] pt-2.5">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
-                Version:
-              </span>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-2.5">
               <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--ink-faint)] mr-1">
+                  Version:
+                </span>
                 {model.versions.map((version) => {
                   const isActive =
                     (selectedVersionId || model.versions[0].version_id) ===
@@ -684,7 +930,7 @@ export default function PublicModelDetailPage({
                       }}
                       className={`rounded-md px-3 py-1 font-mono text-xs transition ${
                         isActive
-                          ? "border border-[var(--accent)] bg-[var(--accent)]/10 font-bold text-[var(--accent)]"
+                          ? "border border-[var(--accent)] bg-[var(--accent)]/10 font-bold text-[var(--accent)] shadow-[0_0_10px_rgba(213,240,111,0.15)]"
                           : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -692,7 +938,64 @@ export default function PublicModelDetailPage({
                     </button>
                   );
                 })}
+
+                <Can do="model:edit" ownerId={model.user_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewVersionName("");
+                      setVersionActionError(null);
+                      setShowAddVersionModal(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-xs text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/5 transition-colors"
+                    title="Add a new release version"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>New Version</span>
+                  </button>
+                </Can>
               </div>
+
+              {activeVersion && (
+                <Can do="model:edit" ownerId={model.user_id}>
+                  <div className="flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 py-0.5">
+                    <span className="font-mono text-[10px] text-[var(--ink-faint)] px-1">
+                      {activeVersion.name} actions:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameVersionName(activeVersion.name);
+                        setVersionActionError(null);
+                        setShowRenameVersionModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[11px] text-[var(--ink-soft)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)] transition"
+                      title="Rename this version"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>Rename</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={model.versions.length <= 1}
+                      onClick={() => {
+                        if (model.versions.length <= 1) return;
+                        setVersionActionError(null);
+                        setShowDeleteVersionModal(true);
+                      }}
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[11px] transition ${
+                        model.versions.length <= 1
+                          ? "opacity-30 cursor-not-allowed text-[var(--ink-faint)]"
+                          : "text-[var(--ink-soft)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10"
+                      }`}
+                      title={model.versions.length <= 1 ? "Cannot delete the only version" : "Delete this version"}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </Can>
+              )}
             </div>
           )}
         </div>
@@ -703,6 +1006,30 @@ export default function PublicModelDetailPage({
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_350px]">
           {/* LEFT COLUMN: Media Showcase, Description, Comments, Related */}
           <section className="space-y-6">
+            {/* Showcase Header with Add Media button for creators */}
+            <div className="flex items-center justify-between pb-1">
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                Showcase Previews ({currentSamples.length})
+              </span>
+              <Can do="model:edit" ownerId={model.user_id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSampleFile(null);
+                    setSamplePreviewUrl(null);
+                    setSamplePromptInput("");
+                    setSampleActionError(null);
+                    setShowAddSampleModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 py-1 font-mono text-xs text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/5 transition"
+                  title="Upload additional showcase preview"
+                >
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  <span>Add Sample Media</span>
+                </button>
+              </Can>
+            </div>
+
             {/* Horizontal Multi-Card Portrait Showcase matching reference */}
             <div className="relative group/showcase w-full overflow-hidden rounded-2xl select-none">
               {/* Floating Left Navigation Chevron */}
@@ -802,6 +1129,24 @@ export default function PublicModelDetailPage({
                         />
                       )}
 
+                      {/* Owner Delete Action */}
+                      <Can do="model:edit" ownerId={model.user_id}>
+                        {sample.sample_id && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSampleToDelete(sample.sample_id);
+                            }}
+                            className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white/80 opacity-0 group-hover:opacity-100 backdrop-blur-md transition-all hover:bg-[var(--danger)] hover:text-white hover:scale-105"
+                            title="Delete sample from version"
+                            aria-label="Delete sample"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </Can>
+
                       {/* Hover-only Inspect Action */}
                       <button
                         type="button"
@@ -815,6 +1160,32 @@ export default function PublicModelDetailPage({
                     </div>
                   );
                 })}
+
+                {/* Optional + Add Card at the end of track for Owners */}
+                <Can do="model:edit" ownerId={model.user_id}>
+                  <div
+                    onClick={() => {
+                      setSelectedSampleFile(null);
+                      setSamplePreviewUrl(null);
+                      setSamplePromptInput("");
+                      setSampleActionError(null);
+                      setShowAddSampleModal(true);
+                    }}
+                    style={{ aspectRatio: "3 / 4" }}
+                    className="relative flex h-[440px] sm:h-[480px] md:h-[520px] w-auto shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)]/40 hover:border-[var(--accent)] hover:bg-[var(--accent)]/5 transition text-[var(--ink-soft)] hover:text-[var(--accent)]"
+                    title="Add new sample media"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-raised)] border border-[var(--line-strong)] mb-2 group-hover:border-[var(--accent)]">
+                      <ImagePlus className="h-6 w-6" />
+                    </div>
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider">
+                      Add Media
+                    </span>
+                    <span className="font-mono text-[10px] text-[var(--ink-faint)] mt-1">
+                      PNG, JPG, MP4
+                    </span>
+                  </div>
+                </Can>
               </div>
             </div>
 
@@ -1309,65 +1680,126 @@ export default function PublicModelDetailPage({
                 )}
               </div>
 
-              {/* Full list of all files in active version (v.files) */}
-              {activeVersion && activeVersion.files && activeVersion.files.length > 0 && (
+              {/* Full list of all files in active version (v.files) & Management */}
+              {activeVersion && (
                 <div className="border-t border-[var(--line)] pt-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
-                      Version Files ({activeVersion.files.length})
+                      Version Files ({activeVersion.files?.length || 0})
                     </span>
                     <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
                       {activeVersion.name}
                     </span>
                   </div>
-                  <div className="space-y-1.5">
-                    {activeVersion.files.map((file) => (
-                      <div
-                        key={file.file_id}
-                        className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
-                            {file.filename}
-                          </p>
-                          <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
-                            <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
-                              {file.precision}
-                            </span>
-                            <span>{(file.size / 1024 ** 2).toFixed(1)} MB</span>
+
+                  {activeVersion.files && activeVersion.files.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {activeVersion.files.map((file) => (
+                        <div
+                          key={file.file_id}
+                          className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs"
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
+                                {file.filename}
+                              </p>
+                              {!file.visible && (
+                                <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 font-mono text-[9px] text-[var(--ink-faint)] uppercase">
+                                  Hidden
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
+                              <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
+                                {file.precision}
+                              </span>
+                              <span>{(file.size / 1024 ** 2).toFixed(1)} MB</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Owner File Management Actions */}
+                            <Can do="model:edit" ownerId={model.user_id}>
+                              <button
+                                type="button"
+                                onClick={() => void handleToggleFileVisibility(file)}
+                                disabled={togglingFileId === file.file_id}
+                                className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-colors ${
+                                  file.visible
+                                    ? "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
+                                    : "border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20"
+                                }`}
+                                title={file.visible ? "Visible in catalog (click to hide)" : "Hidden from catalog (click to show)"}
+                              >
+                                {file.visible ? (
+                                  <Eye className="h-3 w-3" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFileToDelete(file)}
+                                className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--danger)] hover:border-[var(--danger)]/50 transition-colors"
+                                title="Delete file from version"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </Can>
+
+                            <a
+                              href={isAuthenticated ? file.download_url : "#"}
+                              target={isAuthenticated ? "_blank" : undefined}
+                              rel="noreferrer"
+                              onClick={(e) => {
+                                if (!isAuthenticated) {
+                                  e.preventDefault();
+                                  openAuthModal("download_weights");
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                              title={`Download ${file.filename}`}
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>Get</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => void install(file, activeVersion.version_id)}
+                              disabled={installing === file.file_id}
+                              className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                              title={`Install ${file.filename} into ComfyUI`}
+                            >
+                              <HardDriveDownload className="h-3 w-3" />
+                              <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <a
-                            href={isAuthenticated ? file.download_url : "#"}
-                            target={isAuthenticated ? "_blank" : undefined}
-                            rel="noreferrer"
-                            onClick={(e) => {
-                              if (!isAuthenticated) {
-                                e.preventDefault();
-                                openAuthModal("download_weights");
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                            title={`Download ${file.filename}`}
-                          >
-                            <Download className="h-3 w-3" />
-                            <span>Get</span>
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => void install(file, activeVersion.version_id)}
-                            disabled={installing === file.file_id}
-                            className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                            title={`Install ${file.filename} into ComfyUI`}
-                          >
-                            <HardDriveDownload className="h-3 w-3" />
-                            <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-mono text-[11px] text-[var(--ink-faint)] italic py-1">
+                      No weight files linked to this release yet.
+                    </p>
+                  )}
+
+                  {/* Add File button for owners */}
+                  <Can do="model:edit" ownerId={model.user_id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUploadFile(null);
+                        setSelectedFilePrecision("FP16");
+                        setFileActionError(null);
+                        setAddFileMode("upload");
+                        setShowAddFileModal(true);
+                      }}
+                      className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] py-2 font-mono text-xs text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/5 transition"
+                    >
+                      <FilePlus className="h-3.5 w-3.5" />
+                      <span>Add Weight File</span>
+                    </button>
+                  </Can>
                 </div>
               )}
             </div>
@@ -1586,6 +2018,521 @@ export default function PublicModelDetailPage({
           onClose={() => setShowEditDrawer(false)}
           onUpdated={(updated) => setModel(updated)}
         />
+      )}
+
+      {/* PHASE 4: MODALS */}
+      {/* 1. Add Version Modal */}
+      {model && (
+        <WorkspaceModal
+          open={showAddVersionModal}
+          onClose={() => {
+            if (!creatingVersion) setShowAddVersionModal(false);
+          }}
+          title="Create Model Version"
+          description={`Add a new release version for "${model.title}".`}
+          eyebrow="Release Management"
+        >
+          <form onSubmit={handleCreateVersion} className="space-y-4">
+            {versionActionError && (
+              <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+                {versionActionError}
+              </div>
+            )}
+            <div>
+              <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                Version Tag / Name *
+              </label>
+              <input
+                type="text"
+                value={newVersionName}
+                onChange={(e) => setNewVersionName(e.target.value)}
+                placeholder="e.g. v1.1, v2.0, Inpainting-v1"
+                className="workspace-field w-full font-mono text-xs"
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAddVersionModal(false)}
+                disabled={creatingVersion}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creatingVersion || !newVersionName.trim()}
+                className="workspace-action-primary px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+              >
+                {creatingVersion ? "Creating…" : "Create Version"}
+              </button>
+            </div>
+          </form>
+        </WorkspaceModal>
+      )}
+
+      {/* 2. Rename Version Modal */}
+      {model && activeVersion && (
+        <WorkspaceModal
+          open={showRenameVersionModal}
+          onClose={() => {
+            if (!renamingVersion) setShowRenameVersionModal(false);
+          }}
+          title="Rename Version"
+          description={`Rename version "${activeVersion.name}".`}
+          eyebrow="Release Management"
+        >
+          <form onSubmit={handleRenameVersion} className="space-y-4">
+            {versionActionError && (
+              <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+                {versionActionError}
+              </div>
+            )}
+            <div>
+              <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                New Version Name *
+              </label>
+              <input
+                type="text"
+                value={renameVersionName}
+                onChange={(e) => setRenameVersionName(e.target.value)}
+                className="workspace-field w-full font-mono text-xs"
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowRenameVersionModal(false)}
+                disabled={renamingVersion}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={renamingVersion || !renameVersionName.trim()}
+                className="workspace-action-primary px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+              >
+                {renamingVersion ? "Saving…" : "Save Name"}
+              </button>
+            </div>
+          </form>
+        </WorkspaceModal>
+      )}
+
+      {/* 3. Delete Version Modal */}
+      {model && activeVersion && (
+        <WorkspaceModal
+          open={showDeleteVersionModal}
+          onClose={() => {
+            if (!deletingVersion) setShowDeleteVersionModal(false);
+          }}
+          title={`Delete version "${activeVersion.name}"?`}
+          description={`Are you sure you want to delete version "${activeVersion.name}"? All associated weight files and samples in this release will be removed.`}
+          destructive
+          eyebrow="Warning"
+        >
+          <div className="space-y-4">
+            {versionActionError && (
+              <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+                {versionActionError}
+              </div>
+            )}
+            <p className="text-xs text-[var(--ink-soft)]">
+              This action cannot be undone. Models must retain at least one release version.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteVersionModal(false)}
+                disabled={deletingVersion}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteVersion}
+                disabled={deletingVersion || model.versions.length <= 1}
+                className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--danger)]/90 transition disabled:opacity-50"
+              >
+                {deletingVersion ? "Deleting…" : "Delete Version"}
+              </button>
+            </div>
+          </div>
+        </WorkspaceModal>
+      )}
+
+      {/* 4. Add Weight File Modal */}
+      {model && activeVersion && (
+        <WorkspaceModal
+          open={showAddFileModal}
+          onClose={() => {
+            if (!uploadingFile && !importingLocalFile) setShowAddFileModal(false);
+          }}
+          title="Add Model Weight File"
+          description={`Add weights to version "${activeVersion.name}".`}
+          eyebrow="Weights Management"
+          size="wide"
+        >
+          <div className="space-y-4">
+            {fileActionError && (
+              <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+                {fileActionError}
+              </div>
+            )}
+
+            {/* Mode Switcher Tabs */}
+            <div className="flex border-b border-[var(--line)]">
+              <button
+                type="button"
+                onClick={() => setAddFileMode("upload")}
+                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${
+                  addFileMode === "upload"
+                    ? "border-[var(--accent)] text-[var(--accent)]"
+                    : "border-transparent text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                }`}
+              >
+                <UploadCloud className="h-4 w-4" />
+                <span>Upload From Computer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddFileMode("import");
+                  if (localModelsList.length === 0) {
+                    void handleFetchLocalModels();
+                  }
+                }}
+                className={`flex items-center gap-2 px-4 py-2 font-mono text-xs font-bold transition border-b-2 ${
+                  addFileMode === "import"
+                    ? "border-[var(--accent)] text-[var(--accent)]"
+                    : "border-transparent text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                }`}
+              >
+                <HardDriveDownload className="h-4 w-4" />
+                <span>Import from ComfyUI Vault</span>
+              </button>
+            </div>
+
+            {addFileMode === "upload" ? (
+              <form onSubmit={handleUploadFile} className="space-y-4">
+                <div>
+                  <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                    Select Weights File * (.safetensors, .ckpt, .pt, .bin)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".safetensors,.ckpt,.pt,.bin"
+                    onChange={(e) => setSelectedUploadFile(e.target.files?.[0] || null)}
+                    className="workspace-field w-full text-xs font-mono file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[var(--accent)]/10 file:text-[var(--accent)] hover:file:bg-[var(--accent)]/20"
+                    required
+                  />
+                  {selectedUploadFile && (
+                    <p className="mt-1 font-mono text-[10px] text-[var(--accent)]">
+                      Selected: {selectedUploadFile.name} ({(selectedUploadFile.size / 1024 ** 2).toFixed(1)} MB)
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                    Floating Point Precision
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["FP16", "FP32", "BF16", "Quantized"] as ModelPrecision[]).map((prec) => (
+                      <button
+                        key={prec}
+                        type="button"
+                        onClick={() => setSelectedFilePrecision(prec)}
+                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${
+                          selectedFilePrecision === prec
+                            ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
+                            : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {prec}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddFileModal(false)}
+                    disabled={uploadingFile}
+                    className="workspace-action-secondary px-3 py-1.5 text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={uploadingFile || !selectedUploadFile}
+                    className="workspace-action-primary px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+                  >
+                    {uploadingFile ? "Uploading Weights…" : "Upload File"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleImportLocalFile} className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)]">
+                    Scanned Vault Files ({localModelsList.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void handleFetchLocalModels()}
+                    disabled={loadingLocalModels}
+                    className="font-mono text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1"
+                  >
+                    {loadingLocalModels && <Loader2 className="h-3 w-3 animate-spin" />}
+                    <span>Rescan Vault</span>
+                  </button>
+                </div>
+
+                {loadingLocalModels ? (
+                  <div className="flex items-center justify-center p-8 text-xs font-mono text-[var(--ink-soft)] gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" />
+                    <span>Scanning ComfyUI model directories…</span>
+                  </div>
+                ) : localModelsList.length === 0 ? (
+                  <p className="font-mono text-xs text-[var(--ink-faint)] italic p-4 text-center border border-dashed border-[var(--line)] rounded-lg">
+                    No files found in ComfyUI models directory.
+                  </p>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto space-y-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                    {localModelsList.map((item) => {
+                      const isChosen =
+                        selectedLocalModel?.category === item.category &&
+                        selectedLocalModel?.filename === item.filename;
+                      return (
+                        <div
+                          key={`${item.category}/${item.filename}`}
+                          onClick={() => setSelectedLocalModel(item)}
+                          className={`flex items-center justify-between rounded p-2 text-xs font-mono cursor-pointer transition ${
+                            isChosen
+                              ? "bg-[var(--accent)]/15 border border-[var(--accent)] text-[var(--accent)] font-bold"
+                              : "hover:bg-[var(--surface-raised)] text-[var(--ink)] border border-transparent"
+                          }`}
+                        >
+                          <span className="truncate pr-2">{item.filename}</span>
+                          <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--ink-faint)]">
+                            {item.category}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                    Precision
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["FP16", "FP32", "BF16", "Quantized"] as ModelPrecision[]).map((prec) => (
+                      <button
+                        key={prec}
+                        type="button"
+                        onClick={() => setSelectedFilePrecision(prec)}
+                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${
+                          selectedFilePrecision === prec
+                            ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
+                            : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {prec}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddFileModal(false)}
+                    disabled={importingLocalFile}
+                    className="workspace-action-secondary px-3 py-1.5 text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={importingLocalFile || !selectedLocalModel}
+                    className="workspace-action-primary px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+                  >
+                    {importingLocalFile ? "Importing…" : "Import File"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </WorkspaceModal>
+      )}
+
+      {/* 5. Delete File Confirmation Modal */}
+      {fileToDelete && activeVersion && (
+        <WorkspaceModal
+          open={Boolean(fileToDelete)}
+          onClose={() => {
+            if (!deletingFile) setFileToDelete(null);
+          }}
+          title={`Delete file "${fileToDelete.filename}"?`}
+          description={`Remove this weight file from release version "${activeVersion.name}".`}
+          destructive
+          eyebrow="Warning"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-[var(--ink-soft)]">
+              This action will remove the file association. It cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setFileToDelete(null)}
+                disabled={deletingFile}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFile}
+                disabled={deletingFile}
+                className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--danger)]/90 transition disabled:opacity-50"
+              >
+                {deletingFile ? "Deleting…" : "Delete File"}
+              </button>
+            </div>
+          </div>
+        </WorkspaceModal>
+      )}
+
+      {/* 6. Add Showcase Media Modal */}
+      {model && activeVersion && (
+        <WorkspaceModal
+          open={showAddSampleModal}
+          onClose={() => {
+            if (!uploadingSample) {
+              setShowAddSampleModal(false);
+              setSelectedSampleFile(null);
+              setSamplePreviewUrl(null);
+            }
+          }}
+          title="Add Showcase Sample"
+          description={`Upload a preview image or video for version "${activeVersion.name}".`}
+          eyebrow="Showcase Management"
+        >
+          <form onSubmit={handleUploadSample} className="space-y-4">
+            {sampleActionError && (
+              <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+                {sampleActionError}
+              </div>
+            )}
+
+            <div>
+              <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                Media File * (PNG, JPG, WEBP, MP4)
+              </label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+                onChange={handleSampleFileChange}
+                className="workspace-field w-full text-xs font-mono file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[var(--accent)]/10 file:text-[var(--accent)] hover:file:bg-[var(--accent)]/20"
+                required
+              />
+            </div>
+
+            {samplePreviewUrl && (
+              <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-black/40 h-48 flex items-center justify-center">
+                {selectedSampleFile?.type?.startsWith("video/") ? (
+                  <video src={samplePreviewUrl} controls className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <img src={samplePreviewUrl} alt="Preview" className="max-h-full max-w-full object-contain" />
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
+                Generation Prompt / Caption (Optional)
+              </label>
+              <textarea
+                value={samplePromptInput}
+                onChange={(e) => setSamplePromptInput(e.target.value)}
+                placeholder="Positive prompt or description used to create this sample…"
+                rows={2}
+                className="workspace-field w-full text-xs"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddSampleModal(false);
+                  setSelectedSampleFile(null);
+                  setSamplePreviewUrl(null);
+                }}
+                disabled={uploadingSample}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={uploadingSample || !selectedSampleFile}
+                className="workspace-action-primary px-4 py-1.5 text-xs font-bold disabled:opacity-50"
+              >
+                {uploadingSample ? "Uploading…" : "Upload Sample"}
+              </button>
+            </div>
+          </form>
+        </WorkspaceModal>
+      )}
+
+      {/* 7. Delete Showcase Sample Modal */}
+      {sampleToDelete && activeVersion && (
+        <WorkspaceModal
+          open={Boolean(sampleToDelete)}
+          onClose={() => {
+            if (!deletingSample) setSampleToDelete(null);
+          }}
+          title="Delete Showcase Sample?"
+          description={`Remove this sample from version "${activeVersion.name}".`}
+          destructive
+          eyebrow="Warning"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-[var(--ink-soft)]">
+              This sample image/video will be permanently deleted from the model gallery.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSampleToDelete(null)}
+                disabled={deletingSample}
+                className="workspace-action-secondary px-3 py-1.5 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSample}
+                disabled={deletingSample}
+                className="rounded-lg bg-[var(--danger)] px-4 py-1.5 text-xs font-bold text-white hover:bg-[var(--danger)]/90 transition disabled:opacity-50"
+              >
+                {deletingSample ? "Deleting…" : "Delete Sample"}
+              </button>
+            </div>
+          </div>
+        </WorkspaceModal>
       )}
     </main>
   );
