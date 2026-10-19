@@ -30,7 +30,6 @@ import {
   Plus,
   Sliders,
   SlidersHorizontal,
-  Sparkles,
   Star,
   Trash2,
   Upload,
@@ -182,7 +181,7 @@ export default function CreateModelDrawer({
   onCreated,
 }: CreateModelDrawerProps) {
   const { isAuthenticated, openAuthModal } = useAuth();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Auth gate interception on drawer open
   useEffect(() => {
@@ -194,15 +193,6 @@ export default function CreateModelDrawer({
   // Step 1: Identity & Architecture
   const [title, setTitle] = useState("");
   const [modelType, setModelType] = useState<CreatorModelType>("Checkpoint");
-
-  const promptable = isPromptableModelType(modelType);
-
-  // Auto-skip step 2 if switching to a non-promptable model while on step 2
-  useEffect(() => {
-    if (!promptable && step === 2) {
-      setStep(3);
-    }
-  }, [promptable, step]);
   const [category, setCategory] = useState<CreatorModelCategory>("General");
   const [baseModel, setBaseModel] = useState("Allegro");
   const [customBaseModel, setCustomBaseModel] = useState("");
@@ -1031,18 +1021,11 @@ export default function CreateModelDrawer({
 
   const currentDisplayTitle = title.trim() || "Untitled model";
 
-  const stepsList = promptable
-    ? [
-        { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
-        { s: 2 as const, label: "Prompts & Presets (Optional)", num: "02", icon: Sparkles },
-        { s: 3 as const, label: "Weights & Versions", num: "03", icon: HardDrive },
-        { s: 4 as const, label: "Showcase & Permissions", num: "04", icon: FileImage },
-      ]
-    : [
-        { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
-        { s: 3 as const, label: "Weights & Versions", num: "02", icon: HardDrive },
-        { s: 4 as const, label: "Showcase & Permissions", num: "03", icon: FileImage },
-      ];
+  const stepsList = [
+    { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
+    { s: 2 as const, label: "Weights & Versions", num: "02", icon: HardDrive },
+    { s: 3 as const, label: "Showcase & Governance", num: "03", icon: FileImage },
+  ];
 
   const activeStepIndex = stepsList.findIndex((item) => item.s === step);
   const currentStepNumber = activeStepIndex !== -1 ? activeStepIndex + 1 : 1;
@@ -1126,7 +1109,7 @@ export default function CreateModelDrawer({
 
         {/* Step Stepper Navigation Bar */}
         <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
-          <div className={`grid w-full ${promptable ? "grid-cols-4" : "grid-cols-3"} gap-2 font-mono text-[11px]`}>
+          <div className="grid w-full grid-cols-3 gap-2 font-mono text-[11px]">
             {stepsList.map(({ s, label, num, icon: Icon }, index) => {
               const isActive = step === s;
               const isPast = activeStepIndex > index;
@@ -1911,235 +1894,8 @@ export default function CreateModelDrawer({
               </div>
             )}
 
-            {/* STEP 2: PROMPT & PRESETS */}
+            {/* STEP 2: FILES & WEIGHTS */}
             {step === 2 && (
-              <div className="space-y-4 animate-in fade-in duration-150">
-                <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--accent)]">
-                        <Sparkles className="h-3.5 w-3.5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
-                            Recommended Prompts & Presets
-                          </span>
-                          <span className="inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
-                            Optional
-                          </span>
-                        </div>
-                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                          Default prompt conditioning and inference presets applied when users load this model in Studio
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setStep(3)}
-                      className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                    >
-                      <span>Skip / Keep Defaults</span>
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
-
-                  {/* 1. Prompt Conditioning First */}
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                          Recommended Prompt Template
-                        </label>
-                        <span className="font-mono text-[9px] text-[var(--accent)] font-semibold">
-                          Default starter prompt
-                        </span>
-                      </div>
-                      <textarea
-                        rows={3}
-                        value={recommendedPrompt}
-                        onChange={(e) => setRecommendedPrompt(e.target.value)}
-                        placeholder="Recommended prompt conditioning for best model fidelity…"
-                        className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none resize-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Recommended Negative Prompt <span className="text-[var(--ink-faint)]">(Optional)</span>
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={recommendedNegative}
-                        onChange={(e) => setRecommendedNegative(e.target.value)}
-                        placeholder="Suggested negative embeddings or avoidance tokens…"
-                        className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none resize-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 2. Trigger Words */}
-                  <div className="pt-2 border-t border-[var(--line)]">
-                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Recommended Trigger Words{" "}
-                      {isAdapterModelType(modelType) ? (
-                        <span className="text-[var(--accent)] font-bold">
-                          (Recommended for {modelType})
-                        </span>
-                      ) : (
-                        <span className="text-[var(--ink-faint)]">(Optional)</span>
-                      )}
-                    </label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <Zap className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--accent)]" />
-                        <input
-                          type="text"
-                          value={triggerInput}
-                          onChange={(e) => setTriggerInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === ",") {
-                              e.preventDefault();
-                              addTriggerWord();
-                            }
-                          }}
-                          placeholder="e.g. anime girl, retro style, sora-cinematic..."
-                          className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] pl-8 pr-2.5 font-mono text-[11px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={addTriggerWord}
-                        className="h-8 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                      >
-                        Add Trigger
-                      </button>
-                    </div>
-                    {triggerWords.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
-                        {triggerWords.map((tw) => (
-                          <span
-                            key={tw}
-                            className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)]"
-                          >
-                            <span>⚡</span>
-                            {tw}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setTriggerWords(triggerWords.filter((x) => x !== tw))
-                              }
-                              className="text-[var(--accent)]/60 hover:text-[var(--danger)] transition-colors ml-0.5"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 3. Sampler & Clip Skip */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-[var(--line)]">
-                    <div>
-                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Recommended Sampler
-                      </label>
-                      <CustomSelect
-                        value={sampler}
-                        onChange={setSampler}
-                        options={[
-                          "DPM++ 2M Karras",
-                          "Euler a",
-                          "Euler",
-                          "UniPC",
-                          "DPM++ SDE Karras",
-                          "LCM",
-                        ]}
-                        className="w-full"
-                        buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Clip Skip
-                      </label>
-                      <div className="flex gap-2">
-                        {[1, 2].map((cs) => (
-                          <button
-                            key={cs}
-                            type="button"
-                            onClick={() => setClipSkip(cs)}
-                            className={`h-8 flex-1 rounded-[5px] font-mono text-[11px] font-bold transition-colors ${
-                              clipSkip === cs
-                                ? "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
-                                : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                            }`}
-                          >
-                            Clip Skip {cs}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 4. Steps & CFG Range */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    <div>
-                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Min Steps
-                      </label>
-                      <input
-                        type="number"
-                        value={stepsMin}
-                        onChange={(e) => setStepsMin(Number(e.target.value))}
-                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Max Steps
-                      </label>
-                      <input
-                        type="number"
-                        value={stepsMax}
-                        onChange={(e) => setStepsMax(Number(e.target.value))}
-                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Min CFG
-                      </label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={cfgMin}
-                        onChange={(e) => setCfgMin(Number(e.target.value))}
-                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                        Max CFG
-                      </label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={cfgMax}
-                        onChange={(e) => setCfgMax(Number(e.target.value))}
-                        className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 font-mono text-[11px] text-[var(--ink)] tabular-nums"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: FILES & WEIGHTS */}
-            {step === 3 && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
                   {/* Step Header */}
@@ -2601,8 +2357,8 @@ export default function CreateModelDrawer({
               </div>
             )}
 
-            {/* STEP 4: SHOWCASE & PUBLISHING */}
-            {step === 4 && (
+            {/* STEP 3: SHOWCASE & GOVERNANCE */}
+            {step === 3 && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-2.5 pb-3 border-b border-[var(--line)]">
@@ -2970,17 +2726,7 @@ export default function CreateModelDrawer({
                     </span>
                   </div>
                 )}
-                {promptable && recommendedPrompt && (
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-[var(--ink-faint)]">Prompt:</span>
-                    <span
-                      className="font-semibold text-[var(--accent)] truncate max-w-[140px]"
-                      title={recommendedPrompt}
-                    >
-                      {recommendedPrompt}
-                    </span>
-                  </div>
-                )}
+
                 {selectedBaseKey && (
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-[var(--ink-faint)]">Base Enclave:</span>
@@ -2999,14 +2745,6 @@ export default function CreateModelDrawer({
                       : "Pending…"}
                   </span>
                 </div>
-                {promptable && (
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-[var(--ink-faint)]">Trigger Words:</span>
-                    <span className="font-semibold text-[var(--accent)]">
-                      {triggerWords.length ? `${triggerWords.length} active` : "None"}
-                    </span>
-                  </div>
-                )}
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-[var(--ink-faint)]">Visibility:</span>
                   <span
@@ -3040,9 +2778,7 @@ export default function CreateModelDrawer({
               } else if (step === 2) {
                 setStep(1);
               } else if (step === 3) {
-                setStep(promptable ? 2 : 1);
-              } else if (step === 4) {
-                setStep(3);
+                setStep(2);
               }
             }}
             className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] px-3 font-mono text-[11px] font-bold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors disabled:opacity-40"
@@ -3058,29 +2794,15 @@ export default function CreateModelDrawer({
           </button>
 
           <div className="flex items-center gap-2.5">
-            {step === 2 && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setStep(3)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-3 font-mono text-[11px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
-              >
-                <span>Skip / Keep Defaults</span>
-                <ArrowRight className="h-3 w-3" />
-              </button>
-            )}
-
-            {step < 4 ? (
+            {step < 3 ? (
               <button
                 type="button"
                 disabled={step === 1 && !title.trim()}
                 onClick={() => {
                   if (step === 1) {
-                    setStep(promptable ? 2 : 3);
+                    setStep(2);
                   } else if (step === 2) {
                     setStep(3);
-                  } else if (step === 3) {
-                    setStep(4);
                   }
                 }}
                 className="inline-flex h-8 items-center gap-1.5 rounded-[5px] bg-[var(--accent)] px-3.5 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40"
