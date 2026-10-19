@@ -1077,18 +1077,21 @@ class UserLoginRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     email_or_username: Optional[str] = None
+    emailOrUsername: Optional[str] = None
     password: str = Field(..., min_length=1)
 
     @model_validator(mode="after")
     def validate_identifier(self) -> "UserLoginRequest":
-        identifier = self.email_or_username or self.username or self.email
+        extra_ident = (self.__pydantic_extra__ or {}).get("emailOrUsername") if hasattr(self, "__pydantic_extra__") else None
+        identifier = self.email_or_username or self.emailOrUsername or extra_ident or self.username or self.email
         if not identifier or not identifier.strip():
             raise ValueError("Email or username is required to log in")
         return self
 
     @property
     def identifier(self) -> str:
-        val = self.email_or_username or self.username or self.email or ""
+        extra_ident = (self.__pydantic_extra__ or {}).get("emailOrUsername") if hasattr(self, "__pydantic_extra__") else None
+        val = self.email_or_username or self.emailOrUsername or extra_ident or self.username or self.email or ""
         return val.strip()
 
 
