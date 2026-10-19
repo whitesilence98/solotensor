@@ -1721,7 +1721,10 @@ export const api = {
   async getPendingModelsReviewQueue(): Promise<ModelPendingReviewQueueResponse> {
     try {
       return await request<ModelPendingReviewQueueResponse>("/api/v1/moderation/models/pending");
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        throw err;
+      }
       return { items: [], total: 0 };
     }
   },

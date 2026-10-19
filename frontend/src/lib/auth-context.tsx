@@ -42,7 +42,7 @@ export interface AuthContextType {
   isPro: boolean;
   isMod: boolean;
   isAdmin: boolean;
-  switchRoleDemo: (role: UserRole) => void;
+  switchRoleDemo: (role: UserRole) => Promise<void> | void;
   login: (emailOrUsername: string, password?: string) => Promise<UserProfile>;
   loginWithOAuth: (provider: "google" | "discord") => Promise<UserProfile>;
   register: (
@@ -432,7 +432,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return hasRole("admin") || hasPermission("admin:full_access");
   }, [hasRole, hasPermission]);
 
-  const switchRoleDemo = useCallback((newRole: UserRole) => {
+  const switchRoleDemo = useCallback(async (newRole: UserRole) => {
+    const DEMO_PERSONAS: Record<string, { username: string; password?: string }> = {
+      creator: { username: "cyber_artisan", password: "Password123!" },
+      moderator: { username: "sentinel_mod", password: "Password123!" },
+      admin: { username: "winnguyen282", password: "Password123!" },
+      pro_creator: { username: "neon_architect", password: "Password123!" },
+      verified_creator: { username: "lora_mastermind", password: "Password123!" },
+      guest: { username: "guest_wanderer", password: "Password123!" },
+    };
+
+    const norm = normalizeRoleName(newRole);
+    const persona = DEMO_PERSONAS[norm];
+    if (persona) {
+      try {
+        const payload: LoginPayload = {
+          emailOrUsername: persona.username,
+          password: persona.password,
+          provider: "credentials",
+        };
+        const response = await api.login(payload);
+        setAuthToken(response.token);
+        setTokenState(response.token);
+        setUser(response.user);
+        setCredits(response.credits);
+        try {
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.user));
+          localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
+        } catch {
+          /* ignore */
+        }
+        if (norm === "moderator" || norm === "admin") {
+          try {
+            const queue = await api.getPendingModelsReviewQueue();
+            setPendingReviewCount(queue?.total ?? queue?.items?.length ?? 0);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          setPendingReviewCount(0);
+        }
+        return;
+      } catch (err) {
+        console.warn("Backend auth for demo persona failed, falling back to local simulation:", err);
+      }
+    }
+
     const updated = setLocalUserRole(newRole);
     if (updated) {
       setUser({ ...updated });

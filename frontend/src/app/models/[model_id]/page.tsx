@@ -117,7 +117,7 @@ export default function PublicModelDetailPage({
   const [selectedSample, setSelectedSample] = useState<GalleryItem | null>(null);
 
   // Authentication & RBAC Actions
-  const { isAuthenticated, openAuthModal, user, isAdmin, isMod } = useAuth();
+  const { isAuthenticated, openAuthModal, user, isAdmin, isMod, switchRoleDemo } = useAuth();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -793,13 +793,25 @@ export default function PublicModelDetailPage({
                 <strong>Pending Moderator Approval:</strong> This model has been submitted for review. It will become visible in the public gallery and search once approved by a moderator.
               </span>
             </div>
-            {(isAdmin || isMod) && (
+            {(isAdmin || isMod) ? (
               <Link
                 href="/admin/moderation"
                 className="shrink-0 rounded bg-amber-500/20 px-2.5 py-1 font-mono text-[10px] font-bold text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
               >
                 Review in Darkroom &rarr;
               </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  await switchRoleDemo("moderator");
+                  router.push("/admin/moderation");
+                }}
+                className="shrink-0 rounded bg-amber-500/20 px-2.5 py-1 font-mono text-[10px] font-bold text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 transition-colors"
+                title="Switch to Moderator session and review this submission"
+              >
+                Switch to Mod & Review &rarr;
+              </button>
             )}
           </div>
         </div>

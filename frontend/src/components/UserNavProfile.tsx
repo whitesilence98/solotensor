@@ -29,11 +29,13 @@ export default function UserNavProfile() {
     isMod,
     isAdmin,
     pendingReviewCount,
+    switchRoleDemo,
   } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [claimFeedback, setClaimFeedback] = useState<string | null>(null);
   const [resendBusy, setResendBusy] = useState(false);
   const [resendFeedback, setResendFeedback] = useState<string | null>(null);
+  const [switchingRole, setSwitchingRole] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu on click outside or escape key
@@ -172,7 +174,7 @@ export default function UserNavProfile() {
           </div>
 
           {/* Tier Pill & Status */}
-          <div className="my-2.5 flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+          <div className="my-2 flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
             <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
               PRIMARY ROLE
             </span>
@@ -183,6 +185,80 @@ export default function UserNavProfile() {
                 </span>
               )}
               <RoleBadge role={primaryRole} size="xs" />
+            </div>
+          </div>
+
+          {/* Quick Persona Switcher for Pairing & Moderation Testing */}
+          <div className="my-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
+                SWITCH PERSONA
+              </span>
+              <span className="font-mono text-[8px] font-bold text-[var(--accent)] tracking-wider">
+                {switchingRole ? "AUTH…" : "DEV RBAC"}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                type="button"
+                disabled={switchingRole}
+                onClick={async () => {
+                  setSwitchingRole(true);
+                  try {
+                    await switchRoleDemo("creator");
+                  } finally {
+                    setSwitchingRole(false);
+                  }
+                }}
+                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
+                  primaryRole === "creator"
+                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                }`}
+                title="Switch to Creator (@cyber_artisan)"
+              >
+                Creator
+              </button>
+              <button
+                type="button"
+                disabled={switchingRole}
+                onClick={async () => {
+                  setSwitchingRole(true);
+                  try {
+                    await switchRoleDemo("moderator");
+                  } finally {
+                    setSwitchingRole(false);
+                  }
+                }}
+                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
+                  primaryRole === "moderator"
+                    ? "bg-[#0284c7] text-white"
+                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[#38bdf8]"
+                }`}
+                title="Switch to Moderator (@sentinel_mod)"
+              >
+                Mod
+              </button>
+              <button
+                type="button"
+                disabled={switchingRole}
+                onClick={async () => {
+                  setSwitchingRole(true);
+                  try {
+                    await switchRoleDemo("admin");
+                  } finally {
+                    setSwitchingRole(false);
+                  }
+                }}
+                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
+                  primaryRole === "admin"
+                    ? "bg-[#e11d48] text-white"
+                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[#fb7185]"
+                }`}
+                title="Switch to Admin (@winnguyen282)"
+              >
+                Admin
+              </button>
             </div>
           </div>
 

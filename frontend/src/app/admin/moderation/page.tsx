@@ -90,10 +90,13 @@ export default function ModerationDashboardPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [requestChanges, setRequestChanges] = useState(false);
   const [rejectFeedback, setRejectFeedback] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
 
   // Load moderation queues & audit logs
   const loadData = useCallback(async () => {
     setLoading(true);
+    setAuthError(null);
     try {
       const [itemsRes, logsRes, pendingRes] = await Promise.allSettled([
         api.getModerationQueue(),
@@ -108,17 +111,30 @@ export default function ModerationDashboardPage() {
       }
       if (pendingRes.status === "fulfilled") {
         setPendingModels(pendingRes.value?.items || []);
+        setAuthError(null);
+      } else {
+        const reason = pendingRes.reason;
+        if (
+          reason &&
+          typeof reason === "object" &&
+          "status" in reason &&
+          (reason.status === 403 || reason.status === 401)
+        ) {
+          setAuthError(
+            `Active JWT token (${user?.username ? `@${user.username}` : "current session"}) lacks backend permission 'moderation:review_queue'. Please switch to Moderator or Admin.`
+          );
+        }
       }
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.username]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, user?.username, primaryRole]);
 
   // Filter flagged items (models & posts)
   const filteredItems = useMemo(() => {
@@ -387,19 +403,39 @@ export default function ModerationDashboardPage() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => switchRoleDemo("moderator")}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#0c4a6e] bg-[#082f49] py-2 font-mono text-xs font-bold text-[#38bdf8] hover:bg-[#0c4a6e]/50 transition"
+                disabled={isSwitchingRole}
+                onClick={async () => {
+                  setIsSwitchingRole(true);
+                  try {
+                    await switchRoleDemo("moderator");
+                    await loadData();
+                    void refreshPendingReviewCount();
+                  } finally {
+                    setIsSwitchingRole(false);
+                  }
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#0c4a6e] bg-[#082f49] py-2 font-mono text-xs font-bold text-[#38bdf8] hover:bg-[#0c4a6e]/50 transition disabled:opacity-50"
               >
                 <Shield className="h-3.5 w-3.5" />
-                <span>Switch to Moderator</span>
+                <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator"}</span>
               </button>
               <button
                 type="button"
-                onClick={() => switchRoleDemo("admin")}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#881337] bg-[#4c0519] py-2 font-mono text-xs font-bold text-[#fb7185] hover:bg-[#881337]/50 transition"
+                disabled={isSwitchingRole}
+                onClick={async () => {
+                  setIsSwitchingRole(true);
+                  try {
+                    await switchRoleDemo("admin");
+                    await loadData();
+                    void refreshPendingReviewCount();
+                  } finally {
+                    setIsSwitchingRole(false);
+                  }
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#881337] bg-[#4c0519] py-2 font-mono text-xs font-bold text-[#fb7185] hover:bg-[#881337]/50 transition disabled:opacity-50"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Switch to Admin</span>
+                <span>{isSwitchingRole ? "Authenticating…" : "Switch to Admin"}</span>
               </button>
             </div>
           </div>
@@ -475,8 +511,18 @@ export default function ModerationDashboardPage() {
                 <button
                   key={r}
                   type="button"
-                  onClick={() => switchRoleDemo(r)}
-                  className={`px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded transition ${
+                  disabled={isSwitchingRole}
+                  onClick={async () => {
+                    setIsSwitchingRole(true);
+                    try {
+                      await switchRoleDemo(r);
+                      await loadData();
+                      void refreshPendingReviewCount();
+                    } finally {
+                      setIsSwitchingRole(false);
+                    }
+                  }}
+                  className={`px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded transition disabled:opacity-50 ${
                     primaryRole === r
                       ? "bg-[var(--accent)] text-[var(--accent-ink)] font-bold"
                       : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
@@ -730,7 +776,37 @@ export default function ModerationDashboardPage() {
                   );
                 })}
 
-                {filteredPendingModels.length === 0 && (
+                {authError && (
+                  <div className="m-4 rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-xs space-y-3">
+                    <div className="flex items-center gap-2 text-amber-300 font-bold">
+                      <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                      <span>Moderation Queue Clearance Required</span>
+                    </div>
+                    <p className="font-mono text-[11px] text-[var(--ink-soft)] leading-relaxed">
+                      {authError}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={isSwitchingRole}
+                      onClick={async () => {
+                        setIsSwitchingRole(true);
+                        try {
+                          await switchRoleDemo("moderator");
+                          await loadData();
+                          void refreshPendingReviewCount();
+                        } finally {
+                          setIsSwitchingRole(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#0284c7] px-3 py-1.5 font-mono text-xs font-bold text-white hover:bg-[#0369a1] transition shadow-md disabled:opacity-50"
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator (@sentinel_mod)"}</span>
+                    </button>
+                  </div>
+                )}
+
+                {filteredPendingModels.length === 0 && !authError && (
                   <div className="p-12 text-center text-xs text-[var(--ink-faint)] space-y-2">
                     <CheckCircle2 className="h-8 w-8 text-[#38bdf8] mx-auto opacity-70" />
                     <p className="font-bold text-[var(--ink)]">Approval Queue Clear</p>
