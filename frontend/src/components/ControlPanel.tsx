@@ -13,7 +13,6 @@ import {
  ExternalLink,
  Filter,
  HelpCircle,
- Info,
  Layers,
  Loader2,
  Lock,
@@ -268,7 +267,6 @@ export default function ControlPanel(props: Props) {
  const [onlyCompatibleLora, setOnlyCompatibleLora] = useState<boolean>(true);
 
  const [advancedOpen, setAdvancedOpen] = useState(false);
- const [infoTooltip, setInfoTooltip] = useState<string | null>(null);
 
  // WD14 Image Interrogation State
  const tagFileInputRef = useRef<HTMLInputElement>(null);
@@ -358,7 +356,7 @@ export default function ControlPanel(props: Props) {
    return pub.base_model;
   }
   const titleLower = selectedModel.title.toLowerCase();
-  if (titleLower.includes("krea")) return "KREA_2";
+  if (titleLower.includes("krea")) return "Krea-2";
   if (titleLower.includes("sdxl")) return "SDXL";
   if (titleLower.includes("flux")) return "FLUX.1";
   if (titleLower.includes("turbo") || titleLower.includes("z image")) return "Z-Image";
@@ -656,11 +654,11 @@ export default function ControlPanel(props: Props) {
        type="button"
        aria-label="Choose basic model"
        onClick={() => setModelPickerOpen(true)}
-       className="workspace-command group flex flex-1 items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] min-w-0"
+       className="workspace-command group flex flex-1 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] min-w-0"
       >
-      <div className="flex items-center gap-3 w-full min-w-0">
+      <div className="flex items-center gap-2.5 w-full min-w-0">
        {/* Model Thumbnail */}
-       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)]">
+       <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
         {currentModelCover ? (
          <>
           <img
@@ -672,12 +670,12 @@ export default function ControlPanel(props: Props) {
            }}
           />
           <div className="absolute inset-0 grid place-items-center text-[var(--accent)] opacity-60">
-           <Box className="h-6 w-6" />
+           <Box className="h-5 w-5" />
           </div>
          </>
         ) : (
          <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
-          <Box className="h-6 w-6 opacity-75" />
+          <Box className="h-5 w-5 opacity-75" />
          </div>
         )}
         {selectedModel && (
@@ -693,25 +691,17 @@ export default function ControlPanel(props: Props) {
        <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 min-w-0">
          <span
-          className="truncate min-w-0 block text-xs font-bold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition"
+          className="truncate min-w-0 block text-xs font-semibold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition"
           title={selectedModel?.title ?? "Select Basic Model"}
          >
           {selectedModel?.title ?? "Select Basic Model"}
          </span>
         </div>
-        <div className="mt-1 flex items-center gap-1.5 min-w-0">
+        <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
          {selectedModel ? (
-          <>
-           <span className="shrink-0 inline-flex items-center rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--ink-faint)]">
-            {selectedModel.model_type}
-           </span>
-           <p
-            className="truncate min-w-0 font-mono text-[10px] text-[var(--ink-faint)]"
-            title={selectedModel.filename}
-           >
-            {selectedModel.filename}
-           </p>
-          </>
+          <span className="shrink-0 inline-flex items-center rounded-md bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--ink-faint)]">
+           {selectedModel.model_type}
+          </span>
          ) : (
           <p className="truncate min-w-0 text-[10px] text-[var(--ink-faint)]">
            Click to choose a model from gallery
@@ -722,50 +712,37 @@ export default function ControlPanel(props: Props) {
 
        {/* Action Chevron */}
        <div className="flex items-center shrink-0">
-        <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--surface-raised)] text-[var(--ink-faint)] group-hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-focus-within:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
-         <ChevronRight className="h-4 w-4" />
+        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--surface-raised)] text-[var(--ink-faint)] group-hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-focus-within:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
+         <ChevronRight className="h-3.5 w-3.5" />
         </span>
        </div>
       </div>
       </button>
-      {selectedModel && (
-       <div className="flex items-stretch gap-1 shrink-0">
-        {(() => {
-         const modelUrl = resolveModelGalleryUrl(
-          {
-           modelId: selectedModel.model_id,
-           title: selectedModel.title,
-           filename: selectedModel.filename,
-           fileId: selectedModel.file_id,
-          },
-          modelOptions,
-          publicModels
-         );
-         if (!modelUrl) return null;
-         return (
-          <a
-           href={modelUrl}
-           target="_blank"
-           rel="noopener noreferrer"
-           aria-label="View model in gallery"
-           title="View in Model Gallery"
-           className="flex items-center justify-center rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
-          >
-           <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-         );
-        })()}
-        <button
-         type="button"
-         aria-label="Model details"
-         title="Model Details"
-         onClick={() => setInfoTooltip(`${selectedModel.title} • ${selectedModel.model_type} • File: ${selectedModel.filename}`)}
-         className="rounded-xl border border-[var(--line)] px-2 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
+      {selectedModel && (() => {
+       const modelUrl = resolveModelGalleryUrl(
+        {
+         modelId: selectedModel.model_id,
+         title: selectedModel.title,
+         filename: selectedModel.filename,
+         fileId: selectedModel.file_id,
+        },
+        modelOptions,
+        publicModels
+       );
+       if (!modelUrl) return null;
+       return (
+        <a
+         href={modelUrl}
+         target="_blank"
+         rel="noopener noreferrer"
+         aria-label="View model in gallery"
+         title="View in Model Gallery"
+         className="flex items-center justify-center rounded-xl border border-[var(--line)] px-2.5 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
         >
-         <Info className="h-3.5 w-3.5" />
-        </button>
-       </div>
-      )}
+         <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+       );
+      })()}
      </div>
     </div>
     )}
@@ -1416,7 +1393,7 @@ export default function ControlPanel(props: Props) {
      {/* Fast-Lane Queue Readout */}
      <div className="flex items-center gap-1 font-mono text-[10px]">
       {isProUser ? (
-       <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-[var(--accent)] bg-[var(--accent)]/10 border border-[var(--accent)]/20 shadow-[0_0_8px_rgba(213,240,111,0.15)]">
+       <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-bold text-[var(--accent)] bg-[var(--accent)]/10">
         <Zap className="h-2.5 w-2.5 fill-current" />
         <span>⚡ PRIORITY QUEUE (~4s)</span>
        </span>
@@ -1665,8 +1642,8 @@ export default function ControlPanel(props: Props) {
               {[m.version_name || "v1.0", pub?.category || m.model_type].filter(Boolean).join(" • ")}
              </p>
              <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px]">
-              <span className="truncate font-mono text-white/55 max-w-[65%]">
-               {m.filename}
+              <span className="truncate text-white/55 max-w-[65%]">
+               {pub?.base_model || m.model_type}
               </span>
               <span className="font-bold text-[var(--accent)] drop-shadow-sm">
                {isCurrent ? "Current model" : "Select →"}
@@ -1876,8 +1853,8 @@ export default function ControlPanel(props: Props) {
 
            {/* Action Button */}
            <div className="mt-3 pt-2 border-t border-[var(--line)] flex items-center justify-between">
-            <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate max-w-[150px]">
-             {item.filename}
+            <span className="text-[10px] text-[var(--ink-faint)] truncate max-w-[150px]">
+             {item.baseModel || item.category || "LoRA"}
             </span>
             {isAdded ? (
              <span className="inline-flex items-center gap-1 rounded-xl bg-[var(--surface-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink-faint)]">
@@ -2023,20 +2000,6 @@ export default function ControlPanel(props: Props) {
     </div>
    )}
 
-   {/* Info Tooltip Toast */}
-   {infoTooltip && (
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-xs text-[var(--ink)] ">
-     <Info className="h-3.5 w-3.5 text-[var(--accent)]" />
-     <span>{infoTooltip}</span>
-     <button
-      type="button"
-      onClick={() => setInfoTooltip(null)}
-      className="ml-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
-     >
-      <X className="h-3 w-3" />
-     </button>
-    </div>
-   )}
 
    {/* Hardware Envelope Pro Modal */}
    {hardwareModalOpen && (

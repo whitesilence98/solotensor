@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -28,6 +28,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { formatBytes } from "@/components/AssetCard";
+import UserAvatar from "@/components/UserAvatar";
 import {
   api,
   assetTypeOf,
@@ -38,6 +39,31 @@ import {
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
+
+/**
+ * Formats timestamp into exact string: 'Published: MMM d, yyyy h:mm a'
+ * e.g., 'Published: Sep 18, 2026 6:44 AM'
+ */
+export function formatPublishedDate(rawDate?: string | number | null): string {
+  if (!rawDate) return "Published: Just now";
+  try {
+    const d = new Date(rawDate);
+    if (isNaN(d.getTime())) return "Published: Just now";
+    const month = d.toLocaleDateString("en-US", { month: "short" });
+    const day = d.getDate();
+    const year = d.getFullYear();
+    const time = d
+      .toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .replace(/\u202f/g, " ");
+    return `Published: ${month} ${day}, ${year} ${time}`;
+  } catch {
+    return "Published: Just now";
+  }
+}
 
 export const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v4";
 
@@ -147,7 +173,7 @@ export default function AssetInspectionStage({
   const [tagToast, setTagToast] = useState<string | null>(null);
 
   // Moderation Governance State
-  const { isMod, isAdmin, hasPermission } = useAuth();
+  const { user, isMod, isAdmin, hasPermission } = useAuth();
   const canModerate = isMod || isAdmin || hasPermission("moderation:review_queue") || hasPermission("generation:delete_any");
   const [modMenuOpen, setModMenuOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
@@ -272,6 +298,43 @@ export default function AssetInspectionStage({
 
   const meta = asset.metadata;
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
+
+  // Resolve Author Profile & Publication Metadata
+  const rawMeta = (meta || {}) as Record<string, any>;
+  const rawAsset = asset as Record<string, any>;
+
+  const authorUsername: string =
+    rawMeta.author_username ||
+    rawAsset.author_username ||
+    rawMeta.author ||
+    rawAsset.author ||
+    user?.username ||
+    "Crea2re";
+
+  const authorDisplayName: string =
+    rawMeta.author_display_name ||
+    rawAsset.author_display_name ||
+    (rawMeta.author_username ? rawMeta.author_username : null) ||
+    (rawAsset.author_username ? rawAsset.author_username : null) ||
+    user?.displayName ||
+    user?.username ||
+    "Crea2re";
+
+  const authorAvatarUrl: string | null =
+    rawMeta.author_avatar_url ||
+    rawMeta.author_avatar ||
+    rawAsset.author_avatar_url ||
+    rawAsset.author_avatar ||
+    (user?.username && authorUsername === user.username ? user.avatarUrl : null);
+
+  const authorRole: string | undefined =
+    rawMeta.author_role ||
+    rawAsset.author_role ||
+    (user?.username && authorUsername === user.username ? user.role : undefined);
+
+  const publishedDate = useMemo(() => {
+    return formatPublishedDate(meta?.created_at || asset.last_modified);
+  }, [meta?.created_at, asset.last_modified]);
 
   // Auto-measure prompt overflow against compact limit (~5-6 lines, 130px) & reset state on asset change
   useEffect(() => {
@@ -575,148 +638,135 @@ export default function AssetInspectionStage({
 
       {/* Right Column: Parameter Inspector Panel */}
       <div className="w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll relative">
-        {/* Header */}
-        <div className="sticky top-0 z-20 shrink-0 p-5 border-b border-[var(--line)] pr-12 bg-[var(--surface-raised)]/95 backdrop-blur-md">
-          <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block mb-1">
-            ASSET RECORD // INSPECTOR
-          </span>
-          <h2
-            className="font-mono text-sm font-bold text-[var(--ink)] truncate"
-            title={meta?.source_filename || asset.key.split("/").pop() || "Untitled Asset"}
-          >
-            {meta?.source_filename || asset.key.split("/").pop() || "Untitled Asset"}
-          </h2>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--ink-faint)] font-mono">
-            <span>
-              {meta?.created_at
-                ? new Date(meta.created_at).toLocaleDateString()
-                : asset.last_modified
-                  ? new Date(asset.last_modified).toLocaleDateString()
-                  : "Recent"}
-            </span>
-            <span>•</span>
-            <span className="uppercase text-[var(--ink-soft)]">{meta?.format_name || "PNG"}</span>
-            <span>•</span>
-            <span>
-              {meta?.elapsed_ms
-                ? `${(meta.elapsed_ms / 1000).toFixed(1)}s`
-                : asset.size
-                  ? formatBytes(asset.size)
-                  : "Standard"}
-            </span>
-            {(baseModelTitle || meta?.model_title) && (
-              <>
-                <span>•</span>
-                {modelUrl ? (
-                  <a
-                    href={modelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--ink)] hover:text-[var(--accent)] transition truncate max-w-[130px] inline-block align-bottom"
-                    title={`View ${baseModelTitle || meta?.model_title} in gallery`}
+        {/* Header: Author Profile & Inspection Meta */}
+        <div className="sticky top-0 z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md">
+          {/* Top Row: Author Profile Card + Close / Mod Controls */}
+          <div className="flex items-center justify-between gap-3 min-w-0">
+            {/* Author Info */}
+            <div className="flex items-center gap-3 min-w-0">
+              <Link
+                href={`/user/${encodeURIComponent(authorUsername)}`}
+                className="shrink-0 transition-transform active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-full"
+                title={`View @${authorUsername}'s profile`}
+              >
+                <UserAvatar
+                  src={authorAvatarUrl}
+                  username={authorUsername}
+                  name={authorDisplayName}
+                  role={authorRole}
+                  size="md"
+                  shape="circle"
+                />
+              </Link>
+              <div className="min-w-0 flex-1">
+                <Link
+                  href={`/user/${encodeURIComponent(authorUsername)}`}
+                  className="font-bold text-sm text-[var(--ink)] hover:text-[var(--accent)] transition-colors truncate block leading-snug focus:outline-none focus-visible:underline"
+                  title={`@${authorUsername}`}
+                >
+                  {authorDisplayName}
+                </Link>
+                <p
+                  suppressHydrationWarning
+                  className="text-[12px] text-[var(--ink-faint)] font-normal leading-tight mt-0.5 truncate select-none"
+                >
+                  {publishedDate}
+                </p>
+              </div>
+            </div>
+
+            {/* Standalone Breadcrumb / Modal Close Button / Mod Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              {canModerate && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setModMenuOpen((v) => !v)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
+                    title="Moderator Actions & Governance"
                   >
-                    {baseModelTitle || meta?.model_title}
-                  </a>
-                ) : (
-                  <span className="text-[var(--ink)] truncate max-w-[130px] inline-block align-bottom">
-                    {baseModelTitle || meta?.model_title}
-                  </span>
-                )}
-              </>
-            )}
+                    <Shield className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Mod Actions</span>
+                  </button>
+
+                  {modMenuOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-2 py-1 pb-1.5 border-b border-[var(--line)]">
+                        <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] block">
+                          🛡 Mod Controls
+                        </span>
+                        <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate block">
+                          {asset.key.split("/").pop()}
+                        </span>
+                      </div>
+
+                      <div className="py-1 space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleModAction("hide")}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                        >
+                          {isHidden ? <Eye className="h-3.5 w-3.5 text-[var(--accent)]" /> : <EyeOff className="h-3.5 w-3.5 text-[var(--ink-faint)]" />}
+                          <span>{isHidden ? "Unhide from Gallery" : "Hide from Gallery"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleModAction("toggle_nsfw")}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                        >
+                          <ShieldAlert className={`h-3.5 w-3.5 ${isNsfw ? "text-amber-400" : "text-[var(--ink-faint)]"}`} />
+                          <span>{isNsfw ? "Remove NSFW Tag" : "Flag as NSFW / Mature"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleModAction("takedown")}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Takedown / Delete Asset</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mode === "modal" && onClose ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsZoomed(false);
+                    setConfirmDelete(false);
+                    setModMenuOpen(false);
+                    onClose();
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
+                  aria-label="Close dialog"
+                  title="Close (Esc)"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : mode === "standalone" ? (
+                <Link
+                  href={backHref}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
+                  aria-label="Back"
+                  title="Back"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              ) : null}
+            </div>
           </div>
 
           {modToast && (
-            <div className="mb-2 rounded border border-[#0c4a6e]/50 bg-[#082f49]/50 px-2.5 py-1 text-[11px] font-mono text-[#38bdf8] flex items-center gap-1.5 animate-in fade-in duration-150">
+            <div className="mt-2.5 rounded border border-[#0c4a6e]/50 bg-[#082f49]/50 px-2.5 py-1 text-[11px] font-mono text-[#38bdf8] flex items-center gap-1.5 animate-in fade-in duration-150">
               <Shield className="h-3.5 w-3.5 shrink-0" />
               <span>{modToast}</span>
             </div>
           )}
-
-          {/* Standalone Breadcrumb / Modal Close Button / Mod Actions */}
-          <div className="absolute top-4 right-4 flex items-center gap-2">
-            {canModerate && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setModMenuOpen((v) => !v)}
-                  className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
-                  title="Moderator Actions & Governance"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  <span>Mod Actions</span>
-                </button>
-
-                {modMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-                    <div className="px-2 py-1 pb-1.5 border-b border-[var(--line)]">
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] block">
-                        🛡 Mod Controls
-                      </span>
-                      <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate block">
-                        {asset.key.split("/").pop()}
-                      </span>
-                    </div>
-
-                    <div className="py-1 space-y-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleModAction("hide")}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
-                      >
-                        {isHidden ? <Eye className="h-3.5 w-3.5 text-[var(--accent)]" /> : <EyeOff className="h-3.5 w-3.5 text-[var(--ink-faint)]" />}
-                        <span>{isHidden ? "Unhide from Gallery" : "Hide from Gallery"}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleModAction("toggle_nsfw")}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
-                      >
-                        <ShieldAlert className={`h-3.5 w-3.5 ${isNsfw ? "text-amber-400" : "text-[var(--ink-faint)]"}`} />
-                        <span>{isNsfw ? "Remove NSFW Tag" : "Flag as NSFW / Mature"}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleModAction("takedown")}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>Takedown / Delete Asset</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {mode === "modal" && onClose ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsZoomed(false);
-                  setConfirmDelete(false);
-                  setModMenuOpen(false);
-                  onClose();
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
-                aria-label="Close dialog"
-                title="Close (Esc)"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            ) : mode === "standalone" ? (
-              <Link
-                href={backHref}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--accent)] transition-colors active:scale-95"
-                aria-label="Back"
-                title="Back"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            ) : null}
-          </div>
         </div>
 
         {/* Body Content */}

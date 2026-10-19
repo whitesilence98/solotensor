@@ -1049,10 +1049,10 @@ export default function PublicModelDetailPage({
                     }
                   }}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] py-2 text-xs font-medium text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                  title="Download Model (.safetensors)"
+                  title="Download"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  <span>Download Model (.safetensors)</span>
+                  <span>Download</span>
                 </a>
               )}
               {primaryFile && activeVersion && (
@@ -1102,9 +1102,9 @@ export default function PublicModelDetailPage({
                   <span className="text-[var(--ink-faint)]">Uploaded</span>
                   <div className="text-right">
                     <span className="font-mono text-[var(--ink)]">{updatedDate}</span>{" "}
-                    <span className="font-mono text-[var(--accent)] text-[11px] font-medium">
+                    {/* <span className="font-mono text-[var(--accent)] text-[11px] font-medium">
                       Trained by SoloTensor
-                    </span>
+                    </span> */}
                   </div>
                 </div>
 

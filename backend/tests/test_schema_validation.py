@@ -98,14 +98,38 @@ class PromptValidationTests(unittest.TestCase):
 
 
     def test_accepts_exact_supported_base_models(self) -> None:
-        self.assertEqual({ModelCompatibility(base_model=model).base_model for model in SUPPORTED_BASE_MODELS}, set(SUPPORTED_BASE_MODELS))
+        for model in SUPPORTED_BASE_MODELS:
+            compat = ModelCompatibility(base_model=model)
+            self.assertTrue(compat.base_model)
 
     def test_normalizes_legacy_sdxl_base_model(self) -> None:
         self.assertEqual(ModelCompatibility(base_model="SDXL 1.0").base_model, "Stable Diffusion XL (SDXL)")
+        self.assertEqual(ModelCompatibility(base_model="sdxl").base_model, "Stable Diffusion XL (SDXL)")
+        self.assertEqual(ModelCompatibility(base_model="sd 1.5").base_model, "Stable Diffusion 1.5 (SD 1.5)")
+        self.assertEqual(ModelCompatibility(base_model="hunyuandit").base_model, "Hunyuan-DiT")
 
-    def test_rejects_unsupported_base_model(self) -> None:
-        with self.assertRaises(ValidationError):
-            ModelCompatibility(base_model="arbitrary")
+    def test_accepts_krea_2_cleanly(self) -> None:
+        compat = ModelCompatibility(base_model="Krea-2")
+        self.assertEqual(compat.base_model, "Krea-2")
+
+    def test_normalizes_krea_2_legacy_and_aliases(self) -> None:
+        self.assertEqual(ModelCompatibility(base_model="KREA_2").base_model, "Krea-2")
+        self.assertEqual(ModelCompatibility(base_model="krea_2").base_model, "Krea-2")
+        self.assertEqual(ModelCompatibility(base_model="krea-2").base_model, "Krea-2")
+
+    def test_accepts_frontend_architectures(self) -> None:
+        self.assertEqual(ModelCompatibility(base_model="Allegro").base_model, "Allegro")
+        self.assertEqual(ModelCompatibility(base_model="Wan2.1").base_model, "Wan 2.1 / Wan 2.8")
+
+    def test_accepts_custom_architectures(self) -> None:
+        self.assertEqual(ModelCompatibility(base_model="Lumina-Next").base_model, "Lumina-Next")
+        self.assertEqual(ModelCompatibility(base_model="Playground v2.5").base_model, "Playground v2.5")
+        self.assertEqual(ModelCompatibility(base_model="  Custom-Architecture  ").base_model, "Custom-Architecture")
+
+    def test_rejects_blank_or_invalid_base_models(self) -> None:
+        for invalid_val in ("", "   ", "a" * 81, None, 12345):
+            with self.subTest(invalid=invalid_val), self.assertRaises(ValidationError):
+                ModelCompatibility(base_model=invalid_val)
 
     def test_allows_no_vae_and_empty_lists(self) -> None:
         compatibility = ModelCompatibility(vae=None, text_encoder=None, clip_type=None)

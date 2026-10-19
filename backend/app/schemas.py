@@ -8,22 +8,173 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SUPPORTED_BASE_MODELS = (
+    # Canonical frontend architectures
+    "Allegro",
+    "Anima",
+    "AuraFlow",
+    "Bokeh Medium",
+    "Boogu-Image",
+    "Chroma",
+    "Chroma Radiance",
+    "CogVideoX",
+    "Cosmos",
+    "CosXL",
+    "ERNIE-IMAGE",
+    "ERNIE-IMAGE-TURBO",
+    "FireRed-Image-Edit",
+    "FLUX",
     "FLUX.1",
-    "Stable Diffusion XL (SDXL)",
+    "HiDream",
+    "HunyuanDiT",
+    "Hunyuan-DiT",
+    "HunyuanImage-2.1",
+    "HunyuanVideo",
+    "Illustrious",
+    "Illustrious XL",
+    "InfiniteTalk Multi",
+    "InfiniteTalk Single",
+    "Janus Pro",
+    "Kolors",
+    "Krea-2",
+    "KREA_2",
+    "LatentSync",
+    "LTX",
+    "Lumina 2",
+    "Lumina2",
+    "MiniMax H3",
+    "Mochi",
+    "Mochi 1 10B",
+    "Neta-Lumina-Beta",
+    "NewBie-Image",
+    "NoobAI",
+    "OmniGen",
+    "OmniGen2",
+    "Ovis-Image-7B",
+    "PixArt",
+    "Playground",
+    "Playground v2",
+    "Pony",
+    "Pony Diffusion V6 XL",
+    "PonyV7",
+    "Pyramid-Flow-miniFlux",
+    "Qwen-Image",
+    "Qwen-Image-2.1",
+    "Realistic Vision",
+    "SD 1.5",
+    "SD 2.1",
+    "SD 3.5",
+    "SDXL",
+    "SkyReels",
+    "Stable Cascade",
     "Stable Diffusion 1.5 (SD 1.5)",
     "Stable Diffusion 3.5",
-    "Pony Diffusion V6 XL",
-    "Illustrious XL",
-    "KREA_2",
-    "Wan 2.1 / Wan 2.8",
-    "Z-Image / Z-Image-Turbo",
-    "Qwen-Image-2.1",
-    "Hunyuan-DiT",
-    "CogVideoX",
-    "Anima",
-    "Realistic Vision",
+    "Stable Diffusion XL (SDXL)",
+    "Stable Zero 123",
+    "SV3D",
+    "SVD",
+    "Tora",
     "Universal",
+    "USO",
+    "Wan",
+    "Wan2.1",
+    "Wan2.2",
+    "Wan 2.1 / Wan 2.8",
+    "Z-Image",
+    "Z-Image / Z-Image-Turbo",
+    # Sub-variants & dropdown options
+    "CogVideoX 5B",
+    "CogVideoX 2B",
+    "CogVideoX1.5 5B",
+    "CogVideoX Fun 2B",
+    "CogVideoX Fun 5B",
+    "Cosmos-Predict2",
+    "Cosmos-1.0-7B",
+    "Cosmos-1.0-14B",
+    "FLUX.1 Kontext Dev",
+    "FLUX.1 Krea Dev",
+    "FLUX.1 Schnell",
+    "FLUX.1 De-Distill",
+    "FLUX.2 Dev",
+    "FLUX.2 Klein 4B Base",
+    "FLUX.2 Klein 4B Distilled",
+    "FLUX.2 Klein 9B Base",
+    "FLUX.2 Klein 9B Distilled",
+    "FLUX 3 Image Klein Distilled",
+    "FLUX 3 Image Klein Base",
+    "HiDream-l1",
+    "HiDream-e1",
+    "HunYuanDiT",
+    "HunYuanDiT-v1.2",
+    "HunYuanDiT ComfyUI",
+    "HunyuanVideo Fast",
+    "HunyuanVideo 1.5 480P",
+    "HunyuanVideo 1.5 720P",
+    "LTX-Video 2B",
+    "LTX-Video 13B",
+    "LTX-2",
+    "LTX-2.3",
+    "LTX-2.5",
+    "PixArt-α",
+    "PixArt-Σ",
+    "Qwen-Image-Edit",
+    "Qwen-Image-Layered",
+    "SD 1.4",
+    "SD 2.0",
+    "SD 2.1 Unclip",
+    "SD 2.1 768",
+    "SD 2.0 768",
+    "SD 3.0",
+    "SD 3.5 Large",
+    "SD 3.5 Medium",
+    "SDXL 1.0",
+    "SDXL Refiner",
+    "SkyReels-V1",
+    "SkyReels-V2",
+    "Stable Cascade-a",
+    "Stable Cascade-b",
+    "Stable Cascade-c",
+    "SV3D_u",
+    "SV3D_p",
+    "WAN_2_6",
+    "Wan2.1 1.3B",
+    "Wan2.1 14B",
+    "Wan2.2 5B",
+    "Wan2.2 A14B Low Noise",
+    "Wan2.2 A14B High Noise",
+    "Wan2.2 S2V 14B",
+    "Wan2.2-Animate-14B",
+    "Z-Image-Turbo",
+    "Z-Image-Omni",
 )
+
+BASE_MODEL_ALIASES: dict[str, str] = {
+    "krea_2": "Krea-2",
+    "krea-2": "Krea-2",
+    "krea 2": "Krea-2",
+    "krea2": "Krea-2",
+    "sdxl 1.0": "Stable Diffusion XL (SDXL)",
+    "sdxl1.0": "Stable Diffusion XL (SDXL)",
+    "sdxl": "Stable Diffusion XL (SDXL)",
+    "sd 1.5": "Stable Diffusion 1.5 (SD 1.5)",
+    "sd1.5": "Stable Diffusion 1.5 (SD 1.5)",
+    "sd 2.1": "SD 2.1",
+    "sd2.1": "SD 2.1",
+    "sd 3.5": "Stable Diffusion 3.5",
+    "sd3.5": "Stable Diffusion 3.5",
+    "wan 2.1": "Wan 2.1 / Wan 2.8",
+    "wan2.1": "Wan 2.1 / Wan 2.8",
+    "wan 2.8": "Wan 2.1 / Wan 2.8",
+    "wan2.8": "Wan 2.1 / Wan 2.8",
+    "hunyuandit": "Hunyuan-DiT",
+    "hunyuan-dit": "Hunyuan-DiT",
+    "hunyuan dit": "Hunyuan-DiT",
+    "pony": "Pony Diffusion V6 XL",
+    "illustrious": "Illustrious XL",
+    "lumina2": "Lumina 2",
+    "z-image": "Z-Image / Z-Image-Turbo",
+    "z_image": "Z-Image / Z-Image-Turbo",
+    "zimage": "Z-Image / Z-Image-Turbo",
+}
 
 
 class AssistantPersona(str, Enum):
@@ -465,11 +616,23 @@ class ModelCompatibility(BaseModel):
     @field_validator("base_model", mode="before")
     @classmethod
     def normalize_base_model(cls, value: Any) -> Any:
-        if value == "SDXL 1.0":
-            value = "Stable Diffusion XL (SDXL)"
-        if value not in SUPPORTED_BASE_MODELS:
-            raise ValueError("Unsupported base model")
-        return value
+        if not isinstance(value, str):
+            raise ValueError("Base model must be a string")
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Base model cannot be blank")
+        if len(stripped) > 80:
+            raise ValueError("Base model cannot exceed 80 characters")
+
+        key = stripped.lower()
+        if key in BASE_MODEL_ALIASES:
+            return BASE_MODEL_ALIASES[key]
+
+        for canonical in SUPPORTED_BASE_MODELS:
+            if key == canonical.lower():
+                return canonical
+
+        return stripped
 
 
 class ModelGenerationSettings(BaseModel):
