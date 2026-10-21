@@ -98,16 +98,20 @@ export default function UserNavProfile() {
           onClick={openAuthModal}
           aria-label="Sign In to SoloTensor"
           title="Sign In to SoloTensor"
-          className="group relative flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] transition-all duration-200 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:border-[var(--accent)]"
+          className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[var(--ink-faint)] transition-all duration-200 hover:border-[var(--accent)] hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:border-[var(--accent)]"
         >
           <User className="h-4.5 w-4.5" />
-          {/* Active Acid-Lime Presence Indicator */}
+          {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
           <span
             aria-hidden="true"
-            className="absolute bottom-2 right-2 h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.6)]"
+            className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#38bdf8] border border-[#0c0e12] shadow-[0_0_6px_#38bdf8] z-20"
+          />
+          <span
+            aria-hidden="true"
+            className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#d5f06f] border border-[#0c0e12] shadow-[0_0_6px_#d5f06f] z-20"
           />
           {/* Tooltip on desktop */}
-          <span className="pointer-events-none absolute left-[calc(100%+.85rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 font-mono text-[11px] font-semibold tracking-wider uppercase text-[var(--ink)] opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
+          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[#15171e] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider uppercase text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
             Sign In
           </span>
         </button>
@@ -124,21 +128,32 @@ export default function UserNavProfile() {
         aria-expanded={menuOpen}
         aria-haspopup="menu"
         aria-label={`User menu for ${user?.displayName || user?.username}`}
-        className="group relative flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[0_0_12px_rgba(213,240,111,0.25)] focus-visible:outline-none focus-visible:border-[var(--accent)]"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 hover:ring-2 hover:ring-[var(--accent)] hover:shadow-[0_0_12px_rgba(213,240,111,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       >
         <UserAvatar
           src={user?.avatarUrl}
           name={user?.displayName}
           username={user?.username}
           role={primaryRole}
-          size="md"
-          showRoleRing={true}
-          online={true}
+          size="sm"
+          shape="circle"
+          showRoleRing={false}
+          online={false}
+        />
+
+        {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
+        <span
+          aria-hidden="true"
+          className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#38bdf8] border border-[#0c0e12] shadow-[0_0_6px_#38bdf8] z-20"
+        />
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#d5f06f] border border-[#0c0e12] shadow-[0_0_6px_#d5f06f] z-20"
         />
 
         {/* Tooltip on desktop when menu is closed */}
         {!menuOpen && (
-          <span className="pointer-events-none absolute left-[calc(100%+.85rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 font-mono text-[11px] font-semibold tracking-wider text-[var(--ink)] opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
+          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[#15171e] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
             {user?.displayName || user?.username}
           </span>
         )}
