@@ -176,6 +176,138 @@ BASE_MODEL_ALIASES: dict[str, str] = {
     "zimage": "Z-Image / Z-Image-Turbo",
 }
 
+ARCHITECTURE_FAMILIES: dict[str, set[str]] = {
+    "sdxl": {
+        "sdxl",
+        "sdxl 1.0",
+        "sdxl refiner",
+        "stable diffusion xl (sdxl)",
+        "pony",
+        "pony diffusion v6 xl",
+        "ponyv7",
+        "illustrious",
+        "illustrious xl",
+    },
+    "sd15": {
+        "sd 1.5",
+        "sd1.5",
+        "sd 1.4",
+        "stable diffusion 1.5 (sd 1.5)",
+        "realistic vision",
+    },
+    "sd21": {
+        "sd 2.0",
+        "sd 2.1",
+        "sd2.1",
+        "sd 2.1 unclip",
+        "sd 2.1 768",
+        "sd 2.0 768",
+    },
+    "sd35": {
+        "sd 3.0",
+        "sd 3.5",
+        "sd3.5",
+        "sd 3.5 large",
+        "sd 3.5 medium",
+        "stable diffusion 3.5",
+    },
+    "flux": {
+        "flux",
+        "flux.1",
+        "flux.1 dev",
+        "flux.1 schnell",
+        "flux.1 d",
+        "flux.1 s",
+        "flux.1 [dev]",
+        "flux.1 [schnell]",
+        "flux.1 kontext dev",
+        "flux.1 krea dev",
+        "flux.1 schnell",
+        "flux.1 de-distill",
+        "flux.2 dev",
+        "flux.2 klein 4b base",
+        "flux.2 klein 4b distilled",
+        "flux.2 klein 9b base",
+        "flux.2 klein 9b distilled",
+        "flux 3 image klein distilled",
+        "flux 3 image klein base",
+    },
+    "wan": {
+        "wan",
+        "wan2.1",
+        "wan2.2",
+        "wan 2.1 / wan 2.8",
+        "wan2.1 1.3b",
+        "wan2.1 14b",
+        "wan2.2 5b",
+        "wan2.2 a14b low noise",
+        "wan2.2 a14b high noise",
+        "wan2.2 s2v 14b",
+        "wan2.2-animate-14b",
+        "wan_2_6",
+    },
+    "hunyuan": {
+        "hunyuandit",
+        "hunyuan-dit",
+        "hunyuan dit",
+        "hunyuandit-v1.2",
+        "hunyuandit comfyui",
+        "hunyuanimage-2.1",
+        "hunyuanvideo",
+        "hunyuanvideo fast",
+        "hunyuanvideo 1.5 480p",
+        "hunyuanvideo 1.5 720p",
+    },
+    "ltx": {
+        "ltx",
+        "ltx-video 2b",
+        "ltx-video 13b",
+        "ltx-2",
+        "ltx-2.3",
+        "ltx-2.5",
+    },
+    "zimage": {
+        "z-image",
+        "z_image",
+        "zimage",
+        "z-image / z-image-turbo",
+        "z-image-turbo",
+        "z-image-omni",
+    },
+}
+
+
+def is_architecture_compatible(base_arch: str | None, adapter_arch: str | None) -> bool:
+    """Check if a base model architecture and an adapter architecture are cross-compatible."""
+    if not base_arch or not adapter_arch:
+        return True
+    b = base_arch.strip().lower()
+    a = adapter_arch.strip().lower()
+    if not b or not a:
+        return True
+    if b == a:
+        return True
+    b_canonical = BASE_MODEL_ALIASES.get(b, b).lower()
+    a_canonical = BASE_MODEL_ALIASES.get(a, a).lower()
+    if b_canonical == a_canonical:
+        return True
+    for family, members in ARCHITECTURE_FAMILIES.items():
+        b_match = (
+            b == family
+            or b in members
+            or b_canonical in members
+            or any(m in b or (len(b) >= 3 and b in m) for m in members if len(m) >= 3)
+        )
+        a_match = (
+            a == family
+            or a in members
+            or a_canonical in members
+            or any(m in a or (len(a) >= 3 and a in m) for m in members if len(m) >= 3)
+        )
+        if b_match and a_match:
+            return True
+    return False
+
 
 class AssistantPersona(str, Enum):
     BACKEND = "backend"
@@ -1029,6 +1161,7 @@ class InstalledGalleryModel(BaseModel):
     vae: str | None = None
     text_encoder: str | None = None
     clip_type: str | None = None
+    base_model: str | None = None
     base_model_id: str | None = None
     base_version_id: str | None = None
     base_file_id: str | None = None

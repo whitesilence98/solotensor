@@ -37,6 +37,7 @@ from .routers.auth import router as auth_router
 from .routers.moderation import router as moderation_router
 from .routers.notifications import router as notifications_router
 from .schemas import (
+    is_architecture_compatible,
     AssistantRequest,
     AssistantResponse,
     CreateToolRequest,
@@ -1111,19 +1112,21 @@ async def generate(
         )
         is_lora = selected_model["model_type"] in {"LoRA", "LyCORIS"}
         if is_lora:
-            expected_base = (
-                selected_model.get("base_model_id"),
-                selected_model.get("base_version_id"),
-                selected_model.get("base_file_id"),
-            )
             base_ids = (req.base_model_id, req.base_version_id, req.base_file_id)
-            if expected_base != base_ids:
+            if any(b is None for b in base_ids):
                 raise ModelConflict(
-                    "This LoRA is compatible only with its configured base model"
+                    "A base checkpoint must be specified when generating with a primary LoRA"
                 )
             base_model = model_storage.resolve_installed_gallery_file(*base_ids)  # type: ignore[arg-type]
             if base_model["model_type"] not in {"Checkpoint", "Diffusion Model"}:
                 raise ModelConflict("LoRA base must be a Checkpoint or Diffusion Model")
+
+            lora_arch = selected_model.get("base_model")
+            base_arch = base_model.get("base_model")
+            if not is_architecture_compatible(base_arch, lora_arch):
+                raise ModelConflict(
+                    f"Architecture mismatch: LoRA '{selected_model.get('title')}' ({lora_arch}) is incompatible with Checkpoint '{base_model.get('title')}' ({base_arch})"
+                )
         else:
             if any(
                 value is not None
@@ -1187,6 +1190,12 @@ async def generate(
                 )
                 if adapter_model["model_type"] not in {"LoRA", "LyCORIS"}:
                     raise ModelConflict("Adapter model must be a LoRA or LyCORIS")
+                adapter_arch = adapter_model.get("base_model")
+                base_arch = base_model.get("base_model")
+                if not is_architecture_compatible(base_arch, adapter_arch):
+                    raise ModelConflict(
+                        f"Architecture mismatch: Secondary LoRA '{adapter_title or adapter_model.get('title')}' ({adapter_arch}) is incompatible with Checkpoint '{base_model.get('title')}' ({base_arch})"
+                    )
                 raw_filename = adapter_model["filename"]
                 adapter_title = adapter_model.get("title", "")
             elif adapter.lora:

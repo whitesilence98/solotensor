@@ -285,3 +285,121 @@ export function getArchitectureDisplay(value: string): { label: string; group?: 
   }
   return { label: value };
 }
+
+export const ARCHITECTURE_FAMILIES: Record<string, string[]> = {
+  sdxl: [
+    "sdxl",
+    "sdxl 1.0",
+    "sdxl refiner",
+    "stable diffusion xl (sdxl)",
+    "pony",
+    "pony diffusion v6 xl",
+    "ponyv7",
+    "illustrious",
+    "illustrious xl",
+  ],
+  sd15: [
+    "sd 1.5",
+    "sd1.5",
+    "sd 1.4",
+    "stable diffusion 1.5 (sd 1.5)",
+    "realistic vision",
+  ],
+  sd21: [
+    "sd 2.0",
+    "sd 2.1",
+    "sd2.1",
+    "sd 2.1 unclip",
+    "sd 2.1 768",
+    "sd 2.0 768",
+  ],
+  sd35: [
+    "sd 3.0",
+    "sd 3.5",
+    "sd3.5",
+    "sd 3.5 large",
+    "sd 3.5 medium",
+    "stable diffusion 3.5",
+  ],
+  flux: [
+    "flux",
+    "flux.1",
+    "flux.1 dev",
+    "flux.1 schnell",
+    "flux.1 d",
+    "flux.1 s",
+    "flux.1 [dev]",
+    "flux.1 [schnell]",
+    "flux.1 kontext dev",
+    "flux.1 krea dev",
+    "flux.1 schnell",
+    "flux.1 de-distill",
+    "flux.2 dev",
+    "flux.2 klein 4b base",
+    "flux.2 klein 4b distilled",
+    "flux.2 klein 9b base",
+    "flux.2 klein 9b distilled",
+    "flux 3 image klein distilled",
+    "flux 3 image klein base",
+  ],
+  wan: [
+    "wan",
+    "wan2.1",
+    "wan2.2",
+    "wan 2.1 / wan 2.8",
+    "wan2.1 1.3b",
+    "wan2.1 14b",
+    "wan2.2 5b",
+    "wan2.2 a14b low noise",
+    "wan2.2 a14b high noise",
+    "wan2.2 s2v 14b",
+    "wan2.2-animate-14b",
+    "wan_2_6",
+  ],
+  hunyuan: [
+    "hunyuandit",
+    "hunyuan-dit",
+    "hunyuan dit",
+    "hunyuandit-v1.2",
+    "hunyuandit comfyui",
+    "hunyuanimage-2.1",
+    "hunyuanvideo",
+    "hunyuanvideo fast",
+    "hunyuanvideo 1.5 480p",
+    "hunyuanvideo 1.5 720p",
+  ],
+  ltx: [
+    "ltx",
+    "ltx-video 2b",
+    "ltx-video 13b",
+    "ltx-2",
+    "ltx-2.3",
+    "ltx-2.5",
+  ],
+  zimage: [
+    "z-image",
+    "z_image",
+    "zimage",
+    "z-image / z-image-turbo",
+    "z-image-turbo",
+    "z-image-omni",
+  ],
+};
+
+/**
+ * Checks if a base model architecture and an adapter architecture are cross-compatible.
+ */
+export function isArchitectureCompatible(baseArch?: string | null, adapterArch?: string | null): boolean {
+  if (!baseArch || !adapterArch) return true;
+  const b = baseArch.trim().toLowerCase();
+  const a = adapterArch.trim().toLowerCase();
+  if (!b || !a) return true;
+  if (b === a) return true;
+  for (const members of Object.values(ARCHITECTURE_FAMILIES)) {
+    const bMatch = members.some((m) => b === m || (b.length >= 3 && m.includes(b)) || (m.length >= 3 && b.includes(m)));
+    const aMatch = members.some((m) => a === m || (a.length >= 3 && m.includes(a)) || (m.length >= 3 && a.includes(m)));
+    if (bMatch && aMatch) return true;
+  }
+  return false;
+}
+

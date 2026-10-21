@@ -36,6 +36,7 @@ import {
  type PublicModelSummary,
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
+import { isArchitectureCompatible } from "@/lib/baseModelArchitectures";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
@@ -96,29 +97,28 @@ function isLoraCompatibleWithModel(
 ): boolean {
  if (!selectedModel) return true;
 
- // 1. Direct Base Model ID match (exact parent model file/model ID)
+ // 1. Direct Base Model ID match (if specifically nominated)
  if (lora.baseModelId) {
   if (lora.baseModelId === selectedModel.model_id) return true;
   if (selectedModel.base_model_id && lora.baseModelId === selectedModel.base_model_id) return true;
  }
 
- // 2. Base Model name match (e.g. "Z Image Turbo", "SDXL 1.0", "Pony Diffusion V6 XL")
- const targetNames = [
-  selectedModel.title.toLowerCase().trim(),
-  selectedBaseModelName ? selectedBaseModelName.toLowerCase().trim() : "",
- ].filter(Boolean);
+ // 2. Cross-checkpoint Base Model Architecture Family match
+ const targetArchs = [
+  selectedModel.base_model,
+  selectedBaseModelName,
+  selectedModel.title,
+  selectedModel.filename,
+ ].filter(Boolean) as string[];
 
- if (lora.baseModelName) {
-  const loraName = lora.baseModelName.toLowerCase().trim();
-  for (const target of targetNames) {
-   if (loraName === target) return true;
-   if (loraName.includes(target) || target.includes(loraName)) return true;
+ const loraArchs = [
+  lora.baseModelName,
+ ].filter(Boolean) as string[];
+
+ for (const t of targetArchs) {
+  for (const l of loraArchs) {
+   if (isArchitectureCompatible(t, l)) return true;
   }
- }
-
- // If a LoRA explicitly points to a different base model ID, it is not compatible
- if (lora.baseModelId && lora.baseModelId !== selectedModel.model_id) {
-  return false;
  }
 
  return false;
@@ -450,19 +450,16 @@ export default function ControlPanel(props: Props) {
   return galleryLoras.map((g) => {
    const pub = publicModelMap.get(g.model_id);
 
-   // Determine the specific Base Model of this LoRA
-   let loraBaseModelName = "";
-   if (g.base_model_id) {
+   // Determine the Base Architecture of this LoRA
+   let loraBaseModelName = g.base_model || pub?.base_model || "";
+   if (!loraBaseModelName && g.base_model_id) {
     const parent = modelOptions.find((m) => m.model_id === g.base_model_id);
     if (parent) {
-     loraBaseModelName = parent.title;
+     loraBaseModelName = parent.base_model || parent.title;
     }
    }
-   if (!loraBaseModelName && pub?.base_model) {
-    loraBaseModelName = pub.base_model;
-   }
    if (!loraBaseModelName) {
-    loraBaseModelName = selectedModel?.title || "Base Model";
+    loraBaseModelName = selectedModel?.base_model || selectedModel?.title || "Universal";
    }
 
    return {

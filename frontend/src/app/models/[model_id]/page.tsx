@@ -1755,10 +1755,10 @@ export default function PublicModelDetailPage({
                   </span>
                 </div>
 
-                {/* Linked Base Model ID (if adapter) */}
-                {model.compatibility?.base_model_id && (
+                {/* Tested / Recommended Base Checkpoint (if adapter) */}
+                {model.compatibility?.base_model_id ? (
                   <div className="flex items-center justify-between">
-                    <span className="text-[var(--ink-faint)] font-mono text-[11px]">Linked Base Enclave</span>
+                    <span className="text-[var(--ink-faint)] font-mono text-[11px]">Tested On</span>
                     <Link
                       href={`/models/${model.compatibility.base_model_id}`}
                       className="font-mono text-xs font-semibold text-[var(--accent)] hover:underline truncate max-w-[150px]"
@@ -1767,7 +1767,14 @@ export default function PublicModelDetailPage({
                       {model.compatibility.base_model_id.slice(0, 12)}…
                     </Link>
                   </div>
-                )}
+                ) : ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(model.model_type) ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[var(--ink-faint)] font-mono text-[11px]">Compatibility</span>
+                    <span className="font-mono text-xs font-semibold text-[var(--accent)]">
+                      All {model.compatibility?.base_model || "Compatible"} Checkpoints
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
               {/* Full list of all files in active version (v.files) & Management */}

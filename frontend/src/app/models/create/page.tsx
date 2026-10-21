@@ -59,6 +59,7 @@ import {
   BASE_MODEL_ARCHITECTURES,
   getFirstOptionValue,
   isArchitectureInList,
+  isArchitectureCompatible,
 } from "@/lib/baseModelArchitectures";
 import { detectPrecisionFromFilename } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
@@ -1504,12 +1505,12 @@ export default function CreateModelPage() {
                     {/* TIER 2: ADAPTER (LoRA, LoKr, LoCon, LyCORIS, DoRA, Motion LoRA) */}
                     {getModelTier(modelType) === "Adapter" && (
                       <div className="space-y-3.5 animate-in fade-in duration-150">
-                        {/* Base Model Enclave Binding */}
+                        {/* Tested / Recommended Checkpoint Binding */}
                         <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                              Exact Base Checkpoint / Diffusion Enclave{" "}
-                              <span className="text-[var(--accent)]">(Installed in Gallery)</span>
+                              Tested / Recommended Checkpoint{" "}
+                              <span className="text-[var(--accent)] font-semibold">(Optional)</span>
                             </label>
                             {baseOptionsLoading && (
                               <span className="font-mono text-[9px] text-[var(--ink-faint)] animate-pulse">
@@ -1521,17 +1522,19 @@ export default function CreateModelPage() {
                             value={selectedBaseKey}
                             onChange={onSelectBaseModel}
                             options={[
-                              { value: "", label: "Universal / Any Base Architecture" },
-                              ...baseOptions.map((opt) => ({
-                                value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
-                                label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
-                              })),
+                              { value: "", label: `Universal / Any ${resolvedBaseModel || "Compatible"} Checkpoint` },
+                              ...baseOptions
+                                .filter((opt) => !resolvedBaseModel || isArchitectureCompatible(opt.base_model || opt.filename, resolvedBaseModel))
+                                .map((opt) => ({
+                                  value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
+                                  label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                                })),
                             ]}
                             className="w-full"
                             buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
                           />
                           <p className="font-mono text-[9px] text-[var(--ink-faint)]">
-                            Binding to an installed base model auto-inherits its verified architecture, VAE, and text encoder.
+                            LoRAs are compatible with any checkpoint sharing this base architecture ({resolvedBaseModel}). Specifying an installed checkpoint is optional and helps auto-inherit tested generation hyperparameters.
                           </p>
                         </div>
 
@@ -2674,14 +2677,21 @@ export default function CreateModelPage() {
                   </div>
                 )}
 
-                {selectedBaseKey && (
+                {selectedBaseKey ? (
                   <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-[var(--ink-faint)]">Base Enclave:</span>
+                    <span className="text-[var(--ink-faint)]">Tested Checkpoint:</span>
                     <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
                       {baseOptions.find((b) => `${b.model_id}:${b.version_id}:${b.file_id}` === selectedBaseKey)?.title || "Linked Checkpoint"}
                     </span>
                   </div>
-                )}
+                ) : getModelTier(modelType) === "Adapter" ? (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Compatibility:</span>
+                    <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
+                      Universal ({resolvedBaseModel})
+                    </span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between items-center text-[10px]">
                   <span className="text-[var(--ink-faint)]">Weights File:</span>
                   <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">

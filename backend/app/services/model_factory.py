@@ -99,56 +99,62 @@ class SVDModelHandler(BaseModelHandler):
 
 
 class LoraModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "LoRA"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 
 class LoKrModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "LoKr"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 
 class LoConModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "LoCon"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 
 class LycorisModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "LyCORIS"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 
 class DoraModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "DoRA"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 
 class MotionLoraModelHandler(BaseModelHandler):
+    # Base association is optional recommended checkpoint; architecture is authoritative
     model_type = "Motion LoRA"
     tier = ModelTier.ADAPTER
     install_category = "loras"
     supports_generation = True
-    requires_base_association = True
+    requires_base_association = False
     allowed_extensions = {".safetensors", ".sft"}
 
 

@@ -37,6 +37,7 @@ from ..schemas import (
     ModelVersionCreateRequest,
     ModelVersionResponse,
     ModelVisibility,
+    is_architecture_compatible,
 )
 from app.services.model_factory import ModelHandlerFactory, ModelTier
 
@@ -375,20 +376,29 @@ class ModelService:
     ) -> None:
         if not ModelHandlerFactory.is_adapter(model_type):
             return
+        # 1. Base architecture is required for adapters
+        base_arch = compatibility.get("base_model")
+        if not base_arch or not str(base_arch).strip():
+            raise ModelConflict("Adapter models require a base model architecture")
+
+        # 2. Specific base checkpoint ID is now optional (tested/recommended checkpoint)
         base_ids = tuple(compatibility.get(key) for key in ("base_model_id", "base_version_id", "base_file_id"))
-        if any(value is None for value in base_ids):
-            raise ModelConflict("Adapter models require a concrete base model")
-        base_record = self._read(base_ids[0])
-        if require_public and (base_record.get("visibility") != "Public" or not base_record.get("published_at")):
-            raise ModelConflict("The adapter base model must be public before publishing this adapter")
-        if not ModelHandlerFactory.is_base_model(base_record.get("model_type", "")):
-            raise ModelConflict("Adapter base must be a Checkpoint or SVD model")
-        base_version = self._version(base_record, base_ids[1])
-        base_file = next((item for item in base_version.get("files", []) if item.get("file_id") == base_ids[2]), None)
-        if base_file is None or not base_file.get("visible", False):
-            raise ModelConflict("The configured adapter base file is unavailable")
-        if require_public:
-            self.resolve_installed_gallery_file(*base_ids)
+        has_any = any(value is not None for value in base_ids)
+        has_all = all(value is not None for value in base_ids)
+        if has_any and not has_all:
+            raise ModelConflict("base_model_id, base_version_id, and base_file_id must be provided together")
+        if has_all:
+            base_record = self._read(base_ids[0])
+            if require_public and (base_record.get("visibility") != "Public" or not base_record.get("published_at")):
+                raise ModelConflict("The adapter base model must be public before publishing this adapter")
+            if not ModelHandlerFactory.is_base_model(base_record.get("model_type", "")):
+                raise ModelConflict("Adapter base must be a Checkpoint or SVD model")
+            base_version = self._version(base_record, base_ids[1])
+            base_file = next((item for item in base_version.get("files", []) if item.get("file_id") == base_ids[2]), None)
+            if base_file is None or not base_file.get("visible", False):
+                raise ModelConflict("The configured adapter base file is unavailable")
+            if require_public:
+                self.resolve_installed_gallery_file(*base_ids)
 
     def create(
         self,
@@ -804,6 +814,7 @@ class ModelService:
             "vae": compatibility.get("vae"),
             "text_encoder": compatibility.get("text_encoder"),
             "clip_type": compatibility.get("clip_type"),
+            "base_model": compatibility.get("base_model"),
             "base_model_id": compatibility.get("base_model_id"),
             "base_version_id": compatibility.get("base_version_id"),
             "base_file_id": compatibility.get("base_file_id"),
@@ -833,6 +844,11 @@ class ModelService:
             for item in items
             if item["model_type"] in BASE_MODEL_TYPES
         }
+        installed_base_architectures = {
+            item["base_model"]
+            for item in items
+            if item["model_type"] in BASE_MODEL_TYPES and item.get("base_model")
+        }
         items = [
             item for item in items
             if item["model_type"] in BASE_MODEL_TYPES
@@ -841,6 +857,10 @@ class ModelService:
                 item.get("base_version_id"),
                 item.get("base_file_id"),
             ) in base_keys
+            or any(
+                is_architecture_compatible(base_arch, item.get("base_model"))
+                for base_arch in installed_base_architectures
+            )
         ]
         return sorted(
             items,

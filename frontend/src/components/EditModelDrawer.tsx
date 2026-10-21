@@ -32,6 +32,7 @@ import {
   BASE_MODEL_ARCHITECTURES,
   getFirstOptionValue,
   isArchitectureInList,
+  isArchitectureCompatible,
 } from "@/lib/baseModelArchitectures";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
 
@@ -114,6 +115,10 @@ export default function EditModelDrawer({
       : getFirstOptionValue(BASE_MODEL_ARCHITECTURES);
   });
   const [customBaseModel, setCustomBaseModel] = useState("");
+  const resolvedBaseModel =
+    (baseModel === "Other" || baseModel === "Other / Custom") && customBaseModel.trim()
+      ? customBaseModel.trim()
+      : baseModel;
   const [selectedBaseKey, setSelectedBaseKey] = useState<string>("");
   const [baseOptions, setBaseOptions] = useState<InstalledGalleryModel[]>([]);
   const [vae, setVae] = useState(model.compatibility?.vae || "");
@@ -310,10 +315,6 @@ export default function EditModelDrawer({
 
     try {
       const resolvedBaseKeyParts = selectedBaseKey ? selectedBaseKey.split(":") : [];
-      const resolvedBaseModel =
-        (baseModel === "Other" || baseModel === "Other / Custom") && customBaseModel.trim()
-          ? customBaseModel.trim()
-          : baseModel;
 
       const payload: Partial<CreatorModelPayload> = {
         title: title.trim(),
@@ -619,25 +620,27 @@ export default function EditModelDrawer({
                 <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Exact Base Checkpoint Enclave{" "}
-                      <span className="text-[var(--accent)]">(Installed in Gallery)</span>
+                      Tested / Recommended Checkpoint{" "}
+                      <span className="text-[var(--accent)] font-semibold">(Optional)</span>
                     </label>
                   </div>
                   <CustomSelect
                     value={selectedBaseKey}
                     onChange={(val) => setSelectedBaseKey(val)}
                     options={[
-                      { value: "", label: "Universal / Any Base Architecture" },
-                      ...baseOptions.map((opt) => ({
-                        value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
-                        label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
-                      })),
+                      { value: "", label: `Universal / Any ${resolvedBaseModel || "Compatible"} Checkpoint` },
+                      ...baseOptions
+                        .filter((opt) => !resolvedBaseModel || isArchitectureCompatible(opt.base_model || opt.filename, resolvedBaseModel))
+                        .map((opt) => ({
+                          value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
+                          label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                        })),
                     ]}
                     className="w-full"
                     buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
                   />
                   <p className="font-mono text-[9px] text-[var(--ink-faint)]">
-                    Binding this adapter to an installed base model auto-inherits its verified architecture, VAE, and text encoder.
+                    LoRAs are compatible with any checkpoint sharing this base architecture ({resolvedBaseModel}). Specifying an installed checkpoint is optional and helps auto-inherit tested generation hyperparameters.
                   </p>
                 </div>
               )}

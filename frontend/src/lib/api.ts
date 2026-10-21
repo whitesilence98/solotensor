@@ -991,6 +991,7 @@ export interface InstalledGalleryModel {
   vae: string | null;
   text_encoder: string | null;
   clip_type: string | null;
+  base_model?: string | null;
   base_model_id: string | null;
   base_version_id: string | null;
   base_file_id: string | null;
