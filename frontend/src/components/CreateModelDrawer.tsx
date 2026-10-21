@@ -58,7 +58,9 @@ import {
   getFirstOptionValue,
   isArchitectureInList,
 } from "@/lib/baseModelArchitectures";
+import { detectPrecisionFromFilename } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
+import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
 
 const modelTypes: CreatorModelType[] = [
   "Checkpoint",
@@ -340,14 +342,16 @@ export default function CreateModelDrawer({
   };
 
   const addUploadedFile = (file: File) => {
+    const detected = detectPrecisionFromFilename(file.name, selectedPrecision);
     const newFile: StagedModelFile = {
       id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       kind: "upload",
       filename: file.name,
       size: file.size,
-      precision: selectedPrecision,
+      precision: detected,
       file,
     };
+    setSelectedPrecision(detected);
     setVersions((prev) =>
       prev.map((v) =>
         v.id === activeVersion.id ? { ...v, files: [...v.files, newFile] } : v,
@@ -364,14 +368,16 @@ export default function CreateModelDrawer({
     );
     if (exists) return;
 
+    const detected = detectPrecisionFromFilename(item.filename, selectedPrecision);
     const newFile: StagedModelFile = {
       id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       kind: "local",
       filename: item.filename,
       size: item.size,
-      precision: selectedPrecision,
+      precision: detected,
       local: item,
     };
+    setSelectedPrecision(detected);
     setVersions((prev) =>
       prev.map((v) =>
         v.id === activeVersion.id ? { ...v, files: [...v.files, newFile] } : v,
@@ -1031,13 +1037,29 @@ export default function CreateModelDrawer({
 
   const currentDisplayTitle = title.trim() || "Untitled model";
 
-  const stepsList = [
-    { s: 1 as const, label: "Identity & Arch", num: "01", icon: Cpu },
-    { s: 2 as const, label: "Weights & Versions", num: "02", icon: HardDrive },
-    { s: 3 as const, label: "Showcase & Governance", num: "03", icon: FileImage },
+  const isStep1Valid = Boolean(title.trim());
+
+  const stepsList: StudioStepItem<1 | 2 | 3>[] = [
+    { id: 1, code: "01", label: "Identity & Arch", icon: Cpu },
+    {
+      id: 2,
+      code: "02",
+      label: "Weights & Versions",
+      icon: HardDrive,
+      disabled: !isStep1Valid,
+      tooltip: !isStep1Valid ? "Enter a Model Title in Step 1 to unlock" : undefined,
+    },
+    {
+      id: 3,
+      code: "03",
+      label: "Showcase & Governance",
+      icon: FileImage,
+      disabled: !isStep1Valid,
+      tooltip: !isStep1Valid ? "Enter a Model Title in Step 1 to unlock" : undefined,
+    },
   ];
 
-  const activeStepIndex = stepsList.findIndex((item) => item.s === step);
+  const activeStepIndex = stepsList.findIndex((item) => item.id === step);
   const currentStepNumber = activeStepIndex !== -1 ? activeStepIndex + 1 : 1;
   const totalSteps = stepsList.length;
 
@@ -1118,47 +1140,14 @@ export default function CreateModelDrawer({
         )}
 
         {/* Step Stepper Navigation Bar */}
-        <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
-          <div className="grid w-full grid-cols-3 gap-2 font-mono text-[11px]">
-            {stepsList.map(({ s, label, num, icon: Icon }, index) => {
-              const isActive = step === s;
-              const isPast = activeStepIndex > index;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setStep(s)}
-                  className={`group relative flex items-center justify-center gap-2 rounded-[5px] py-2 px-2 transition-all ${
-                    isActive
-                      ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm shadow-[var(--accent)]/5"
-                      : isPast
-                        ? "border border-[var(--line)] bg-[var(--surface-raised)]/60 text-[var(--ink)] hover:border-[var(--line-strong)] hover:text-[var(--accent)]"
-                        : "border border-transparent text-[var(--ink-faint)] hover:text-[var(--ink-soft)]"
-                  }`}
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[9px] font-bold ${
-                      isActive
-                        ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                        : isPast
-                          ? "bg-[var(--accent)]/20 text-[var(--accent)]"
-                          : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
-                    }`}
-                  >
-                    {isPast ? <Check className="h-2.5 w-2.5 stroke-[3]" /> : num}
-                  </span>
-                  <span className="truncate font-semibold tracking-wide uppercase text-[10px]">
-                    {label}
-                  </span>
-                  {isActive && (
-                    <div className="absolute inset-x-2 -bottom-2 h-0.5 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <StudioStepperTabs
+          steps={stepsList}
+          activeStep={step}
+          onStepChange={(newStep) => setStep(newStep as 1 | 2 | 3)}
+          busy={busy}
+          mode="wizard"
+          ariaLabel="Publish steps"
+        />
 
         {/* Error Notification Banner */}
         {error && (
@@ -1433,29 +1422,6 @@ export default function CreateModelDrawer({
                               className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
                             />
                           )}
-
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {vaeOptions.map((vp) => {
-                              const isSel = !isCustomVae && vae === vp;
-                              return (
-                                <button
-                                  key={vp}
-                                  type="button"
-                                  onClick={() => {
-                                    setIsCustomVae(false);
-                                    setVae(vp);
-                                  }}
-                                  className={`rounded-[5px] border px-2.5 py-1 font-mono text-[11px] font-bold transition-all ${
-                                    isSel
-                                      ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                                      : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                                  }`}
-                                >
-                                  <span>{vp}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
 
                           {vaeError && (
                             <div className="flex items-center justify-between rounded-[4px] border border-[var(--danger-line)] bg-[var(--danger-surface)] px-2.5 py-1 font-mono text-[10px] text-[var(--danger)]">
@@ -2088,7 +2054,7 @@ export default function CreateModelDrawer({
                       <div className="mt-2.5 flex items-center justify-between">
                         <div className="flex items-center gap-1">
                           <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">Precision:</span>
-                          {(["FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
+                          {(["FP8", "FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
                             <button
                               key={prec}
                               type="button"
@@ -2330,7 +2296,7 @@ export default function CreateModelDrawer({
                                 </td>
                                 <td className="px-2.5 py-2.5 whitespace-nowrap">
                                   <div className="flex items-center gap-1">
-                                    {(["FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
+                                    {(["FP8", "FP16", "BF16", "FP32"] as ModelPrecision[]).map((prec) => (
                                       <button
                                         key={prec}
                                         type="button"

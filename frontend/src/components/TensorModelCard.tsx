@@ -80,25 +80,25 @@ export function TensorModelCard({
   // Type badge styling
   const typeBadgeStyle = useMemo(() => {
     switch (item.model_type) {
+      case "Checkpoint":
+      case "SVD":
+        return "bg-stone-950/60 text-[#c8be85] border-[#6b643a]/70";
       case "LoRA":
       case "LoKr":
       case "LoCon":
       case "LyCORIS":
       case "DoRA":
       case "Motion LoRA":
-        return "bg-[var(--surface)]/90 text-[var(--accent)] border-[var(--accent)]/30";
-      case "Checkpoint":
-      case "SVD":
-        return "bg-[var(--surface)]/90 text-[var(--accent)] border-[var(--accent)]/30";
+        return "bg-stone-950/60 text-[var(--accent)] border-[var(--accent)]/40";
       case "ControlNet":
       case "Poses":
-        return "bg-[var(--surface)]/90 text-cyan-400 border-cyan-400/30";
+        return "bg-stone-950/60 text-cyan-300 border-cyan-500/40";
       case "VAE":
       case "StyleModel":
       case "Aesthetic Gradient":
-        return "bg-[var(--surface)]/90 text-amber-400 border-amber-400/30";
+        return "bg-stone-950/60 text-amber-300 border-amber-500/40";
       default:
-        return "bg-[var(--surface)]/90 text-[var(--ink)] border-[var(--line)]";
+        return "bg-stone-950/60 text-white/90 border-white/20";
     }
   }, [item.model_type]);
 
@@ -148,15 +148,8 @@ export function TensorModelCard({
     return `${count}`;
   }, [item]);
 
-  const isExclusive = Boolean(
-    ("exclusive" in item && item.exclusive) ||
-      (index === 0 && !("early_access" in item && item.early_access))
-  );
-
-  const isEarlyAccess = Boolean(
-    ("early_access" in item && item.early_access) ||
-      (index === 1 && !isExclusive)
-  );
+  const isExclusive = Boolean("exclusive" in item && item.exclusive);
+  const isEarlyAccess = Boolean("early_access" in item && item.early_access);
 
   const cardContent = (
     <>

@@ -812,6 +812,51 @@ class ToolApiEndpointTests(unittest.TestCase):
         self.assertEqual(gen_payload["prompt_id"], "prompt-abc")
         self.assertEqual(gen_payload["gallery_saved"], 1)
 
+    def test_workflow_modality_autodetection(self) -> None:
+        from app.services.ai_tools import detect_workflow_modality
+
+        # 1. Text-to-Image graph
+        meta_t2i = detect_workflow_modality(self.workflow)
+        self.assertEqual(meta_t2i["detected_mode"], ToolMode.TEXT_TO_IMAGE)
+        self.assertEqual(meta_t2i["detected_output_type"], "image")
+        self.assertEqual(meta_t2i["archetype"], "Text-to-Image Generation")
+        self.assertIn("Creative Prompt", meta_t2i["detected_inputs"])
+        self.assertIn("Sampling Settings", meta_t2i["detected_inputs"])
+
+        # 2. Image-to-Image graph (with LoadImage)
+        img2img_workflow = dict(self.workflow)
+        img2img_workflow["input_img"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": "starter.png"}
+        }
+        meta_i2i = detect_workflow_modality(img2img_workflow)
+        self.assertEqual(meta_i2i["detected_mode"], ToolMode.IMAGE_TO_IMAGE)
+        self.assertEqual(meta_i2i["detected_output_type"], "image")
+        self.assertEqual(meta_i2i["archetype"], "Image-to-Image Transformation")
+        self.assertIn("Starter Image", meta_i2i["detected_inputs"])
+
+        # 3. Video graph
+        video_workflow = dict(img2img_workflow)
+        video_workflow["video_out"] = {
+            "class_type": "VHS_VideoCombine",
+            "inputs": {"images": ["sampler", 0]}
+        }
+        meta_vid = detect_workflow_modality(video_workflow)
+        self.assertEqual(meta_vid["detected_mode"], ToolMode.IMAGE_TO_VIDEO)
+        self.assertEqual(meta_vid["detected_output_type"], "video")
+        self.assertEqual(meta_vid["archetype"], "Image-to-Video Motion")
+
+        # 4. Verify parse endpoint returns these fields
+        files = {"workflow_api": ("custom_pipeline.json", json.dumps(img2img_workflow).encode(), "application/json")}
+        resp = self.client.post("/api/tools/parse", files=files, data={"name": "Auto Tool"})
+        self.assertEqual(resp.status_code, 200)
+        parsed = resp.json()
+        self.assertEqual(parsed["detected_mode"], "image-to-image")
+        self.assertEqual(parsed["detected_output_type"], "image")
+        self.assertEqual(parsed["archetype"], "Image-to-Image Transformation")
+        self.assertIn("Starter Image", parsed["detected_inputs"])
+        self.assertGreater(parsed["node_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

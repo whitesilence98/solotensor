@@ -158,6 +158,7 @@ export interface ToolControl {
   input_name: string;
   role?: string | null;
   recommended?: boolean;
+  exposed?: boolean;
 }
 
 export interface ToolParseResponse {
@@ -165,6 +166,11 @@ export interface ToolParseResponse {
   name: string;
   controls: ToolControl[];
   locked_nodes: Array<{ id: string; class_type: string }>;
+  detected_mode?: ToolMode;
+  detected_output_type?: "image" | "video";
+  detected_inputs?: string[];
+  archetype?: string;
+  node_count?: number;
 }
 
 export interface ToolExecutionResult {
@@ -1352,11 +1358,11 @@ export const api = {
     return resp.deleted;
   },
 
-  async createTool(file: File, name: string, mode: ToolMode, aspectRatio: ToolAspectRatio, thumbnail?: File, controls?: ToolControl[]): Promise<ToolDetail> {
+  async createTool(file: File, name: string, mode?: ToolMode, aspectRatio: ToolAspectRatio = "1:1", thumbnail?: File, controls?: ToolControl[]): Promise<ToolDetail> {
     const form = new FormData();
-    form.append("workflow_api", file, "workflow_api.json");
+    form.append("workflow_api", file, file.name || "workflow_api.json");
     form.append("name", name);
-    form.append("mode", mode);
+    if (mode) form.append("mode", mode);
     form.append("aspect_ratio", aspectRatio);
     if (thumbnail) form.append("thumbnail", thumbnail, thumbnail.name);
     if (controls) form.append("controls", JSON.stringify(controls));
@@ -1464,7 +1470,7 @@ export const api = {
 
   async parseTool(file: File, name = "Untitled tool"): Promise<ToolParseResponse> {
     const form = new FormData();
-    form.append("workflow_api", file, "workflow_api.json");
+    form.append("workflow_api", file, file.name || "workflow_api.json");
     form.append("name", name);
     const resp = await fetch(`${API_BASE}/api/tools/parse`, {
       method: "POST",

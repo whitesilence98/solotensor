@@ -433,6 +433,7 @@ class ToolControl(BaseModel):
     input_name: str
     role: str | None = None
     recommended: bool = True
+    exposed: bool = True
 
     model_config = {"extra": "allow"}
 
@@ -479,6 +480,11 @@ class ToolParseResponse(BaseModel):
     name: str
     controls: list[ToolControl]
     locked_nodes: list[dict[str, str]]
+    detected_mode: ToolMode = ToolMode.TEXT_TO_IMAGE
+    detected_output_type: str = "image"
+    detected_inputs: list[str] = Field(default_factory=list)
+    archetype: str = "Text-to-Image Generation"
+    node_count: int = 0
 
 
 class ToolSummary(BaseModel):

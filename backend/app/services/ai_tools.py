@@ -398,6 +398,94 @@ def _prompt_roles(workflow: Workflow) -> dict[str, str]:
     return roles
 
 
+def detect_workflow_modality(workflow: Workflow) -> dict[str, Any]:
+    """
+    Analyzes ComfyUI workflow_api graph to detect:
+    - detected_mode (ToolMode)
+    - detected_output_type ("image" | "video")
+    - detected_inputs (list of human-readable input capability identifiers)
+    - archetype (e.g. "Text-to-Image Generation", "Image-to-Image Transformation", etc.)
+    - node_count (int)
+    """
+    node_count = len(workflow)
+    has_video_output = False
+    has_image_input = False
+    has_mask_input = False
+    has_upscaler = False
+    has_sampler = False
+    detected_inputs: list[str] = []
+
+    for _nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type", ""))
+        normalized = _norm(class_type)
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            inputs = {}
+
+        # 1. Video outputs / processors
+        if any(marker in normalized for marker in (
+            "vhs", "videocombine", "animate", "animatediff", "wanvideo", "cogvideo", "svd", "hunyuanvideo"
+        )):
+            has_video_output = True
+
+        # 2. Image inputs
+        if "loadimage" in normalized and "image" in inputs:
+            has_image_input = True
+            if "Starter Image" not in detected_inputs:
+                detected_inputs.append("Starter Image")
+
+        # 3. Mask inputs / Inpainting
+        if any(m in normalized for m in ("loadmask", "loadimagemask", "inpaint", "inpaintmodelconditioning")):
+            has_mask_input = True
+            if "Inpaint Mask" not in detected_inputs:
+                detected_inputs.append("Inpaint Mask")
+
+        # 4. Upscaler
+        if any(u in normalized for u in ("upscalemodelloader", "imageupscalewithmodel", "iterativeupscale")):
+            has_upscaler = True
+
+        # 5. Sampler
+        if "sampler" in normalized or "ksampler" in normalized:
+            has_sampler = True
+            if "Sampling Settings" not in detected_inputs:
+                detected_inputs.append("Sampling Settings")
+
+        # 6. Prompts
+        if any(p in normalized for p in ("cliptextencode", "prompt")):
+            if "Creative Prompt" not in detected_inputs:
+                detected_inputs.append("Creative Prompt")
+
+    detected_output_type = "video" if has_video_output else "image"
+
+    if has_video_output:
+        detected_mode = ToolMode.IMAGE_TO_VIDEO if has_image_input else ToolMode.TEXT_TO_VIDEO
+    else:
+        detected_mode = ToolMode.IMAGE_TO_IMAGE if has_image_input else ToolMode.TEXT_TO_IMAGE
+
+    if has_mask_input:
+        archetype = "Inpainting & Mask Editing"
+    elif has_upscaler and not has_sampler:
+        archetype = "AI Upscaler & Restorer"
+    elif has_video_output and has_image_input:
+        archetype = "Image-to-Video Motion"
+    elif has_video_output:
+        archetype = "Text-to-Video Synthesis"
+    elif has_image_input:
+        archetype = "Image-to-Image Transformation"
+    else:
+        archetype = "Text-to-Image Generation"
+
+    return {
+        "detected_mode": detected_mode,
+        "detected_output_type": detected_output_type,
+        "detected_inputs": detected_inputs,
+        "archetype": archetype,
+        "node_count": node_count,
+    }
+
+
 def extract_controls(
     workflow: Workflow,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -989,8 +1077,14 @@ class AIToolService:
             if require_controls
             else self._safe_controls(workflow)
         )
+        meta = detect_workflow_modality(workflow)
         tool_id = uuid.uuid4().hex
         clean_name = re.sub(r"\s+", " ", name.strip())[:120] or "Untitled tool"
+        mode_val = (
+            meta["detected_mode"].value
+            if hasattr(meta["detected_mode"], "value")
+            else str(meta["detected_mode"])
+        )
         record = {
             "tool_id": tool_id,
             "name": clean_name,
@@ -998,10 +1092,30 @@ class AIToolService:
             "workflow": _copy(workflow),
             "controls": controls,
             "locked_nodes": locked,
+            "mode": mode_val,
+            "default_aspect_ratio": "1:1",
+            "supported_aspect_ratios": list(ASPECT_DIMENSIONS),
+            "detected_mode": mode_val,
+            "detected_output_type": meta["detected_output_type"],
+            "detected_inputs": meta["detected_inputs"],
+            "archetype": meta["archetype"],
+            "node_count": meta["node_count"],
+            "prompt_binding": self._find_prompt_binding(workflow),
+            "requires_image": meta["detected_mode"] in (ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO),
+            "output_kind": meta["detected_output_type"],
+            "is_draft": True,
         }
         self._write_record(record)
         return ToolParseResponse(
-            tool_id=tool_id, name=clean_name, controls=controls, locked_nodes=locked
+            tool_id=tool_id,
+            name=clean_name,
+            controls=controls,
+            locked_nodes=locked,
+            detected_mode=meta["detected_mode"],
+            detected_output_type=meta["detected_output_type"],
+            detected_inputs=meta["detected_inputs"],
+            archetype=meta["archetype"],
+            node_count=meta["node_count"],
         )
 
     @staticmethod
@@ -1066,8 +1180,8 @@ class AIToolService:
         self,
         payload: bytes,
         name: str,
-        mode: ToolMode,
-        aspect_ratio: ToolAspectRatio,
+        mode: ToolMode | None = None,
+        aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE,
         thumbnail_data: bytes | None = None,
         thumbnail_ext: str | None = None,
         custom_controls: list[ToolControl | dict[str, Any]] | None = None,
@@ -1075,6 +1189,7 @@ class AIToolService:
         author_username: str | None = None,
     ) -> ToolSummary:
         parsed = self.parse(payload, name, require_controls=(custom_controls is None))
+        effective_mode = mode if mode is not None else parsed.detected_mode
         record = self.get(parsed.tool_id)
         workflow = record["workflow"]
         if custom_controls is not None:
@@ -1144,7 +1259,7 @@ class AIToolService:
         ]
         dimension_bindings = self._find_dimension_bindings(workflow)
         step_binding = self._find_step_binding(workflow)
-        requires_image = mode in {ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO}
+        requires_image = effective_mode in {ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO}
         if requires_image and not image_bindings:
             raise AIToolError("Image-based tools require a LoadImage input node")
         thumbnail_name = None
@@ -1161,7 +1276,8 @@ class AIToolService:
                 raise AIToolError("Could not save tool thumbnail") from exc
         record.update(
             {
-                "mode": mode.value,
+                "is_draft": False,
+                "mode": effective_mode.value if hasattr(effective_mode, "value") else str(effective_mode),
                 "default_aspect_ratio": aspect_ratio.value,
                 "supported_aspect_ratios": list(ASPECT_DIMENSIONS),
                 "prompt_binding": prompt_binding,
@@ -1171,7 +1287,7 @@ class AIToolService:
                 "dimension_bindings": dimension_bindings,
                 "requires_image": requires_image,
                 "output_kind": "video"
-                if mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
+                if effective_mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
                 else "image",
                 "thumbnail": thumbnail_name,
             }
@@ -1277,6 +1393,8 @@ class AIToolService:
         for path in self.definitions.glob("*.json"):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
+                if record.get("is_draft"):
+                    continue
                 if user_id and record.get("user_id") != user_id:
                     continue
                 if record.get("mode") and record.get("default_aspect_ratio"):

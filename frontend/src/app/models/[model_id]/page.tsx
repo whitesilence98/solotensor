@@ -53,6 +53,7 @@ import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import EditModelDrawer from "@/components/EditModelDrawer";
 import UserAvatar from "@/components/UserAvatar";
+import { detectPrecisionFromFilename } from "@/lib/models";
 
 interface CommentItem {
   id: string;
@@ -2381,7 +2382,13 @@ export default function PublicModelDetailPage({
                   <input
                     type="file"
                     accept=".safetensors,.ckpt,.pt,.bin"
-                    onChange={(e) => setSelectedUploadFile(e.target.files?.[0] || null)}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setSelectedUploadFile(f);
+                      if (f) {
+                        setSelectedFilePrecision(detectPrecisionFromFilename(f.name));
+                      }
+                    }}
                     className="workspace-field w-full text-xs font-mono file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[var(--accent)]/10 file:text-[var(--accent)] hover:file:bg-[var(--accent)]/20"
                     required
                   />
@@ -2396,13 +2403,13 @@ export default function PublicModelDetailPage({
                   <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
                     Floating Point Precision
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {(["FP16", "FP32", "BF16", "Quantized"] as ModelPrecision[]).map((prec) => (
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(["FP8", "FP16", "BF16", "FP32", "Quantized"] as ModelPrecision[]).map((prec) => (
                       <button
                         key={prec}
                         type="button"
                         onClick={() => setSelectedFilePrecision(prec)}
-                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
+                        className={`rounded-lg border px-2 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
                             ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
                             : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
                           }`}
@@ -2466,7 +2473,10 @@ export default function PublicModelDetailPage({
                       return (
                         <div
                           key={`${item.category}/${item.filename}`}
-                          onClick={() => setSelectedLocalModel(item)}
+                          onClick={() => {
+                            setSelectedLocalModel(item);
+                            setSelectedFilePrecision(detectPrecisionFromFilename(item.filename));
+                          }}
                           className={`flex items-center justify-between rounded p-2 text-xs font-mono cursor-pointer transition ${isChosen
                               ? "bg-[var(--accent)]/15 border border-[var(--accent)] text-[var(--accent)] font-bold"
                               : "hover:bg-[var(--surface-raised)] text-[var(--ink)] border border-transparent"
@@ -2486,13 +2496,13 @@ export default function PublicModelDetailPage({
                   <label className="block font-mono text-[11px] font-bold uppercase text-[var(--ink-soft)] mb-1">
                     Precision
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {(["FP16", "FP32", "BF16", "Quantized"] as ModelPrecision[]).map((prec) => (
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(["FP8", "FP16", "BF16", "FP32", "Quantized"] as ModelPrecision[]).map((prec) => (
                       <button
                         key={prec}
                         type="button"
                         onClick={() => setSelectedFilePrecision(prec)}
-                        className={`rounded-lg border px-3 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
+                        className={`rounded-lg border px-2 py-1.5 font-mono text-xs transition ${selectedFilePrecision === prec
                             ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
                             : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
                           }`}

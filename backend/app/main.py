@@ -1490,9 +1490,9 @@ async def parse_tool(
     name: str = Form("Untitled tool"),
 ) -> ToolParseResponse:
     """Store a server-owned workflow and return only safe editable controls."""
-    if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
+    if workflow_api.filename and not workflow_api.filename.lower().endswith(".json"):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file"
+            status.HTTP_400_BAD_REQUEST, "Upload a valid ComfyUI JSON file"
         )
     payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
     if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:
@@ -1509,17 +1509,17 @@ async def parse_tool(
 async def create_tool(
     workflow_api: UploadFile = File(...),
     name: str = Form("Untitled tool"),
-    mode: ToolMode = Form(...),
-    aspect_ratio: ToolAspectRatio = Form(...),
+    mode: ToolMode | None = Form(None),
+    aspect_ratio: ToolAspectRatio = Form(ToolAspectRatio.SQUARE),
     thumbnail: UploadFile | None = File(None),
     controls: str | None = Form(None),
     user_id: str | None = Form(None),
     author_username: str | None = Form(None),
     current_user: UserResponse = Depends(RequirePermission("tool:publish")),
 ) -> ToolDetail:
-    if workflow_api.filename and workflow_api.filename.lower() != "workflow_api.json":
+    if workflow_api.filename and not workflow_api.filename.lower().endswith(".json"):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Upload a workflow_api.json file"
+            status.HTTP_400_BAD_REQUEST, "Upload a valid ComfyUI JSON file"
         )
     payload = await workflow_api.read(settings.TOOL_MAX_WORKFLOW_BYTES + 1)
     if len(payload) > settings.TOOL_MAX_WORKFLOW_BYTES:

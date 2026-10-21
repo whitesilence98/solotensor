@@ -20,11 +20,6 @@ const nextConfig: NextConfig = {
         destination: "/models/:model_id",
         permanent: true,
       },
-      {
-        source: "/tools/create",
-        destination: "/tools?create=true",
-        permanent: false,
-      },
     ];
   },
   async rewrites() {

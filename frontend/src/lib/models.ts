@@ -215,3 +215,60 @@ export function resolveModelGalleryUrl(
 
   return null;
 }
+
+export const SUPPORTED_MODEL_PRECISIONS: ModelPrecision[] = [
+  "FP8",
+  "FP16",
+  "BF16",
+  "FP32",
+  "Quantized",
+];
+
+/**
+ * Heuristically detects floating point precision from file naming patterns
+ * (e.g. krea2_turbo_fp8_scaled.safetensors -> "FP8", model_bf16.safetensors -> "BF16").
+ */
+export function detectPrecisionFromFilename(
+  filename?: string | null,
+  fallback: ModelPrecision = "FP16"
+): ModelPrecision {
+  if (!filename) return fallback;
+  const lower = filename.toLowerCase();
+
+  // FP8 patterns: fp8, e4m3, e5m2, fp8_scaled, etc.
+  if (
+    lower.includes("fp8") ||
+    lower.includes("e4m3") ||
+    lower.includes("e5m2") ||
+    lower.includes("-fp8") ||
+    lower.includes("_fp8")
+  ) {
+    return "FP8";
+  }
+
+  // BF16 patterns: bf16, bfloat16
+  if (lower.includes("bf16") || lower.includes("bfloat16")) {
+    return "BF16";
+  }
+
+  // FP32 patterns: fp32, float32
+  if (lower.includes("fp32") || lower.includes("float32")) {
+    return "FP32";
+  }
+
+  // Quantized patterns: gguf, q8, q4, q5, int8, int4, awq, exl2
+  if (
+    lower.includes("gguf") ||
+    lower.includes("quantized") ||
+    /\b(q4|q5|q8|int4|int8|awq|exl2)\b/i.test(lower)
+  ) {
+    return "Quantized";
+  }
+
+  // FP16 patterns
+  if (lower.includes("fp16") || lower.includes("float16")) {
+    return "FP16";
+  }
+
+  return fallback;
+}

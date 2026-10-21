@@ -33,6 +33,7 @@ import {
   getFirstOptionValue,
   isArchitectureInList,
 } from "@/lib/baseModelArchitectures";
+import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
 
 export const isPromptableModelType = (t: string): boolean =>
   ![
@@ -71,6 +72,13 @@ const DEFAULT_CLIP_TYPES = [
   "flux_clip",
   "sd3_clip",
   "sdxl_clip",
+];
+
+const EDIT_MODEL_TABS: StudioStepItem<1 | 2 | 3 | 4>[] = [
+  { id: 1, code: "01", label: "Identity & Metadata" },
+  { id: 2, code: "02", label: "Architecture & Conditioning" },
+  { id: 3, code: "03", label: "Prompts & Presets" },
+  { id: 4, code: "04", label: "Licensing & Permissions" },
 ];
 
 export interface EditModelDrawerProps {
@@ -414,47 +422,14 @@ export default function EditModelDrawer({
         </header>
 
         {/* Step Stepper Navigation Bar */}
-        <div className="flex items-center border-b border-[var(--line)] bg-[var(--surface-sunken)] px-6 py-2">
-          <div className="grid w-full grid-cols-4 gap-2 font-mono text-[11px]">
-            {[
-              { s: 1 as const, label: "Identity & Metadata", num: "01" },
-              { s: 2 as const, label: "Architecture & Conditioning", num: "02" },
-              { s: 3 as const, label: "Prompts & Presets", num: "03" },
-              { s: 4 as const, label: "Licensing & Permissions", num: "04" },
-            ].map(({ s, label, num }) => {
-              const isActive = activeTab === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setActiveTab(s)}
-                  className={`group relative flex items-center justify-center gap-2 rounded-[5px] py-2 px-2 transition-all ${
-                    isActive
-                      ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm shadow-[var(--accent)]/5"
-                      : "border border-transparent text-[var(--ink-faint)] hover:border-[var(--line)] hover:bg-[var(--surface-raised)]/60 hover:text-[var(--ink-soft)]"
-                  }`}
-                >
-                  <span
-                    className={`flex h-4 min-w-[18px] px-1 shrink-0 items-center justify-center rounded font-mono text-[9px] font-bold ${
-                      isActive
-                        ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                        : "bg-[var(--surface-soft)] text-[var(--ink-faint)]"
-                    }`}
-                  >
-                    {num}
-                  </span>
-                  <span className="truncate font-semibold tracking-wide uppercase text-[10px]">
-                    {label}
-                  </span>
-                  {isActive && (
-                    <div className="absolute inset-x-2 -bottom-2 h-0.5 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <StudioStepperTabs
+          steps={EDIT_MODEL_TABS}
+          activeStep={activeTab}
+          onStepChange={(newTab) => setActiveTab(newTab as 1 | 2 | 3 | 4)}
+          busy={saving}
+          mode="tabs"
+          ariaLabel="Edit model navigation"
+        />
 
         {/* Scrollable Content Body */}
         <div className="workspace-scroll flex-1 overflow-y-auto p-6 space-y-6">
