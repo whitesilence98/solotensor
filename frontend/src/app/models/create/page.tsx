@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   DragEvent,
@@ -81,7 +83,7 @@ const modelTypes: CreatorModelType[] = [
   "StyleModel",
 ];
 
-export type ModelTierType =
+type ModelTierType =
   | "Core Base"
   | "Adapter"
   | "Autoencoder"
@@ -89,7 +91,7 @@ export type ModelTierType =
   | "Inversion"
   | "Prompt Asset";
 
-export function getModelTier(t: string): ModelTierType {
+function getModelTier(t: string): ModelTierType {
   switch (t) {
     case "Checkpoint":
     case "SVD":
@@ -120,7 +122,7 @@ export function getModelTier(t: string): ModelTierType {
   }
 }
 
-export const isPromptableModelType = (t: string) =>
+const isPromptableModelType = (t: string) =>
   [
     "Checkpoint",
     "SVD",
@@ -153,7 +155,7 @@ function formatBytes(size: number): string {
   return `${(size / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export interface StagedModelFile {
+interface StagedModelFile {
   id: string;
   kind: "upload" | "local";
   filename: string;
@@ -163,38 +165,29 @@ export interface StagedModelFile {
   local?: LocalModelSummary;
 }
 
-export interface StagedModelVersion {
+interface StagedModelVersion {
   id: string;
   name: string;
   files: StagedModelFile[];
 }
 
-export interface StagedShowcaseItem {
+interface StagedShowcaseItem {
   id: string;
   file: File;
   previewUrl: string;
 }
 
-export interface CreateModelDrawerProps {
-  open: boolean;
-  onClose: () => void;
-  onCreated?: (model: CreatorModel) => void;
-}
-
-export default function CreateModelDrawer({
-  open,
-  onClose,
-  onCreated,
-}: CreateModelDrawerProps) {
+export default function CreateModelPage() {
+  const router = useRouter();
   const { isAuthenticated, openAuthModal } = useAuth();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // Auth gate interception on drawer open
+  // Auth gate interception on page load
   useEffect(() => {
-    if (open && !isAuthenticated) {
+    if (!isAuthenticated) {
       openAuthModal("create_model");
     }
-  }, [open, isAuthenticated, openAuthModal]);
+  }, [isAuthenticated, openAuthModal]);
 
   // Step 1: Identity & Architecture
   const [title, setTitle] = useState("");
@@ -474,13 +467,7 @@ export default function CreateModelDrawer({
   const showcaseInputRef = useRef<HTMLInputElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  // Reset form when drawer opens
-  useEffect(() => {
-    if (open) {
-      setStep(1);
-      setError(null);
-    }
-  }, [open]);
+
 
   // Clean up object URLs on unmount
   useEffect(() => {
@@ -491,17 +478,16 @@ export default function CreateModelDrawer({
     };
   }, []);
 
-  // Escape key close
+  // Escape key navigate back
   useEffect(() => {
-    if (!open) return;
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape" && !busy) {
-        onClose();
+        router.push("/models");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, busy, onClose]);
+  }, [busy, router]);
 
   // ComfyUI category resolution
   const comfyCategory = useMemo(() => {
@@ -538,7 +524,7 @@ export default function CreateModelDrawer({
 
   // Scan local ComfyUI models when picker opens
   useEffect(() => {
-    if (!showLocalPicker || !open) return;
+    if (!showLocalPicker) return;
     let cancelled = false;
     setLocalLoading(true);
     setLocalError(null);
@@ -584,7 +570,7 @@ export default function CreateModelDrawer({
     return () => {
       cancelled = true;
     };
-  }, [showLocalPicker, localSearch, comfyCategory, modelType, open]);
+  }, [showLocalPicker, localSearch, comfyCategory, modelType]);
 
   // Load ComfyUI local models & workflow info when drawer opens
   const refreshComfyEnclave = () => {
@@ -688,10 +674,8 @@ export default function CreateModelDrawer({
   };
 
   useEffect(() => {
-    if (open) {
-      refreshComfyEnclave();
-    }
-  }, [open]);
+    refreshComfyEnclave();
+  }, []);
 
   // Apply reference node values from backend template
   const applyWorkflowDefaults = (info: WorkflowTemplateInfo) => {
@@ -1022,18 +1006,13 @@ export default function CreateModelDrawer({
           ? await api.publishCreatorModel(created.model_id, "Public")
           : created;
 
-      if (onCreated) {
-        onCreated(finalModel);
-      }
-      onClose();
+      router.push(`/models/${finalModel.model_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create model");
     } finally {
       setBusy(false);
     }
   };
-
-  if (!open) return null;
 
   const currentDisplayTitle = title.trim() || "Untitled model";
 
@@ -1064,19 +1043,19 @@ export default function CreateModelDrawer({
   const totalSteps = stepsList.length;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Publish Creator Model"
-      className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-    >
-      <div
-        ref={drawerRef}
-        className="relative flex h-full w-full max-w-4xl lg:max-w-5xl flex-col border-l border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)] shadow-2xl animate-in slide-in-from-right duration-250 ease-out"
-      >
-        {/* Header Bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)] px-6">
-          <div className="flex items-center gap-3">
+    <div className="flex h-screen w-full flex-col bg-[var(--ground)] text-[var(--ink)] overflow-hidden font-sans">
+      {/* Top Studio Bar */}
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--surface-raised)] px-6 z-20">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/models"
+            className="flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] font-bold text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Models</span>
+          </Link>
+          <div className="h-4 w-px bg-[var(--line)]" />
+          <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--accent)] shadow-sm">
               <Box className="h-4 w-4 stroke-[2]" />
             </div>
@@ -1090,28 +1069,20 @@ export default function CreateModelDrawer({
                   PUBLISH WIZARD
                 </span>
               </div>
-              <h2 className="font-mono text-xs font-bold tracking-wider text-[var(--ink)] uppercase">
-                Publish Creator Model
-              </h2>
+              <h1 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
+                {currentDisplayTitle}
+              </h1>
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] text-[var(--ink-soft)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-              Live Preview Synchronized
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              aria-label="Close panel"
-              className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] transition-colors hover:border-[var(--line-strong)] hover:text-[var(--ink)] disabled:opacity-40"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </header>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] text-[var(--ink-soft)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+            Live Preview Synchronized
+          </span>
+        </div>
+      </header>
 
         {/* Obsidian & Acid-Lime Sign-In Notice Banner */}
         {!isAuthenticated && (
@@ -2750,7 +2721,7 @@ export default function CreateModelDrawer({
             disabled={busy}
             onClick={() => {
               if (step === 1) {
-                onClose();
+                router.push("/models");
               } else if (step === 2) {
                 setStep(1);
               } else if (step === 3) {
@@ -2799,7 +2770,6 @@ export default function CreateModelDrawer({
             )}
           </div>
         </footer>
-      </div>
     </div>
   );
 }

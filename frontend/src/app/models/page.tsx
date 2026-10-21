@@ -20,7 +20,6 @@ import {
 import { api, resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
-import CreateModelDrawer from "@/components/CreateModelDrawer";
 import CustomSelect from "@/components/CustomSelect";
 
 import type { CreatorModelType } from "@/lib/api";
@@ -83,7 +82,6 @@ export default function ModelsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [baseModelFilter, setBaseModelFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
-  const [studioOpen, setStudioOpen] = useState(false);
   const [createdBanner, setCreatedBanner] = useState<{ id: string; title: string } | null>(null);
 
   const load = (searchVal = query) => {
@@ -109,7 +107,12 @@ export default function ModelsPage() {
         setQuery(initialQuery);
       }
       if (search.get("create") === "true") {
-        setStudioOpen(true);
+        window.location.href = "/models/create";
+      }
+      const createdId = search.get("createdId");
+      const createdTitle = search.get("createdTitle");
+      if (createdId && createdTitle) {
+        setCreatedBanner({ id: createdId, title: createdTitle });
       }
     }
     load(initialQuery);
@@ -187,10 +190,10 @@ export default function ModelsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]"
+      className="workspace-scroll relative flex h-full min-h-0 w-full flex-1 flex-col justify-between overflow-y-auto bg-[var(--ground)]"
     >
       {/* 1. Main Content Grid & Integrated Controls */}
-      <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <section className="mx-auto w-full max-w-[1600px] flex-1 flex flex-col min-h-0 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         {/* Model Submission Pending Review Alert */}
         {createdBanner && (
           <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-200 animate-in fade-in duration-200">
@@ -274,14 +277,13 @@ export default function ModelsPage() {
                 buttonClassName="h-9 rounded-lg font-medium text-xs text-[var(--ink)]"
               />
 
-              <button
-                type="button"
-                onClick={() => setStudioOpen(true)}
+              <Link
+                href="/models/create"
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] hover:brightness-105 active:scale-[0.98] transition-all shadow-sm hover:shadow-md"
               >
                 <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
                 <span>Publish Model</span>
-              </button>
+              </Link>
             </div>
           </div>
         </div>
@@ -392,7 +394,7 @@ export default function ModelsPage() {
 
         {/* Empty State */}
         {!loading && !error && filteredItems.length === 0 && (
-          <div className="rounded-[var(--radius-panel)] border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] p-12 text-center">
+          <div className="rounded-[var(--radius-panel)] border border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)] p-12 text-center my-auto">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[var(--radius-panel)] bg-[var(--surface-soft)] text-[var(--accent)] mb-3">
               <Box className="h-7 w-7 opacity-70" />
             </div>
@@ -415,13 +417,12 @@ export default function ModelsPage() {
                 Clear all filters
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => setStudioOpen(true)}
+              <Link
+                href="/models/create"
                 className="mt-4 inline-block rounded-[var(--radius-panel)] bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition"
               >
                 Publish First Model
-              </button>
+              </Link>
             )}
           </div>
         )}
@@ -436,23 +437,11 @@ export default function ModelsPage() {
         )}
       </section>
 
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1600px] px-4 pb-4 sm:px-6 lg:px-8 mt-auto shrink-0">
         <WorkspaceFooter />
       </div>
 
-      <CreateModelDrawer
-        open={studioOpen}
-        onClose={() => setStudioOpen(false)}
-        onCreated={(model) => {
-          load();
-          if (model?.title) {
-            setCreatedBanner({
-              id: model.model_id,
-              title: model.title,
-            });
-          }
-        }}
-      />
+
     </main>
   );
 }
