@@ -397,13 +397,17 @@ export default function PublicModelDetailPage({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void params.then(({ model_id }) =>
+    void params.then(({ model_id }) => {
+      if (!model_id || model_id === "[model_id]") {
+        if (!cancelled) setLoading(false);
+        return;
+      }
       api
         .getPublicModel(model_id)
         .then((value) => {
           if (!cancelled) {
             setModel(value);
-            if (value.versions.length > 0) {
+            if (value?.versions?.length > 0) {
               setSelectedVersionId(value.versions[0].version_id);
             }
           }
@@ -416,8 +420,8 @@ export default function PublicModelDetailPage({
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
-        }),
-    );
+        });
+    });
     return () => {
       cancelled = true;
     };

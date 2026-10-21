@@ -29,10 +29,12 @@ import {
   Info,
   Layers,
   Layout,
+  Plus,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
   Square,
+  Trash2,
   Type,
   Upload,
   X,
@@ -48,6 +50,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
+import NodeParameterExplorer from "@/components/NodeParameterExplorer";
 
 const MODES: {
   value: ToolMode;
@@ -115,6 +118,7 @@ export default function CreateToolDrawer({
   const [mode, setMode] = useState<ToolMode>("text-to-image");
   const [ratio, setRatio] = useState<ToolAspectRatio>("1:1");
   const [showModeOverride, setShowModeOverride] = useState(false);
+  const [isExplorerOpen, setIsExplorerOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState<"form" | "card">("card");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -249,6 +253,14 @@ export default function CreateToolDrawer({
 
   const handleHideAll = () => {
     setControls((prev) => prev.map((c) => ({ ...c, exposed: false })));
+  };
+
+  const handleAddCustomControl = (newCtrl: ToolControl) => {
+    setControls((prev) => [...prev, newCtrl]);
+  };
+
+  const handleRemoveControl = (id: string) => {
+    setControls((prev) => prev.filter((c) => c.id !== id));
   };
 
   const exposedControls = controls.filter((c) => c.exposed !== false);
@@ -792,8 +804,16 @@ export default function CreateToolDrawer({
                       </div>
                     </div>
 
-                    {/* Exposed Stats Pill */}
+                    {/* Custom Controller & Exposed Stats Pill */}
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsExplorerOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all shadow-sm"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span>Custom Node Controller</span>
+                      </button>
                       <span className="rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)]">
                         <span className="text-[var(--accent)]">{exposedCount}</span> / {controls.length} Exposed
                       </span>
@@ -882,20 +902,30 @@ export default function CreateToolDrawer({
                                     </span>
                                   </div>
 
-                                  {/* Status Indicator */}
-                                  <span className="font-mono text-[9px] font-bold">
-                                    {isExposed ? (
-                                      <span className="text-[var(--accent)] flex items-center gap-1">
-                                        <Eye className="h-3 w-3" />
-                                        <span>Exposed</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[var(--ink-faint)] flex items-center gap-1">
-                                        <EyeOff className="h-3 w-3" />
-                                        <span>Hidden (Fixed)</span>
-                                      </span>
-                                    )}
-                                  </span>
+                                  {/* Status Indicator & Remove Action */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-[9px] font-bold">
+                                      {isExposed ? (
+                                        <span className="text-[var(--accent)] flex items-center gap-1">
+                                          <Eye className="h-3 w-3" />
+                                          <span>Exposed</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[var(--ink-faint)] flex items-center gap-1">
+                                          <EyeOff className="h-3 w-3" />
+                                          <span>Hidden (Fixed)</span>
+                                        </span>
+                                      )}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveControl(control.id)}
+                                      title="Remove controller"
+                                      className="p-1 rounded text-[var(--ink-faint)] hover:text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors opacity-70 hover:opacity-100"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
                                 </div>
 
                                 {/* Custom Label Input */}
@@ -1398,6 +1428,14 @@ export default function CreateToolDrawer({
           </div>
         </footer>
       </div>
+
+      <NodeParameterExplorer
+        open={isExplorerOpen}
+        onClose={() => setIsExplorerOpen(false)}
+        availableNodes={parsedData?.available_nodes || []}
+        existingControlIds={controls.map((c) => c.id)}
+        onAddControl={handleAddCustomControl}
+      />
     </div>
   );
 }

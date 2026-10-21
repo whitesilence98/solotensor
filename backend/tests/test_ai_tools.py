@@ -856,6 +856,68 @@ class ToolApiEndpointTests(unittest.TestCase):
         self.assertEqual(parsed["archetype"], "Image-to-Image Transformation")
         self.assertIn("Starter Image", parsed["detected_inputs"])
         self.assertGreater(parsed["node_count"], 0)
+        self.assertIn("available_nodes", parsed)
+        self.assertGreater(len(parsed["available_nodes"]), 0)
+
+    def test_available_nodes_and_custom_controller(self) -> None:
+        """Verify node parameter explorer returns all graph nodes and allows creating custom controllers."""
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.post("/api/tools/parse", files=files, data={"name": "Explorer Tool"})
+        self.assertEqual(resp.status_code, 200)
+        parsed = resp.json()
+        self.assertIn("available_nodes", parsed)
+        avail = parsed["available_nodes"]
+        self.assertTrue(any(n["class_type"] == "KSampler" for n in avail))
+        sampler_node = next(n for n in avail if n["class_type"] == "KSampler")
+        inputs = {inp["name"]: inp for inp in sampler_node["inputs"]}
+        self.assertIn("cfg", inputs)
+        self.assertFalse(inputs["cfg"]["is_linked"])
+        self.assertEqual(inputs["cfg"]["type_hint"], "number")
+
+        # Now test creating tool with a custom controller from available nodes
+        custom_ctrl = {
+            "id": f"nodes.{sampler_node['id']}.inputs.cfg",
+            "path": f"nodes.{sampler_node['id']}.inputs.cfg",
+            "node_id": sampler_node["id"],
+            "input_name": "cfg",
+            "label": "Custom CFG Controller",
+            "kind": "number",
+            "value": 8.5,
+            "default": 8.5,
+            "numeric": True,
+            "minimum": 1.0,
+            "maximum": 20.0,
+            "step": 0.5,
+            "exposed": True,
+        }
+        create_files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        create_resp = self.client.post(
+            "/api/tools/create",
+            files=create_files,
+            data={
+                "name": "Custom Controller Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+                "controls": json.dumps([custom_ctrl]),
+            },
+        )
+        self.assertEqual(create_resp.status_code, 200)
+        created = create_resp.json()
+        self.assertEqual(len(created["controls"]), 1)
+        self.assertEqual(created["controls"][0]["label"], "Custom CFG Controller")
+        self.assertEqual(created["controls"][0]["value"], 8.5)
 
 
 if __name__ == "__main__":

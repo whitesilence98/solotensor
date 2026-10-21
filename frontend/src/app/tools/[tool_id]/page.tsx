@@ -6,12 +6,18 @@ import { useParams, useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  Check,
   ChevronRight,
+  Clock,
+  Copy,
+  Cpu,
   Download,
   ExternalLink,
   ImagePlus,
+  Maximize2,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   Trash2,
   X,
   Zap,
@@ -45,8 +51,10 @@ const MODE_LABELS = {
   "text-to-video": "Text → Video",
   "image-to-video": "Image → Video",
 } as const;
+
 const FIELD =
-  "workspace-field w-full px-2.5 py-2 text-xs font-mono outline-none rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "workspace-field w-full px-3 py-2 text-xs font-mono outline-none rounded-lg bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -56,6 +64,146 @@ function formatBytes(bytes: number): string {
   return bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function cleanNodeTitle(raw: string): string {
+  if (!raw) return "";
+  let s = raw.trim();
+  // Strip emojis like 🖼️, ⚡, 🎨
+  s = s.replace(/[\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{26FF}]/gu, "").trim();
+
+  // If string contains English and Chinese (e.g. "Text2Video Switch 文生视频开关"),
+  // strip the redundant Chinese translation characters if English words exist
+  if (/[a-zA-Z]/.test(s) && /[\u4e00-\u9fa5]/.test(s)) {
+    s = s.replace(/[\u4e00-\u9fa5]+/g, "").trim();
+  }
+
+  // Remove redundant "(Prompt)" if title is just "CLIP Text Encode (Prompt)"
+  if (/^clip\s*text\s*encode\s*(\(prompt\))?$/i.test(s)) {
+    return "CLIP Text Encode";
+  }
+
+  return s.trim();
+}
+
+interface DisambiguatedControlMeta {
+  displayTitle: string;
+  badge?: string;
+  placeholder?: string;
+  hint?: string;
+}
+
+function resolveControlMeta(
+  control: ToolControl,
+  index: number,
+  allControls: ToolControl[],
+): DisambiguatedControlMeta {
+  const rawTitle = control.meta_title ?? control.label ?? "";
+  const cleaned = cleanNodeTitle(rawTitle);
+
+  // Check if it's a prompt control
+  if (control.kind === "prompt") {
+    const promptControls = allControls.filter((c) => c.kind === "prompt");
+    const isMultiplePrompts = promptControls.length > 1;
+
+    // Check if role or text indicates negative
+    const valString = String(control.value || control.default || "").toLowerCase();
+    const hasNegativeKeywords =
+      valString.includes("noise") ||
+      valString.includes("blur") ||
+      valString.includes("ugly") ||
+      valString.includes("deformed") ||
+      valString.includes("watermark") ||
+      valString.includes("bad") ||
+      valString.includes("subtitles") ||
+      valString.includes("bleep") ||
+      valString.includes("artifacts");
+
+    const isNegative =
+      control.role === "negative_prompt" ||
+      cleaned.toLowerCase().includes("negative") ||
+      cleaned.toLowerCase().includes("neg") ||
+      (isMultiplePrompts &&
+        (hasNegativeKeywords ||
+          (control.id === promptControls[1]?.id &&
+            !cleaned.toLowerCase().includes("positive"))));
+
+    if (isNegative) {
+      return {
+        displayTitle: "Negative Conditioning",
+        badge: "Exclusions",
+        placeholder:
+          "Specify unwanted elements to avoid (e.g. blurry, noise, watermark, low quality, artifacts)…",
+        hint: "Subtracted from the latent representation during sampling",
+      };
+    }
+
+    return {
+      displayTitle: isMultiplePrompts ? "Positive Prompt" : "Generation Prompt",
+      badge: "Conditioning",
+      placeholder:
+        "Describe the subject, composition, atmosphere, lighting, and rendering style…",
+      hint: "Primary textual guidance for the diffusion model",
+    };
+  }
+
+  // Check if it's an image control
+  if (control.kind === "image") {
+    let title = cleaned;
+    if (
+      title.toLowerCase().startsWith("load image") ||
+      title.toLowerCase().startsWith("loadimage")
+    ) {
+      title = title.replace(/^load\s*image\s*/i, "Input Image ").trim();
+    }
+    if (!title || title.toLowerCase() === "image") {
+      title = "Reference Image";
+    }
+    return {
+      displayTitle: title,
+      badge: control.role ? control.role.toUpperCase() : "IMAGE",
+      hint: "PNG, JPEG, or WebP · max 10 MB",
+    };
+  }
+
+  // Check boolean
+  if (control.kind === "boolean") {
+    let title = cleaned;
+    if (title.toLowerCase().startsWith("primitive")) {
+      title = title.replace(/^primitive\s*/i, "").trim();
+    }
+    return {
+      displayTitle: title || "Toggle Switch",
+      badge: "OPTION",
+    };
+  }
+
+  // Numerical or other controls
+  let title = cleaned;
+  if (title.toLowerCase().startsWith("primitive")) {
+    title = title.replace(/^primitive\s*/i, "").trim();
+  }
+  return {
+    displayTitle: title || control.input_name || "Parameter",
+    badge: control.kind === "seed" ? "SEED" : control.kind === "number" ? "PARAM" : undefined,
+  };
+}
+
+function AspectRatioIcon({ ratio }: { ratio: ToolAspectRatio }) {
+  switch (ratio) {
+    case "1:1":
+      return <div className="h-3 w-3 rounded-[1px] border border-current" />;
+    case "16:9":
+      return <div className="h-2 w-3.5 rounded-[1px] border border-current" />;
+    case "9:16":
+      return <div className="h-3.5 w-2 rounded-[1px] border border-current" />;
+    case "4:3":
+      return <div className="h-2.5 w-3 rounded-[1px] border border-current" />;
+    case "21:9":
+      return <div className="h-1.5 w-4 rounded-[1px] border border-current" />;
+    default:
+      return <div className="h-3 w-3 rounded-[1px] border border-current" />;
+  }
 }
 
 function ImagePreview({ file, alt }: { file: File; alt: string }) {
@@ -74,50 +222,23 @@ function ImagePreview({ file, alt }: { file: File; alt: string }) {
   );
 }
 
-function SectionHeading({
-  eyebrow,
-  title,
-  count,
-}: {
-  eyebrow: string;
-  title: string;
-  count?: number;
-}) {
-  return (
-    <div className="flex items-end justify-between border-b border-[var(--line)] pb-3">
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-          {eyebrow}
-        </p>
-        <h2 className="mt-1 text-lg font-semibold tracking-[-0.025em] text-[var(--ink)]">
-          {title}
-        </h2>
-      </div>
-      {count !== undefined && (
-        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-          {String(count).padStart(2, "0")}
-        </span>
-      )}
-    </div>
-  );
-}
-
 function ImageControl({
   control,
   file,
   busy,
   required,
+  meta,
   onFile,
 }: {
   control: ToolControl;
   file?: File;
   busy: boolean;
   required: boolean;
+  meta: DisambiguatedControlMeta;
   onFile: (file: File | undefined) => void;
 }) {
   const id = `control-${control.id}`;
   const [fileError, setFileError] = useState<string | null>(null);
-  const display = control.meta_title ?? control.label;
 
   const choose = (next: File | undefined) => {
     if (!next) return;
@@ -134,31 +255,42 @@ function ImageControl({
   };
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <label
-          htmlFor={id}
-          className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--ink-soft)]"
-        >
-          {display}
-        </label>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor={id}
+            className="font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]"
+          >
+            {meta.displayTitle}
+          </label>
+          {meta.badge && (
+            <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--ink-faint)] tracking-wider">
+              {meta.badge}
+            </span>
+          )}
+        </div>
         {required && (
-          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--accent)]">
+          <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-wider text-[var(--accent)] uppercase">
             Required
           </span>
         )}
       </div>
       <div
-        className={`border bg-[var(--surface-sunken)] p-3 transition ${fileError ? "border-[var(--danger-line)]" : "border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]"}`}
+        className={`rounded-lg border bg-[var(--surface-sunken)] p-3 transition ${
+          fileError
+            ? "border-[var(--danger-line)]"
+            : "border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]"
+        }`}
       >
         {file ? (
           <div className="flex items-center gap-3">
-            <div className="h-14 w-14 shrink-0 overflow-hidden border border-[var(--line)] bg-[var(--surface-soft)]">
-              <ImagePreview file={file} alt={control.label} />
+            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-[var(--line)] bg-[var(--surface-soft)]">
+              <ImagePreview file={file} alt={meta.displayTitle} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-[var(--ink)]">{file.name}</p>
-              <p className="mt-1 text-xs text-[var(--ink-faint)]">
+              <p className="truncate text-xs font-medium text-[var(--ink)]">{file.name}</p>
+              <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
                 {formatBytes(file.size)} · Ready
               </p>
             </div>
@@ -169,8 +301,8 @@ function ImageControl({
                 setFileError(null);
                 onFile(undefined);
               }}
-              aria-label={`Remove ${display}`}
-              className="p-2 text-[var(--ink-soft)] transition hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] disabled:opacity-40"
+              aria-label={`Remove ${meta.displayTitle}`}
+              className="rounded p-1.5 text-[var(--ink-soft)] transition hover:bg-[var(--danger-surface)] hover:text-[var(--danger)] disabled:opacity-40"
             >
               <X className="h-4 w-4" />
             </button>
@@ -178,16 +310,16 @@ function ImageControl({
         ) : (
           <label
             htmlFor={id}
-            className="flex cursor-pointer items-center gap-3 p-2 transition hover:bg-[var(--surface-soft)]"
+            className="flex cursor-pointer items-center gap-3 p-2 transition hover:bg-[var(--surface)] rounded-md"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
-              <ImagePlus className="h-5 w-5" />
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
+              <ImagePlus className="h-4 w-4" />
             </span>
             <span>
-              <span className="block text-sm font-medium text-[var(--ink)]">
-                Add reference image
+              <span className="block text-xs font-semibold text-[var(--ink)]">
+                Upload reference image
               </span>
-              <span className="mt-1 block text-xs text-[var(--ink-faint)]">
+              <span className="mt-0.5 block font-mono text-[10px] text-[var(--ink-faint)]">
                 PNG, JPEG, or WebP · max 10 MB
               </span>
             </span>
@@ -206,7 +338,7 @@ function ImageControl({
         />
       </div>
       {fileError && (
-        <p className="mt-2 text-xs text-[var(--danger)]" role="alert">
+        <p className="mt-1 text-[11px] text-[var(--danger)]" role="alert">
           {fileError}
         </p>
       )}
@@ -220,6 +352,7 @@ function DynamicControl({
   busy,
   required,
   file,
+  meta,
   onChange,
   onFile,
 }: {
@@ -228,18 +361,42 @@ function DynamicControl({
   busy: boolean;
   required: boolean;
   file?: File;
+  meta: DisambiguatedControlMeta;
   onChange: (value: Scalar) => void;
   onFile: (file: File | undefined) => void;
 }) {
   const id = `control-${control.id}`;
-  const display = control.meta_title ?? control.label;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (value !== undefined) {
+      navigator.clipboard.writeText(String(value));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
   const label = (
-    <label
-      htmlFor={id}
-      className="mb-1 block font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]"
-    >
-      {display}
-    </label>
+    <div className="mb-1.5 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <label
+          htmlFor={id}
+          className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]"
+        >
+          {meta.displayTitle}
+        </label>
+        {meta.badge && (
+          <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--ink-faint)] tracking-wider">
+            {meta.badge}
+          </span>
+        )}
+      </div>
+      {meta.hint && (
+        <span className="truncate font-mono text-[9px] text-[var(--ink-faint)] opacity-70">
+          {meta.hint}
+        </span>
+      )}
+    </div>
   );
 
   if (control.kind === "image") {
@@ -249,23 +406,32 @@ function DynamicControl({
         file={file}
         busy={busy}
         required={required}
+        meta={meta}
         onFile={onFile}
       />
     );
   }
 
   if (control.kind === "boolean") {
+    const isChecked = Boolean(value ?? control.value);
     return (
       <label
         htmlFor={id}
-        className="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 text-xs font-mono text-[var(--ink)] transition hover:border-[var(--line-strong)]"
+        className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3.5 py-2.5 transition hover:border-[var(--line-strong)]"
       >
-        <span className="font-mono text-[11px] font-semibold">{display}</span>
+        <div>
+          <span className="block font-mono text-xs font-semibold text-[var(--ink)]">
+            {meta.displayTitle}
+          </span>
+          <span className="mt-0.5 block font-mono text-[9px] text-[var(--ink-faint)]">
+            {isChecked ? "Active / Enabled" : "Bypassed / Disabled"}
+          </span>
+        </div>
         <span className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-[var(--line-strong)] transition has-[:checked]:bg-[var(--accent)]">
           <input
             id={id}
             type="checkbox"
-            checked={Boolean(value ?? control.value)}
+            checked={isChecked}
             disabled={busy}
             onChange={(event) => onChange(event.target.checked)}
             className="peer sr-only"
@@ -297,7 +463,7 @@ function DynamicControl({
     return (
       <SeedInput
         id={id}
-        label={display}
+        label={meta.displayTitle}
         showLabel={true}
         value={
           typeof value === "number" || typeof value === "string"
@@ -314,47 +480,125 @@ function DynamicControl({
   }
 
   const numeric = control.kind === "number";
+
+  if (control.kind === "prompt" || control.kind === "text") {
+    const textVal = String(value ?? control.value ?? "");
+    return (
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor={id}
+              className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]"
+            >
+              {meta.displayTitle}
+            </label>
+            {meta.badge && (
+              <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--ink-faint)] tracking-wider">
+                {meta.badge}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {textVal && (
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1 font-mono text-[9px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                title="Copy prompt"
+              >
+                {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                <span>{copied ? "Copied" : "Copy"}</span>
+              </button>
+            )}
+            <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+              {textVal.length} chars
+            </span>
+          </div>
+        </div>
+        <textarea
+          id={id}
+          value={textVal}
+          disabled={busy}
+          onChange={(event) => onChange(event.target.value)}
+          rows={control.kind === "prompt" ? 4 : 3}
+          placeholder={meta.placeholder ?? "Enter prompt text…"}
+          className={`${FIELD} resize-y leading-relaxed text-xs`}
+        />
+      </div>
+    );
+  }
+
+  // Numeric control with optional slider if min & max are provided
+  if (numeric && control.minimum !== null && control.maximum !== null) {
+    const minVal = control.minimum;
+    const maxVal = control.maximum;
+    const stepVal = control.step ?? (Number.isInteger(minVal) && Number.isInteger(maxVal) ? 1 : 0.1);
+    const numVal = typeof value === "number" ? value : Number(control.value ?? minVal);
+
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          {label}
+          <span className="font-mono text-xs font-semibold tabular-nums text-[var(--accent)]">
+            {numVal}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={minVal}
+            max={maxVal}
+            step={stepVal}
+            value={numVal}
+            disabled={busy}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="flex-1 accent-[var(--accent)] cursor-pointer h-1.5 rounded-lg bg-[var(--surface-sunken)] border border-[var(--line)]"
+          />
+          <input
+            id={id}
+            type="number"
+            value={numVal}
+            min={minVal}
+            max={maxVal}
+            step={stepVal}
+            disabled={busy}
+            onChange={(e) => {
+              const raw = e.target.value.trim();
+              onChange(raw === "" ? minVal : Number(raw));
+            }}
+            className={`${FIELD} h-7 w-20 text-center tabular-nums font-mono text-xs`}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {label}
-      {control.kind === "prompt" || control.kind === "text" ? (
-        <textarea
+      <div className="relative">
+        <input
           id={id}
+          type={numeric ? "number" : "text"}
           value={String(value ?? control.value ?? "")}
           disabled={busy}
-          onChange={(event) => onChange(event.target.value)}
-          rows={5}
-          placeholder={
-            control.kind === "prompt"
-              ? "Describe the generation prompt…"
-              : undefined
-          }
-          className={`${FIELD} resize-y leading-relaxed`}
+          min={control.minimum ?? undefined}
+          max={control.maximum ?? undefined}
+          step={control.step ?? undefined}
+          onChange={(event) => {
+            const raw = event.target.value.trim();
+            if (numeric) {
+              onChange(raw === "" ? "" : Number(raw));
+            } else {
+              onChange(event.target.value);
+            }
+          }}
+          className={`${FIELD} h-8 ${numeric ? "tabular-nums" : ""}`}
         />
-      ) : (
-        <div className="relative">
-          <input
-            id={id}
-            type={numeric ? "number" : "text"}
-            value={String(value ?? control.value ?? "")}
-            disabled={busy}
-            min={control.minimum ?? undefined}
-            max={control.maximum ?? undefined}
-            step={control.step ?? undefined}
-            onChange={(event) => {
-              const raw = event.target.value.trim();
-              if (numeric) {
-                onChange(raw === "" ? "" : Number(raw));
-              } else {
-                onChange(event.target.value);
-              }
-            }}
-            className={`${FIELD} h-7.5 ${numeric ? "tabular-nums" : ""}`}
-          />
-        </div>
-      )}
+      </div>
       {numeric && (control.minimum !== null || control.maximum !== null) && (
-        <p className="mt-2 text-[11px] text-[var(--ink-faint)]">
+        <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
           {`Range ${control.minimum ?? "—"} to ${control.maximum ?? "—"}`}
           {control.step ? ` · step ${control.step}` : ""}
         </p>
@@ -378,7 +622,42 @@ export default function ToolDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [copiedResultPrompt, setCopiedResultPrompt] = useState(false);
   const socket = useRef<WebSocket | null>(null);
+
+  // Execution elapsed stopwatch
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (busy) {
+      setElapsedMs(0);
+      const start = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsedMs(Date.now() - start);
+      }, 100);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [busy]);
+
+  const formattedElapsedTime = useMemo(() => {
+    const totalSec = elapsedMs / 1000;
+    const mins = Math.floor(totalSec / 60);
+    const secs = (totalSec % 60).toFixed(1);
+    if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    }
+    return `${secs}s`;
+  }, [elapsedMs]);
 
   const handleDelete = async () => {
     if (!tool) return;
@@ -485,9 +764,8 @@ export default function ToolDetailPage() {
     Boolean(tool) &&
     !busy &&
     (!tool?.requires_image || missingImages.length === 0);
-  const editableCount = tool?.controls.length ?? 0;
 
-  const run = async () => {
+  const run = useCallback(async () => {
     if (!tool || !canRun) return;
     const clientId = uuid();
     setBusy(true);
@@ -512,7 +790,29 @@ export default function ToolDetailPage() {
       socket.current = null;
       setBusy(false);
     }
-  };
+  }, [tool, canRun, ratio, values, files, saveToGallery]);
+
+  // Keyboard shortcut: Cmd/Ctrl + Enter to run
+  useEffect(() => {
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        if (canRun) {
+          e.preventDefault();
+          run();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canRun, run]);
+
+  // Telemetry step calculations
+  const progressPercentage = useMemo(() => {
+    if (!progress || progress.type !== "progress") return 0;
+    const val = progress.value ?? 0;
+    const max = progress.max ?? 1;
+    return Math.min(100, Math.max(0, Math.round((val / max) * 100)));
+  }, [progress]);
 
   if (!tool && !error) {
     return (
@@ -524,11 +824,11 @@ export default function ToolDetailPage() {
         aria-label="Loading tool"
       >
         <div className="mx-auto max-w-7xl">
-          <div className="h-4 w-24 animate-pulse bg-[var(--surface-soft)]" />
-          <div className="mt-6 h-12 w-2/3 animate-pulse bg-[var(--surface-soft)]" />
-          <div className="mt-10 grid gap-5 lg:grid-cols-[minmax(20rem,27rem)_1fr]">
-            <div className="h-[34rem] animate-pulse border border-[var(--line)] bg-[var(--surface)]" />
-            <div className="h-[34rem] animate-pulse border border-[var(--line)] bg-[var(--surface)]" />
+          <div className="h-4 w-24 animate-pulse rounded bg-[var(--surface-soft)]" />
+          <div className="mt-6 h-10 w-1/3 animate-pulse rounded bg-[var(--surface-soft)]" />
+          <div className="mt-8 grid gap-5 lg:grid-cols-[380px_1fr]">
+            <div className="h-[34rem] animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface)]" />
+            <div className="h-[34rem] animate-pulse rounded-xl border border-[var(--line)] bg-[var(--surface)]" />
           </div>
         </div>
       </main>
@@ -539,27 +839,23 @@ export default function ToolDetailPage() {
     return (
       <main
         id="main-content"
-        className="workspace-scroll h-full min-h-0 bg-[var(--ground)] px-4 py-8 pb-28 md:px-8 md:pb-10"
+        className="workspace-scroll flex h-full min-h-0 items-center justify-center bg-[var(--ground)] p-6"
       >
-        <div className="mx-auto max-w-3xl">
-          <Link
-            href="/tools"
-            className="mb-8 inline-flex items-center gap-2 text-xs text-[var(--ink-soft)] transition hover:text-[var(--accent)]"
-          >
-            <ArrowLeft className="h-4 w-4" /> All tools
-          </Link>
-          <div
-            role="alert"
-            className="border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6"
-          >
-            <div className="flex gap-3">
-              <AlertCircle className="h-5 w-5 shrink-0 text-[var(--danger)]" />
-              <p className="text-sm leading-6 text-[var(--danger)]">{error}</p>
-            </div>
+        <div className="w-full max-w-md rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[var(--danger)]" />
+          <h2 className="text-base font-bold text-[var(--ink)]">Failed to load workflow tool</h2>
+          <p className="mt-1 text-xs text-[var(--danger)]">{error}</p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <Link
+              href="/tools"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-strong)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to tools
+            </Link>
             <button
               type="button"
               onClick={load}
-              className="mt-5 inline-flex items-center gap-2 border border-[var(--danger-line)] px-3 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--danger-surface)]"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)]"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Try again
             </button>
@@ -572,17 +868,19 @@ export default function ToolDetailPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll flex h-full min-h-0 w-full flex-col overflow-x-hidden bg-[var(--ground)] lg:flex-row lg:overflow-hidden"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--ground)] lg:flex-row"
     >
-      <aside className="workspace-bezel workspace-scroll flex w-full shrink-0 flex-col border-b border-r-0 p-0 lg:w-[360px] lg:border-b-0 lg:border-r">
-        <header className="border-b border-[var(--line)] px-4 py-4 sm:px-5 sm:py-5">
-          <nav aria-label="Breadcrumb" className="mb-3.5 flex items-center justify-between">
+      {/* LEFT INSPECTOR SIDEBAR */}
+      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--line)] bg-[var(--surface)] lg:w-[380px] lg:border-b-0 lg:border-r h-full min-h-0">
+        {/* PINNED HEADER (Never scrolls away) */}
+        <header className="shrink-0 border-b border-[var(--line)] px-5 py-4 bg-[var(--surface)]">
+          <nav aria-label="Breadcrumb" className="mb-3 flex items-center justify-between">
             <Link
               href="/tools"
-              className="inline-flex items-center gap-1.5 font-mono text-[10px] text-[var(--ink-soft)] hover:text-[var(--ink)] transition-colors"
+              className="group inline-flex items-center gap-1.5 font-mono text-[10px] text-[var(--ink-soft)] hover:text-[var(--ink)] transition-colors"
             >
-              <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-              <span>Back to tools</span>
+              <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
+              <span>All Workflows</span>
             </Link>
             <Can do="tool:delete" ownerId={tool?.user_id}>
               <button
@@ -596,42 +894,46 @@ export default function ToolDetailPage() {
               </button>
             </Can>
           </nav>
-          <div className="mb-1.5 flex items-center justify-between gap-3">
-            <p className="font-mono text-[9px] font-bold tracking-widest text-[var(--accent)] uppercase truncate">
+
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="rounded bg-[var(--accent)]/10 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider text-[var(--accent)] uppercase">
               {MODE_LABELS[tool!.mode]}
-            </p>
-            <span className="rounded border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-1.5 py-0.2 font-mono text-[8px] font-bold text-[var(--ink-faint)] uppercase">
-              LOCAL
             </span>
+            <div className="flex items-center gap-1.5 font-mono text-[9px] text-[var(--ink-faint)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+              <span>LOCAL ENGINE</span>
+            </div>
           </div>
-          <h1 className="font-sans text-xl font-bold tracking-tight text-[var(--ink)]">{tool!.name}</h1>
-          <p className="mt-1 font-mono text-[10px] leading-4 text-[var(--ink-faint)]">
-            Configure pipeline parameters, then generate locally.
+
+          <h1 className="font-sans text-xl font-bold tracking-tight text-[var(--ink)] truncate">
+            {tool!.name}
+          </h1>
+          <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)] truncate">
+            Configure pipeline parameters and execute locally.
           </p>
         </header>
 
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(event) => { event.preventDefault(); run(); }}
-          aria-busy={busy}
-        >
-          <fieldset className="flex-1 space-y-5 px-4 py-5 sm:px-5">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-soft)]">
-                Generation controls
-              </span>
-              <button
-                type="button"
-                onClick={handleResetInputs}
-                className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] transition hover:text-[var(--ink)]"
-                title="Reset inputs to defaults"
-              >
-                <RotateCcw className="h-2.5 w-2.5" />
-                <span>Reset inputs</span>
-              </button>
-            </div>
-            {tool!.controls.length ? (
-              tool!.controls.map((control) => (
+        {/* SCROLLABLE FORM CONTROLS */}
+        <div className="workspace-scroll flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+            <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-soft)]">
+              Generation Parameters
+            </span>
+            <button
+              type="button"
+              onClick={handleResetInputs}
+              className="inline-flex items-center gap-1 font-mono text-[9px] text-[var(--ink-faint)] transition hover:text-[var(--ink)]"
+              title="Reset inputs to defaults"
+            >
+              <RotateCcw className="h-2.5 w-2.5" />
+              <span>Reset</span>
+            </button>
+          </div>
+
+          {tool!.controls.length ? (
+            tool!.controls.map((control, idx) => {
+              const meta = resolveControlMeta(control, idx, tool!.controls);
+              return (
                 <DynamicControl
                   key={control.id}
                   control={control}
@@ -639,7 +941,8 @@ export default function ToolDetailPage() {
                   busy={busy}
                   required={control.kind === "image" && tool!.requires_image}
                   file={files[control.id]}
-                  onChange={(value) => handleValueChange(control.id, value)}
+                  meta={meta}
+                  onChange={(val) => handleValueChange(control.id, val)}
                   onFile={(file) =>
                     setFiles((current) => {
                       const next = { ...current };
@@ -649,108 +952,205 @@ export default function ToolDetailPage() {
                     })
                   }
                 />
-              ))
-            ) : (
-              <p className="font-mono text-xs text-[var(--ink-faint)]">No editable controls.</p>
-            )}
+              );
+            })
+          ) : (
+            <p className="font-mono text-xs text-[var(--ink-faint)]">No editable controls detected.</p>
+          )}
 
-            {!dimensionControls && (
-              <fieldset>
-                <legend className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
-                  Format
-                </legend>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {tool!.supported_aspect_ratios
-                    .filter((item) => RATIOS.includes(item))
-                    .map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        disabled={busy}
-                        aria-pressed={ratio === item}
-                        onClick={() => setRatio(item)}
-                        className={`rounded-md border py-1.5 text-center font-mono text-[10px] font-bold transition duration-200 disabled:opacity-40 ${
-                          ratio === item
-                            ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
-                            : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                        }`}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                </div>
-              </fieldset>
-            )}
-          </fieldset>
+          {!dimensionControls && (
+            <div className="space-y-1.5 pt-1 border-t border-[var(--line)]">
+              <label className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                Aspect Ratio Format
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {tool!.supported_aspect_ratios
+                  .filter((item) => RATIOS.includes(item))
+                  .map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      disabled={busy}
+                      aria-pressed={ratio === item}
+                      onClick={() => setRatio(item)}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-lg border py-2 text-center font-mono text-[10px] font-bold transition duration-150 disabled:opacity-40 ${
+                        ratio === item
+                          ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
+                          : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      <AspectRatioIcon ratio={item} />
+                      <span>{item}</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-          <div className="border-t border-[var(--line)] p-4 sm:p-5">
-            {tool!.requires_image && missingImages.length > 0 && (
-              <p id="required-images-note" className="mb-2.5 font-mono text-[10px] leading-4 text-[var(--danger)]">
-                Add all required reference images before generating.
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={!canRun}
-              aria-busy={busy}
-              aria-describedby={tool!.requires_image && missingImages.length > 0 ? "required-images-note" : undefined}
-              className="flex w-full items-center justify-between rounded-lg bg-[var(--accent)] px-4 py-3 text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="flex items-center gap-1.5">
+        {/* PINNED FOOTER CTA */}
+        <footer className="shrink-0 border-t border-[var(--line)] bg-[var(--surface)] p-4">
+          {tool!.requires_image && missingImages.length > 0 && (
+            <p id="required-images-note" className="mb-2.5 font-mono text-[10px] leading-4 text-[var(--danger)]">
+              ⚠ Add required reference image before generating.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={run}
+            disabled={!canRun}
+            aria-busy={busy}
+            aria-describedby={
+              tool!.requires_image && missingImages.length > 0
+                ? "required-images-note"
+                : undefined
+            }
+            className="flex w-full items-center justify-between rounded-lg bg-[var(--accent)] px-4 py-3 text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-all shadow-[0_0_12px_rgba(213,240,111,0.2)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="flex items-center gap-2">
+              {busy ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
                 <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>{busy ? "Generating…" : "Generate image"}</span>
-              </span>
-              <span className="font-mono text-[10px] opacity-80">⚡ LOCAL</span>
-            </button>
-          </div>
-        </form>
+              )}
+              <span>{busy ? "Generating Output…" : "Generate Output"}</span>
+            </span>
+            <span className="font-mono text-[9px] opacity-80 flex items-center gap-1">
+              <span>⌘↵</span>
+              <span>·</span>
+              <span>LOCAL</span>
+            </span>
+          </button>
+        </footer>
       </aside>
 
-      <section className="relative z-0 flex min-h-[28rem] flex-1 flex-col lg:min-h-0" aria-labelledby="output-heading">
-        <header className="flex h-[3.5rem] shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--ground)] px-4 sm:px-6">
-          <div className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-            <span>Canvas ready</span>
+      {/* RIGHT CANVAS VIEWPORT */}
+      <section className="relative flex flex-1 min-w-0 min-h-0 flex-col h-full bg-[var(--ground)]" aria-labelledby="output-heading">
+        {/* CANVAS HEADER */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--ground)] px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider">
+              {busy ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]"></span>
+                </span>
+              ) : (
+                <span className={`h-2 w-2 rounded-full ${result?.images.length ? "bg-emerald-400" : "bg-[var(--accent)]"}`} />
+              )}
+              <span className={busy ? "text-[var(--accent)]" : "text-[var(--ink-soft)]"}>
+                {busy
+                  ? progress?.type === "progress"
+                    ? `Rendering Step ${progress.value ?? 0}/${progress.max ?? 20}`
+                    : "Executing Graph"
+                  : result?.images.length
+                    ? "Output Complete"
+                    : "Canvas Ready"}
+              </span>
+            </div>
+            <span className="text-[var(--line-strong)]">/</span>
+            <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate max-w-[200px]">
+              {tool!.name}
+            </span>
           </div>
+
           {result?.images.length && inputImageUrl ? (
-            <div className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5">
+            <div className="flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-1">
               <button
                 type="button"
                 onClick={() => setPreviewTab("comparison")}
-                className={`rounded px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
+                className={`rounded-md px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
                   previewTab === "comparison"
                     ? "bg-[var(--accent)] text-[var(--accent-ink)]"
                     : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
                 }`}
               >
-                Comparison
+                Comparison Slider
               </button>
               <button
                 type="button"
                 onClick={() => setPreviewTab("result")}
-                className={`rounded px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
+                className={`rounded-md px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider transition ${
                   previewTab === "result"
                     ? "bg-[var(--accent)] text-[var(--accent-ink)]"
                     : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
                 }`}
               >
-                Result only
+                Result Only
               </button>
             </div>
           ) : null}
-          <div className="font-mono text-[10px] font-bold tracking-wider text-[var(--ink-faint)] uppercase">
-            {String(result?.images.length ?? 0).padStart(2, "0")} OUTPUTS
+
+          <div className="flex items-center gap-3">
+            <div className="font-mono text-[10px] font-bold tracking-wider text-[var(--ink-faint)] uppercase">
+              {String(result?.images.length ?? 0).padStart(2, "0")} OUTPUTS
+            </div>
           </div>
         </header>
 
-        <div className="workspace-scroll flex flex-1 items-center justify-center overflow-y-auto bg-[var(--ground)] p-4 sm:p-8">
+        {/* CANVAS WORKSPACE VIEWPORT */}
+        <div className="workspace-scroll flex-1 min-h-0 overflow-y-auto p-6 flex items-center justify-center">
           {busy ? (
-            <div className="flex flex-col items-center text-center" role="status" aria-live="polite" aria-atomic="true">
-              <RefreshCw className="mb-4 h-8 w-8 animate-spin text-[var(--accent)]" aria-hidden="true" />
-              <p className="workspace-kicker mb-2">{progress?.type === "progress" ? "Rendering" : progress?.type === "executing" ? "Executing" : "Queued"}</p>
-              <h2 id="output-heading" className="mt-2 text-3xl font-medium tracking-tight text-[var(--ink)]">Building output…</h2>
+            /* LIVE EXECUTION TELEMETRY HUD */
+            <div className="w-full max-w-md rounded-2xl border border-[var(--line-strong)] bg-[var(--surface)] p-6 shadow-2xl backdrop-blur-md">
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-3.5 mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--accent)]"></span>
+                  </span>
+                  <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase">
+                    {progress?.type === "progress"
+                      ? "Inference Active"
+                      : progress?.type === "executing"
+                        ? "Executing Graph"
+                        : "Pipeline Queued"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--ink-soft)] bg-[var(--surface-sunken)] px-2.5 py-1 rounded-md border border-[var(--line)]">
+                  <Clock className="h-3 w-3 text-[var(--accent)]" />
+                  <span>{formattedElapsedTime}</span>
+                </div>
+              </div>
+
+              <div className="mb-5">
+                <h3 className="text-xl font-bold tracking-tight text-[var(--ink)]">
+                  {progress?.type === "progress"
+                    ? `Sampling Latents (${progress.value ?? 0}/${progress.max ?? 20})`
+                    : progress?.type === "executing"
+                      ? `Executing Node: ${progress.node ?? "Pipeline"}`
+                      : "Synthesizing Pipeline Parameters…"}
+                </h3>
+                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
+                  {progress?.message || "Running through local ComfyUI graph"}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between font-mono text-[10px] font-semibold text-[var(--ink-soft)]">
+                  <span>PROGRESS</span>
+                  <span className="text-[var(--accent)]">{progressPercentage}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-sunken)] border border-[var(--line)]">
+                  <div
+                    className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] transition-all duration-300 shadow-[0_0_10px_rgba(213,240,111,0.3)]"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-2 pt-3 border-t border-[var(--line)] font-mono text-[9px] text-[var(--ink-faint)]">
+                <div className="flex items-center gap-1.5">
+                  <Cpu className="h-3 w-3 text-[var(--ink-soft)]" />
+                  <span>ENGINE: COMFYUI LOCAL</span>
+                </div>
+                <div className="text-right">
+                  <span>FORMAT: {ratio}</span>
+                </div>
+              </div>
             </div>
           ) : result?.images.length ? (
+            /* COMPLETED RESULT VIEW */
             <div className="flex w-full max-w-5xl flex-col gap-3">
               <h2 id="output-heading" className="sr-only">Generated output</h2>
 
@@ -763,21 +1163,30 @@ export default function ToolDetailPage() {
                   aspectRatio="16/9"
                 />
               ) : (
-                <div className="aspect-[16/9] w-full overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                <div className="aspect-[16/9] w-full overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result.images[0].url} alt={`Generated result from ${tool!.name}`} className="asset-zoom-media h-full w-full object-contain" />
+                  <img
+                    src={result.images[0].url}
+                    alt={`Generated result from ${tool!.name}`}
+                    className="asset-zoom-media h-full w-full object-contain"
+                  />
                 </div>
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-3">
-                <span className="font-mono text-[11px] text-[var(--ink-faint)]">
-                  {result.images[0].filename || "output.png"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-[var(--ink-soft)]">
+                    {result.images[0].filename || "output.png"}
+                  </span>
+                  <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                    PNG · {ratio}
+                  </span>
+                </div>
                 <div className="flex items-center gap-2">
                   <a
                     href={result.images[0].url}
                     download={result.images[0].filename || "tool_output.png"}
-                    className="inline-flex items-center gap-1.5 border border-[var(--line-strong)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] active:scale-[.97]"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-strong)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] active:scale-[.97]"
                   >
                     <Download className="h-3.5 w-3.5" />
                     <span>Download</span>
@@ -786,7 +1195,7 @@ export default function ToolDetailPage() {
                     href={result.images[0].url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 bg-[var(--accent)] px-3.5 py-1.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] active:scale-[.97]"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] active:scale-[.97]"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                     <span>Open original</span>
@@ -795,28 +1204,52 @@ export default function ToolDetailPage() {
               </div>
             </div>
           ) : error ? (
-            <div className="text-center text-[var(--danger)]" role="alert">
-              <AlertCircle className="mx-auto mb-3 h-8 w-8" aria-hidden="true" />
-              <h2 id="output-heading" className="sr-only">Generation error</h2>
-              <p>{error}</p>
+            /* ERROR STATE */
+            <div className="w-full max-w-md rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center" role="alert">
+              <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[var(--danger)]" aria-hidden="true" />
+              <h2 id="output-heading" className="text-base font-bold text-[var(--ink)]">Generation Encountered an Error</h2>
+              <p className="mt-1 text-xs text-[var(--danger)]">{error}</p>
+              <button
+                type="button"
+                onClick={run}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger-line)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--danger-surface)]"
+              >
+                <RefreshCw className="h-3 w-3" /> Retry Generation
+              </button>
             </div>
           ) : (
-            <div className="flex aspect-video w-full max-w-[900px] flex-col items-center justify-center border border-[var(--line)] bg-[var(--surface)] px-5">
-              <div className="mb-6 flex h-[60px] w-[60px] items-center justify-center border border-[var(--line-strong)]">
-                <ImagePlus className="h-[22px] w-[22px] text-[var(--ink-faint)]" aria-hidden="true" />
+            /* BLANK CANVAS EMPTY STATE */
+            <div className="flex aspect-video w-full max-w-[800px] flex-col items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-12 text-center">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-sunken)] shadow-inner">
+                <Sparkles className="h-6 w-6 text-[var(--accent)]" aria-hidden="true" />
               </div>
-              <p className="workspace-kicker mb-5">Blank canvas</p>
-              <h2 id="output-heading" className="text-center text-4xl font-medium leading-[1.05] tracking-tighter text-[var(--ink)] sm:text-6xl lg:text-7xl">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] mb-3">
+                WORKSPACE / READY
+              </p>
+              <h2 id="output-heading" className="text-center text-4xl font-bold leading-tight tracking-tighter text-[var(--ink)] sm:text-5xl">
                 Give the model<br className="hidden sm:block" /> something to see.
               </h2>
-              <p className="mt-6 max-w-[42ch] text-center text-[13px] leading-relaxed text-[var(--ink-faint)]">
-                Write a specific prompt. Choose a format. The first result lands here and stays in your library.
+              <p className="mt-4 max-w-[44ch] text-center text-xs leading-relaxed text-[var(--ink-faint)]">
+                Adjust prompt conditioning on the left sidebar. Press <kbd className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1 py-0.5 font-mono text-[10px] text-[var(--accent)]">⌘ Enter</kbd> to launch local execution.
               </p>
+
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-2 font-mono text-[9px] text-[var(--ink-faint)]">
+                <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
+                  ⚡ Uses local ComfyUI pipeline
+                </span>
+                <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
+                  🖼️ Auto-saved to library
+                </span>
+                <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
+                  ⏱️ Real-time step telemetry
+                </span>
+              </div>
             </div>
           )}
         </div>
       </section>
 
+      {/* DELETION CONFIRMATION MODAL */}
       {tool && (
         <WorkspaceModal
           open={showDeleteModal}

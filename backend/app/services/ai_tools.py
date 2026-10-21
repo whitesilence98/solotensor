@@ -19,6 +19,8 @@ from ..schemas import (
     ToolControl,
     ToolDetail,
     ToolMode,
+    ToolNodeInfo,
+    ToolNodeInput,
     ToolParseResponse,
     ToolSummary,
 )
@@ -1085,6 +1087,44 @@ class AIToolService:
             if hasattr(meta["detected_mode"], "value")
             else str(meta["detected_mode"])
         )
+        available_nodes: list[dict[str, Any]] = []
+        for n_id, n_data in sorted(workflow.items()):
+            c_type = str(n_data.get("class_type", ""))
+            raw_inputs = n_data.get("inputs", {})
+            if not isinstance(raw_inputs, dict):
+                continue
+            inputs_summary: list[dict[str, Any]] = []
+            for inp_name, inp_val in raw_inputs.items():
+                is_link = (
+                    isinstance(inp_val, list)
+                    and len(inp_val) == 2
+                    and isinstance(inp_val[0], str)
+                )
+                if isinstance(inp_val, (int, float)) and not isinstance(inp_val, bool):
+                    t_hint = "number"
+                elif isinstance(inp_val, bool):
+                    t_hint = "boolean"
+                elif isinstance(inp_val, str):
+                    t_hint = "string"
+                else:
+                    t_hint = "unknown"
+                inputs_summary.append(
+                    {
+                        "name": inp_name,
+                        "value": inp_val if not is_link else None,
+                        "type_hint": t_hint,
+                        "is_linked": is_link,
+                        "options": [],
+                    }
+                )
+            available_nodes.append(
+                {
+                    "id": n_id,
+                    "class_type": c_type,
+                    "title": _meta_title(n_data) or _label(c_type),
+                    "inputs": inputs_summary,
+                }
+            )
         record = {
             "tool_id": tool_id,
             "name": clean_name,
@@ -1104,6 +1144,7 @@ class AIToolService:
             "requires_image": meta["detected_mode"] in (ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO),
             "output_kind": meta["detected_output_type"],
             "is_draft": True,
+            "available_nodes": available_nodes,
         }
         self._write_record(record)
         return ToolParseResponse(
@@ -1116,6 +1157,7 @@ class AIToolService:
             detected_inputs=meta["detected_inputs"],
             archetype=meta["archetype"],
             node_count=meta["node_count"],
+            available_nodes=[ToolNodeInfo.model_validate(n) for n in available_nodes],
         )
 
     @staticmethod

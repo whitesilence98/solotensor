@@ -475,6 +475,21 @@ class CreateToolRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ToolNodeInput(BaseModel):
+    name: str
+    value: Any = None
+    type_hint: Literal["number", "string", "boolean", "select", "unknown"] = "unknown"
+    is_linked: bool = False
+    options: list[Any] = Field(default_factory=list)
+
+
+class ToolNodeInfo(BaseModel):
+    id: str
+    class_type: str
+    title: str | None = None
+    inputs: list[ToolNodeInput] = Field(default_factory=list)
+
+
 class ToolParseResponse(BaseModel):
     tool_id: str
     name: str
@@ -485,6 +500,7 @@ class ToolParseResponse(BaseModel):
     detected_inputs: list[str] = Field(default_factory=list)
     archetype: str = "Text-to-Image Generation"
     node_count: int = 0
+    available_nodes: list[ToolNodeInfo] = Field(default_factory=list)
 
 
 class ToolSummary(BaseModel):

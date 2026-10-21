@@ -23,9 +23,11 @@ import {
   Layers,
   Layout,
   Play,
+  Plus,
   RotateCcw,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Type,
   Upload,
   X,
@@ -43,6 +45,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
+import NodeParameterExplorer from "@/components/NodeParameterExplorer";
 import {
   STARTER_TEMPLATES,
   detectComfyUIFormat,
@@ -95,6 +98,7 @@ export default function CreateToolStudioPage() {
   const [ratio, setRatio] = useState<ToolAspectRatio>("1:1");
   const [showModeOverride, setShowModeOverride] = useState(false);
   const [formatWarning, setFormatWarning] = useState<string | null>(null);
+  const [isExplorerOpen, setIsExplorerOpen] = useState(false);
 
   // Playground test-run state
   const [playgroundPrompt, setPlaygroundPrompt] = useState("");
@@ -264,6 +268,17 @@ export default function CreateToolStudioPage() {
 
   const handleHideAll = () => {
     setControls((prev) => prev.map((c) => ({ ...c, exposed: false })));
+  };
+
+  const handleAddCustomControl = (newCtrl: ToolControl) => {
+    setControls((prev) => [...prev, newCtrl]);
+    if (newCtrl.default !== undefined) {
+      setPlaygroundValues((prev) => ({ ...prev, [newCtrl.id]: newCtrl.default! }));
+    }
+  };
+
+  const handleRemoveControl = (id: string) => {
+    setControls((prev) => prev.filter((c) => c.id !== id));
   };
 
   const exposedControls = controls.filter((c) => c.exposed !== false);
@@ -851,7 +866,7 @@ export default function CreateToolStudioPage() {
 
               {/* Form Builder */}
               <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--line)]">
                   <div>
                     <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
                       Parametric Form Builder
@@ -860,9 +875,19 @@ export default function CreateToolStudioPage() {
                       Toggle exposed user controls and customize display labels
                     </span>
                   </div>
-                  <span className="rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink)]">
-                    <span className="text-[var(--accent)]">{exposedCount}</span> / {controls.length} Exposed
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsExplorerOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all shadow-sm"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Custom Node Controller</span>
+                    </button>
+                    <span className="rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink)]">
+                      <span className="text-[var(--accent)]">{exposedCount}</span> / {controls.length} Exposed
+                    </span>
+                  </div>
                 </div>
 
                 {/* Batch Actions */}
@@ -934,19 +959,29 @@ export default function CreateToolStudioPage() {
                                   Node #{control.node_id} · {control.input_name}
                                 </span>
                               </div>
-                              <span className="font-mono text-[9px] font-bold">
-                                {isExposed ? (
-                                  <span className="text-[var(--accent)] flex items-center gap-1">
-                                    <Eye className="h-3 w-3" />
-                                    <span>Exposed</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[var(--ink-faint)] flex items-center gap-1">
-                                    <EyeOff className="h-3 w-3" />
-                                    <span>Locked</span>
-                                  </span>
-                                )}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[9px] font-bold">
+                                  {isExposed ? (
+                                    <span className="text-[var(--accent)] flex items-center gap-1">
+                                      <Eye className="h-3 w-3" />
+                                      <span>Exposed</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[var(--ink-faint)] flex items-center gap-1">
+                                      <EyeOff className="h-3 w-3" />
+                                      <span>Locked</span>
+                                    </span>
+                                  )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveControl(control.id)}
+                                  title="Remove controller"
+                                  className="p-1 rounded text-[var(--ink-faint)] hover:text-[var(--danger)] hover:bg-[var(--danger-surface)] transition-colors opacity-70 hover:opacity-100"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
                             </div>
 
                             <input
@@ -1470,6 +1505,14 @@ export default function CreateToolStudioPage() {
           </div>
         )}
       </div>
+
+      <NodeParameterExplorer
+        open={isExplorerOpen}
+        onClose={() => setIsExplorerOpen(false)}
+        availableNodes={parsedData?.available_nodes || []}
+        existingControlIds={controls.map((c) => c.id)}
+        onAddControl={handleAddCustomControl}
+      />
     </div>
   );
 }
