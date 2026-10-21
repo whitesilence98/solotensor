@@ -578,6 +578,7 @@ class ModelModerationStatus(str, Enum):
 
 
 class ModelPrecision(str, Enum):
+    FP8 = "FP8"
     FP16 = "FP16"
     FP32 = "FP32"
     BF16 = "BF16"
