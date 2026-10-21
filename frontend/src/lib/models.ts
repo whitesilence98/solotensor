@@ -1,4 +1,4 @@
-import type { InstalledGalleryModel, PublicModelSummary } from "./api";
+import type { InstalledGalleryModel, PublicModelSummary, ModelPrecision } from "./api";
 
 /**
  * Clean and normalize a model filename or identifier for fuzzy comparison.

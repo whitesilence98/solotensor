@@ -713,7 +713,7 @@ export type CreatorModelType =
   | "StyleModel";
 export type ModelVisibility = "Public" | "Unlisted" | "Private";
 export type ModelModerationStatus = "draft" | "pending_review" | "approved" | "rejected";
-export type ModelPrecision = "FP16" | "FP32" | "BF16" | "Quantized";
+export type ModelPrecision = "FP8" | "FP16" | "FP32" | "BF16" | "Quantized";
 
 export interface CreatorModelCompatibility {
   base_model: string;
