@@ -5,7 +5,9 @@
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
+  (typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://127.0.0.1:8000");
 
 /**
  * Resolves media/sample/cover URLs returned by backend.
@@ -753,6 +755,9 @@ export interface CreatorModelFile {
   precision: ModelPrecision;
   visible: boolean;
   download_url: string;
+  category?: string | null;
+  from_vault?: boolean;
+  in_vault?: boolean;
 }
 
 export interface CreatorModelSample {
@@ -792,6 +797,8 @@ export interface CreatorModel {
   versions: CreatorModelVersion[];
   moderation_status?: ModelModerationStatus;
   moderation_notes?: string | null;
+  from_vault?: boolean;
+  in_vault?: boolean;
 }
 
 export interface CreatorModelPayload {
@@ -925,6 +932,8 @@ export interface ModelPendingReviewItem {
   versions: CreatorModelVersion[];
   moderation_status: ModelModerationStatus;
   moderation_notes?: string | null;
+  from_vault?: boolean;
+  in_vault?: boolean;
 }
 
 export interface ModelPendingReviewQueueResponse {
@@ -2402,7 +2411,7 @@ export function setLocalUserRole(newRole: UserRole): UserProfile | null {
     const norm = normalizeRoleName(newRole);
     user.role = norm;
     user.primary_role = norm;
-    user.roles = Array.from(new Set([norm, ...(user.roles || [])]));
+    user.roles = [norm];
     user.permissions = getDefaultPermissionsForRole(norm);
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
     return user;

@@ -78,6 +78,7 @@ export default function PublicModelDetailPage({
 
   // Interaction states
   const [installing, setInstalling] = useState<string | null>(null);
+  const [installedFileIds, setInstalledFileIds] = useState<Set<string>>(new Set());
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
   const [isStarred, setIsStarred] = useState(false);
@@ -609,6 +610,7 @@ export default function PublicModelDetailPage({
         versionId,
         file.file_id,
       );
+      setInstalledFileIds((prev) => new Set([...prev, file.file_id]));
       if (useAfterInstall) {
         runInStudio(versionId, file.file_id);
         return;
@@ -1642,26 +1644,36 @@ export default function PublicModelDetailPage({
                   );
                 })()
               )}
-              {primaryFile && activeVersion && (isAdmin || isMod) && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void install(primaryFile, activeVersion.version_id)
-                  }
-                  disabled={installing === primaryFile.file_id}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--accent)]/60 bg-[var(--accent)]/10 py-2 text-xs font-bold text-[var(--accent)] transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
-                  title="Install weight file into ComfyUI vault (Moderator Tool)"
-                >
-                  <HardDriveDownload className="h-3.5 w-3.5" />
-                  <span>
-                    {installing === primaryFile.file_id
-                      ? "Installing…"
-                      : "ComfyUI"}
-                  </span>
-                  <span className="rounded bg-[var(--accent)]/20 px-1 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
-                    Mod
-                  </span>
-                </button>
+              {primaryFile && activeVersion && isAuthenticated && (isAdmin || isMod) && (
+                primaryFile.from_vault || primaryFile.in_vault || installedFileIds.has(primaryFile.file_id) ? (
+                  <div
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/20 py-2 px-3 text-xs font-mono font-bold text-emerald-400"
+                    title={primaryFile.from_vault ? "Weights sourced directly from local ComfyUI vault" : "Weights already mounted into ComfyUI vault"}
+                  >
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>{primaryFile.from_vault ? "Vault Source" : "In Vault"}</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void install(primaryFile, activeVersion.version_id)
+                    }
+                    disabled={installing === primaryFile.file_id}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--accent)]/60 bg-[var(--accent)]/10 py-2 text-xs font-bold text-[var(--accent)] transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
+                    title="Install weight file into ComfyUI vault (Moderator Tool)"
+                  >
+                    <HardDriveDownload className="h-3.5 w-3.5" />
+                    <span>
+                      {installing === primaryFile.file_id
+                        ? "Installing…"
+                        : "Install to ComfyUI"}
+                    </span>
+                    <span className="rounded bg-[var(--accent)]/20 px-1 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
+                      Mod
+                    </span>
+                  </button>
+                )
               )}
             </div>
 
@@ -1858,17 +1870,27 @@ export default function PublicModelDetailPage({
                                   <span>Get</span>
                                 </button>
                               )}
-                              {(isAdmin || isMod) && (
-                                <button
-                                  type="button"
-                                  onClick={() => void install(file, activeVersion.version_id)}
-                                  disabled={installing === file.file_id}
-                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                                  title={`Install ${file.filename} into ComfyUI (Moderator Tool)`}
-                                >
-                                  <HardDriveDownload className="h-3 w-3" />
-                                  <span>{installing === file.file_id ? "Installing…" : "ComfyUI"}</span>
-                                </button>
+                              {isAuthenticated && (isAdmin || isMod) && (
+                                (file.from_vault || file.in_vault || installedFileIds.has(file.file_id)) ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-950/30 px-2 py-1 font-mono text-[10px] font-bold text-emerald-400"
+                                    title={file.from_vault ? "Imported from local ComfyUI vault" : "Already installed in ComfyUI vault"}
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    <span>{file.from_vault ? "Vault Source" : "In Vault"}</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => void install(file, activeVersion.version_id)}
+                                    disabled={installing === file.file_id}
+                                    className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                                    title={`Install ${file.filename} into ComfyUI (Moderator Tool)`}
+                                  >
+                                    <HardDriveDownload className="h-3 w-3" />
+                                    <span>{installing === file.file_id ? "Installing…" : "Install to ComfyUI"}</span>
+                                  </button>
+                                )
                               )}
                             </div>
                           </div>

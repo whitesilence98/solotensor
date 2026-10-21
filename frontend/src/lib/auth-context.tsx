@@ -379,22 +379,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const primaryRole = useMemo(() => {
+    if (!token || !user) return "guest";
     return normalizeRoleName(user?.primary_role || user?.role || "creator");
-  }, [user]);
+  }, [token, user]);
 
   const roles = useMemo(() => {
+    if (!token || !user) return ["guest"];
     if (user?.roles && user.roles.length > 0) {
       return user.roles.map(normalizeRoleName);
     }
     return [primaryRole];
-  }, [user, primaryRole]);
+  }, [token, user, primaryRole]);
 
   const permissions = useMemo(() => {
+    if (!token || !user) return getDefaultPermissionsForRole("guest");
     if (user?.permissions && user.permissions.length > 0) {
       return user.permissions;
     }
     return getDefaultPermissionsForRole(primaryRole);
-  }, [user, primaryRole]);
+  }, [token, user, primaryRole]);
 
   const hasRole = useCallback(
     (checkRole: string) => {
@@ -406,13 +409,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasPermission = useCallback(
     (permission: string) => {
+      if (!token || !user) return false;
       if (permissions.includes("admin:full_access")) return true;
       return permissions.includes(permission);
     },
-    [permissions]
+    [token, user, permissions]
   );
 
   const isPro = useMemo(() => {
+    if (!token || !user) return false;
     return (
       hasRole("pro_creator") ||
       hasRole("verified_creator") ||
@@ -420,31 +425,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hasRole("admin") ||
       hasPermission("generation:create_pro")
     );
-  }, [hasRole, hasPermission]);
+  }, [token, user, hasRole, hasPermission]);
 
   const isMod = useMemo(() => {
+    if (!token || !user) return false;
     return (
       hasRole("moderator") ||
       hasRole("admin") ||
       hasPermission("moderation:review_queue")
     );
-  }, [hasRole, hasPermission]);
+  }, [token, user, hasRole, hasPermission]);
 
   const isAdmin = useMemo(() => {
+    if (!token || !user) return false;
     return hasRole("admin") || hasPermission("admin:full_access");
-  }, [hasRole, hasPermission]);
+  }, [token, user, hasRole, hasPermission]);
 
   const switchRoleDemo = useCallback(async (newRole: UserRole) => {
+    const norm = normalizeRoleName(newRole);
+    if (norm === "guest") {
+      logout();
+      setPendingReviewCount(0);
+      return;
+    }
+
     const DEMO_PERSONAS: Record<string, { username: string; password?: string }> = {
       creator: { username: "cyber_artisan", password: "Password123!" },
       moderator: { username: "sentinel_mod", password: "Password123!" },
       admin: { username: "winnguyen282", password: "Password123!" },
       pro_creator: { username: "neon_architect", password: "Password123!" },
       verified_creator: { username: "lora_mastermind", password: "Password123!" },
-      guest: { username: "guest_wanderer", password: "Password123!" },
     };
 
-    const norm = normalizeRoleName(newRole);
     const persona = DEMO_PERSONAS[norm];
     if (persona) {
       try {

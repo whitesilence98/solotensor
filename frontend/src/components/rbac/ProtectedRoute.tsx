@@ -102,8 +102,8 @@ export function ProtectedRoute({
   // 1. Loading State (Zero-CLS Shimmer Frame)
   if (isLoading) {
     return (
-      <div className="workspace-bezel m-4 p-6 min-h-[420px] flex flex-col justify-center items-center">
-        <div className="workspace-core w-full max-w-md p-8 flex flex-col items-center text-center space-y-4">
+      <div className="relative flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="workspace-core w-full max-w-md p-8 flex flex-col items-center text-center space-y-4 rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] shadow-2xl">
           <div className="h-10 w-10 rounded-xl bg-[var(--surface-soft)] border border-[var(--line-strong)] shimmer" />
           <div className="h-5 w-48 rounded-md bg-[var(--surface-soft)] shimmer" />
           <div className="h-3.5 w-64 rounded-md bg-[var(--surface-sunken)] shimmer" />
@@ -128,18 +128,20 @@ export function ProtectedRoute({
     return null;
   }
 
-  // 4. Unauthenticated Visitor State (401 Gate)
+  // 4. Unauthenticated Visitor State (Creator Access Gate)
   if (requireAuth && !isAuthenticated) {
     return (
-      <div className="workspace-bezel m-4 p-6 min-h-[460px] flex items-center justify-center">
-        <div className="workspace-core w-full max-w-md p-7 text-center space-y-5">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] shadow-[0_0_24px_rgba(0,0,0,0.8)]">
-            <Lock className="h-6 w-6 text-[var(--accent)]" />
+      <div className="relative flex h-full min-h-0 w-full flex-1 items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="workspace-core relative w-full max-w-md p-8 text-center space-y-6 rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] shadow-2xl">
+          {/* Subtle ambient accent glow behind icon */}
+          <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line-strong)] bg-[var(--surface)] shadow-[0_0_24px_rgba(0,0,0,0.8)]">
+            <div className="absolute inset-0 rounded-2xl bg-[var(--accent)] opacity-10 blur-md pointer-events-none" />
+            <Lock className="relative h-6 w-6 text-[var(--accent)]" />
           </div>
 
           <div className="space-y-1.5">
             <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--accent)] font-semibold">
-              SEC-GATE // 401 UNAUTHENTICATED
+              PROTECTED WORKSPACE // CREATOR ACCESS
             </span>
             <h2 className="text-xl font-bold tracking-tight text-[var(--ink)]">
               {title || "Authentication Required"}
@@ -189,15 +191,15 @@ export function ProtectedRoute({
     : null;
 
   return (
-    <div className="workspace-bezel m-4 p-6 min-h-[500px] flex items-center justify-center">
-      <div className="workspace-core w-full max-w-lg p-7 text-center space-y-5">
+    <div className="relative flex h-full min-h-0 w-full flex-1 items-center justify-center p-4 sm:p-6 overflow-hidden">
+      <div className="workspace-core relative w-full max-w-lg p-8 text-center space-y-5 rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] shadow-2xl">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--danger-line)] bg-[var(--danger-surface)] shadow-[0_0_24px_rgba(239,139,128,0.15)]">
           <ShieldAlert className="h-6 w-6 text-[var(--danger)]" />
         </div>
 
         <div className="space-y-1.5">
           <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--danger)] font-bold">
-            SEC-GATE // 403 ACCESS RESTRICTED
+            RESTRICTED ENCLAVE // ELEVATED CLEARANCE
           </span>
           <h2 className="text-xl font-bold tracking-tight text-[var(--ink)]">
             {title || "Elevated Privileges Required"}

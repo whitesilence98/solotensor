@@ -742,7 +742,9 @@ class ComfyClient:
         """
         url = f"{self.settings.comfy_ws}/ws?clientId={client_id}"
         try:
-            async with websockets.connect(url, max_size=64 * 1024 * 1024) as ws:
+            async with websockets.connect(
+                url, max_size=64 * 1024 * 1024, ping_interval=30, ping_timeout=120
+            ) as ws:
                 deadline = asyncio.get_running_loop().time() + self.settings.COMFY_TIMEOUT
                 while True:
                     remaining = deadline - asyncio.get_running_loop().time()
@@ -798,14 +800,35 @@ class ComfyClient:
             logger.warning("ComfyUI websocket error: %s", exc)
             yield {"type": "error", "message": f"Lost connection to ComfyUI: {exc}"}
 
-    async def wait_until_done(self, prompt_id: str, client_id: str) -> str:
-        """Consume the progress stream and return the final status ("completed"/"failed"/"timeout")."""
-        async for event in self.stream_progress(prompt_id, client_id):
-            if event["type"] == "error":
-                return "failed"
-            if event["type"] == "completed":
-                return "completed"
-        return "timeout"
+    async def wait_until_done(self, prompt_id: str, client_id: str | None = None) -> str:
+        """Poll ComfyUI history until prompt_id completes, fails, or times out.
+
+        Does not open a secondary WebSocket with client_id, avoiding eviction of the
+        frontend's live progress WebSocket relay channel.
+        """
+        deadline = asyncio.get_running_loop().time() + self.settings.COMFY_TIMEOUT
+        poll_interval = max(0.2, self.settings.COMFY_POLL_INTERVAL)
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                logger.warning("Prompt %s timed out after %ds", prompt_id, self.settings.COMFY_TIMEOUT)
+                return "timeout"
+
+            try:
+                history = await self.get_history(prompt_id)
+                if history:
+                    status = history.get("status", {}) or {}
+                    status_str = status.get("status_str", "")
+                    if status_str in ("error", "interrupted") or (
+                        status.get("completed") is False and "messages" in status
+                    ):
+                        logger.warning("Prompt %s execution error: %s", prompt_id, status)
+                        return "failed"
+                    return "completed"
+            except Exception as exc:
+                logger.debug("Error checking ComfyUI history for prompt %s: %s", prompt_id, exc)
+
+            await asyncio.sleep(min(poll_interval, max(0.1, remaining)))
 
 
 def get_comfy_client() -> ComfyClient:

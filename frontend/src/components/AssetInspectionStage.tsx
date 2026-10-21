@@ -37,7 +37,11 @@ import {
   type GalleryMetadata,
   type InstalledGalleryModel,
 } from "@/lib/api";
-import { resolveModelGalleryUrl } from "@/lib/models";
+import {
+  findMatchingModel,
+  resolveLoraDisplayName,
+  resolveModelGalleryUrl,
+} from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
 
 /**
@@ -73,26 +77,31 @@ export const SAVED_INPUTS_KEY = "solotensor:last-successful-inputs:v4";
 export function saveRemixToStorage(meta: GalleryMetadata, modelOptions?: InstalledGalleryModel[]) {
   if (typeof window === "undefined" || !meta) return;
   try {
-    const matchedModel = modelOptions?.find(
-      (m) =>
-        (meta.model_id && m.model_id === meta.model_id) ||
-        m.title === meta.model_title ||
-        m.filename === meta.model_filename
+    const matchedModel = findMatchingModel(
+      {
+        modelId: meta.model_id,
+        fileId: meta.file_id,
+        filename: meta.model_filename || meta.unet_name,
+        title: meta.model_title,
+      },
+      modelOptions
     );
 
     const activeLoras = Array.isArray(meta.loras)
       ? meta.loras.map((l, index) => {
-        const matchedLora = modelOptions?.find(
-          (m) =>
-            (l.model_id && m.model_id === l.model_id) ||
-            m.filename === l.lora ||
-            m.title === l.lora ||
-            l.lora.includes(m.filename) ||
-            m.filename.includes(l.lora)
+        const matchedLora = findMatchingModel(
+          {
+            modelId: (l as any).model_id || (l as any).modelId,
+            fileId: (l as any).file_id || (l as any).fileId,
+            filename: l.lora,
+            title: (l as any).title,
+          },
+          modelOptions
         );
+        const resolvedTitle = matchedLora?.title || resolveLoraDisplayName(l, modelOptions);
         return {
           id: `remix-${index}-${l.lora}`,
-          title: matchedLora?.title || l.lora,
+          title: resolvedTitle,
           baseModel: matchedLora?.version_name || "SDXL",
           weight: l.strength,
           enabled: l.on,
@@ -151,6 +160,29 @@ export default function AssetInspectionStage({
   backHref = "/",
 }: AssetInspectionStageProps) {
   const router = useRouter();
+  const [internalModelOptions, setInternalModelOptions] = useState<InstalledGalleryModel[]>(modelOptions);
+
+  useEffect(() => {
+    if (modelOptions && modelOptions.length > 0) {
+      setInternalModelOptions(modelOptions);
+    } else {
+      let cancelled = false;
+      void api
+        .listSelectableModels()
+        .then((items) => {
+          if (!cancelled && items && items.length > 0) {
+            setInternalModelOptions(items);
+          }
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [modelOptions]);
+
+  const effectiveModelOptions = internalModelOptions.length > 0 ? internalModelOptions : modelOptions;
+
   const [isZoomed, setIsZoomed] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -431,16 +463,22 @@ export default function AssetInspectionStage({
       onRemix(meta);
       onClose?.();
     } else {
-      saveRemixToStorage(meta, modelOptions);
+      saveRemixToStorage(meta, effectiveModelOptions);
       router.push("/generate");
     }
   };
 
-  const matchedBaseModel = modelOptions.find(
-    (m) =>
-      (meta?.model_id && m.model_id === meta.model_id) ||
-      (meta?.model_title && (m.title === meta.model_title || m.filename === meta.model_title)) ||
-      (meta?.model_filename && (m.filename === meta.model_filename || m.title === meta.model_filename))
+  const matchedBaseModel = findMatchingModel(
+    {
+      modelId: meta?.model_id,
+      fileId: meta?.file_id,
+      filename:
+        meta?.model_filename ||
+        meta?.unet_name ||
+        ((meta as Record<string, unknown> | null | undefined)?.model as string | undefined),
+      title: meta?.model_title,
+    },
+    effectiveModelOptions
   );
 
   const baseModelTitle = (() => {
@@ -471,7 +509,7 @@ export default function AssetInspectionStage({
         matchedBaseModel?.filename,
       fileId: meta?.file_id || matchedBaseModel?.file_id,
     },
-    modelOptions
+    effectiveModelOptions
   );
 
   const activeLoras = Array.isArray(meta?.loras) ? meta.loras : [];
@@ -815,29 +853,27 @@ export default function AssetInspectionStage({
 
                 {/* Attached LoRAs */}
                 {activeLoras.map((item, idx) => {
-                  const loraUrl = resolveModelGalleryUrl(
+                  const matched = findMatchingModel(
                     {
                       modelId: (item as any).model_id || (item as any).modelId,
                       fileId: (item as any).file_id || (item as any).fileId,
                       filename: item.lora,
-                      title: item.lora,
+                      title: (item as any).title,
                     },
-                    modelOptions
+                    effectiveModelOptions
                   );
 
-                  const matched = modelOptions.find(
-                    (m) =>
-                      m.filename === item.lora ||
-                      m.title === item.lora ||
-                      item.lora.includes(m.filename) ||
-                      m.filename.includes(item.lora)
-                  );
+                  const displayTitle = resolveLoraDisplayName(item, effectiveModelOptions);
 
-                  const displayTitle = (() => {
-                    if (matched?.title) return matched.title;
-                    const base = item.lora.split(/[/\\]/).pop() || item.lora;
-                    return base.replace(/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i, "");
-                  })();
+                  const loraUrl = resolveModelGalleryUrl(
+                    {
+                      modelId: (item as any).model_id || (item as any).modelId || matched?.model_id,
+                      fileId: (item as any).file_id || (item as any).fileId || matched?.file_id,
+                      filename: item.lora,
+                      title: matched?.title || (item as any).title || displayTitle,
+                    },
+                    effectiveModelOptions
+                  );
 
                   return (
                     <div
@@ -864,6 +900,11 @@ export default function AssetInspectionStage({
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        {matched?.version_name && (
+                          <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-soft)] border border-[var(--line)]">
+                            {matched.version_name}
+                          </span>
+                        )}
                         <span className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-faint)] border border-[var(--line)]">
                           LoRA
                         </span>

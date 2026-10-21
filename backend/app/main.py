@@ -1050,8 +1050,6 @@ async def workflow_template_info() -> dict[str, Any]:
         lower_ref = f"{unet_name or ''} {clip_name or ''} {vae_name or ''}".lower()
         if "flux" in lower_ref:
             base_architecture = "FLUX.1"
-        elif "krea" in lower_ref:
-            base_architecture = "Krea 2"
         elif "wan" in lower_ref:
             base_architecture = "Wan 2.1 / Wan 2.8"
         elif "z-image" in lower_ref or "z_image" in lower_ref:
@@ -1167,6 +1165,7 @@ async def generate(
             active_loras.append(
                 {
                     "lora": resolved_primary_lora,
+                    "title": selected_model.get("title", ""),
                     "strength": 1.0,
                     "on": True,
                     "model_id": selected_model.get("model_id"),
@@ -1181,6 +1180,7 @@ async def generate(
             adapter_model_id = adapter.model_id
             adapter_version_id = adapter.version_id
             adapter_file_id = adapter.file_id
+            adapter_title = ""
             if adapter.model_id and adapter.version_id and adapter.file_id:
                 adapter_model = model_storage.resolve_installed_gallery_file(
                     adapter.model_id, adapter.version_id, adapter.file_id
@@ -1188,10 +1188,22 @@ async def generate(
                 if adapter_model["model_type"] not in {"LoRA", "LyCORIS"}:
                     raise ModelConflict("Adapter model must be a LoRA or LyCORIS")
                 raw_filename = adapter_model["filename"]
+                adapter_title = adapter_model.get("title", "")
             elif adapter.lora:
                 raw_filename = adapter.lora
             else:
                 continue
+
+            if not adapter_title and raw_filename:
+                norm_raw = raw_filename.replace("\\", "/").lower()
+                for gal_model in model_storage.selectable_gallery_files():
+                    if gal_model.get("filename", "").replace("\\", "/").lower() == norm_raw:
+                        adapter_title = gal_model.get("title", "")
+                        if not adapter_model_id:
+                            adapter_model_id = gal_model.get("model_id")
+                            adapter_version_id = gal_model.get("version_id")
+                            adapter_file_id = gal_model.get("file_id")
+                        break
 
             resolved_adapter_lora = await comfy.resolve_model_name(
                 "loras", raw_filename
@@ -1207,6 +1219,8 @@ async def generate(
             if existing is not None:
                 existing["strength"] = adapter.strength
                 existing["on"] = adapter.on
+                if adapter_title:
+                    existing["title"] = adapter_title
                 if adapter_model_id:
                     existing["model_id"] = adapter_model_id
                     existing["version_id"] = adapter_version_id
@@ -1215,6 +1229,7 @@ async def generate(
                 active_loras.append(
                     {
                         "lora": resolved_adapter_lora,
+                        "title": adapter_title,
                         "strength": adapter.strength,
                         "on": adapter.on,
                         "model_id": adapter_model_id,
@@ -1901,7 +1916,9 @@ async def ws_progress(websocket: WebSocket, client_id: str) -> None:
     logger.info("WS progress channel opened for %s", client_id)
     try:
         url = f"{settings.comfy_ws}/ws?clientId={client_id}"
-        async with websockets.connect(url, max_size=64 * 1024 * 1024) as upstream:
+        async with websockets.connect(
+            url, max_size=64 * 1024 * 1024, ping_interval=30, ping_timeout=120
+        ) as upstream:
             async for raw in upstream:
                 if isinstance(raw, (bytes, bytearray)):
                     # Binary frames = live preview images; forward as-is.

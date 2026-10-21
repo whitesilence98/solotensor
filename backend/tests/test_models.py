@@ -892,6 +892,46 @@ class ModelModerationLifecycleTests(unittest.TestCase):
         self.assertEqual(reloaded.visibility, ModelVisibility.PRIVATE)
         self.assertIsNone(reloaded.published_at)
 
+    def test_vault_source_and_installation_flags(self) -> None:
+        base_model = self.service.create(
+            ModelCreateRequest(title="Vault Model", visibility=ModelVisibility.PRIVATE)
+        )
+        data = b"local vault weights"
+        source = Path(self.comfy.name) / "models" / "checkpoints"
+        source.mkdir(parents=True, exist_ok=True)
+        (source / "vault_model.safetensors").write_bytes(data)
+
+        local_res = self.service.import_local_file(
+            base_model.model_id,
+            base_model.versions[0].version_id,
+            "checkpoints",
+            "vault_model.safetensors",
+            ModelPrecision.FP16,
+        )
+        local_file = local_res.versions[0].files[-1]
+        self.assertTrue(local_file.from_vault)
+        self.assertTrue(local_file.in_vault)
+        self.assertTrue(local_res.from_vault)
+        self.assertTrue(local_res.in_vault)
+
+        up_model, up_file_id, up_data = self._create_model_with_file("Uploaded Test Model")
+        up_reloaded = self.service.get(up_model.model_id)
+        up_file = up_reloaded.versions[0].files[0]
+        self.assertFalse(up_file.from_vault)
+        self.assertFalse(up_file.in_vault)
+        self.assertFalse(up_reloaded.from_vault)
+        self.assertFalse(up_reloaded.in_vault)
+
+        self.service.publish(up_model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC), is_moderator=True)
+        self.service.install_file(up_model.model_id, up_model.versions[0].version_id, up_file_id)
+
+        installed_reloaded = self.service.get(up_model.model_id)
+        installed_file = installed_reloaded.versions[0].files[0]
+        self.assertFalse(installed_file.from_vault)
+        self.assertTrue(installed_file.in_vault)
+        self.assertFalse(installed_reloaded.from_vault)
+        self.assertTrue(installed_reloaded.in_vault)
+
     def test_review_model_invalid_action(self) -> None:
         model, file_id, data = self._create_model_with_file("Invalid Action Model")
         with self.assertRaises(ModelConflict) as ctx:

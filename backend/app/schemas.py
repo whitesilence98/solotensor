@@ -778,6 +778,8 @@ class ModelFileResponse(BaseModel):
     visible: bool
     download_url: str
     category: Optional[str] = None
+    from_vault: bool = False
+    in_vault: bool = False
 
 
 class ModelSampleResponse(BaseModel):
@@ -808,6 +810,8 @@ class ModelResponse(ModelCreateRequest):
     versions: list[ModelVersionResponse] = Field(default_factory=list)
     moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
     moderation_notes: Optional[str] = None
+    from_vault: bool = False
+    in_vault: bool = False
 
 
 class ModelListResponse(BaseModel):
@@ -977,6 +981,8 @@ class ModelPendingReviewItem(BaseModel):
     versions: list[ModelVersionResponse] = Field(default_factory=list)
     moderation_status: ModelModerationStatus = ModelModerationStatus.PENDING_REVIEW
     moderation_notes: Optional[str] = None
+    from_vault: bool = False
+    in_vault: bool = False
 
 
 class ModelPendingReviewQueueResponse(BaseModel):

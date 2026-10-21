@@ -7,6 +7,8 @@ import {
   type BaseArchitectureGroup,
   isArchitectureGroup,
   getArchitectureDisplay,
+  getFirstOptionValue,
+  isArchitectureInList,
 } from "@/lib/baseModelArchitectures";
 
 export interface HierarchicalSelectProps {
@@ -42,8 +44,28 @@ export default function HierarchicalSelect({
   const generatedId = useId();
   const id = explicitId || generatedId;
 
-  // Selected item display info
-  const selectedDisplay = useMemo(() => getArchitectureDisplay(value), [value]);
+  // First item on the list as default
+  const defaultOptionValue = useMemo(() => {
+    return getFirstOptionValue(options);
+  }, [options]);
+
+  // Check if current value exists on the list
+  const isValueValid = useMemo(() => {
+    return isArchitectureInList(value, options);
+  }, [value, options]);
+
+  // If value is not on the list or not provided, use the first item on the list as default
+  const effectiveValue = isValueValid ? value : defaultOptionValue;
+
+  // Selected item display info based on effectiveValue
+  const selectedDisplay = useMemo(() => getArchitectureDisplay(effectiveValue), [effectiveValue]);
+
+  // Sync back to parent if the provided value was invalid and a default is available
+  useEffect(() => {
+    if (!isValueValid && defaultOptionValue && value !== defaultOptionValue) {
+      onChange(defaultOptionValue);
+    }
+  }, [isValueValid, defaultOptionValue, value, onChange]);
 
   // Focus search input when popover opens
   useEffect(() => {
@@ -158,7 +180,7 @@ export default function HierarchicalSelect({
         } ${buttonClassName}`}
       >
         <div className="flex items-center gap-2 min-w-0 truncate">
-          {value ? (
+          {effectiveValue ? (
             selectedDisplay.group ? (
               <div className="flex items-center gap-1.5 truncate">
                 <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink-soft)] border border-[var(--line)] shrink-0">
@@ -170,7 +192,7 @@ export default function HierarchicalSelect({
               </div>
             ) : (
               <span className="truncate font-bold text-[var(--ink)]">
-                {selectedDisplay.label || value}
+                {selectedDisplay.label || effectiveValue}
               </span>
             )
           ) : (
@@ -233,7 +255,7 @@ export default function HierarchicalSelect({
                     : !!expandedGroups[node.label];
 
                   const hasSelectedChild = node.options.some(
-                    (opt) => opt.value === value,
+                    (opt) => opt.value === effectiveValue,
                   );
 
                   return (
@@ -273,7 +295,7 @@ export default function HierarchicalSelect({
                       {isExpanded && (
                         <div className="ml-3 pl-2.5 border-l border-[var(--line)] my-0.5 space-y-0.5 animate-in fade-in">
                           {node.options.map((opt) => {
-                            const isSelected = opt.value === value;
+                            const isSelected = opt.value === effectiveValue;
                             return (
                               <button
                                 key={opt.value}
@@ -299,7 +321,7 @@ export default function HierarchicalSelect({
                 }
 
                 // Standalone Item
-                const isSelected = node.value === value;
+                const isSelected = node.value === effectiveValue;
                 return (
                   <button
                     key={`item-${node.value}-${nodeIdx}`}

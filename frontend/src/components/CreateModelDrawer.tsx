@@ -53,7 +53,11 @@ import {
 import TensorModelCard from "@/components/TensorModelCard";
 import CustomSelect from "@/components/CustomSelect";
 import HierarchicalSelect from "@/components/HierarchicalSelect";
-import { BASE_MODEL_ARCHITECTURES } from "@/lib/baseModelArchitectures";
+import {
+  BASE_MODEL_ARCHITECTURES,
+  getFirstOptionValue,
+  isArchitectureInList,
+} from "@/lib/baseModelArchitectures";
 import { useAuth } from "@/lib/auth-context";
 
 const modelTypes: CreatorModelType[] = [
@@ -194,7 +198,7 @@ export default function CreateModelDrawer({
   const [title, setTitle] = useState("");
   const [modelType, setModelType] = useState<CreatorModelType>("Checkpoint");
   const [category, setCategory] = useState<CreatorModelCategory>("General");
-  const [baseModel, setBaseModel] = useState("Allegro");
+  const [baseModel, setBaseModel] = useState(() => getFirstOptionValue(BASE_MODEL_ARCHITECTURES));
   const [customBaseModel, setCustomBaseModel] = useState("");
 
   // Base Model link for LoRA / LyCORIS
@@ -691,7 +695,7 @@ export default function CreateModelDrawer({
     if (info.clip_name) {
       setTextEncoder(info.clip_name);
     }
-    if (info.base_architecture) {
+    if (info.base_architecture && isArchitectureInList(info.base_architecture, BASE_MODEL_ARCHITECTURES)) {
       setBaseModel(info.base_architecture);
     }
     if (info.sampler_name) {

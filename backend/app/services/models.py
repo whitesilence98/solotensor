@@ -212,6 +212,49 @@ class ModelService:
     def _public_sample_url(self, model_id: str, version_id: str, sample_id: str) -> str:
         return f"{self.settings.FILES_PUBLIC_BASE}/api/v1/models/public/{model_id}/versions/{version_id}/samples/{sample_id}/download"
 
+    def is_file_in_vault(self, record: dict[str, Any], item: dict[str, Any]) -> tuple[bool, bool]:
+        """Check if a file originated from or is currently installed in the ComfyUI vault.
+
+        Returns (from_vault, in_vault).
+        - from_vault: True if registered in-place directly from ComfyUI vault.
+        - in_vault: True if physically present in ComfyUI vault (either in-place or installed).
+        """
+        from_vault = not bool(item.get("stored_name"))
+        root_value = self.settings.COMFY_MODEL_ROOT
+        if not root_value:
+            return from_vault, from_vault
+
+        try:
+            root = Path(root_value).expanduser().resolve()
+            if not root.is_dir():
+                return from_vault, from_vault
+
+            m_type = record.get("model_type", "Checkpoint")
+            item_cat = item.get("category")
+            candidate_cats: list[str] = [item_cat] if item_cat else []
+            for c in ModelHandlerFactory.candidate_categories(m_type):
+                if c not in candidate_cats:
+                    candidate_cats.append(c)
+
+            filename = self._clean_relative_filename(item.get("filename", ""))
+            if not filename:
+                return from_vault, from_vault
+
+            for cat in candidate_cats:
+                cat_root = (root / "models" / cat).resolve()
+                if not cat_root.is_dir():
+                    continue
+                cand_dest = (cat_root / filename).resolve()
+                if cand_dest != cat_root and cat_root not in cand_dest.parents:
+                    continue
+                if cand_dest.is_file() and not cand_dest.is_symlink():
+                    if cand_dest.stat().st_size == item.get("size"):
+                        return from_vault, True
+        except Exception:
+            pass
+
+        return from_vault, from_vault
+
     def _response(
         self,
         record: dict[str, Any],
@@ -221,32 +264,36 @@ class ModelService:
     ) -> ModelResponse:
         versions: list[ModelVersionResponse] = []
         for version in record.get("versions", []):
-            files = [
-                ModelFileResponse(
-                    **{
-                        key: item[key]
-                        for key in (
-                            "file_id",
-                            "filename",
-                            "size",
-                            "sha256",
-                            "precision",
-                            "visible",
-                        )
-                    },
-                    category=item.get("category"),
-                    download_url=(
-                        self._public_file_url(
-                            record["model_id"], version["version_id"], item["file_id"]
-                        )
-                        if public_urls
-                        else self._file_url(
-                            record["model_id"], version["version_id"], item["file_id"]
-                        )
-                    ),
+            files: list[ModelFileResponse] = []
+            for item in version.get("files", []):
+                from_vault, in_vault = self.is_file_in_vault(record, item)
+                files.append(
+                    ModelFileResponse(
+                        **{
+                            key: item[key]
+                            for key in (
+                                "file_id",
+                                "filename",
+                                "size",
+                                "sha256",
+                                "precision",
+                                "visible",
+                            )
+                        },
+                        category=item.get("category"),
+                        from_vault=from_vault,
+                        in_vault=in_vault,
+                        download_url=(
+                            self._public_file_url(
+                                record["model_id"], version["version_id"], item["file_id"]
+                            )
+                            if public_urls
+                            else self._file_url(
+                                record["model_id"], version["version_id"], item["file_id"]
+                            )
+                        ),
+                    )
                 )
-                for item in version.get("files", [])
-            ]
             samples = [
                 ModelSampleResponse(
                     sample_id=item["sample_id"],
@@ -315,6 +362,8 @@ class ModelService:
             versions=versions,
             moderation_status=record.get("moderation_status", ModelModerationStatus.APPROVED.value),
             moderation_notes=record.get("moderation_notes"),
+            from_vault=any(f.from_vault for v in versions for f in v.files),
+            in_vault=any(f.in_vault for v in versions for f in v.files),
         )
 
     def _validate_base_association(
@@ -550,6 +599,8 @@ class ModelService:
                     versions=resp.versions,
                     moderation_status=record.get("moderation_status", ModelModerationStatus.PENDING_REVIEW.value),
                     moderation_notes=record.get("moderation_notes"),
+                    from_vault=any(f.from_vault for v in resp.versions for f in v.files),
+                    in_vault=any(f.in_vault for v in resp.versions for f in v.files),
                 )
                 items.append(item.model_dump(mode="json"))
             except Exception as exc:

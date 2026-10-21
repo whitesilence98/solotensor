@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # --- ComfyUI engine -------------------------------------------------
     COMFY_HOST: str = "127.0.0.1:8188"
-    COMFY_TIMEOUT: float = 600.0          # seconds to wait for a workflow to finish
+    COMFY_TIMEOUT: float = 1800.0         # seconds to wait for a workflow to finish (30 min default)
     COMFY_POLL_INTERVAL: float = 0.5
 
     # --- Local file storage ----------------------------------------------

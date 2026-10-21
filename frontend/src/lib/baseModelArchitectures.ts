@@ -98,57 +98,77 @@ export const BASE_MODEL_ARCHITECTURES: BaseArchitectureNode[] = [
   {
     label: "LTX",
     options: [
-      { label: "LTX-Video 2B", value: "LTX-Video 2B" },
-      { label: "LTX-Video 13B", value: "LTX-Video 13B" },
+      { label: "LTX Video", value: "LTX Video" },
+      { label: "LTX-Video 0.9.5", value: "LTX-Video 0.9.5" },
+      { label: "LTX-Video 0.9.1", value: "LTX-Video 0.9.1" },
       { label: "LTX-2", value: "LTX-2" },
       { label: "LTX-2.3", value: "LTX-2.3" },
-      { label: "LTX-2.5", value: "LTX-2.5" },
     ],
   },
-  { label: "Lumina 2", value: "Lumina 2" },
-  { label: "MiniMax H3", value: "MiniMax H3" },
-  { label: "Mochi 1 10B", value: "Mochi 1 10B" },
-  { label: "Neta-Lumina-Beta", value: "Neta-Lumina-Beta" },
-  { label: "NewBie-Image", value: "NewBie-Image" },
-  { label: "NoobAI", value: "NoobAI" },
-  { label: "OmniGen2", value: "OmniGen2" },
-  { label: "Other", value: "Other" },
-  { label: "Ovis-Image-7B", value: "Ovis-Image-7B" },
+  { label: "Lumina", value: "Lumina" },
+  { label: "Mochi", value: "Mochi" },
+  { label: "OmniGen", value: "OmniGen" },
+  { label: "Open-Sora", value: "Open-Sora" },
   {
-    label: "PixArt",
+    label: "Other",
     options: [
-      { label: "PixArt-α", value: "PixArt-α" },
-      { label: "PixArt-Σ", value: "PixArt-Σ" },
+      { label: "Other / Custom", value: "Other / Custom" },
+      { label: "ConsisID", value: "ConsisID" },
+      { label: "DiT", value: "DiT" },
+      { label: "Film-Grain", value: "Film-Grain" },
+      { label: "FlashFace", value: "FlashFace" },
+      { label: "Hyper-SD", value: "Hyper-SD" },
+      { label: "InstantX", value: "InstantX" },
+      { label: "LCM", value: "LCM" },
+      { label: "Lightx2v", value: "Lightx2v" },
+      { label: "LivePortrait", value: "LivePortrait" },
+      { label: "MMAudio", value: "MMAudio" },
+      { label: "MoE", value: "MoE" },
+      { label: "PuLID", value: "PuLID" },
+      { label: "StoryDiffusion", value: "StoryDiffusion" },
+      { label: "X-Adapter", value: "X-Adapter" },
     ],
   },
-  { label: "Playground v2", value: "Playground v2" },
-  { label: "Pony", value: "Pony" },
-  { label: "PonyV7", value: "PonyV7" },
-  { label: "Pyramid-Flow-miniFlux", value: "Pyramid-Flow-miniFlux" },
+  { label: "PixArt a", value: "PixArt a" },
+  { label: "PixArt E", value: "PixArt E" },
   {
-    label: "Qwen-Image",
+    label: "Pony",
     options: [
+      { label: "Pony", value: "Pony" },
+      { label: "Pony V6", value: "Pony V6" },
+      { label: "Pony V7", value: "Pony V7" },
+    ],
+  },
+  {
+    label: "Qwen",
+    options: [
+      { label: "Qwen", value: "Qwen" },
+      { label: "Qwen-VL", value: "Qwen-VL" },
       { label: "Qwen-Image", value: "Qwen-Image" },
+      { label: "Qwen2.5-VL", value: "Qwen2.5-VL" },
       { label: "Qwen-Image-Edit", value: "Qwen-Image-Edit" },
+      { label: "Qwen-Image-Edit-2509", value: "Qwen-Image-Edit-2509" },
+      { label: "Qwen-Image-Edit-2511", value: "Qwen-Image-Edit-2511" },
+      { label: "Qwen-Image-Edit-Rapid-A1", value: "Qwen-Image-Edit-Rapid-A1" },
       { label: "Qwen-Image-Layered", value: "Qwen-Image-Layered" },
     ],
   },
-  { label: "Qwen-Image-2.1", value: "Qwen-Image-2.1" },
   {
     label: "SD 1.x",
     options: [
-      { label: "SD 1.5", value: "SD 1.5" },
       { label: "SD 1.4", value: "SD 1.4" },
+      { label: "SD 1.5", value: "SD 1.5" },
+      { label: "SD 1.5 LCM", value: "SD 1.5 LCM" },
+      { label: "SD 1.5 Hyper", value: "SD 1.5 Hyper" },
     ],
   },
   {
     label: "SD 2.x",
     options: [
       { label: "SD 2.0", value: "SD 2.0" },
-      { label: "SD 2.1 Unclip", value: "SD 2.1 Unclip" },
-      { label: "SD 2.1 768", value: "SD 2.1 768" },
       { label: "SD 2.1", value: "SD 2.1" },
-      { label: "SD 2.0 768", value: "SD 2.0 768" },
+      { label: "SD 2.1 768", value: "SD 2.1 768" },
+      { label: "SD 2.1 Unclip", value: "SD 2.1 Unclip" },
     ],
   },
   {
@@ -164,35 +184,27 @@ export const BASE_MODEL_ARCHITECTURES: BaseArchitectureNode[] = [
     options: [
       { label: "SDXL 1.0", value: "SDXL 1.0" },
       { label: "SDXL Refiner", value: "SDXL Refiner" },
-    ],
-  },
-  {
-    label: "SkyReels",
-    options: [
-      { label: "SkyReels-V1", value: "SkyReels-V1" },
-      { label: "SkyReels-V2", value: "SkyReels-V2" },
-    ],
-  },
-  {
-    label: "Stable Cascade",
-    options: [
-      { label: "Stable Cascade", value: "Stable Cascade" },
-      { label: "Stable Cascade-a", value: "Stable Cascade-a" },
-      { label: "Stable Cascade-b", value: "Stable Cascade-b" },
-      { label: "Stable Cascade-c", value: "Stable Cascade-c" },
-    ],
-  },
-  { label: "Stable Zero 123", value: "Stable Zero 123" },
-  {
-    label: "SV3D",
-    options: [
-      { label: "SV3D_u", value: "SV3D_u" },
-      { label: "SV3D_p", value: "SV3D_p" },
+      { label: "SDXL Turbo", value: "SDXL Turbo" },
+      { label: "SDXL Lightning", value: "SDXL Lightning" },
+      { label: "SDXL Hyper", value: "SDXL Hyper" },
     ],
   },
   { label: "SVD", value: "SVD" },
-  { label: "Tora", value: "Tora" },
-  { label: "USO", value: "USO" },
+  { label: "SVD XT", value: "SVD XT" },
+  {
+    label: "StepVideo",
+    options: [
+      { label: "StepVideo", value: "StepVideo" },
+      { label: "StepVideo-T2V", value: "StepVideo-T2V" },
+    ],
+  },
+  {
+    label: "Vchitect",
+    options: [
+      { label: "Vchitect", value: "Vchitect" },
+      { label: "Vchitect-2.0", value: "Vchitect-2.0" },
+    ],
+  },
   {
     label: "Wan",
     options: [
@@ -217,6 +229,33 @@ export const BASE_MODEL_ARCHITECTURES: BaseArchitectureNode[] = [
   },
   { label: "Universal", value: "Universal" },
 ];
+
+/**
+ * Returns the value of the first option on the list.
+ */
+export function getFirstOptionValue(options: BaseArchitectureNode[] = BASE_MODEL_ARCHITECTURES): string {
+  if (!options || options.length === 0) return "";
+  const first = options[0];
+  if (isArchitectureGroup(first)) {
+    return first.options[0]?.value || "";
+  }
+  return first.value || "";
+}
+
+/**
+ * Checks whether a given value exists in the architecture options list.
+ */
+export function isArchitectureInList(value: string, options: BaseArchitectureNode[] = BASE_MODEL_ARCHITECTURES): boolean {
+  if (!value) return false;
+  for (const node of options) {
+    if (isArchitectureGroup(node)) {
+      if (node.options.some((opt) => opt.value === value)) return true;
+    } else if (node.value === value) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Helper to find the display label of a selected architecture value

@@ -28,7 +28,11 @@ import {
 } from "@/lib/api";
 import CustomSelect from "@/components/CustomSelect";
 import HierarchicalSelect from "@/components/HierarchicalSelect";
-import { BASE_MODEL_ARCHITECTURES } from "@/lib/baseModelArchitectures";
+import {
+  BASE_MODEL_ARCHITECTURES,
+  getFirstOptionValue,
+  isArchitectureInList,
+} from "@/lib/baseModelArchitectures";
 
 export const isPromptableModelType = (t: string): boolean =>
   ![
@@ -95,7 +99,12 @@ export default function EditModelDrawer({
   const [visibility, setVisibility] = useState<ModelVisibility>(model.visibility);
 
   // Tab 2: Architecture & Conditioning
-  const [baseModel, setBaseModel] = useState(model.compatibility?.base_model || "Allegro");
+  const [baseModel, setBaseModel] = useState(() => {
+    const raw = model.compatibility?.base_model;
+    return raw && isArchitectureInList(raw, BASE_MODEL_ARCHITECTURES)
+      ? raw
+      : getFirstOptionValue(BASE_MODEL_ARCHITECTURES);
+  });
   const [customBaseModel, setCustomBaseModel] = useState("");
   const [selectedBaseKey, setSelectedBaseKey] = useState<string>("");
   const [baseOptions, setBaseOptions] = useState<InstalledGalleryModel[]>([]);
@@ -146,7 +155,12 @@ export default function EditModelDrawer({
       setTagInput("");
       setVisibility(model.visibility);
 
-      setBaseModel(model.compatibility?.base_model || "Allegro");
+      const rawArch = model.compatibility?.base_model;
+      setBaseModel(
+        rawArch && isArchitectureInList(rawArch, BASE_MODEL_ARCHITECTURES)
+          ? rawArch
+          : getFirstOptionValue(BASE_MODEL_ARCHITECTURES)
+      );
       const baseKey = model.compatibility?.base_model_id
         ? `${model.compatibility.base_model_id}:${model.compatibility.base_version_id || ""}:${model.compatibility.base_file_id || ""}`
         : "";

@@ -23,6 +23,7 @@ import { loadSettings } from "@/lib/settings";
 import { STORAGE_KEYS } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
+import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
 
@@ -501,17 +502,19 @@ export default function StudioPage() {
     }
     if (Array.isArray(meta.loras) && meta.loras.length > 0) {
       const activeLoras: ActiveLora[] = meta.loras.map((l, index) => {
-        const matched = modelOptions.find(
-          (m) =>
-            (l.model_id && m.model_id === l.model_id) ||
-            m.filename === l.lora ||
-            m.title === l.lora ||
-            l.lora.includes(m.filename) ||
-            m.filename.includes(l.lora)
+        const matched = findMatchingModel(
+          {
+            modelId: (l as any).model_id || (l as any).modelId,
+            fileId: (l as any).file_id || (l as any).fileId,
+            filename: l.lora,
+            title: (l as any).title,
+          },
+          modelOptions
         );
+        const resolvedTitle = matched?.title || resolveLoraDisplayName(l, modelOptions);
         return {
           id: `remix-${index}-${l.lora}`,
-          title: matched?.title || l.lora,
+          title: resolvedTitle,
           baseModel: matched?.version_name || "SDXL",
           weight: l.strength,
           enabled: l.on,

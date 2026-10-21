@@ -713,6 +713,11 @@ export default function ModerationDashboardPage() {
                           {item.model_id}
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {(item.from_vault || item.in_vault) && (
+                            <span className="rounded px-1.5 py-0.2 font-mono text-[9px] font-bold uppercase tracking-wider bg-emerald-950/60 text-emerald-300 border border-emerald-800/60" title="Model weights exist in local ComfyUI vault">
+                              Vault
+                            </span>
+                          )}
                           <span className="rounded px-1.5 py-0.2 font-mono text-[9px] font-bold uppercase tracking-wider bg-amber-950/60 text-amber-300 border border-amber-800/60">
                             {item.moderation_status.replace("_", " ")}
                           </span>
@@ -963,7 +968,7 @@ export default function ModerationDashboardPage() {
                             {/* Files */}
                             <div className="space-y-2">
                               {version.files.map((file) => {
-                                const isInstalled = installedFiles[file.file_id];
+                                const isInstalled = file.from_vault || file.in_vault || Boolean(installedFiles[file.file_id]);
                                 const isInstalling = installingFileId === file.file_id;
 
                                 return (
@@ -974,9 +979,16 @@ export default function ModerationDashboardPage() {
                                     <div className="flex items-center gap-2 min-w-0">
                                       <HardDrive className="h-4 w-4 text-[var(--accent)] shrink-0" />
                                       <div className="min-w-0">
-                                        <span className="font-bold text-[var(--ink)] block truncate">
-                                          {file.filename}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-[var(--ink)] block truncate">
+                                            {file.filename}
+                                          </span>
+                                          {file.from_vault && (
+                                            <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
+                                              Vault Source
+                                            </span>
+                                          )}
+                                        </div>
                                         <span className="text-[10px] text-[var(--ink-faint)]">
                                           {formatBytes(file.size)} • {file.precision}
                                           {file.sha256 ? ` • SHA: ${file.sha256.slice(0, 8)}…` : ""}
@@ -984,40 +996,40 @@ export default function ModerationDashboardPage() {
                                       </div>
                                     </div>
 
-                                    {/* Moderator Test-Mount ComfyUI Vault Button */}
-                                    <button
-                                      type="button"
-                                      disabled={isInstalling || actionLoading}
-                                      onClick={() =>
-                                        handleInstallFile(
-                                          selectedPendingModel.model_id,
-                                          version.version_id,
-                                          file.file_id,
-                                          file.filename
-                                        )
-                                      }
-                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[11px] font-bold uppercase tracking-wider transition ${
-                                        isInstalled
-                                          ? "border border-emerald-600/50 bg-emerald-950/40 text-emerald-300"
-                                          : "border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25"
-                                      }`}
-                                      title="Mount weights into local ComfyUI model vault"
-                                    >
-                                      {isInstalling ? (
-                                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                      ) : isInstalled ? (
-                                        <Check className="h-3.5 w-3.5" />
-                                      ) : (
-                                        <Zap className="h-3.5 w-3.5" />
-                                      )}
-                                      <span>
-                                        {isInstalling
-                                          ? "Mounting…"
-                                          : isInstalled
-                                          ? "Vault Mounted"
-                                          : "Install to ComfyUI"}
-                                      </span>
-                                    </button>
+                                    {/* Moderator Test-Mount ComfyUI Vault Button OR In Vault Mark */}
+                                    {isInstalled ? (
+                                      <div
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[11px] font-bold uppercase tracking-wider border border-emerald-600/50 bg-emerald-950/40 text-emerald-300"
+                                        title={file.from_vault ? "Weights sourced directly from local ComfyUI vault" : "Weights already mounted into ComfyUI vault"}
+                                      >
+                                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                        <span>{file.from_vault ? "Vault Source" : "In Vault"}</span>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={isInstalling || actionLoading}
+                                        onClick={() =>
+                                          handleInstallFile(
+                                            selectedPendingModel.model_id,
+                                            version.version_id,
+                                            file.file_id,
+                                            file.filename
+                                          )
+                                        }
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[11px] font-bold uppercase tracking-wider transition border border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] hover:bg-[var(--accent)]/25"
+                                        title="Mount weights into local ComfyUI model vault"
+                                      >
+                                        {isInstalling ? (
+                                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <Zap className="h-3.5 w-3.5" />
+                                        )}
+                                        <span>
+                                          {isInstalling ? "Mounting…" : "Install to ComfyUI"}
+                                        </span>
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1042,16 +1054,43 @@ export default function ModerationDashboardPage() {
                         <span>[A] Approve & Publish</span>
                       </button>
 
-                      <button
-                        type="button"
-                        disabled={actionLoading}
-                        onClick={() => handleReviewModel("approve", true)}
-                        className="flex items-center gap-2 rounded-lg border border-[#0c4a6e] bg-[#082f49] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-[#38bdf8] hover:bg-[#0c4a6e]/70 transition shadow-sm"
-                        title="Approve model and install primary weights into ComfyUI vault"
-                      >
-                        <Zap className="h-4 w-4" />
-                        <span>Approve & Mount to Vault</span>
-                      </button>
+                      {(() => {
+                        const firstFile = selectedPendingModel.versions?.[0]?.files?.[0];
+                        const isPrimaryInVault =
+                          selectedPendingModel.from_vault ||
+                          selectedPendingModel.in_vault ||
+                          Boolean(
+                            firstFile &&
+                            (firstFile.from_vault ||
+                              firstFile.in_vault ||
+                              installedFiles[firstFile.file_id])
+                          );
+
+                        if (isPrimaryInVault) {
+                          return (
+                            <div
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-emerald-600/40 bg-emerald-950/30 font-mono text-xs font-semibold text-emerald-400"
+                              title="Primary weights are already present in ComfyUI vault"
+                            >
+                              <Check className="h-4 w-4" />
+                              <span>Vault Managed</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={() => handleReviewModel("approve", true)}
+                            className="flex items-center gap-2 rounded-lg border border-[#0c4a6e] bg-[#082f49] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-[#38bdf8] hover:bg-[#0c4a6e]/70 transition shadow-sm"
+                            title="Approve model and install primary weights into ComfyUI vault"
+                          >
+                            <Zap className="h-4 w-4" />
+                            <span>Approve & Mount to Vault</span>
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2">
