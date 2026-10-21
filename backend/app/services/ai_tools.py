@@ -48,7 +48,6 @@ INFRASTRUCTURE_MARKERS = (
     "vae",
     "clipvision",
     "encoder",
-    "randomnoise",
 )
 LOCKED_EXECUTION_MARKERS = ("sampler", "ksampler", "scheduler", "noise")
 NON_INPUT_NODE_MARKERS = ("cleangpuused", "cleangpu", "ramclean")
@@ -515,12 +514,20 @@ def extract_controls(
         step: float | None = None,
         role: str | None = None,
         recommended: bool = True,
+        is_essential: bool = False,
     ) -> None:
         path = f"nodes.{node_id}.inputs.{input_name}"
         raw = node.get("inputs", {}).get(input_name)
         if path in seen or isinstance(raw, list):
             return
         val = raw if value is None else value
+        is_ess = (
+            is_essential
+            or seed
+            or (role in {"seed", "width", "height", "cfg", "steps"})
+            or (kind == "seed")
+            or (input_name in {"seed", "noise_seed", "cfg", "guidance", "steps", "width", "height"})
+        )
         controls.append(
             {
                 "id": path,
@@ -542,6 +549,7 @@ def extract_controls(
                 "input_name": input_name,
                 "role": role,
                 "recommended": recommended,
+                "is_essential": is_ess,
             }
         )
         seen.add(path)
@@ -753,12 +761,47 @@ def extract_controls(
                 )
             continue
 
-        # 5. EmptyLatent dimensions
-        if "emptylatent" in normalized:
+        # 4b. Modular Sampler Sub-nodes (CFGGuider, FluxGuidance, RandomNoise, Standalone Seed, Schedulers)
+        is_guider = any(m in normalized for m in ("cfgguider", "dualcfgguider", "fluxguidance", "guidance"))
+        if is_guider:
+            for g_param in ("cfg", "guidance"):
+                if g_param in inputs:
+                    val = inputs[g_param]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        add(
+                            node_id,
+                            node,
+                            g_param,
+                            kind="number",
+                            label="Guidance (CFG)" if g_param == "guidance" else "CFG Scale",
+                            numeric=True,
+                            minimum=0.0,
+                            maximum=30.0,
+                            step=0.1,
+                            role="cfg",
+                            recommended=True,
+                            is_essential=True,
+                        )
+
+        is_noise_or_seed = any(m in normalized for m in ("randomnoise", "noise_randomnoise", "seed")) and not is_sampler
+        if is_noise_or_seed:
+            for s_param in ("noise_seed", "seed", "value"):
+                if s_param in inputs:
+                    add_sampler_value(node_id, node, s_param, inputs[s_param])
+
+        is_scheduler_node = "scheduler" in normalized and not is_sampler
+        if is_scheduler_node:
+            if "steps" in inputs:
+                add_sampler_value(node_id, node, "steps", inputs["steps"])
+            if "denoise" in inputs:
+                add_sampler_value(node_id, node, "denoise", inputs["denoise"])
+
+        # 5. Latent dimensions (EmptyLatentImage, SDXLEmptyLatentImage, EmptySD3LatentImage, FluxLatentImage, EmptyLTXVLatentVideo, etc.)
+        is_latent_dim = ("latent" in normalized or "emptylatent" in normalized or "empty" in normalized) and ("width" in inputs or "height" in inputs)
+        if is_latent_dim:
             for input_name in ("width", "height"):
-                if isinstance(inputs.get(input_name), (int, float)) and not isinstance(
-                    inputs[input_name], bool
-                ):
+                raw_dim = inputs.get(input_name)
+                if isinstance(raw_dim, (int, float)) and not isinstance(raw_dim, bool):
                     add(
                         node_id,
                         node,
@@ -771,7 +814,29 @@ def extract_controls(
                         step=8,
                         role=input_name,
                         recommended=True,
+                        is_essential=True,
                     )
+                elif isinstance(raw_dim, list) and len(raw_dim) == 2 and isinstance(raw_dim[0], str):
+                    src_node = workflow.get(raw_dim[0])
+                    if isinstance(src_node, dict) and isinstance(src_node.get("inputs"), dict):
+                        src_inputs = src_node["inputs"]
+                        src_name = input_name if input_name in src_inputs else "value"
+                        src_val = src_inputs.get(src_name)
+                        if isinstance(src_val, (int, float)) and not isinstance(src_val, bool):
+                            add(
+                                raw_dim[0],
+                                src_node,
+                                src_name,
+                                kind="number",
+                                label=_label(input_name),
+                                numeric=True,
+                                minimum=64,
+                                maximum=4096,
+                                step=8,
+                                role=input_name,
+                                recommended=True,
+                                is_essential=True,
+                            )
             continue
 
         # 6. Upscaler nodes
@@ -1146,6 +1211,28 @@ class AIToolService:
             "is_draft": True,
             "available_nodes": available_nodes,
         }
+        dim_binding = self._find_dimension_bindings(workflow)
+        has_seed = any(c.get("seed") or c.get("role") == "seed" for c in controls)
+        seed_id = next((c["id"] for c in controls if c.get("seed") or c.get("role") == "seed"), None)
+        has_aspect_ratio = bool(dim_binding) or any(c.get("role") in {"width", "height"} for c in controls)
+        width_id = next((c["id"] for c in controls if c.get("role") == "width" or c.get("input_name") == "width"), None)
+        height_id = next((c["id"] for c in controls if c.get("role") == "height" or c.get("input_name") == "height"), None)
+        has_cfg = any(c.get("role") == "cfg" or c.get("input_name") in {"cfg", "guidance"} for c in controls)
+        cfg_id = next((c["id"] for c in controls if c.get("role") == "cfg" or c.get("input_name") in {"cfg", "guidance"}), None)
+        has_steps = any(c.get("role") == "steps" or c.get("input_name") == "steps" for c in controls)
+        steps_id = next((c["id"] for c in controls if c.get("role") == "steps" or c.get("input_name") == "steps"), None)
+        essential_summary = {
+            "has_seed": has_seed,
+            "seed_control_id": seed_id,
+            "has_aspect_ratio": has_aspect_ratio,
+            "width_control_id": width_id,
+            "height_control_id": height_id,
+            "has_cfg": has_cfg,
+            "cfg_control_id": cfg_id,
+            "has_steps": has_steps,
+            "steps_control_id": steps_id,
+        }
+        record["essential_summary"] = essential_summary
         self._write_record(record)
         return ToolParseResponse(
             tool_id=tool_id,
@@ -1158,6 +1245,7 @@ class AIToolService:
             archetype=meta["archetype"],
             node_count=meta["node_count"],
             available_nodes=[ToolNodeInfo.model_validate(n) for n in available_nodes],
+            essential_summary=essential_summary,
         )
 
     @staticmethod
@@ -1194,21 +1282,42 @@ class AIToolService:
         for node_id in sorted(workflow):
             node = workflow[node_id]
             normalized = _norm(str(node.get("class_type", "")))
-            inputs = node["inputs"]
+            inputs = node.get("inputs", {})
+            if not isinstance(inputs, dict):
+                continue
             if (
-                "latent" in normalized
+                ("latent" in normalized or "emptylatent" in normalized or "empty" in normalized)
                 and "width" in inputs
                 and "height" in inputs
-                and isinstance(inputs["width"], (int, float))
-                and isinstance(inputs["height"], (int, float))
             ):
-                return {"node_id": node_id, "width": "width", "height": "height"}
+                w_val = inputs["width"]
+                h_val = inputs["height"]
+                if (
+                    isinstance(w_val, (int, float))
+                    and not isinstance(w_val, bool)
+                    and isinstance(h_val, (int, float))
+                    and not isinstance(h_val, bool)
+                ):
+                    return {"node_id": node_id, "width": "width", "height": "height"}
+                if (
+                    isinstance(w_val, list)
+                    and len(w_val) == 2
+                    and isinstance(w_val[0], str)
+                    and isinstance(h_val, list)
+                    and len(h_val) == 2
+                    and isinstance(h_val[0], str)
+                    and w_val[0] == h_val[0]
+                ):
+                    src = workflow.get(w_val[0], {})
+                    src_inputs = src.get("inputs", {})
+                    if "width" in src_inputs and "height" in src_inputs:
+                        return {"node_id": w_val[0], "width": "width", "height": "height"}
         return {}
 
     @staticmethod
     def _find_step_binding(workflow: Workflow) -> dict[str, str] | None:
         for node_id in sorted(workflow):
-            inputs = workflow[node_id]["inputs"]
+            inputs = workflow[node_id].get("inputs", {})
             for input_name, value in inputs.items():
                 if (
                     input_name.lower() == "steps"
@@ -1216,6 +1325,34 @@ class AIToolService:
                     and not isinstance(value, bool)
                 ):
                     return {"node_id": node_id, "input_name": input_name}
+        return None
+
+    @staticmethod
+    def _find_seed_binding(workflow: Workflow) -> dict[str, str] | None:
+        for node_id in sorted(workflow):
+            inputs = workflow[node_id].get("inputs", {})
+            for s_name in ("seed", "noise_seed"):
+                if s_name in inputs:
+                    val = inputs[s_name]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        return {"node_id": node_id, "input_name": s_name}
+                    if isinstance(val, list) and len(val) == 2 and isinstance(val[0], str):
+                        src = workflow.get(val[0], {})
+                        src_inputs = src.get("inputs", {})
+                        for src_param in (s_name, "value"):
+                            if src_param in src_inputs and isinstance(src_inputs[src_param], (int, float)) and not isinstance(src_inputs[src_param], bool):
+                                return {"node_id": val[0], "input_name": src_param}
+        return None
+
+    @staticmethod
+    def _find_cfg_binding(workflow: Workflow) -> dict[str, str] | None:
+        for node_id in sorted(workflow):
+            inputs = workflow[node_id].get("inputs", {})
+            for g_name in ("cfg", "guidance"):
+                if g_name in inputs:
+                    val = inputs[g_name]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        return {"node_id": node_id, "input_name": g_name}
         return None
 
     def create(
@@ -1316,6 +1453,26 @@ class AIToolService:
                 temp.replace(thumbnail_path)
             except OSError as exc:
                 raise AIToolError("Could not save tool thumbnail") from exc
+        has_seed = any(c.get("seed") or c.get("role") == "seed" for c in controls)
+        seed_id = next((c["id"] for c in controls if c.get("seed") or c.get("role") == "seed"), None)
+        has_aspect_ratio = bool(dimension_bindings) or any(c.get("role") in {"width", "height"} for c in controls)
+        width_id = next((c["id"] for c in controls if c.get("role") == "width" or c.get("input_name") == "width"), None)
+        height_id = next((c["id"] for c in controls if c.get("role") == "height" or c.get("input_name") == "height"), None)
+        has_cfg = any(c.get("role") == "cfg" or c.get("input_name") in {"cfg", "guidance"} for c in controls)
+        cfg_id = next((c["id"] for c in controls if c.get("role") == "cfg" or c.get("input_name") in {"cfg", "guidance"}), None)
+        has_steps = any(c.get("role") == "steps" or c.get("input_name") == "steps" for c in controls)
+        steps_id = next((c["id"] for c in controls if c.get("role") == "steps" or c.get("input_name") == "steps"), None)
+        essential_summary = {
+            "has_seed": has_seed,
+            "seed_control_id": seed_id,
+            "has_aspect_ratio": has_aspect_ratio,
+            "width_control_id": width_id,
+            "height_control_id": height_id,
+            "has_cfg": has_cfg,
+            "cfg_control_id": cfg_id,
+            "has_steps": has_steps,
+            "steps_control_id": steps_id,
+        }
         record.update(
             {
                 "is_draft": False,
@@ -1332,6 +1489,7 @@ class AIToolService:
                 if effective_mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
                 else "image",
                 "thumbnail": thumbnail_name,
+                "essential_summary": essential_summary,
             }
         )
         if user_id is not None:
@@ -1454,6 +1612,7 @@ class AIToolService:
             ),
             output_kind=record.get("output_kind", "image"),
             controls=record.get("controls", []),
+            essential_summary=record.get("essential_summary"),
         )
 
     def build_graph(

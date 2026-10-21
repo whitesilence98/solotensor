@@ -159,6 +159,19 @@ export interface ToolControl {
   role?: string | null;
   recommended?: boolean;
   exposed?: boolean;
+  is_essential?: boolean;
+}
+
+export interface EssentialControlSummary {
+  has_seed: boolean;
+  seed_control_id?: string | null;
+  has_aspect_ratio: boolean;
+  width_control_id?: string | null;
+  height_control_id?: string | null;
+  has_cfg: boolean;
+  cfg_control_id?: string | null;
+  has_steps: boolean;
+  steps_control_id?: string | null;
 }
 
 export interface ToolNodeInput {
@@ -187,6 +200,7 @@ export interface ToolParseResponse {
   archetype?: string;
   node_count?: number;
   available_nodes?: ToolNodeInfo[];
+  essential_summary?: EssentialControlSummary | null;
 }
 
 export interface ToolExecutionResult {
@@ -219,6 +233,7 @@ export interface ToolDetail extends ToolSummary {
   supported_aspect_ratios: ToolAspectRatio[];
   output_kind: "image" | "video";
   controls: ToolControl[];
+  essential_summary?: EssentialControlSummary | null;
 }
 
 export interface ToolRunResult extends ToolExecutionResult {

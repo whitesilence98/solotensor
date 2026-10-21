@@ -608,6 +608,10 @@ export default function StudioPage() {
 
         {/* Main Canvas Area */}
         <CanvasPreview
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          activeModelTitle={selectedModel?.title || "Krea 2 Turbo"}
+          aspectRatio={format}
           canGenerate={canGenerate}
           onGenerate={handleGenerate}
           busy={busy}

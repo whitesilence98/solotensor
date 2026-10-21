@@ -48,6 +48,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
+import AspectRatioSelector from "@/components/AspectRatioSelector";
 
 const MODES: {
   value: ToolMode;
@@ -753,25 +754,14 @@ export default function CreateToolDrawer({
 
                   {/* Canvas Aspect Ratio */}
                   <div>
-                    <label className="mb-1.5 block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
-                      Default Canvas Aspect Ratio
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {RATIOS.map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => setRatio(item)}
-                          className={`rounded-[5px] border px-3 py-1 font-mono text-xs font-bold transition-all ${
-                            ratio === item
-                              ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                              : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                          }`}
-                        >
-                          {item}
-                        </button>
-                      ))}
-                    </div>
+                    <AspectRatioSelector
+                      value={ratio}
+                      onChange={setRatio}
+                      options={RATIOS}
+                      label="Default Canvas Aspect Ratio"
+                      columns={5}
+                      size="sm"
+                    />
                   </div>
                 </div>
 

@@ -45,75 +45,79 @@ export function AspectRatioIcon({
   ratio: string;
   className?: string;
 }) {
-  switch (ratio) {
+  const normalized = String(ratio).trim().replace("/", ":");
+
+  switch (normalized) {
     case "1:1":
       return (
         <div
-          className={`h-3 w-3 rounded-[1px] border border-current ${className}`}
+          className={`h-3 w-3 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "16:9":
       return (
         <div
-          className={`h-2 w-3.5 rounded-[1px] border border-current ${className}`}
+          className={`h-2 w-3.5 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "9:16":
       return (
         <div
-          className={`h-3.5 w-2 rounded-[1px] border border-current ${className}`}
+          className={`h-3.5 w-2 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "4:3":
       return (
         <div
-          className={`h-2.5 w-3.5 rounded-[1px] border border-current ${className}`}
+          className={`h-2.5 w-3.5 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "3:4":
       return (
         <div
-          className={`h-3.5 w-2.5 rounded-[1px] border border-current ${className}`}
+          className={`h-3.5 w-2.5 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "3:2":
       return (
         <div
-          className={`h-2.5 w-3.75 rounded-[1px] border border-current ${className}`}
+          style={{ width: 15, height: 10 }}
+          className={`shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "2:3":
       return (
         <div
-          className={`h-3.75 w-2.5 rounded-[1px] border border-current ${className}`}
+          style={{ width: 10, height: 15 }}
+          className={`shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "21:9":
       return (
         <div
-          className={`h-1.5 w-4 rounded-[1px] border border-current ${className}`}
+          className={`h-1.5 w-4 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );
     case "custom":
       return (
         <div
-          className={`h-3 w-3 rounded-[1px] border border-dashed border-current flex items-center justify-center opacity-80 ${className}`}
+          className={`h-3 w-3 shrink-0 rounded-[1px] border border-dashed border-current flex items-center justify-center opacity-80 ${className}`}
           aria-hidden="true"
         >
           <div className="h-1 w-1 bg-current rounded-[0.5px]" />
         </div>
       );
     default: {
-      // Dynamic fallback based on parsing ratio string like "W:H"
-      const parts = ratio.split(":").map(Number);
+      // Dynamic fallback based on parsing ratio string like "W:H" or "W/H"
+      const parts = normalized.split(":").map(Number);
       if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && parts[0] > 0 && parts[1] > 0) {
         const [w, h] = parts;
         const maxDim = 14; // pixels
@@ -123,14 +127,14 @@ export function AspectRatioIcon({
         return (
           <div
             style={{ width: `${widthPx}px`, height: `${heightPx}px` }}
-            className={`rounded-[1px] border border-current ${className}`}
+            className={`shrink-0 rounded-[1px] border border-current ${className}`}
             aria-hidden="true"
           />
         );
       }
       return (
         <div
-          className={`h-3 w-3 rounded-[1px] border border-current ${className}`}
+          className={`h-3 w-3 shrink-0 rounded-[1px] border border-current ${className}`}
           aria-hidden="true"
         />
       );

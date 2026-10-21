@@ -713,6 +713,79 @@ export default function ToolDetailPage() {
     return () => socket.current?.close();
   }, [load]);
 
+  const handleRatioChange = useCallback(
+    (newRatio: ToolAspectRatio) => {
+      setRatio(newRatio);
+      if (tool) {
+        const widthCtrl = tool.controls.find(
+          (c) => c.role === "width" || c.input_name === "width",
+        );
+        const heightCtrl = tool.controls.find(
+          (c) => c.role === "height" || c.input_name === "height",
+        );
+        const aspectMap: Record<ToolAspectRatio, [number, number]> = {
+          "1:1": [1024, 1024],
+          "16:9": [1280, 720],
+          "9:16": [720, 1280],
+          "4:3": [1152, 864],
+          "21:9": [1536, 656],
+        };
+        const dims = aspectMap[newRatio];
+        if (dims && (widthCtrl || heightCtrl)) {
+          setValues((current) => {
+            const next = { ...current };
+            if (widthCtrl) next[widthCtrl.id] = dims[0];
+            if (heightCtrl) next[heightCtrl.id] = dims[1];
+            setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
+            return next;
+          });
+        }
+      }
+    },
+    [tool, params.tool_id],
+  );
+
+  const isEssential = useCallback(
+    (c: ToolControl) =>
+      Boolean(
+        c.is_essential ||
+        c.kind === "seed" ||
+        c.seed ||
+        ["seed", "width", "height", "cfg", "steps"].includes(c.role || "") ||
+        ["seed", "noise_seed", "cfg", "guidance", "steps", "width", "height"].includes(c.input_name),
+      ),
+    [],
+  );
+
+  const promptAndImageControls = useMemo(
+    () => tool?.controls.filter((c) => c.kind === "prompt" || c.kind === "image") ?? [],
+    [tool],
+  );
+
+  const essentialControls = useMemo(
+    () =>
+      tool?.controls.filter(
+        (c) =>
+          isEssential(c) &&
+          c.kind !== "prompt" &&
+          c.kind !== "image" &&
+          c.input_name !== "width" &&
+          c.input_name !== "height",
+      ) ?? [],
+    [tool, isEssential],
+  );
+
+  const customControls = useMemo(
+    () =>
+      tool?.controls.filter(
+        (c) =>
+          !isEssential(c) &&
+          c.kind !== "prompt" &&
+          c.kind !== "image",
+      ) ?? [],
+    [tool, isEssential],
+  );
+
   const imageControls = useMemo(
     () => tool?.controls.filter((control) => control.kind === "image") ?? [],
     [tool],
@@ -914,44 +987,113 @@ export default function ToolDetailPage() {
             </button>
           </div>
 
-          {tool!.controls.length ? (
-            tool!.controls.map((control, idx) => {
-              const meta = resolveControlMeta(control, idx, tool!.controls);
-              return (
-                <DynamicControl
-                  key={control.id}
-                  control={control}
-                  value={values[control.id]}
-                  busy={busy}
-                  required={control.kind === "image" && tool!.requires_image}
-                  file={files[control.id]}
-                  meta={meta}
-                  onChange={(val) => handleValueChange(control.id, val)}
-                  onFile={(file) =>
-                    setFiles((current) => {
-                      const next = { ...current };
-                      if (file) next[control.id] = file;
-                      else delete next[control.id];
-                      return next;
-                    })
-                  }
-                />
-              );
-            })
-          ) : (
-            <p className="font-mono text-xs text-[var(--ink-faint)]">No editable controls detected.</p>
+          {/* 1. Primary Inputs (Prompts & Images) */}
+          {promptAndImageControls.length > 0 && (
+            <div className="space-y-3.5">
+              {promptAndImageControls.map((control, idx) => {
+                const meta = resolveControlMeta(control, idx, tool!.controls);
+                return (
+                  <DynamicControl
+                    key={control.id}
+                    control={control}
+                    value={values[control.id]}
+                    busy={busy}
+                    required={control.kind === "image" && tool!.requires_image}
+                    file={files[control.id]}
+                    meta={meta}
+                    onChange={(val) => handleValueChange(control.id, val)}
+                    onFile={(file) =>
+                      setFiles((current) => {
+                        const next = { ...current };
+                        if (file) next[control.id] = file;
+                        else delete next[control.id];
+                        return next;
+                      })
+                    }
+                  />
+                );
+              })}
+            </div>
           )}
 
-          {!dimensionControls && (
-            <div className="pt-2 border-t border-[var(--line)]">
+          {/* 2. Generation Essentials Container */}
+          <div className="rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-sunken)]/60 p-3.5 space-y-3.5">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-2">
+              <span className="font-mono text-[9px] font-bold text-[var(--accent)] flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="h-3 w-3" />
+                <span>Generation Essentials</span>
+              </span>
+              <span className="font-mono text-[8px] text-[var(--ink-faint)]">
+                RATIO · SEED · GUIDANCE
+              </span>
+            </div>
+
+            {/* Aspect Ratio Selector (Universal Format Controller) */}
+            <div>
               <AspectRatioSelector
                 value={ratio}
-                onChange={setRatio}
+                onChange={handleRatioChange}
                 options={tool!.supported_aspect_ratios.filter((item) => RATIOS.includes(item))}
                 disabled={busy}
                 label="Aspect Ratio Format"
               />
             </div>
+
+            {/* Seed, CFG, Steps & Other Essential Controls */}
+            {essentialControls.length > 0 && (
+              <div className="space-y-3 pt-1 border-t border-[var(--line)]/50">
+                {essentialControls.map((control, idx) => {
+                  const meta = resolveControlMeta(control, idx, tool!.controls);
+                  return (
+                    <DynamicControl
+                      key={control.id}
+                      control={control}
+                      value={values[control.id]}
+                      busy={busy}
+                      required={false}
+                      meta={meta}
+                      onChange={(val) => handleValueChange(control.id, val)}
+                      onFile={() => {}}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Custom / Advanced Workflow Controls */}
+          {customControls.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-1.5">
+                <span className="font-mono text-[9px] font-bold text-[var(--ink-soft)] uppercase tracking-wider">
+                  Custom Parameters
+                </span>
+                <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+                  {customControls.length} options
+                </span>
+              </div>
+              <div className="space-y-3">
+                {customControls.map((control, idx) => {
+                  const meta = resolveControlMeta(control, idx, tool!.controls);
+                  return (
+                    <DynamicControl
+                      key={control.id}
+                      control={control}
+                      value={values[control.id]}
+                      busy={busy}
+                      required={false}
+                      meta={meta}
+                      onChange={(val) => handleValueChange(control.id, val)}
+                      onFile={() => {}}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!tool!.controls.length && (
+            <p className="font-mono text-xs text-[var(--ink-faint)]">No editable controls detected.</p>
           )}
         </div>
 

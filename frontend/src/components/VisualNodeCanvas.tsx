@@ -243,6 +243,31 @@ export default function VisualNodeCanvas({
     );
   };
 
+  const isEssentialInput = (inputName: string) => {
+    const norm = inputName.toLowerCase();
+    return (
+      norm.includes("seed") ||
+      norm === "cfg" ||
+      norm === "guidance" ||
+      norm === "steps" ||
+      norm === "width" ||
+      norm === "height"
+    );
+  };
+
+  const handleExposeEssentials = () => {
+    const updated = controls.map((c) => {
+      const isEss =
+        c.is_essential ||
+        c.kind === "seed" ||
+        c.seed ||
+        ["seed", "width", "height", "cfg", "steps"].includes(c.role || "") ||
+        isEssentialInput(c.input_name);
+      return isEss ? { ...c, exposed: true } : c;
+    });
+    onControlsChange(updated);
+  };
+
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null;
     return initialTopology.nodes.find((n) => n.id === selectedNodeId) || null;
@@ -332,6 +357,16 @@ export default function VisualNodeCanvas({
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span className="text-[10px]">Layout</span>
+          </button>
+          <div className="h-3 w-px bg-[var(--line)] mx-1" />
+          <button
+            type="button"
+            onClick={handleExposeEssentials}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] hover:bg-[var(--accent)]/25 font-bold transition shadow-[0_0_8px_rgba(213,240,111,0.2)]"
+            title="Expose Essential Parameters (Seed, Dimensions, CFG, Steps)"
+          >
+            <Zap className="h-3.5 w-3.5 fill-current" />
+            <span className="text-[10px]">Expose Essentials</span>
           </button>
         </div>
       </div>
@@ -478,6 +513,20 @@ export default function VisualNodeCanvas({
                             >
                               {inp.name}
                             </span>
+                            {!inp.isLinked && isEssentialInput(inp.name) && (
+                              <span
+                                className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
+                                title="Essential Generation Parameter"
+                              >
+                                {inp.name.toLowerCase().includes("seed")
+                                  ? "🎲 Seed"
+                                  : inp.name === "cfg" || inp.name === "guidance"
+                                  ? "🎚️ CFG"
+                                  : inp.name === "steps"
+                                  ? "⏱️ Steps"
+                                  : "📐 Dim"}
+                              </span>
+                            )}
                           </div>
 
                           {/* Unlinked Parameter Action: Toggle Expose Controller */}

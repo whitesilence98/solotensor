@@ -440,6 +440,38 @@
       background-color: var(--surface-soft);
     }
   }
+
+  /* AI Magic Navigation Item Styling (as per design mockup) */
+  .ai-magic-icon path {
+    stroke: url(#ai-magic-wand-gradient) !important;
+    transition: stroke 0.2s ease, filter 0.2s ease;
+  }
+
+  .group:hover .ai-magic-icon path {
+    stroke: url(#ai-magic-wand-gradient-bright) !important;
+    filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.75));
+  }
+
+  /* When active / selected: pure luminous white icon against the solid cyan/blue gradient fill */
+  .ai-magic-active .ai-magic-icon path {
+    stroke: #ffffff !important;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.85));
+  }
+
+  @keyframes sparkle-twinkle {
+    0%, 100% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.22) rotate(6deg);
+    }
+  }
+
+  .animate-sparkle {
+    animation: sparkle-twinkle 2s ease-in-out infinite;
+  }
 }
 
 /* Precision darkroom primitives shared by every product route. */

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -24,7 +25,6 @@ import {
 import { api, resolveMediaUrl, type ToolMode, type ToolSummary, type ToolAspectRatio } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import WorkspaceModal from "@/components/WorkspaceModal";
-import CreateToolDrawer from "@/components/CreateToolDrawer";
 
 const MODE_LABELS: Record<ToolMode, string> = {
   "text-to-image": "Text to Image",
@@ -55,43 +55,43 @@ interface StarterKit {
 const STARTER_KITS: StarterKit[] = [
   {
     id: "flux-schnell",
-    name: "FLUX.1 Schnell Turbo",
+    name: "Flux.1 Schnell Studio",
     mode: "text-to-image",
     modeLabel: "Text to Image",
-    description: "4-step distilled latent diffusion pipeline with high prompt alignment.",
-    telemetry: "4 STEPS • CFG 1.0 • FP8 SCALED",
+    description: "4-step distilled latent diffusion pipeline with high prompt alignment and sharp fidelity.",
+    telemetry: "4 STEPS • CFG 3.5 • FP8 SCALED",
     ratio: "1:1",
     badgeStyle: "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]",
   },
   {
-    id: "wan-cinematic-i2v",
-    name: "Wan 2.1 Motion Cinema",
-    mode: "image-to-video",
-    modeLabel: "Image to Video",
-    description: "Temporal coherent video synthesis from image anchor frames with DiT motion.",
-    telemetry: "81 FRAMES • 16 FPS • DI-DIFFUSION",
-    ratio: "16:9",
-    badgeStyle: "border-purple-500/40 bg-purple-500/10 text-purple-300",
-  },
-  {
-    id: "sdxl-hires-upscale",
-    name: "SDXL High-Res Latent Fix",
-    mode: "image-to-image",
-    modeLabel: "Image to Image",
-    description: "Bilinear latent space upscaler with dynamic tiled decoders and micro-grain recovery.",
-    telemetry: "2X UPSCALE • TILED VAE • 0.35 DENOISE",
-    ratio: "4:3",
+    id: "sdxl-turbo",
+    name: "SDXL Lightning Turbo",
+    mode: "text-to-image",
+    modeLabel: "Text to Image",
+    description: "High-throughput 4-8 step latent diffusion pipeline using SDXL Lightning for near real-time rendering.",
+    telemetry: "8 STEPS • EULER • SDXL BASE",
+    ratio: "1:1",
     badgeStyle: "border-cyan-500/40 bg-cyan-500/10 text-cyan-300",
   },
   {
-    id: "instant-id-portrait",
-    name: "InstantID Neural Portrait",
+    id: "qwen-image-edit",
+    name: "Qwen Vision Image Transformation",
     mode: "image-to-image",
     modeLabel: "Image to Image",
-    description: "Zero-shot facial identity preservation and keypoint guidance conditioning.",
-    telemetry: "INSIGHTFACE • CONTROLNET • CFG 2.5",
+    description: "Instruct-based image modification pipeline conditioned on reference input photos and natural language edits.",
+    telemetry: "IMAGE INPUT • DENOISE 0.65 • VISION",
     ratio: "1:1",
     badgeStyle: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+  },
+  {
+    id: "ltx-video-animator",
+    name: "LTX Video Motion Synthesis",
+    mode: "image-to-video",
+    modeLabel: "Image to Video",
+    description: "Temporal video animation workflow generating smooth 24fps motion clips seeded by a reference starter image.",
+    telemetry: "24 FPS • H264 MP4 • TEMPORAL",
+    ratio: "16:9",
+    badgeStyle: "border-purple-500/40 bg-purple-500/10 text-purple-300",
   },
 ];
 
@@ -219,6 +219,7 @@ function TensorToolCard({
 }
 
 export default function ToolStudioPage() {
+  const router = useRouter();
   const [tools, setTools] = useState<ToolSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -227,15 +228,6 @@ export default function ToolStudioPage() {
   const [toolToDelete, setToolToDelete] = useState<ToolSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  
-  // Drawer & Initial Setup States
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [initialFile, setInitialFile] = useState<File | null>(null);
-  const [initialConfig, setInitialConfig] = useState<{
-    name?: string;
-    mode?: ToolMode;
-    ratio?: ToolAspectRatio;
-  } | null>(null);
 
   // Drag & Drop state on the page
   const [isDraggingOverDropzone, setIsDraggingOverDropzone] = useState(false);
@@ -246,12 +238,10 @@ export default function ToolStudioPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("create") === "true") {
-        setInitialFile(null);
-        setInitialConfig(null);
-        setIsCreateOpen(true);
+        router.push("/tools/create");
       }
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -313,38 +303,41 @@ export default function ToolStudioPage() {
   };
 
   const handleOpenStandardCreate = () => {
-    setInitialFile(null);
-    setInitialConfig(null);
-    setIsCreateOpen(true);
+    router.push("/tools/create");
   };
 
   const handleInitializeStarterKit = (kit: StarterKit) => {
-    setInitialFile(null);
-    setInitialConfig({
-      name: kit.name,
-      mode: kit.mode,
-      ratio: kit.ratio,
-    });
-    setIsCreateOpen(true);
+    sessionStorage.setItem("st_tool_starter_template", kit.id);
+    router.push(`/tools/create?template=${kit.id}`);
   };
 
-  const handleDropWorkflow = (e: React.DragEvent) => {
+  const handleDropWorkflow = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOverDropzone(false);
     const file = e.dataTransfer.files?.[0];
     if (file && file.name.toLowerCase().endsWith(".json")) {
-      setInitialFile(file);
-      setInitialConfig(null);
-      setIsCreateOpen(true);
+      try {
+        const text = await file.text();
+        sessionStorage.setItem("st_tool_upload_json", text);
+        sessionStorage.setItem("st_tool_upload_filename", file.name);
+        router.push("/tools/create");
+      } catch (err) {
+        console.error("Failed to read dropped workflow:", err);
+      }
     }
   };
 
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setInitialFile(file);
-      setInitialConfig(null);
-      setIsCreateOpen(true);
+      try {
+        const text = await file.text();
+        sessionStorage.setItem("st_tool_upload_json", text);
+        sessionStorage.setItem("st_tool_upload_filename", file.name);
+        router.push("/tools/create");
+      } catch (err) {
+        console.error("Failed to read selected workflow:", err);
+      }
     }
     e.target.value = "";
   };
@@ -418,7 +411,7 @@ export default function ToolStudioPage() {
                 )}
               </div>
 
-              {/* Create New Tool CTA */}
+              {/* Create AI Tool CTAs */}
               <div className="flex items-center gap-2 shrink-0">
                 <Link
                   href="/tools/canvas"
@@ -431,21 +424,12 @@ export default function ToolStudioPage() {
 
                 <Link
                   href="/tools/create"
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 text-xs font-mono font-bold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] active:scale-[0.98] transition-all"
-                  title="Open dedicated full-screen Tool Studio workspace"
-                >
-                  <Cpu className="h-4 w-4" />
-                  <span>Studio Workspace</span>
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={handleOpenStandardCreate}
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_16px_var(--accent-ambient)]"
+                  title="Open dedicated AI Tool Studio"
                 >
                   <Plus className="h-4 w-4 stroke-[2.5]" />
-                  <span>Quick Create</span>
-                </button>
+                  <span>Create AI Tool</span>
+                </Link>
               </div>
             </div>
           </div>
@@ -710,21 +694,6 @@ export default function ToolStudioPage() {
           </div>
         </div>
       </WorkspaceModal>
-
-      {/* Parametric Tool Creation Drawer */}
-      <CreateToolDrawer
-        open={isCreateOpen}
-        onClose={() => {
-          setIsCreateOpen(false);
-          setInitialFile(null);
-          setInitialConfig(null);
-        }}
-        onCreated={() => {
-          load();
-        }}
-        initialFile={initialFile}
-        initialConfig={initialConfig}
-      />
     </main>
   );
 }

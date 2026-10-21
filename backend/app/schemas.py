@@ -434,6 +434,7 @@ class ToolControl(BaseModel):
     role: str | None = None
     recommended: bool = True
     exposed: bool = True
+    is_essential: bool = False
 
     model_config = {"extra": "allow"}
 
@@ -501,6 +502,7 @@ class ToolParseResponse(BaseModel):
     archetype: str = "Text-to-Image Generation"
     node_count: int = 0
     available_nodes: list[ToolNodeInfo] = Field(default_factory=list)
+    essential_summary: dict[str, Any] | None = None
 
 
 class ToolSummary(BaseModel):
@@ -520,6 +522,7 @@ class ToolDetail(ToolSummary):
     supported_aspect_ratios: list[ToolAspectRatio]
     output_kind: Literal["image", "video"]
     controls: list[ToolControl] = Field(default_factory=list)
+    essential_summary: dict[str, Any] | None = None
 
 
 class ToolCatalogResponse(BaseModel):

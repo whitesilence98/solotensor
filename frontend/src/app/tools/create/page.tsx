@@ -44,6 +44,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
+import AspectRatioSelector from "@/components/AspectRatioSelector";
 import {
   STARTER_TEMPLATES,
   detectComfyUIFormat,
@@ -82,6 +83,319 @@ const MODES: {
 
 const RATIOS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
 
+/**
+ * Dual-Mode Live Preview Inspector Panel (from CreateToolDrawer).
+ * Retains the complete right panel: [Live Form] & [Card Mockup] with dynamic Telemetry table.
+ */
+function StudioInspectorPanel({
+  previewTab,
+  setPreviewTab,
+  step,
+  mode,
+  ratio,
+  currentDisplayName,
+  exposedCount,
+  exposedControls,
+  controls,
+  thumbnailPreview,
+  isVideoMode,
+  file,
+  parsedData,
+}: {
+  previewTab: "form" | "card";
+  setPreviewTab: (tab: "form" | "card") => void;
+  step: 1 | 2 | 3 | 4;
+  mode: ToolMode;
+  ratio: ToolAspectRatio;
+  currentDisplayName: string;
+  exposedCount: number;
+  exposedControls: ToolControl[];
+  controls: ToolControl[];
+  thumbnailPreview: string | null;
+  isVideoMode: boolean;
+  file: File | null;
+  parsedData: ToolParseResponse | null;
+}) {
+  return (
+    <div className="w-[340px] lg:w-[380px] xl:w-[420px] shrink-0 bg-[var(--surface-sunken)] p-5 flex flex-col justify-between overflow-y-auto border-l border-[var(--line)]">
+      <div className="space-y-4">
+        {/* Preview Mode Selector Tabs */}
+        <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
+          <div className="flex items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] p-0.5">
+            <button
+              type="button"
+              onClick={() => setPreviewTab("form")}
+              className={`flex items-center gap-1 rounded px-2.5 py-1 font-mono text-[10px] font-bold transition ${
+                previewTab === "form"
+                  ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                  : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
+              }`}
+            >
+              <Layout className="h-3 w-3" />
+              <span>Live Form</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewTab("card")}
+              className={`flex items-center gap-1 rounded px-2.5 py-1 font-mono text-[10px] font-bold transition ${
+                previewTab === "card"
+                  ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                  : "text-[var(--ink-soft)] hover:text-[var(--ink)]"
+              }`}
+            >
+              <Sparkles className="h-3 w-3" />
+              <span>Card Mockup</span>
+            </button>
+          </div>
+          <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--accent)] bg-[var(--accent)]/10 px-2 py-0.5 rounded-[5px] border border-[var(--accent)]/20">
+            Step {step}/4
+          </span>
+        </div>
+
+        {/* TAB 1: LIVE USER FORM PREVIEW */}
+        {previewTab === "form" && (
+          <div className="space-y-3 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between font-mono text-[10px]">
+              <span className="font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+                Live User Interface
+              </span>
+              <span className="text-[var(--accent)] font-bold">
+                {exposedCount} Controls
+              </span>
+            </div>
+
+            {/* Mock Studio Tool Execution Interface */}
+            <div className="rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-raised)] p-4 shadow-xl space-y-3.5">
+              {/* Simulated Tool Header */}
+              <div className="border-b border-[var(--line)] pb-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] font-bold text-[var(--accent)] uppercase">
+                    {mode.toUpperCase()}
+                  </span>
+                  <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[8px] text-[var(--ink-faint)]">
+                    LOCAL COMFYUI
+                  </span>
+                </div>
+                <h4 className="font-mono text-xs font-bold text-[var(--ink)] truncate mt-0.5">
+                  {currentDisplayName}
+                </h4>
+              </div>
+
+              {/* Render Mock Controls for Exposed Items */}
+              {exposedCount === 0 ? (
+                <div className="rounded border border-dashed border-[var(--line-strong)] p-4 text-center font-mono text-[10px] text-[var(--ink-faint)]">
+                  No parameters exposed yet. Check [✓] Expose on parameters to add them to your user interface.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {exposedControls.map((ctrl) => (
+                    <div key={ctrl.id} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase truncate max-w-[200px]">
+                          {ctrl.label || ctrl.input_name}
+                        </label>
+                        <span className="font-mono text-[8px] text-[var(--ink-faint)] uppercase">
+                          {ctrl.kind}
+                        </span>
+                      </div>
+
+                      {/* Render visual mock input based on kind */}
+                      {ctrl.kind === "prompt" && (
+                        <textarea
+                          readOnly
+                          rows={2}
+                          value={String(ctrl.default ?? ctrl.value ?? "")}
+                          placeholder="Enter prompt instructions…"
+                          className="w-full resize-none rounded border border-[var(--line)] bg-[var(--surface-sunken)] p-2 font-mono text-[10px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none"
+                        />
+                      )}
+
+                      {ctrl.kind === "image" && (
+                        <div className="flex h-14 items-center justify-center rounded border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] font-mono text-[9px] text-[var(--ink-faint)]">
+                          🖼️ Starter Image Input Zone
+                        </div>
+                      )}
+
+                      {ctrl.kind === "seed" && (
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-7 flex-1 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center">
+                            {String(ctrl.default ?? ctrl.value ?? "-1")}
+                          </div>
+                          <div className="h-7 w-7 rounded border border-[var(--line)] bg-[var(--surface)] flex items-center justify-center text-[var(--ink-faint)]">
+                            <Dices className="h-3 w-3" />
+                          </div>
+                        </div>
+                      )}
+
+                      {ctrl.kind === "number" && (
+                        <div className="space-y-1">
+                          <div className="h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center justify-between">
+                            <span>{String(ctrl.default ?? ctrl.value ?? "0")}</span>
+                            <span className="text-[8px] text-[var(--ink-faint)]">
+                              [{ctrl.min ?? ctrl.minimum ?? "0"} - {ctrl.max ?? ctrl.maximum ?? "100"}]
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {ctrl.kind === "select" && (
+                        <div className="h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center justify-between">
+                          <span>{String(ctrl.default ?? ctrl.value ?? "Default Option")}</span>
+                          <ChevronDown className="h-3 w-3 opacity-60" />
+                        </div>
+                      )}
+
+                      {ctrl.kind === "boolean" && (
+                        <div className="flex items-center justify-between h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2">
+                          <span className="font-mono text-[9px] text-[var(--ink)]">Enabled</span>
+                          <div className="h-3.5 w-6 rounded-full bg-[var(--accent)] flex items-center justify-end px-0.5">
+                            <div className="h-2.5 w-2.5 rounded-full bg-[var(--accent-ink)]" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Aspect Ratio Selector Mockup */}
+                  <div className="space-y-1 pt-1 border-t border-[var(--line)]">
+                    <label className="font-mono text-[9px] font-bold uppercase text-[var(--ink-soft)]">
+                      Format
+                    </label>
+                    <div className="flex gap-1">
+                      {RATIOS.slice(0, 4).map((r) => (
+                        <span
+                          key={r}
+                          className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                            ratio === r
+                              ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                              : "bg-[var(--surface-sunken)] text-[var(--ink-faint)] border border-[var(--line)]"
+                          }`}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mock Generate Button */}
+                  <div className="pt-2">
+                    <div className="flex h-8 w-full items-center justify-center gap-1.5 rounded-[5px] bg-[var(--accent)] font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-sm">
+                      <Zap className="h-3 w-3" />
+                      <span>Generate ⚡</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: TOOL CARD CATALOG MOCKUP */}
+        {previewTab === "card" && (
+          <div className="space-y-3 animate-in fade-in duration-150">
+            {/* Machined 16:10 Tool Card Container */}
+            <div className="relative aspect-[16/10] w-full overflow-hidden rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] shadow-xl">
+              {thumbnailPreview ? (
+                <img
+                  src={thumbnailPreview}
+                  alt={currentDisplayName}
+                  className="asset-zoom-media absolute inset-0 h-full w-full object-cover"
+                />
+              ) : (
+                <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
+                  <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)]">
+                      {isVideoMode ? (
+                        <Film className="h-5 w-5 opacity-80" />
+                      ) : (
+                        <Sparkles className="h-5 w-5 opacity-80" />
+                      )}
+                    </div>
+                    <span className="line-clamp-2 font-mono text-[11px] font-semibold text-[var(--ink-faint)]">
+                      {currentDisplayName}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Dark Gradient Scrim */}
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent" />
+
+              {/* Top Badges */}
+              <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between pointer-events-none">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-[5px] border border-white/20 bg-black/60 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-white/90 backdrop-blur-md">
+                    {isVideoMode ? (
+                      <Film className="h-3 w-3" />
+                    ) : (
+                      <ImageIcon className="h-3 w-3" />
+                    )}
+                    {isVideoMode ? "Motion" : "Visual"}
+                  </span>
+                  <span className="rounded-[5px] border border-white/15 bg-black/60 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white/80 backdrop-blur-md">
+                    {ratio}
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom Title Overlay */}
+              <div className="absolute inset-x-3 bottom-3 z-10 pointer-events-none">
+                <p className="line-clamp-1 font-mono text-xs font-bold text-white">
+                  {currentDisplayName}
+                </p>
+                <p className="mt-0.5 font-mono text-[9px] text-white/70 uppercase">
+                  {mode} · ComfyUI Pipeline
+                </p>
+              </div>
+            </div>
+
+            {/* Dynamic Telemetry Specs */}
+            <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface)] p-3 font-mono text-[11px] space-y-2">
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Workflow Source:</span>
+                <span className="font-semibold text-[var(--ink)] truncate max-w-[150px]">
+                  {file?.name || "Pending upload…"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Archetype:</span>
+                <span className="font-bold text-[var(--accent)] truncate max-w-[150px]">
+                  {parsedData?.archetype || "ComfyUI Pipeline"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Graph Nodes:</span>
+                <span className="font-bold text-[var(--accent)]">
+                  {parsedData?.node_count ? `${parsedData.node_count} detected` : "None"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Parameters:</span>
+                <span className="font-semibold text-[var(--ink)]">
+                  {exposedCount} of {controls.length} exposed
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Pipeline Mode:</span>
+                <span className="font-semibold text-[var(--accent)] uppercase">{mode}</span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-[var(--ink-faint)]">Default Canvas:</span>
+                <span className="font-semibold text-[var(--ink)]">{ratio}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Micro Hint */}
+      <p className="mt-4 text-center font-mono text-[9px] text-[var(--ink-faint)]">
+        Updates in real-time as you configure the pipeline
+      </p>
+    </div>
+  );
+}
+
 export default function CreateToolStudioPage() {
   const router = useRouter();
   const { isAuthenticated, openAuthModal } = useAuth();
@@ -96,6 +410,7 @@ export default function CreateToolStudioPage() {
   const [ratio, setRatio] = useState<ToolAspectRatio>("1:1");
   const [showModeOverride, setShowModeOverride] = useState(false);
   const [formatWarning, setFormatWarning] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState<"form" | "card">("card");
 
   // Playground test-run state
   const [playgroundPrompt, setPlaygroundPrompt] = useState("");
@@ -237,6 +552,40 @@ export default function CreateToolStudioPage() {
     setMode(template.mode);
     void processJsonFile(templateFile);
   };
+
+  // Restore workflow dropped/selected from /tools, or load starter template from query param
+  useEffect(() => {
+    // 1. Session Storage dropped / uploaded workflow
+    try {
+      const savedJson = sessionStorage.getItem("st_tool_upload_json");
+      const savedFilename = sessionStorage.getItem("st_tool_upload_filename");
+      if (savedJson && savedFilename) {
+        sessionStorage.removeItem("st_tool_upload_json");
+        sessionStorage.removeItem("st_tool_upload_filename");
+        const blob = new Blob([savedJson], { type: "application/json" });
+        const restoredFile = new File([blob], savedFilename, { type: "application/json" });
+        void processJsonFile(restoredFile);
+        return;
+      }
+    } catch (e) {
+      console.error("Failed to restore workflow from session:", e);
+    }
+
+    // 2. Query param or session starter template
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const templateId = params.get("template") || sessionStorage.getItem("st_tool_starter_template");
+      if (templateId) {
+        sessionStorage.removeItem("st_tool_starter_template");
+        const matched = STARTER_TEMPLATES.find((t) => t.id === templateId);
+        if (matched) {
+          handleApplyTemplate(matched);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load starter template:", e);
+    }
+  }, []);
 
   const handleControlLabelChange = (id: string, newLabel: string) => {
     setControls((prev) =>
@@ -576,8 +925,9 @@ export default function CreateToolStudioPage() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* STEP 1: SOURCE & WORKFLOW INGESTION */}
         {step === 1 && (
-          <div className="flex-1 overflow-y-auto p-6 max-w-6xl mx-auto w-full space-y-6 animate-in fade-in duration-150">
-            {/* Option A: Drop / Upload JSON Graph */}
+          <div className="flex flex-1 min-h-0 overflow-hidden animate-in fade-in duration-150">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Option A: Drop / Upload JSON Graph */}
             <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-6 shadow-sm space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
                 <div className="flex items-center gap-2.5">
@@ -776,6 +1126,24 @@ export default function CreateToolStudioPage() {
                 ))}
               </div>
             </div>
+            </div>
+
+            {/* Right: Dual-Mode Live Preview Inspector */}
+            <StudioInspectorPanel
+              previewTab={previewTab}
+              setPreviewTab={setPreviewTab}
+              step={step}
+              mode={mode}
+              ratio={ratio}
+              currentDisplayName={currentDisplayName}
+              exposedCount={exposedCount}
+              exposedControls={exposedControls}
+              controls={controls}
+              thumbnailPreview={thumbnailPreview}
+              isVideoMode={isVideoMode}
+              file={file}
+              parsedData={parsedData}
+            />
           </div>
         )}
 
@@ -837,25 +1205,14 @@ export default function CreateToolStudioPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
-                    Default Canvas Aspect Ratio
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {RATIOS.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setRatio(item)}
-                        className={`rounded px-3 py-1 font-mono text-xs font-bold transition ${
-                          ratio === item
-                            ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                            : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                        }`}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
+                  <AspectRatioSelector
+                    value={ratio}
+                    onChange={setRatio}
+                    options={RATIOS}
+                    label="Default Canvas Aspect Ratio"
+                    columns={5}
+                    size="sm"
+                  />
                 </div>
               </div>
 
@@ -989,106 +1346,22 @@ export default function CreateToolStudioPage() {
               </div>
             </div>
 
-            {/* Right: Live Interactive End-User View */}
-            <div className="w-[380px] lg:w-[440px] shrink-0 bg-[var(--surface-sunken)] p-6 flex flex-col justify-between overflow-y-auto border-l border-[var(--line)]">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-[var(--line)] pb-2.5">
-                  <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)]">
-                    <Layout className="h-3.5 w-3.5 text-[var(--accent)]" />
-                    <span>Real-Time End-User Form</span>
-                  </div>
-                  <span className="font-mono text-[9px] text-[var(--accent)]">
-                    {exposedCount} Controls Visible
-                  </span>
-                </div>
-
-                <div className="rounded-[8px] border border-[var(--line-strong)] bg-[var(--surface-raised)] p-4 shadow-xl space-y-3.5">
-                  <div className="border-b border-[var(--line)] pb-2">
-                    <span className="font-mono text-[9px] font-bold text-[var(--accent)] uppercase">
-                      {mode}
-                    </span>
-                    <h4 className="font-mono text-xs font-bold text-[var(--ink)] truncate mt-0.5">
-                      {currentDisplayName}
-                    </h4>
-                  </div>
-
-                  {exposedCount === 0 ? (
-                    <div className="rounded border border-dashed border-[var(--line)] p-6 text-center font-mono text-[10px] text-[var(--ink-faint)]">
-                      No parameters exposed. Check [✓] Expose on any parameter to see it appear in the user interface.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {exposedControls.map((ctrl) => (
-                        <div key={ctrl.id} className="space-y-1">
-                          <label className="font-mono text-[9px] font-bold uppercase text-[var(--ink-soft)] truncate block">
-                            {ctrl.label || ctrl.input_name}
-                          </label>
-
-                          {ctrl.kind === "prompt" && (
-                            <textarea
-                              readOnly
-                              rows={2}
-                              value={String(ctrl.default ?? ctrl.value ?? "")}
-                              placeholder="Enter prompt instructions…"
-                              className="w-full resize-none rounded border border-[var(--line)] bg-[var(--surface-sunken)] p-2 font-mono text-[10px] text-[var(--ink)] outline-none"
-                            />
-                          )}
-
-                          {ctrl.kind === "image" && (
-                            <div className="flex h-12 items-center justify-center rounded border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] font-mono text-[9px] text-[var(--ink-faint)]">
-                              🖼️ Image Reference Upload
-                            </div>
-                          )}
-
-                          {ctrl.kind === "seed" && (
-                            <div className="flex items-center gap-1.5">
-                              <div className="h-7 flex-1 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center">
-                                {String(ctrl.default ?? ctrl.value ?? "-1")}
-                              </div>
-                              <div className="h-7 w-7 rounded border border-[var(--line)] bg-[var(--surface)] flex items-center justify-center text-[var(--ink-faint)]">
-                                <Dices className="h-3 w-3" />
-                              </div>
-                            </div>
-                          )}
-
-                          {ctrl.kind === "number" && (
-                            <div className="h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center justify-between">
-                              <span>{String(ctrl.default ?? ctrl.value ?? "0")}</span>
-                              <span className="text-[8px] text-[var(--ink-faint)]">
-                                [{ctrl.min ?? ctrl.minimum ?? "0"} - {ctrl.max ?? ctrl.maximum ?? "100"}]
-                              </span>
-                            </div>
-                          )}
-
-                          {ctrl.kind === "select" && (
-                            <div className="h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 font-mono text-[10px] text-[var(--ink)] flex items-center justify-between">
-                              <span>{String(ctrl.default ?? ctrl.value ?? "Default")}</span>
-                              <ChevronDown className="h-3 w-3 opacity-60" />
-                            </div>
-                          )}
-
-                          {ctrl.kind === "boolean" && (
-                            <div className="flex items-center justify-between h-7 rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2">
-                              <span className="font-mono text-[9px] text-[var(--ink)]">Enabled</span>
-                              <div className="h-3 w-5 rounded-full bg-[var(--accent)] flex items-center justify-end px-0.5">
-                                <div className="h-2 w-2 rounded-full bg-[var(--accent-ink)]" />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      <div className="pt-2">
-                        <div className="flex h-8 w-full items-center justify-center gap-1.5 rounded bg-[var(--accent)] font-mono text-[10px] font-bold uppercase text-[var(--accent-ink)] opacity-70">
-                          <Zap className="h-3 w-3" />
-                          <span>Generate ⚡ (User View)</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* Right: Dual-Mode Live Preview Inspector */}
+            <StudioInspectorPanel
+              previewTab={previewTab}
+              setPreviewTab={setPreviewTab}
+              step={step}
+              mode={mode}
+              ratio={ratio}
+              currentDisplayName={currentDisplayName}
+              exposedCount={exposedCount}
+              exposedControls={exposedControls}
+              controls={controls}
+              thumbnailPreview={thumbnailPreview}
+              isVideoMode={isVideoMode}
+              file={file}
+              parsedData={parsedData}
+            />
           </div>
         )}
 
@@ -1340,8 +1613,9 @@ export default function CreateToolStudioPage() {
 
         {/* STEP 4: SHOWCASE MEDIA & FINAL DEPLOY */}
         {step === 4 && (
-          <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full space-y-6 animate-in fade-in duration-150">
-            <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-6 shadow-sm space-y-5">
+          <div className="flex flex-1 min-h-0 overflow-hidden animate-in fade-in duration-150">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="rounded-[8px] border border-[var(--line)] bg-[var(--surface-raised)] p-6 shadow-sm space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
                 <div className="flex items-center gap-2.5">
                   <ImageIcon className="h-4 w-4 text-[var(--accent)]" />
@@ -1477,6 +1751,24 @@ export default function CreateToolStudioPage() {
                 </button>
               </div>
             </div>
+            </div>
+
+            {/* Right: Dual-Mode Live Preview Inspector */}
+            <StudioInspectorPanel
+              previewTab={previewTab}
+              setPreviewTab={setPreviewTab}
+              step={step}
+              mode={mode}
+              ratio={ratio}
+              currentDisplayName={currentDisplayName}
+              exposedCount={exposedCount}
+              exposedControls={exposedControls}
+              controls={controls}
+              thumbnailPreview={thumbnailPreview}
+              isVideoMode={isVideoMode}
+              file={file}
+              parsedData={parsedData}
+            />
           </div>
         )}
       </div>

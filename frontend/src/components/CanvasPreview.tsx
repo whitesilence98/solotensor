@@ -4,10 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
  AlertCircle,
+ Camera,
  Check,
  ChevronLeft,
  ChevronRight,
+ Clock,
  Copy,
+ Cpu,
  Download,
  ExternalLink,
  FolderOpen,
@@ -21,6 +24,7 @@ import {
  Sparkles,
  Trash2,
  X,
+ Zap,
 } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
@@ -55,6 +59,8 @@ interface Props {
  onSetReferenceImage?: (url: string) => void;
  onDeleteOutput?: (key: string) => void;
  modelOptions?: InstalledGalleryModel[];
+ activeModelTitle?: string;
+ aspectRatio?: string;
 }
 
 function ComparisonSlider({ before, after }: { before: string; after: string }) {
@@ -230,8 +236,61 @@ function CanvasListCard({
  );
 }
 
+const STYLE_CATALYSTS = [
+  {
+    id: "cyberpunk",
+    genre: "SCI-FI / DIT",
+    icon: Zap,
+    title: "Cyberpunk Arcology",
+    description: "Towering neon arcologies in volumetric acid rain with anamorphic flares",
+    prompt:
+      "Dystopian towering neon arcology shrouded in volumetric acid rain, reflections in wet asphalt, anamorphic blue flare, 8k cinematic photography, octane render, intricate cybernetic details, raytracing, sharp focus",
+    borderHover: "hover:border-cyan-400/60 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]",
+    badgeStyle: "text-cyan-400 border-cyan-800/50 bg-cyan-950/30",
+    iconColor: "text-cyan-400",
+  },
+  {
+    id: "analog",
+    genre: "PHOTOGRAPHY / 35MM",
+    icon: Camera,
+    title: "Analog Studio Portrait",
+    description: "Tactile tungsten rim lighting, natural skin micro-pores, Kodak Portra grain",
+    prompt:
+      "Close-up 35mm film portrait of a thoughtful artisan in a dimly lit workshop, dramatic tungsten rim lighting, natural skin pores and micro-texture, shallow depth of field f/1.4, Kodak Portra 400 film grain, hyperrealistic",
+    borderHover: "hover:border-amber-400/60 hover:shadow-[0_0_20px_rgba(251,191,36,0.15)]",
+    badgeStyle: "text-amber-400 border-amber-800/50 bg-amber-950/30",
+    iconColor: "text-amber-400",
+  },
+  {
+    id: "anime",
+    genre: "ANIME / SHINKAI",
+    icon: Sparkles,
+    title: "Celestial Horizon",
+    description: "Towering cumulonimbus clouds over a glass ocean with crepuscular rays",
+    prompt:
+      "Makoto Shinkai aesthetic, towering cumulonimbus clouds over a glass ocean, golden hour crepuscular rays, vibrant anime sky, sparkling atmospheric particles, masterpiece, highres, vibrant color palette",
+    borderHover: "hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(192,132,252,0.15)]",
+    badgeStyle: "text-purple-400 border-purple-800/50 bg-purple-950/30",
+    iconColor: "text-purple-400",
+  },
+  {
+    id: "brutalism",
+    genre: "ARCHITECTURE / MONO",
+    icon: Layers,
+    title: "Obsidian Monolith",
+    description: "Minimalist concrete monolith in volcanic desert, harsh geometric shadows",
+    prompt:
+      "Minimalist brutalist concrete monolith standing in an obsidian volcanic desert, harsh architectural shadows, dramatic overcast sky, Hasselblad H6D-100c medium format, cinematic architectural photography, award winning",
+    borderHover: "hover:border-[var(--accent)] hover:shadow-[0_0_20px_rgba(213,240,111,0.15)]",
+    badgeStyle: "text-[var(--accent)] border-[var(--accent)]/40 bg-[var(--accent)]/10",
+    iconColor: "text-[var(--accent)]",
+  },
+];
+
 export default function CanvasPreview(props: Props) {
  const {
+  prompt,
+  onPromptChange,
   canGenerate,
   onGenerate,
   busy,
@@ -248,7 +307,19 @@ export default function CanvasPreview(props: Props) {
   onRemix,
   onSetReferenceImage,
   onDeleteOutput,
+  activeModelTitle,
+  aspectRatio,
  } = props;
+
+ const [appliedCatalystId, setAppliedCatalystId] = useState<string | null>(null);
+
+ const handleApplyCatalyst = (cat: (typeof STYLE_CATALYSTS)[number]) => {
+  if (onPromptChange) {
+   onPromptChange(cat.prompt);
+  }
+  setAppliedCatalystId(cat.id);
+  setTimeout(() => setAppliedCatalystId(null), 1800);
+ };
 
  const [activeTab, setActiveTab] = useState<MediaFilter>("all");
  const [viewMode, setViewMode] = usePersistentState<ViewMode>(
@@ -491,20 +562,129 @@ export default function CanvasPreview(props: Props) {
 
     {/* Outputs Grid or Empty State */}
     {filteredGallery.length === 0 && !busy ? (
-     <section className="mx-auto flex min-h-96 w-full max-w-xl flex-col justify-center border-y border-[var(--line)] py-10 text-center">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">Getting started</p>
-      <h2 className="mt-2 text-lg font-semibold text-[var(--ink)]">Create your first image</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--ink-faint)]">
-       Describe what you want to make, choose the number of images, then generate your first result.
+     <section className="relative mx-auto my-auto flex w-full max-w-4xl flex-col items-center justify-center py-10 px-4 sm:px-6 select-none animate-in fade-in duration-300">
+      {/* Corner Registration Crosshairs */}
+      <div className="absolute top-2 left-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
+      <div className="absolute top-2 right-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
+      <div className="absolute bottom-2 left-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
+      <div className="absolute bottom-2 right-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
+
+      {/* Status Beacon */}
+      <div className="mb-3.5 flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1 shadow-sm">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]" />
+        </span>
+        <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
+          Studio Workbench / Standby
+        </span>
+      </div>
+
+      {/* Hero Headline */}
+      <h2 className="text-center text-3xl font-extrabold tracking-tight text-[var(--ink)] sm:text-4xl lg:text-5xl">
+        Give the model<br className="hidden sm:block" /> something to see.
+      </h2>
+      <p className="mt-3.5 max-w-lg text-center font-mono text-xs leading-relaxed text-[var(--ink-faint)]">
+        Adjust parameters on the left inspector, or ignite the latent diffusion pipeline with a curated style catalyst below.
       </p>
-      <button
-       type="button"
-       onClick={onGenerate}
-       disabled={!canGenerate}
-       className="mx-auto mt-6 border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] focus-visible:bg-[var(--accent-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-       Generate image
-      </button>
+
+      {/* 4 Style Catalyst Cards */}
+      <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+        {STYLE_CATALYSTS.map((cat) => {
+          const Icon = cat.icon;
+          const isApplied = appliedCatalystId === cat.id;
+
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => handleApplyCatalyst(cat)}
+              className={`group relative flex flex-col justify-between rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98] ${cat.borderHover}`}
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className={`rounded border px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-wider uppercase ${cat.badgeStyle}`}>
+                    {cat.genre}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {isApplied ? (
+                      <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--accent)] animate-in fade-in">
+                        <Check className="h-3 w-3" />
+                        <span>Loaded to prompt</span>
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[9px] text-[var(--ink-faint)] group-hover:text-[var(--ink-soft)] transition-colors">
+                        Click to compose ↵
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 mb-1.5">
+                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-soft)] ${cat.iconColor}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <h3 className="font-mono text-xs font-bold text-[var(--ink)] group-hover:text-white transition-colors">
+                    {cat.title}
+                  </h3>
+                </div>
+
+                <p className="font-mono text-[10px] leading-relaxed text-[var(--ink-faint)] line-clamp-2">
+                  {cat.description}
+                </p>
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-[var(--line)]/50 flex items-center justify-between text-[9px] font-mono text-[var(--ink-faint)]">
+                <span className="truncate max-w-[240px] opacity-70">
+                  {cat.prompt.slice(0, 48)}…
+                </span>
+                <span className="text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                  Use Style →
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Primary Action Button */}
+      <div className="mt-8 flex flex-col items-center gap-3">
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={!canGenerate}
+          className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent)] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-[0_0_16px_rgba(213,240,111,0.25)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Zap className="h-4 w-4 fill-current" />
+          <span>Generate First Output</span>
+          <span className="font-mono text-[9px] opacity-80 rounded bg-[var(--accent-ink)]/10 px-1.5 py-0.5">⌘↵</span>
+        </button>
+      </div>
+
+      {/* Darkroom Shortcuts & Telemetry Footer */}
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-4 border-t border-[var(--line)] pt-5 font-mono text-[9px] text-[var(--ink-faint)]">
+        <div className="flex items-center gap-2">
+          <span>SHORTCUTS:</span>
+          <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 text-[var(--ink-soft)]">
+            <kbd className="font-bold text-[var(--accent)]">⌘ Enter</kbd> Generate
+          </span>
+          <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 text-[var(--ink-soft)]">
+            <kbd className="font-bold">Tab</kbd> Composer
+          </span>
+          <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 text-[var(--ink-soft)]">
+            <kbd className="font-bold">Alt 1-5</kbd> Ratio
+          </span>
+        </div>
+        <div className="h-3 w-px bg-[var(--line-strong)] hidden sm:block" />
+        <div className="flex items-center gap-2">
+          <Cpu className="h-3 w-3 text-[var(--accent)]" />
+          <span>{activeModelTitle || "Krea 2 Turbo"}</span>
+          <span>·</span>
+          <span>{aspectRatio || "16:9"}</span>
+          <span>·</span>
+          <span>LOCAL ENGINE</span>
+        </div>
+      </div>
      </section>
     ) : viewMode === "grid" ? (
       <AssetCardList
