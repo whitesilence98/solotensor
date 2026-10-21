@@ -158,7 +158,12 @@ export default function StudioPage() {
           setSelection({ modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId });
         }
         if (Array.isArray(saved.loras) && saved.loras.length > 0) {
-          setLoras(saved.loras);
+          setLoras(
+            saved.loras.map((l: ActiveLora) => ({
+              ...l,
+              weight: typeof l.weight === "number" ? Math.max(0, Math.min(1, l.weight)) : 0.8,
+            }))
+          );
         }
       } else {
         const settings = loadSettings();
@@ -516,7 +521,7 @@ export default function StudioPage() {
           id: `remix-${index}-${l.lora}`,
           title: resolvedTitle,
           baseModel: matched?.version_name || "SDXL",
-          weight: l.strength,
+          weight: typeof l.strength === "number" ? Math.max(0, Math.min(1, l.strength)) : 0.8,
           enabled: l.on,
           modelId: l.model_id || matched?.model_id,
           versionId: l.version_id || matched?.version_id,

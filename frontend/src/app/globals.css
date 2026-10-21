@@ -533,6 +533,11 @@
   cursor: pointer;
 }
 
+.workspace-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .workspace-range::-webkit-slider-thumb {
   appearance: none;
   width: .875rem;
@@ -543,12 +548,31 @@
   box-shadow: 0 0 0 1px rgba(199, 227, 106, .4);
 }
 
+.workspace-range:disabled::-webkit-slider-thumb {
+  background: var(--ink-faint);
+  box-shadow: none;
+}
+
 .workspace-range::-moz-range-thumb {
   width: .875rem;
   height: .875rem;
   border: 2px solid var(--surface-sunken);
   border-radius: 50%;
   background: var(--accent);
+}
+
+.workspace-range:disabled::-moz-range-thumb {
+  background: var(--ink-faint);
+}
+
+.workspace-range::-moz-range-progress {
+  background: var(--accent);
+  border-radius: 999px;
+  height: 100%;
+}
+
+.workspace-range:disabled::-moz-range-progress {
+  background: var(--ink-faint);
 }
 
 .workspace-icon-island {

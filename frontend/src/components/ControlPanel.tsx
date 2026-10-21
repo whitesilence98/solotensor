@@ -380,9 +380,9 @@ export default function ControlPanel(props: Props) {
   return resolveMediaUrl(cover);
  }, [selectedModel, publicModelMap, publicModels]);
 
- // Adjust LoRA weight
+ // Adjust LoRA weight (clamped between 0.0 and 1.0)
  const updateLoraWeight = (id: string, nextWeight: number) => {
-  const clamped = Math.round(Math.min(2.0, Math.max(-2.0, nextWeight)) * 10) / 10;
+  const clamped = Math.round(Math.max(0.0, Math.min(1.0, nextWeight)) * 100) / 100;
   onLorasChange(loras.map((l) => (l.id === id ? { ...l, weight: clamped } : l)));
  };
 
@@ -902,30 +902,41 @@ export default function ControlPanel(props: Props) {
             {/* Slider Row with fine steppers */}
             <div className="mt-2.5 flex items-center gap-2">
              <div className="relative flex-1 flex items-center">
-              <input
-               type="range"
-               min="-2.0"
-               max="2.0"
-               step="0.05"
-               value={lora.weight}
-               disabled={isMuted}
-               onChange={(e) => updateLoraWeight(lora.id, parseFloat(e.target.value))}
-               className="workspace-range w-full"
-              />
+              {(() => {
+               const clampedWeight = Math.max(0, Math.min(1, typeof lora.weight === "number" ? lora.weight : 0.8));
+               const percent = Math.round(clampedWeight * 100);
+               return (
+                <input
+                 type="range"
+                 min="0"
+                 max="1"
+                 step="0.05"
+                 value={clampedWeight}
+                 disabled={isMuted}
+                 onChange={(e) => updateLoraWeight(lora.id, parseFloat(e.target.value))}
+                 style={{
+                  background: isMuted
+                   ? `linear-gradient(to right, var(--ink-faint) 0%, var(--ink-faint) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`
+                   : `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`,
+                 }}
+                 className="workspace-range w-full"
+                />
+               );
+              })()}
              </div>
 
              {/* Numeric Weight Badge */}
-             <div className="flex h-6 min-w-[2.4rem] items-center justify-center rounded-xl bg-[var(--surface-soft)] px-1.5 font-mono text-[11px] font-bold text-[var(--ink)]">
-              {lora.weight.toFixed(1)}
+             <div className="flex h-6 min-w-[2.6rem] items-center justify-center rounded-xl bg-[var(--surface-soft)] px-1.5 font-mono text-[11px] font-bold text-[var(--ink)]">
+              {(typeof lora.weight === "number" ? Math.max(0, Math.min(1, lora.weight)) : 0.8).toFixed(2)}
              </div>
 
              {/* Decrement Stepper */}
              <button
               type="button"
-              disabled={isMuted}
-              onClick={() => updateLoraWeight(lora.id, lora.weight - 0.1)}
+              disabled={isMuted || lora.weight <= 0}
+              onClick={() => updateLoraWeight(lora.id, lora.weight - 0.05)}
               className="flex h-6 w-6 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] active:scale-95 disabled:opacity-40 transition"
-              title="Decrease (-0.1)"
+              title="Decrease (-0.05)"
              >
               <Minus className="h-3 w-3" />
              </button>
@@ -933,10 +944,10 @@ export default function ControlPanel(props: Props) {
              {/* Increment Stepper */}
              <button
               type="button"
-              disabled={isMuted}
-              onClick={() => updateLoraWeight(lora.id, lora.weight + 0.1)}
+              disabled={isMuted || lora.weight >= 1}
+              onClick={() => updateLoraWeight(lora.id, lora.weight + 0.05)}
               className="flex h-6 w-6 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] active:scale-95 disabled:opacity-40 transition"
-              title="Increase (+0.1)"
+              title="Increase (+0.05)"
              >
               <Plus className="h-3 w-3" />
              </button>
@@ -1038,15 +1049,24 @@ export default function ControlPanel(props: Props) {
 
            <div className="mt-2.5 flex items-center gap-2">
             <div className="relative flex-1 flex items-center">
-             <input
-              type="range"
-              min="0.0"
-              max="2.0"
-              step="0.05"
-              value={emb.weight}
-              onChange={(e) => updateEmbeddingWeight(emb.id, parseFloat(e.target.value))}
-              className="workspace-range w-full"
-             />
+             {(() => {
+              const clamped = Math.max(0, Math.min(2, typeof emb.weight === "number" ? emb.weight : 1.0));
+              const percent = Math.round((clamped / 2.0) * 100);
+              return (
+               <input
+                type="range"
+                min="0.0"
+                max="2.0"
+                step="0.05"
+                value={clamped}
+                onChange={(e) => updateEmbeddingWeight(emb.id, parseFloat(e.target.value))}
+                style={{
+                 background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`,
+                }}
+                className="workspace-range w-full"
+               />
+              );
+             })()}
             </div>
             <div className="flex h-6 min-w-[2.25rem] items-center justify-center rounded-xl bg-[var(--surface-soft)] px-1.5 font-mono text-[11px] font-semibold text-[var(--ink)]">
              {emb.weight.toFixed(1)}
@@ -1323,16 +1343,25 @@ export default function ControlPanel(props: Props) {
           <span>Denoise</span>
           <span className="font-mono text-[var(--ink)]">{denoise}</span>
          </div>
-         <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={denoise}
-          onChange={(e) => onDenoiseChange(e.target.value)}
-          disabled={busy}
-          className="workspace-range mt-2 w-full"
-         />
+         {(() => {
+          const num = typeof denoise === "number" ? denoise : parseFloat(String(denoise)) || 0;
+          const percent = Math.round(Math.max(0, Math.min(1, num)) * 100);
+          return (
+           <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={denoise}
+            onChange={(e) => onDenoiseChange(e.target.value)}
+            disabled={busy}
+            style={{
+             background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`,
+            }}
+            className="workspace-range mt-2 w-full"
+           />
+          );
+         })()}
         </div>
        </div>
       )}
