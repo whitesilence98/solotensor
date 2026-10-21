@@ -163,16 +163,16 @@ export interface ToolControl {
 
 export interface ToolNodeInput {
   name: string;
-  value: unknown;
-  type_hint: "number" | "string" | "boolean" | "select" | "unknown";
-  is_linked: boolean;
-  options?: Array<string | number>;
+  value?: unknown;
+  type_hint?: "number" | "string" | "boolean" | "select" | "unknown";
+  is_linked?: boolean;
+  options?: unknown[];
 }
 
 export interface ToolNodeInfo {
   id: string;
   class_type: string;
-  title: string | null;
+  title?: string | null;
   inputs: ToolNodeInput[];
 }
 
@@ -712,13 +712,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(resp.status, message);
   }
   if (resp.status === 204) return undefined as T;
-  const text = await resp.text();
-  if (!text.trim()) return undefined as T;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return text as unknown as T;
-  }
+  return (await resp.json()) as T;
 }
 
 export type CreatorModelCategory = "Character" | "Style" | "Concept" | "Pose" | "Clothing" | "General";

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { AssetRecord, GalleryItem } from "@/lib/api";
 import AssetCardList from "@/components/AssetCardList";
+import { AspectRatioIcon } from "@/components/AspectRatioSelector";
 
 export type PostSortMode = "explore" | "trending" | "latest";
 
@@ -316,13 +317,14 @@ export default function HomePostsSection({
                       key={opt.id}
                       type="button"
                       onClick={() => setAspectFilter(opt.id)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                         aspectFilter === opt.id
-                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
+                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-sm"
                           : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-white"
                       }`}
                     >
-                      {opt.label}
+                      {opt.id !== "all" && <AspectRatioIcon ratio={opt.id} />}
+                      <span>{opt.label}</span>
                     </button>
                   ))}
                 </div>

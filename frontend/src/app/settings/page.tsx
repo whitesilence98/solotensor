@@ -14,6 +14,7 @@ import WorkspaceFooter from "@/components/WorkspaceFooter";
 import CreditPill from "@/components/CreditPill";
 import WorkspaceNavbar from "@/components/WorkspaceNavbar";
 import CustomSelect from "@/components/CustomSelect";
+import AspectRatioSelector from "@/components/AspectRatioSelector";
 
 const formatLabels: Record<StudioSettings["defaultFormat"], string> = {
   "1:1": "Square · 1024 × 1024",
@@ -137,10 +138,7 @@ export default function SettingsPage() {
           <div className="px-5 py-6 md:px-7 md:py-7">
             <div className="grid gap-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(15rem,.8fr)] lg:gap-10">
               <div>
-                <label className="block" htmlFor="default-format">
-                  <span className={fieldLabel}>Default format</span>
-                </label>
-                <CustomSelect
+                <AspectRatioSelector
                   id="default-format"
                   value={settings.defaultFormat}
                   onChange={(val) =>
@@ -149,9 +147,9 @@ export default function SettingsPage() {
                       val as StudioSettings["defaultFormat"],
                     )
                   }
-                  options={formatOptions}
-                  className="mt-2 w-full"
-                  buttonClassName="w-full h-10 px-3.5 text-xs"
+                  options={SETTING_FORMATS}
+                  label="Default Aspect Ratio Format"
+                  size="md"
                 />
                 <span id="default-format-help" className={fieldHelp}>
                   Custom dimensions remain available from the generator.

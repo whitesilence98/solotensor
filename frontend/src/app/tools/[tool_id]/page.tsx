@@ -26,6 +26,7 @@ import BeforeAfterSlider from "@/components/BeforeAfterSlider";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import CustomSelect from "@/components/CustomSelect";
 import SeedInput from "@/components/SeedInput";
+import AspectRatioSelector, { AspectRatioIcon } from "@/components/AspectRatioSelector";
 import { useAuth } from "@/lib/auth-context";
 import { Can } from "@/components/rbac";
 import {
@@ -187,23 +188,6 @@ function resolveControlMeta(
     displayTitle: title || control.input_name || "Parameter",
     badge: control.kind === "seed" ? "SEED" : control.kind === "number" ? "PARAM" : undefined,
   };
-}
-
-function AspectRatioIcon({ ratio }: { ratio: ToolAspectRatio }) {
-  switch (ratio) {
-    case "1:1":
-      return <div className="h-3 w-3 rounded-[1px] border border-current" />;
-    case "16:9":
-      return <div className="h-2 w-3.5 rounded-[1px] border border-current" />;
-    case "9:16":
-      return <div className="h-3.5 w-2 rounded-[1px] border border-current" />;
-    case "4:3":
-      return <div className="h-2.5 w-3 rounded-[1px] border border-current" />;
-    case "21:9":
-      return <div className="h-1.5 w-4 rounded-[1px] border border-current" />;
-    default:
-      return <div className="h-3 w-3 rounded-[1px] border border-current" />;
-  }
 }
 
 function ImagePreview({ file, alt }: { file: File; alt: string }) {
@@ -959,31 +943,14 @@ export default function ToolDetailPage() {
           )}
 
           {!dimensionControls && (
-            <div className="space-y-1.5 pt-1 border-t border-[var(--line)]">
-              <label className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
-                Aspect Ratio Format
-              </label>
-              <div className="grid grid-cols-5 gap-1.5">
-                {tool!.supported_aspect_ratios
-                  .filter((item) => RATIOS.includes(item))
-                  .map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      disabled={busy}
-                      aria-pressed={ratio === item}
-                      onClick={() => setRatio(item)}
-                      className={`flex flex-col items-center justify-center gap-1 rounded-lg border py-2 text-center font-mono text-[10px] font-bold transition duration-150 disabled:opacity-40 ${
-                        ratio === item
-                          ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
-                          : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                      }`}
-                    >
-                      <AspectRatioIcon ratio={item} />
-                      <span>{item}</span>
-                    </button>
-                  ))}
-              </div>
+            <div className="pt-2 border-t border-[var(--line)]">
+              <AspectRatioSelector
+                value={ratio}
+                onChange={setRatio}
+                options={tool!.supported_aspect_ratios.filter((item) => RATIOS.includes(item))}
+                disabled={busy}
+                label="Aspect Ratio Format"
+              />
             </div>
           )}
         </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   ArrowRight,
   Clock3,
   Cpu,
@@ -419,6 +420,15 @@ export default function ToolStudioPage() {
 
               {/* Create New Tool CTA */}
               <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href="/tools/canvas"
+                  className="hidden md:inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] px-3 text-xs font-mono font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] active:scale-[0.98] transition-all"
+                  title="Open Interactive Visual Node Canvas"
+                >
+                  <Activity className="h-4 w-4" />
+                  <span>Node Canvas</span>
+                </Link>
+
                 <Link
                   href="/tools/create"
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 text-xs font-mono font-bold text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] active:scale-[0.98] transition-all"

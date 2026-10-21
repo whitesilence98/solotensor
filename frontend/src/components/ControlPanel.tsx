@@ -40,6 +40,7 @@ import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
 import SeedInput from "@/components/SeedInput";
+import AspectRatioSelector from "@/components/AspectRatioSelector";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -1199,32 +1200,14 @@ export default function ControlPanel(props: Props) {
     <div className="border-t border-[var(--line)] pt-4 space-y-4">
      {/* Format / Aspect Ratio */}
      <div>
-      <div className="mb-2 flex items-center justify-between">
-       <span className="text-[11px] font-semibold text-[var(--ink-faint)] uppercase tracking-wide">
-        Aspect Ratio
-       </span>
-       <span className="font-mono text-[10px] text-[var(--accent)]">{format}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-1.5">
-       {FORMATS.map(({ value, label }) => {
-        const active = format === value;
-        return (
-         <button
-          key={value}
-          type="button"
-          onClick={() => onFormatChange(value)}
-          disabled={busy}
-          className={`rounded-xl border py-2 text-center font-mono text-[11px] font-semibold transition active:scale-95 disabled:opacity-40 ${
-           active
-            ? "border-[color-mix(in_srgb,var(--accent)_60%,transparent)] bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)] "
-            : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
-          }`}
-         >
-          {label}
-         </button>
-        );
-       })}
-      </div>
+      <AspectRatioSelector
+       value={format}
+       onChange={onFormatChange}
+       options={FORMATS}
+       disabled={busy}
+       label="Aspect Ratio"
+       columns={3}
+      />
 
       {format === "custom" && (
        <>

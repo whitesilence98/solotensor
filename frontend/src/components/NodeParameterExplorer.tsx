@@ -71,7 +71,7 @@ export default function NodeParameterExplorer({
   // Active selected input
   const activeInput = useMemo(() => {
     if (!activeNode || !selectedInputName) return null;
-    return activeNode.inputs.find((i) => i.name === selectedInputName) || null;
+    return activeNode.inputs.find((i: ToolNodeInput) => i.name === selectedInputName) || null;
   }, [activeNode, selectedInputName]);
 
   const handleSelectInputToConfigure = (node: ToolNodeInfo, input: ToolNodeInput) => {
@@ -81,7 +81,7 @@ export default function NodeParameterExplorer({
     // Smart defaults based on input characteristics
     const cleanLabel = (node.title ? `${node.title} ` : "") + input.name
       .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+      .replace(/\b\w/g, (c: string) => c.toUpperCase());
     setCustomLabel(cleanLabel);
 
     if (input.type_hint === "number") {
@@ -243,7 +243,7 @@ export default function NodeParameterExplorer({
               ) : (
                 filteredNodes.map((node) => {
                   const isSelected = activeNode?.id === node.id;
-                  const unlinkedCount = node.inputs.filter((i) => !i.is_linked).length;
+                  const unlinkedCount = node.inputs.filter((i: ToolNodeInput) => !i.is_linked).length;
 
                   return (
                     <button
@@ -318,7 +318,7 @@ export default function NodeParameterExplorer({
                   </span>
 
                   <div className="grid grid-cols-1 gap-2">
-                    {activeNode.inputs.map((inp) => {
+                    {activeNode.inputs.map((inp: ToolNodeInput) => {
                       const controlId = `nodes.${activeNode.id}.inputs.${inp.name}`;
                       const isAlreadyExposed = existingControlIds.includes(controlId);
                       const isConfiguring = activeInput?.name === inp.name;
