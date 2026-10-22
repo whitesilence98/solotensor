@@ -629,8 +629,8 @@ export default function PublicModelDetailPage({
       }
       setInstallMessage(
         result.already_present
-          ? `${file.filename} is already installed in ComfyUI.`
-          : `${file.filename} installed in ComfyUI.`,
+          ? `${getBaseFilename(file.filename)} is already installed in ComfyUI.`
+          : `${getBaseFilename(file.filename)} installed in ComfyUI.`,
       );
     } catch (reason) {
       setInstallError(
