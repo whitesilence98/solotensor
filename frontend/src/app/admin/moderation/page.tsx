@@ -981,8 +981,8 @@ export default function ModerationDashboardPage() {
                                       <HardDrive className="h-4 w-4 text-[var(--accent)] shrink-0" />
                                       <div className="min-w-0">
                                         <div className="flex items-center gap-2">
-                                          <span className="font-bold text-[var(--ink)] block truncate">
-                                            {file.filename}
+                                          <span className="font-bold text-[var(--ink)] block truncate" title={file.filename}>
+                                            {getBaseFilename(file.filename)}
                                           </span>
                                           {file.from_vault && (
                                             <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
