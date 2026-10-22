@@ -1,6 +1,14 @@
 import type { InstalledGalleryModel, PublicModelSummary, ModelPrecision } from "./api";
 
 /**
+ * Extract file name only, ignoring folder directory path / or \.
+ */
+export function getBaseFilename(filename?: string | null): string {
+  if (!filename) return "";
+  return filename.split(/[/\\]/).pop() || filename;
+}
+
+/**
  * Clean and normalize a model filename or identifier for fuzzy comparison.
  */
 export function cleanIdentifier(value: string): string {

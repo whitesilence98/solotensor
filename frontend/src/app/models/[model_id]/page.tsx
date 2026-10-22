@@ -53,7 +53,7 @@ import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import EditModelDrawer from "@/components/EditModelDrawer";
 import UserAvatar from "@/components/UserAvatar";
-import { detectPrecisionFromFilename } from "@/lib/models";
+import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 
 interface CommentItem {
   id: string;
