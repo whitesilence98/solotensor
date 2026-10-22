@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Wand2, Zap, Film, Cpu } from "lucide-react";
+import { ArrowRight, Cpu, Film, Sparkles, Wand2, Zap } from "lucide-react";
+import Carousel from "@/components/Carousel";
 
 export interface PromoSlide {
   id: string;
@@ -82,31 +82,6 @@ const PROMO_SLIDES: PromoSlide[] = [
 ];
 
 export default function HomePromoCarousel() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const totalSlides = PROMO_SLIDES.length;
-
-  // Compute slides to show based on screen width
-  // Desktop shows 3 side-by-side, tablet 2, mobile 1
-  const maxIndex = totalSlides - 1;
-
-  const nextSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev >= maxIndex ? 0 : prev + 1));
-  }, [maxIndex]);
-
-  const prevSlide = useCallback(() => {
-    setCurrentIndex((prev) => (prev <= 0 ? maxIndex : prev - 1));
-  }, [maxIndex]);
-
-  // Auto advance every 5.5s unless hovered
-  useEffect(() => {
-    if (isPaused) return;
-    const timer = setInterval(() => {
-      nextSlide();
-    }, 5500);
-    return () => clearInterval(timer);
-  }, [isPaused, nextSlide]);
-
   const getBadgeStyle = (type?: PromoSlide["badgeType"]) => {
     switch (type) {
       case "amber":
@@ -122,120 +97,68 @@ export default function HomePromoCarousel() {
   };
 
   return (
-    <div
-      className="relative w-full select-none"
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      aria-label="Promotional feature banners"
-    >
-      {/* Outer Carousel Container */}
-      <div className="relative overflow-hidden rounded-2xl">
-        <div
-          className="flex transition-transform duration-500 ease-out gap-4"
-          style={{
-            transform: `translateX(-${currentIndex * (100 / 3 + 1.2)}%)`,
-          }}
-        >
-          {PROMO_SLIDES.map((slide, idx) => {
-            const Icon = slide.icon;
-            return (
-              <div
-                key={slide.id}
-                className="w-full shrink-0 sm:w-[calc(50%-8px)] lg:w-[calc(33.333%-11px)]"
-              >
-                <div
-                  className={`group relative flex h-full min-h-[170px] flex-col justify-between overflow-hidden rounded-2xl border border-[var(--line)] bg-gradient-to-br ${slide.gradient} p-5 transition-all duration-300 ${slide.borderHover} hover:shadow-[0_12px_36px_rgba(0,0,0,0.5)]`}
-                >
-                  {/* Subtle technical background grid / glow */}
-                  <div
-                    className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/[0.03] blur-2xl group-hover:scale-125 transition-transform duration-500"
-                    aria-hidden="true"
-                  />
-
-                  {/* Top Bar: Badge + Icon */}
-                  <div className="relative z-10 flex items-start justify-between gap-2">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur-md ${getBadgeStyle(
-                        slide.badgeType
-                      )}`}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
-                      {slide.badge}
-                    </span>
-
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-[var(--ink-soft)] group-hover:text-[var(--accent)] group-hover:scale-110 transition-all">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                  </div>
-
-                  {/* Middle: Title & Subtitle */}
-                  <div className="relative z-10 my-3">
-                    <h3 className="font-heading text-lg font-bold tracking-tight text-white group-hover:text-[var(--accent)] transition-colors">
-                      {slide.title}
-                    </h3>
-                    <p className="mt-1 line-clamp-2 text-xs font-normal leading-relaxed text-[var(--ink-soft)]">
-                      {slide.subtitle}
-                    </p>
-                  </div>
-
-                  {/* Bottom: Action CTA */}
-                  <div className="relative z-10 flex items-center justify-between pt-1 border-t border-white/[0.06]">
-                    <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--ink-faint)]">
-                      Local GPU Accelerated
-                    </span>
-                    <Link
-                      href={slide.href}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] active:scale-95 transition-all duration-200"
-                    >
-                      <span>{slide.ctaText}</span>
-                      <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Navigation Arrows */}
-      <button
-        type="button"
-        onClick={prevSlide}
-        aria-label="Previous promotional slide"
-        className="absolute -left-3.5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line-strong)] bg-black/70 text-white/90 backdrop-blur-md transition-all hover:bg-black hover:border-[var(--accent)] hover:text-[var(--accent)] active:scale-90 shadow-xl"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={nextSlide}
-        aria-label="Next promotional slide"
-        className="absolute -right-3.5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line-strong)] bg-black/70 text-white/90 backdrop-blur-md transition-all hover:bg-black hover:border-[var(--accent)] hover:text-[var(--accent)] active:scale-90 shadow-xl"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-
-      {/* Pagination Indicator Dots */}
-      <div className="mt-3.5 flex items-center justify-center gap-1.5">
-        {Array.from({ length: totalSlides - 2 }).map((_, idx) => {
-          const isActive = currentIndex === idx;
-          return (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => setCurrentIndex(idx)}
-              aria-label={`Go to slide page ${idx + 1}`}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                isActive
-                  ? "w-6 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]"
-                  : "w-2 bg-white/20 hover:bg-white/40"
-              }`}
+    <Carousel
+      items={PROMO_SLIDES}
+      itemsPerView={{ base: 1, sm: 2, lg: 3 }}
+      gap={16}
+      autoplay={true}
+      autoplayInterval={5500}
+      loop={true}
+      ariaLabel="Promotional feature banners"
+      renderItem={(slide) => {
+        const Icon = slide.icon;
+        return (
+          <div
+            className={`group relative flex h-full min-h-[170px] flex-col justify-between overflow-hidden rounded-2xl border border-[var(--line)] bg-gradient-to-br ${slide.gradient} p-5 transition-all duration-300 ${slide.borderHover} hover:shadow-[0_12px_36px_rgba(0,0,0,0.5)]`}
+          >
+            {/* Subtle technical background grid / glow */}
+            <div
+              className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/[0.03] blur-2xl group-hover:scale-125 transition-transform duration-500"
+              aria-hidden="true"
             />
-          );
-        })}
-      </div>
-    </div>
+
+            {/* Top Bar: Badge + Icon */}
+            <div className="relative z-10 flex items-start justify-between gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider backdrop-blur-md ${getBadgeStyle(
+                  slide.badgeType
+                )}`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
+                {slide.badge}
+              </span>
+
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-[var(--ink-soft)] group-hover:text-[var(--accent)] group-hover:scale-110 transition-all">
+                <Icon className="h-4 w-4" />
+              </div>
+            </div>
+
+            {/* Middle: Title & Subtitle */}
+            <div className="relative z-10 my-3">
+              <h3 className="font-heading text-lg font-bold tracking-tight text-white group-hover:text-[var(--accent)] transition-colors">
+                {slide.title}
+              </h3>
+              <p className="mt-1 line-clamp-2 text-xs font-normal leading-relaxed text-[var(--ink-soft)]">
+                {slide.subtitle}
+              </p>
+            </div>
+
+            {/* Bottom: Action CTA */}
+            <div className="relative z-10 flex items-center justify-between pt-1 border-t border-white/[0.06]">
+              <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--ink-faint)]">
+                Local GPU Accelerated
+              </span>
+              <Link
+                href={slide.href}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] active:scale-95 transition-all duration-200"
+              >
+                <span>{slide.ctaText}</span>
+                <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            </div>
+          </div>
+        );
+      }}
+    />
   );
 }
