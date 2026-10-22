@@ -1348,6 +1348,7 @@ class ModelService:
         filename: str,
         data: bytes,
         metadata: dict[str, Any] | None = None,
+        is_cover: bool = False,
     ) -> ModelResponse:
         record = self._read(model_id)
         version = self._version(record, version_id)
@@ -1362,18 +1363,118 @@ class ModelService:
         target = self.root / model_id / version_id / "samples" / f"{sample_id}{suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        version.setdefault("samples", []).append(
-            {
-                "sample_id": sample_id,
-                "filename": name,
-                "kind": kind,
-                "stored_name": target.name,
-                "metadata": metadata or {},
-            }
-        )
+        meta = dict(metadata or {})
+        if is_cover:
+            meta["is_cover"] = True
+            for s in version.get("samples", []):
+                if isinstance(s.get("metadata"), dict):
+                    s["metadata"]["is_cover"] = False
+
+        sample_obj = {
+            "sample_id": sample_id,
+            "filename": name,
+            "kind": kind,
+            "stored_name": target.name,
+            "metadata": meta,
+        }
+        samples_list = version.setdefault("samples", [])
+        if is_cover:
+            samples_list.insert(0, sample_obj)
+        else:
+            samples_list.append(sample_obj)
+
         record["updated_at"] = self._now()
         self._write(record)
         self._sync_to_db(record)
+        self.invalidate_public_cache()
+        return self._response(record)
+
+    def set_cover_sample(
+        self,
+        model_id: str,
+        version_id: str,
+        sample_id: str,
+    ) -> ModelResponse:
+        record = self._read(model_id)
+        version = self._version(record, version_id)
+        samples = version.get("samples", [])
+        target_idx = next(
+            (idx for idx, s in enumerate(samples) if s.get("sample_id") == sample_id),
+            None,
+        )
+        if target_idx is None:
+            raise ModelNotFound("Model sample not found")
+
+        target_sample = samples.pop(target_idx)
+        for s in samples:
+            if isinstance(s.get("metadata"), dict):
+                s["metadata"]["is_cover"] = False
+        if not isinstance(target_sample.get("metadata"), dict):
+            target_sample["metadata"] = {}
+        target_sample["metadata"]["is_cover"] = True
+        samples.insert(0, target_sample)
+
+        record["updated_at"] = self._now()
+        self._write(record)
+        self._sync_to_db(record)
+        self.invalidate_public_cache()
+        return self._response(record)
+
+    def patch_sample(
+        self,
+        model_id: str,
+        version_id: str,
+        sample_id: str,
+        metadata: dict[str, Any],
+    ) -> ModelResponse:
+        record = self._read(model_id)
+        version = self._version(record, version_id)
+        target = next(
+            (s for s in version.get("samples", []) if s.get("sample_id") == sample_id),
+            None,
+        )
+        if target is None:
+            raise ModelNotFound("Model sample not found")
+
+        if not isinstance(target.get("metadata"), dict):
+            target["metadata"] = {}
+        target["metadata"].update(metadata)
+
+        record["updated_at"] = self._now()
+        self._write(record)
+        self._sync_to_db(record)
+        self.invalidate_public_cache()
+        return self._response(record)
+
+    def reorder_samples(
+        self,
+        model_id: str,
+        version_id: str,
+        sample_ids: list[str],
+    ) -> ModelResponse:
+        record = self._read(model_id)
+        version = self._version(record, version_id)
+        current_samples = version.get("samples", [])
+        samples_by_id = {s.get("sample_id"): s for s in current_samples if s.get("sample_id")}
+
+        reordered = []
+        for sid in sample_ids:
+            if sid in samples_by_id:
+                reordered.append(samples_by_id.pop(sid))
+        reordered.extend(samples_by_id.values())
+
+        if reordered:
+            for s in reordered:
+                if isinstance(s.get("metadata"), dict):
+                    s["metadata"]["is_cover"] = False
+            if isinstance(reordered[0].get("metadata"), dict):
+                reordered[0]["metadata"]["is_cover"] = True
+
+        version["samples"] = reordered
+        record["updated_at"] = self._now()
+        self._write(record)
+        self._sync_to_db(record)
+        self.invalidate_public_cache()
         return self._response(record)
 
     def remove_sample(self, model_id: str, version_id: str, sample_id: str) -> None:
@@ -1388,6 +1489,7 @@ class ModelService:
                 record["updated_at"] = self._now()
                 self._write(record)
                 self._sync_to_db(record)
+                self.invalidate_public_cache()
                 return
         raise ModelNotFound("Model sample not found")
 

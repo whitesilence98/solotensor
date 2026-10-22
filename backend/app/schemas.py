@@ -1010,6 +1010,18 @@ class ModelPublishRequest(BaseModel):
     visibility: ModelVisibility
 
 
+class ModelSamplePatchRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelSampleReorderRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    sample_ids: list[str] = Field(..., min_length=1)
+
+
 class ModelFilePatchRequest(BaseModel):
     model_config = {"extra": "forbid"}
 

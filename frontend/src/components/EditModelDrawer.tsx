@@ -17,6 +17,15 @@ import {
   Globe,
   SlidersHorizontal,
   Sparkles,
+  Star,
+  Upload,
+  Trash2,
+  Edit3,
+  ChevronLeft,
+  ChevronRight,
+  ImageIcon,
+  Check,
+  CheckCircle2,
 } from "lucide-react";
 import {
   api,
@@ -25,6 +34,7 @@ import {
   type CreatorModelCategory,
   type ModelVisibility,
   type InstalledGalleryModel,
+  type ModelSample,
 } from "@/lib/api";
 import CustomSelect from "@/components/CustomSelect";
 import HierarchicalSelect from "@/components/HierarchicalSelect";
@@ -75,11 +85,12 @@ const DEFAULT_CLIP_TYPES = [
   "sdxl_clip",
 ];
 
-const EDIT_MODEL_TABS: StudioStepItem<1 | 2 | 3 | 4>[] = [
+const EDIT_MODEL_TABS: StudioStepItem<1 | 2 | 3 | 4 | 5>[] = [
   { id: 1, code: "01", label: "Identity & Metadata" },
-  { id: 2, code: "02", label: "Architecture & Conditioning" },
-  { id: 3, code: "03", label: "Prompts & Presets" },
-  { id: 4, code: "04", label: "Licensing & Permissions" },
+  { id: 2, code: "02", label: "Showcase & Media" },
+  { id: 3, code: "03", label: "Architecture & Conditioning" },
+  { id: 4, code: "04", label: "Prompts & Presets" },
+  { id: 5, code: "05", label: "Licensing & Permissions" },
 ];
 
 export interface EditModelDrawerProps {
@@ -95,9 +106,29 @@ export default function EditModelDrawer({
   onClose,
   onUpdated,
 }: EditModelDrawerProps) {
-  const [activeTab, setActiveTab] = useState<1 | 2 | 3 | 4>(1);
+  const [activeTab, setActiveTab] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Model & Version state for live updates
+  const [currentModel, setCurrentModel] = useState<CreatorModel>(model);
+  const [selectedVersionId, setSelectedVersionId] = useState<string>(
+    model.versions[0]?.version_id || ""
+  );
+
+  // Media Tab Actions state
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingSamples, setUploadingSamples] = useState(false);
+  const [sampleActionId, setSampleActionId] = useState<string | null>(null);
+
+  // Sample prompt editing modal state
+  const [editingSample, setEditingSample] = useState<ModelSample | null>(null);
+  const [samplePrompt, setSamplePrompt] = useState("");
+  const [sampleNegativePrompt, setSampleNegativePrompt] = useState("");
+  const [sampleSeed, setSampleSeed] = useState<string>("");
+  const [sampleSampler, setSampleSampler] = useState<string>("");
+  const [sampleCfg, setSampleCfg] = useState<string>("");
+  const [sampleSteps, setSampleSteps] = useState<string>("");
 
   // Tab 1: Identity & Metadata
   const [title, setTitle] = useState(model.title);
@@ -161,6 +192,8 @@ export default function EditModelDrawer({
   useEffect(() => {
     if (open && model) {
       setError(null);
+      setCurrentModel(model);
+      setSelectedVersionId(model.versions[0]?.version_id || "");
       setTitle(model.title);
       setDescription(model.description || "");
       setCategory(model.category);
@@ -303,6 +336,166 @@ export default function EditModelDrawer({
     setTriggerWords((prev) => prev.filter((t) => t !== twToRemove));
   };
 
+  const activeVersion =
+    currentModel.versions.find((v) => v.version_id === selectedVersionId) ||
+    currentModel.versions[0];
+  const currentSamples = activeVersion?.samples || [];
+  const currentCover = currentSamples[0] || null;
+
+  const handleSetCover = async (sampleId: string) => {
+    if (!activeVersion) return;
+    setSampleActionId(sampleId);
+    setError(null);
+    try {
+      const updated = await api.setCoverModelSample(
+        currentModel.model_id,
+        activeVersion.version_id,
+        sampleId
+      );
+      setCurrentModel(updated);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set cover");
+    } finally {
+      setSampleActionId(null);
+    }
+  };
+
+  const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeVersion) return;
+    setUploadingCover(true);
+    setError(null);
+    try {
+      const updated = await api.uploadModelSample(
+        currentModel.model_id,
+        activeVersion.version_id,
+        file,
+        { role: "showcase" },
+        true
+      );
+      setCurrentModel(updated);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload cover thumbnail");
+    } finally {
+      setUploadingCover(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleUploadSamples = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !activeVersion) return;
+    setUploadingSamples(true);
+    setError(null);
+    try {
+      let lastUpdated = currentModel;
+      for (let i = 0; i < files.length; i++) {
+        lastUpdated = await api.uploadModelSample(
+          currentModel.model_id,
+          activeVersion.version_id,
+          files[i],
+          { role: "showcase" },
+          false
+        );
+      }
+      setCurrentModel(lastUpdated);
+      onUpdated(lastUpdated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload showcase images");
+    } finally {
+      setUploadingSamples(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDeleteSample = async (sampleId: string) => {
+    if (!activeVersion) return;
+    if (!confirm("Are you sure you want to delete this sample image?")) return;
+    setSampleActionId(sampleId);
+    setError(null);
+    try {
+      await api.deleteModelSample(
+        currentModel.model_id,
+        activeVersion.version_id,
+        sampleId
+      );
+      const updatedModel: CreatorModel = {
+        ...currentModel,
+        versions: currentModel.versions.map((v) =>
+          v.version_id === activeVersion.version_id
+            ? { ...v, samples: v.samples.filter((s) => s.sample_id !== sampleId) }
+            : v
+        ),
+      };
+      setCurrentModel(updatedModel);
+      onUpdated(updatedModel);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete sample");
+    } finally {
+      setSampleActionId(null);
+    }
+  };
+
+  const handleMoveSample = async (fromIdx: number, toIdx: number) => {
+    if (!activeVersion) return;
+    if (toIdx < 0 || toIdx >= currentSamples.length) return;
+    const reordered = [...currentSamples];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    const sampleIds = reordered.map((s) => s.sample_id);
+
+    try {
+      const updated = await api.reorderModelSamples(
+        currentModel.model_id,
+        activeVersion.version_id,
+        sampleIds
+      );
+      setCurrentModel(updated);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reorder samples");
+    }
+  };
+
+  const handleOpenPromptModal = (sample: ModelSample) => {
+    setEditingSample(sample);
+    const meta = (sample.metadata || {}) as Record<string, any>;
+    setSamplePrompt(typeof meta.prompt === "string" ? meta.prompt : "");
+    setSampleNegativePrompt(typeof meta.negative_prompt === "string" ? meta.negative_prompt : "");
+    setSampleSeed(meta.seed !== undefined && meta.seed !== null ? String(meta.seed) : "");
+    setSampleSampler(typeof meta.sampler === "string" ? meta.sampler : "");
+    setSampleCfg(meta.cfg !== undefined && meta.cfg !== null ? String(meta.cfg) : "");
+    setSampleSteps(meta.steps !== undefined && meta.steps !== null ? String(meta.steps) : "");
+  };
+
+  const handleSaveSamplePrompt = async () => {
+    if (!editingSample || !activeVersion) return;
+    try {
+      const patchData: Record<string, any> = {
+        ...(editingSample.metadata || {}),
+        prompt: samplePrompt.trim() || undefined,
+        negative_prompt: sampleNegativePrompt.trim() || undefined,
+        seed: sampleSeed.trim() ? Number(sampleSeed.trim()) : undefined,
+        sampler: sampleSampler.trim() || undefined,
+        cfg: sampleCfg.trim() ? Number(sampleCfg.trim()) : undefined,
+        steps: sampleSteps.trim() ? Number(sampleSteps.trim()) : undefined,
+      };
+      const updated = await api.patchModelSample(
+        currentModel.model_id,
+        activeVersion.version_id,
+        editingSample.sample_id,
+        patchData
+      );
+      setCurrentModel(updated);
+      onUpdated(updated);
+      setEditingSample(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update sample prompt");
+    }
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
       setError("Model title cannot be blank");
@@ -426,7 +619,7 @@ export default function EditModelDrawer({
         <StudioStepperTabs
           steps={EDIT_MODEL_TABS}
           activeStep={activeTab}
-          onStepChange={(newTab) => setActiveTab(newTab as 1 | 2 | 3 | 4)}
+          onStepChange={(newTab) => setActiveTab(newTab as 1 | 2 | 3 | 4 | 5)}
           busy={saving}
           mode="tabs"
           ariaLabel="Edit model navigation"
@@ -562,8 +755,274 @@ export default function EditModelDrawer({
             </div>
           )}
 
-          {/* TAB 2: ARCHITECTURE & CONDITIONING */}
+          {/* TAB 2: SHOWCASE & MEDIA */}
           {activeTab === 2 && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Version Switcher if multiple versions */}
+              {currentModel.versions.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label className="font-mono text-[10px] font-bold text-[var(--ink-soft)] uppercase">
+                    Target Release Version:
+                  </label>
+                  <CustomSelect
+                    value={selectedVersionId}
+                    onChange={(val) => setSelectedVersionId(val)}
+                    options={currentModel.versions.map((v) => ({
+                      value: v.version_id,
+                      label: `${v.name} (${v.samples.length} samples)`,
+                    }))}
+                    className="w-48"
+                  />
+                </div>
+              )}
+
+              {/* Primary Cover Thumbnail Showcase Card */}
+              <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Primary Catalog Cover Thumbnail
+                    </label>
+                    <p className="font-mono text-[9px] text-[var(--ink-faint)] mt-0.5">
+                      The hero image displayed on catalog grids, search cards, and social previews.
+                    </p>
+                  </div>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 font-mono text-xs font-bold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors shadow-sm">
+                    {uploadingCover ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--accent)]" />
+                        <span>Uploading Cover…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 text-[var(--accent)]" />
+                        <span>Quick Replace Cover</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      disabled={uploadingCover}
+                      onChange={handleUploadCover}
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-4 pt-1">
+                  <div className="relative h-44 w-44 shrink-0 overflow-hidden rounded-[5px] border border-[var(--line-strong)] bg-black/40 shadow-inner">
+                    {currentCover ? (
+                      <>
+                        <img
+                          src={currentCover.url}
+                          alt="Primary Thumbnail Cover"
+                          className="h-full w-full object-cover"
+                        />
+                        <span className="absolute top-2 left-2 flex items-center gap-1 rounded bg-[var(--accent)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] shadow-md">
+                          <Star className="h-2.5 w-2.5 fill-current" />
+                          ★ Cover
+                        </span>
+                      </>
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center p-3 text-center">
+                        <ImageIcon className="h-8 w-8 text-[var(--ink-faint)] mb-1" />
+                        <span className="font-mono text-[10px] text-[var(--ink-soft)]">
+                          No cover set
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-2 text-xs font-mono">
+                    <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface)] p-3 space-y-1.5">
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-[var(--ink-faint)] uppercase">Filename</span>
+                        <span className="font-bold text-[var(--ink)] truncate max-w-[200px]">
+                          {currentCover?.filename || "None"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-[var(--ink-faint)] uppercase">Status</span>
+                        <span className="text-[var(--accent)] font-semibold">
+                          {currentCover ? "Active in Catalog" : "Awaiting Cover Media"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <span className="text-[var(--ink-faint)] uppercase">Position</span>
+                        <span className="text-[var(--ink-soft)]">
+                          {currentCover ? "Slot 1 (Hero Index)" : "—"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-[var(--ink-faint)] leading-relaxed">
+                      💡 Tip: Click <strong>"Set as Cover"</strong> on any sample below to promote it to the primary catalog thumbnail.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Showcase Gallery Samples Grid */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block font-mono text-[10px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                      Showcase Gallery ({currentSamples.length})
+                    </label>
+                    <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+                      Samples attached to this model release.
+                    </p>
+                  </div>
+
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1 font-mono text-[11px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors">
+                    {uploadingSamples ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)]" />
+                        <span>Uploading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3 w-3 text-[var(--accent)]" />
+                        <span>Add Samples</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      disabled={uploadingSamples}
+                      onChange={handleUploadSamples}
+                    />
+                  </label>
+                </div>
+
+                {currentSamples.length === 0 ? (
+                  <div className="rounded-[5px] border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-8 text-center space-y-2">
+                    <ImageIcon className="mx-auto h-8 w-8 text-[var(--ink-faint)]" />
+                    <p className="font-mono text-xs font-bold text-[var(--ink-soft)]">
+                      No showcase images uploaded
+                    </p>
+                    <p className="font-mono text-[10px] text-[var(--ink-faint)] max-w-sm mx-auto">
+                      Upload example generations or test outputs to show other creators what this model can produce.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {currentSamples.map((sample, idx) => {
+                      const isCover = idx === 0;
+                      const isBusy = sampleActionId === sample.sample_id;
+                      const promptExcerpt =
+                        typeof sample.metadata?.prompt === "string"
+                          ? sample.metadata.prompt
+                          : "";
+
+                      return (
+                        <div
+                          key={sample.sample_id || idx}
+                          className={`group relative flex flex-col overflow-hidden rounded-[5px] border transition-all ${
+                            isCover
+                              ? "border-[var(--accent)] bg-[var(--surface-raised)] shadow-md"
+                              : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)]"
+                          }`}
+                        >
+                          {/* Image preview */}
+                          <div className="relative aspect-square w-full overflow-hidden bg-black/50">
+                            <img
+                              src={sample.url}
+                              alt={sample.filename}
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+
+                            {/* Badge */}
+                            {isCover ? (
+                              <span className="absolute top-1.5 left-1.5 z-10 flex items-center gap-1 rounded bg-[var(--accent)] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--accent-ink)] shadow">
+                                <Star className="h-2.5 w-2.5 fill-current" />
+                                Cover
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => handleSetCover(sample.sample_id)}
+                                className="absolute top-1.5 left-1.5 z-10 opacity-0 group-hover:opacity-100 flex items-center gap-1 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[8px] font-bold text-white hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all shadow"
+                                title="Promote to primary catalog thumbnail"
+                              >
+                                <Star className="h-2.5 w-2.5" />
+                                Set Cover
+                              </button>
+                            )}
+
+                            {/* Delete button */}
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleDeleteSample(sample.sample_id)}
+                              className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 flex h-6 w-6 items-center justify-center rounded bg-black/75 text-white/80 hover:bg-[var(--danger)] hover:text-white transition-all shadow"
+                              title="Delete sample"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          {/* Footer details & actions */}
+                          <div className="p-2 space-y-1.5 bg-[var(--surface)]">
+                            <p className="truncate font-mono text-[10px] text-[var(--ink)] font-semibold" title={sample.filename}>
+                              {sample.filename}
+                            </p>
+
+                            {promptExcerpt ? (
+                              <p className="line-clamp-1 font-mono text-[9px] text-[var(--ink-faint)]" title={promptExcerpt}>
+                                💬 {promptExcerpt}
+                              </p>
+                            ) : (
+                              <p className="font-mono text-[9px] text-[var(--ink-faint)] italic">
+                                No prompt attached
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-between pt-1 border-t border-[var(--line)]">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPromptModal(sample)}
+                                className="flex items-center gap-1 text-[9px] font-mono font-semibold text-[var(--accent)] hover:underline"
+                              >
+                                <Edit3 className="h-2.5 w-2.5" />
+                                <span>Prompt</span>
+                              </button>
+
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0 || isBusy}
+                                  onClick={() => handleMoveSample(idx, idx - 1)}
+                                  className="h-5 w-5 rounded flex items-center justify-center text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-sunken)] disabled:opacity-20"
+                                  title="Move earlier"
+                                >
+                                  <ChevronLeft className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === currentSamples.length - 1 || isBusy}
+                                  onClick={() => handleMoveSample(idx, idx + 1)}
+                                  className="h-5 w-5 rounded flex items-center justify-center text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-sunken)] disabled:opacity-20"
+                                  title="Move later"
+                                >
+                                  <ChevronRight className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: ARCHITECTURE & CONDITIONING */}
+          {activeTab === 3 && (
             <div className="space-y-5 animate-in fade-in duration-150">
               {/* Scan / Rescan Enclave Bar */}
               <div className="flex items-center justify-between rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
@@ -746,8 +1205,8 @@ export default function EditModelDrawer({
             </div>
           )}
 
-          {/* TAB 3: PROMPTS & PRESETS */}
-          {activeTab === 3 && (
+          {/* TAB 4: PROMPTS & PRESETS */}
+          {activeTab === 4 && (
             <div className="space-y-5 animate-in fade-in duration-150">
               {!promptable ? (
                 <div className="flex items-start gap-3 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-4">
@@ -947,8 +1406,8 @@ export default function EditModelDrawer({
             </div>
           )}
 
-          {/* TAB 4: LICENSING & PERMISSIONS */}
-          {activeTab === 4 && (
+          {/* TAB 5: LICENSING & PERMISSIONS */}
+          {activeTab === 5 && (
             <div className="space-y-4 animate-in fade-in duration-150">
               {/* Catalog Visibility */}
               <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] p-4 shadow-sm space-y-3">
@@ -1131,6 +1590,121 @@ export default function EditModelDrawer({
             </div>
           )}
         </div>
+
+        {/* Sample Metadata Modal */}
+        {editingSample && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          >
+            <div className="relative w-full max-w-lg rounded-[5px] border border-[var(--line-strong)] bg-[var(--surface)] p-5 text-[var(--ink)] shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-[var(--accent)]" />
+                  <h3 className="font-mono text-xs font-bold uppercase tracking-wider">
+                    Edit Sample Generation Metadata
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingSample(null)}
+                  className="rounded p-1 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 font-mono text-xs">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-[var(--ink-soft)] uppercase">
+                    Positive Prompt
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={samplePrompt}
+                    onChange={(e) => setSamplePrompt(e.target.value)}
+                    placeholder="Describe what was in the generation prompt…"
+                    className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-[var(--ink-soft)] uppercase">
+                    Negative Prompt
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={sampleNegativePrompt}
+                    onChange={(e) => setSampleNegativePrompt(e.target.value)}
+                    placeholder="Undesired elements…"
+                    className="workspace-field w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-[var(--ink-soft)] uppercase">Seed</label>
+                    <input
+                      type="text"
+                      value={sampleSeed}
+                      onChange={(e) => setSampleSeed(e.target.value)}
+                      placeholder="e.g. 42"
+                      className="workspace-field h-8 w-full rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-[var(--ink-soft)] uppercase">Steps</label>
+                    <input
+                      type="text"
+                      value={sampleSteps}
+                      onChange={(e) => setSampleSteps(e.target.value)}
+                      placeholder="e.g. 25"
+                      className="workspace-field h-8 w-full rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-[var(--ink-soft)] uppercase">CFG</label>
+                    <input
+                      type="text"
+                      value={sampleCfg}
+                      onChange={(e) => setSampleCfg(e.target.value)}
+                      placeholder="e.g. 6.5"
+                      className="workspace-field h-8 w-full rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-[var(--ink-soft)] uppercase">Sampler</label>
+                    <input
+                      type="text"
+                      value={sampleSampler}
+                      onChange={(e) => setSampleSampler(e.target.value)}
+                      placeholder="e.g. Euler a"
+                      className="workspace-field h-8 w-full rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-2 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-[var(--line)] pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingSample(null)}
+                  className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 font-mono text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface)]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSamplePrompt}
+                  className="rounded-[5px] bg-[var(--accent)] px-4 py-1.5 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
+                >
+                  Save Metadata
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Footer */}
         <footer className="flex h-16 shrink-0 items-center justify-between border-t border-[var(--line)] bg-[var(--surface-raised)] px-6">

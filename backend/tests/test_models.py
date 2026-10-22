@@ -1108,6 +1108,108 @@ class ModelArchitectureCompatibilityTests(unittest.TestCase):
         self.assertIn(lora_sdxl.model_id, selectable_ids)
 
 
+class ModelSampleMediaManagementTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.comfy = tempfile.TemporaryDirectory()
+        self.settings = Settings(
+            MODELS_DIR=self.temp.name,
+            COMFY_MODEL_ROOT=self.comfy.name,
+            FILES_PUBLIC_BASE="http://test",
+        )
+        self.service = ModelService(self.settings)
+        self.model = self.service.create(ModelCreateRequest(title="Media Test Model"))
+        self.version_id = self.model.versions[0].version_id
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+        self.comfy.cleanup()
+
+    def test_add_sample_and_set_cover(self) -> None:
+        # Add sample 1
+        res1 = self.service.add_sample(
+            self.model.model_id,
+            self.version_id,
+            "sample1.png",
+            b"fake-png-data-1",
+            {"prompt": "A scenic landscape"},
+        )
+        s1_id = res1.versions[0].samples[0].sample_id
+
+        # Add sample 2
+        res2 = self.service.add_sample(
+            self.model.model_id,
+            self.version_id,
+            "sample2.png",
+            b"fake-png-data-2",
+            {"prompt": "A portrait"},
+        )
+        samples = res2.versions[0].samples
+        self.assertEqual(len(samples), 2)
+        self.assertEqual(samples[0].sample_id, s1_id)
+        s2_id = samples[1].sample_id
+
+        # Promote sample 2 to cover
+        covered = self.service.set_cover_sample(self.model.model_id, self.version_id, s2_id)
+        cov_samples = covered.versions[0].samples
+        self.assertEqual(cov_samples[0].sample_id, s2_id)
+        self.assertTrue(cov_samples[0].metadata.get("is_cover"))
+        self.assertEqual(cov_samples[1].sample_id, s1_id)
+        self.assertFalse(cov_samples[1].metadata.get("is_cover", False))
+
+    def test_add_sample_with_is_cover(self) -> None:
+        self.service.add_sample(
+            self.model.model_id,
+            self.version_id,
+            "sample1.png",
+            b"data1",
+        )
+        # Add second sample explicitly as cover
+        res = self.service.add_sample(
+            self.model.model_id,
+            self.version_id,
+            "sample2.png",
+            b"data2",
+            is_cover=True,
+        )
+        samples = res.versions[0].samples
+        self.assertEqual(samples[0].filename, "sample2.png")
+        self.assertTrue(samples[0].metadata.get("is_cover"))
+
+    def test_patch_sample_metadata(self) -> None:
+        res = self.service.add_sample(
+            self.model.model_id,
+            self.version_id,
+            "sample1.png",
+            b"data1",
+            {"prompt": "Initial"},
+        )
+        s_id = res.versions[0].samples[0].sample_id
+
+        patched = self.service.patch_sample(
+            self.model.model_id,
+            self.version_id,
+            s_id,
+            {"prompt": "Updated prompt", "seed": 42},
+        )
+        meta = patched.versions[0].samples[0].metadata
+        self.assertEqual(meta["prompt"], "Updated prompt")
+        self.assertEqual(meta["seed"], 42)
+
+    def test_reorder_samples(self) -> None:
+        self.service.add_sample(self.model.model_id, self.version_id, "s1.png", b"1")
+        self.service.add_sample(self.model.model_id, self.version_id, "s2.png", b"2")
+        res3 = self.service.add_sample(self.model.model_id, self.version_id, "s3.png", b"3")
+        s_ids = [s.sample_id for s in res3.versions[0].samples]
+
+        # Reverse order
+        reversed_ids = list(reversed(s_ids))
+        reordered = self.service.reorder_samples(self.model.model_id, self.version_id, reversed_ids)
+        new_ids = [s.sample_id for s in reordered.versions[0].samples]
+        self.assertEqual(new_ids, reversed_ids)
+        self.assertTrue(reordered.versions[0].samples[0].metadata.get("is_cover"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

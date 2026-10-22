@@ -393,6 +393,17 @@ export default function PublicModelDetailPage({
     }
   };
 
+  const handleSetCover = async (sampleId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!model || !activeVersion) return;
+    try {
+      const updated = await api.setCoverModelSample(model.model_id, activeVersion.version_id, sampleId);
+      setModel(updated);
+    } catch (err) {
+      console.error("Failed to set cover:", err);
+    }
+  };
+
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
@@ -1186,8 +1197,28 @@ export default function PublicModelDetailPage({
                         />
                       )}
 
-                      {/* Owner Delete Action */}
+                      {/* Cover Badge on active thumbnail (slot 0) */}
+                      {idx === 0 && (
+                        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--accent-ink)] shadow-lg backdrop-blur-sm">
+                          <Star className="h-3 w-3 fill-current" />
+                          <span>Cover</span>
+                        </div>
+                      )}
+
+                      {/* Owner Quick Actions */}
                       <Can do="model:edit" ownerId={model.user_id}>
+                        {sample.sample_id && idx !== 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleSetCover(sample.sample_id, e)}
+                            className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg bg-black/70 px-2.5 py-1 font-mono text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 backdrop-blur-md transition-all hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] hover:scale-105 shadow-lg"
+                            title="Set as primary catalog cover thumbnail"
+                            aria-label="Set as cover thumbnail"
+                          >
+                            <Star className="h-3 w-3" />
+                            <span>Set Cover</span>
+                          </button>
+                        )}
                         {sample.sample_id && (
                           <button
                             type="button"
@@ -1195,7 +1226,7 @@ export default function PublicModelDetailPage({
                               e.stopPropagation();
                               setSampleToDelete(sample.sample_id);
                             }}
-                            className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white/80 opacity-0 group-hover:opacity-100 backdrop-blur-md transition-all hover:bg-[var(--danger)] hover:text-white hover:scale-105"
+                            className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white/80 opacity-0 group-hover:opacity-100 backdrop-blur-md transition-all hover:bg-[var(--danger)] hover:text-white hover:scale-105 shadow-lg"
                             title="Delete sample from version"
                             aria-label="Delete sample"
                           >

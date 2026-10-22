@@ -64,6 +64,8 @@ from .schemas import (
     ModelReviewRequest,
     ModelReviewResponse,
     ModelSampleResponse,
+    ModelSamplePatchRequest,
+    ModelSampleReorderRequest,
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
@@ -673,6 +675,7 @@ async def upload_model_sample(
     version_id: str,
     file: UploadFile = File(...),
     metadata: str = Form("{}"),
+    is_cover: bool = Form(False),
     current_user: UserResponse = Depends(get_current_user),
     rbac: RBACService = Depends(get_rbac_service),
 ) -> ModelResponse:
@@ -686,7 +689,7 @@ async def upload_model_sample(
             raise ValueError("Sample metadata must be an object")
         data = await file.read(settings.MODEL_SAMPLE_MAX_BYTES + 1)
         return model_storage.add_sample(
-            model_id, version_id, file.filename or "sample.png", data, parsed
+            model_id, version_id, file.filename or "sample.png", data, parsed, is_cover=is_cover
         )
     except (
         json.JSONDecodeError,
@@ -715,6 +718,70 @@ async def delete_model_sample(
             existing.user_id, current_user, rbac
         )
         model_storage.remove_sample(model_id, version_id, sample_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.post(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}/set-cover",
+    response_model=ModelResponse,
+)
+async def set_model_sample_cover(
+    model_id: str,
+    version_id: str,
+    sample_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
+    try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        return model_storage.set_cover_sample(model_id, version_id, sample_id)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.patch(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/{sample_id}",
+    response_model=ModelResponse,
+)
+async def patch_model_sample(
+    model_id: str,
+    version_id: str,
+    sample_id: str,
+    req: ModelSamplePatchRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
+    try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        return model_storage.patch_sample(model_id, version_id, sample_id, req.metadata)
+    except (ModelError, ModelConflict, ModelNotFound) as exc:
+        raise _model_http_error(exc) from exc
+
+
+@app.put(
+    "/api/v1/models/id/{model_id}/versions/{version_id}/samples/order",
+    response_model=ModelResponse,
+)
+async def reorder_model_samples(
+    model_id: str,
+    version_id: str,
+    req: ModelSampleReorderRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ModelResponse:
+    try:
+        existing = model_storage.get(model_id)
+        await RequireOwnerOrPermission("model:edit_any").enforce(
+            existing.user_id, current_user, rbac
+        )
+        return model_storage.reorder_samples(model_id, version_id, req.sample_ids)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 

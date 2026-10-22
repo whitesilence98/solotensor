@@ -797,6 +797,8 @@ export interface CreatorModelFile {
   in_vault?: boolean;
 }
 
+export type ModelSample = CreatorModelSample;
+
 export interface CreatorModelSample {
   sample_id: string;
   filename: string;
@@ -1206,10 +1208,14 @@ export const api = {
     versionId: string,
     file: File,
     metadata: Record<string, unknown> = {},
+    isCover: boolean = false,
   ): Promise<CreatorModel> {
     const form = new FormData();
     form.append("file", file, file.name);
     form.append("metadata", JSON.stringify(metadata));
+    if (isCover) {
+      form.append("is_cover", "true");
+    }
     const path = `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples`;
     const response = await uploadWithDirectFallback(path, form);
     if (!response.ok) {
@@ -1217,6 +1223,27 @@ export const api = {
       throw new ApiError(response.status, errorMsg);
     }
     return (await response.json()) as CreatorModel;
+  },
+
+  async setCoverModelSample(modelId: string, versionId: string, sampleId: string): Promise<CreatorModel> {
+    return request<CreatorModel>(
+      `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples/${encodeURIComponent(sampleId)}/set-cover`,
+      { method: "POST" }
+    );
+  },
+
+  async patchModelSample(modelId: string, versionId: string, sampleId: string, metadata: Record<string, unknown>): Promise<CreatorModel> {
+    return request<CreatorModel>(
+      `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples/${encodeURIComponent(sampleId)}`,
+      { method: "PATCH", body: JSON.stringify({ metadata }) }
+    );
+  },
+
+  async reorderModelSamples(modelId: string, versionId: string, sampleIds: string[]): Promise<CreatorModel> {
+    return request<CreatorModel>(
+      `/api/v1/models/id/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/samples/order`,
+      { method: "PUT", body: JSON.stringify({ sample_ids: sampleIds }) }
+    );
   },
 
   async patchModelFile(modelId: string, versionId: string, fileId: string, payload: { visible: boolean; precision?: ModelPrecision }): Promise<CreatorModel> {
