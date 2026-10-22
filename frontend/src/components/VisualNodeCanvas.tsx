@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import {
   Activity,
   Check,
+  ChevronDown,
   ChevronRight,
   Compass,
   Cpu,
@@ -12,21 +13,25 @@ import {
   Eye,
   EyeOff,
   Focus,
+  FolderOpen,
   Grid,
   Keyboard,
   Layers,
   Magnet,
-  Map as MapIcon,
   Maximize2,
   Minimize2,
   Minus,
   Move,
+  PanelRightClose,
+  PanelRightOpen,
+  Play,
   Plus,
   RotateCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
   Type,
+  Waves,
   X,
   Zap,
 } from "lucide-react";
@@ -36,6 +41,7 @@ import {
   CanvasGraphTopology,
   VisualCanvasNode,
   VisualCanvasEdge,
+  CanvasNodeGroup,
   getSocketColor,
 } from "@/lib/graph-topology";
 
@@ -43,6 +49,7 @@ export interface VisualNodeCanvasProps {
   workflow: Record<string, unknown>;
   controls: ToolControl[];
   onControlsChange: (controls: ToolControl[]) => void;
+  onWorkflowChange?: (workflow: Record<string, unknown>) => void;
   className?: string;
 }
 
@@ -50,6 +57,7 @@ export default function VisualNodeCanvas({
   workflow,
   controls,
   onControlsChange,
+  onWorkflowChange,
   className = "",
 }: VisualNodeCanvasProps) {
   // Graph topology memoized from workflow
@@ -59,6 +67,9 @@ export default function VisualNodeCanvas({
 
   // Node position overrides state (allows dragging nodes)
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+
+  // Collapsed node IDs state (minimize utility nodes)
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
 
   // Viewport pan & zoom transform
   const [transform, setTransform] = useState<{ x: number; y: number; scale: number }>({
@@ -76,6 +87,11 @@ export default function VisualNodeCanvas({
   // Grid snap state (default 20px)
   const [snapToGrid, setSnapToGrid] = useState(true);
   const GRID_SIZE = 20;
+
+  // Visual toggles
+  const [showGroups, setShowGroups] = useState(true);
+  const [showFlowPulses, setShowFlowPulses] = useState(true);
+  const [showFormPreview, setShowFormPreview] = useState(false);
 
   // Selected & Hovered nodes for pipeline trace & side inspector
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -97,6 +113,9 @@ export default function VisualNodeCanvas({
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [showHotkeysHelp, setShowHotkeysHelp] = useState(false);
 
+  // Form preview mockup form state
+  const [previewValues, setPreviewValues] = useState<Record<string, unknown>>({});
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Get effective position for a node
@@ -116,15 +135,15 @@ export default function VisualNodeCanvas({
     const graphWidth = Math.max(bounds.maxX - bounds.minX, 400);
     const graphHeight = Math.max(bounds.maxY - bounds.minY, 400);
 
-    const scaleX = (clientWidth - 160) / graphWidth;
+    const scaleX = (clientWidth - (showFormPreview ? 460 : 160)) / graphWidth;
     const scaleY = (clientHeight - 160) / graphHeight;
     const scale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.3), 1.2);
 
-    const x = (clientWidth - graphWidth * scale) / 2 - bounds.minX * scale;
+    const x = ((clientWidth - (showFormPreview ? 340 : 0)) - graphWidth * scale) / 2 - bounds.minX * scale;
     const y = (clientHeight - graphHeight * scale) / 2 - bounds.minY * scale;
 
     setTransform({ x, y, scale });
-  }, [initialTopology]);
+  }, [initialTopology, showFormPreview]);
 
   // Center camera on a specific node with a flash indicator
   const centerOnNode = useCallback(
@@ -136,7 +155,7 @@ export default function VisualNodeCanvas({
       const { clientWidth, clientHeight } = containerRef.current;
 
       const scale = transform.scale;
-      const x = clientWidth / 2 - (pos.x + targetNode.width / 2) * scale;
+      const x = ((clientWidth - (showFormPreview ? 340 : 0)) / 2) - (pos.x + targetNode.width / 2) * scale;
       const y = clientHeight / 2 - (pos.y + targetNode.height / 2) * scale;
 
       setTransform({ x, y, scale });
@@ -144,7 +163,7 @@ export default function VisualNodeCanvas({
       setFlashNodeId(nodeId);
       setTimeout(() => setFlashNodeId((curr) => (curr === nodeId ? null : curr)), 1400);
     },
-    [initialTopology.nodes, getNodePos, transform.scale]
+    [initialTopology.nodes, getNodePos, transform.scale, showFormPreview]
   );
 
   // Fit to view once mounted
@@ -155,7 +174,18 @@ export default function VisualNodeCanvas({
   // Reset node positions to auto-layout
   const handleResetLayout = () => {
     setNodePositions({});
+    setCollapsedNodeIds(new Set());
     fitToView();
+  };
+
+  // Toggle node collapsed state
+  const toggleNodeCollapse = (nodeId: string) => {
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
   };
 
   // Wheel zoom handler
@@ -179,7 +209,6 @@ export default function VisualNodeCanvas({
 
   // Mouse down on canvas (pan start)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    // If middle click or space key is held down, pan canvas immediately
     if (e.button === 1 || isSpaceDown) {
       e.preventDefault();
       setIsPanning(true);
@@ -187,7 +216,6 @@ export default function VisualNodeCanvas({
       return;
     }
 
-    // Only pan if clicking canvas background (not inside node card or minimap)
     if (
       (e.target as HTMLElement).closest(".canvas-node") ||
       (e.target as HTMLElement).closest(".canvas-hud")
@@ -201,7 +229,6 @@ export default function VisualNodeCanvas({
 
   // Mouse down on node header (node drag start)
   const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
-    // If Space is held down or middle click, allow panning instead of node dragging
     if (isSpaceDown || e.button === 1) {
       handleCanvasMouseDown(e);
       return;
@@ -259,7 +286,6 @@ export default function VisualNodeCanvas({
         activeEl instanceof HTMLTextAreaElement ||
         (activeEl as HTMLElement)?.isContentEditable;
 
-      // Escape always closes search, inspector, or hotkeys modal
       if (e.key === "Escape") {
         if (isSearchOpen) {
           setIsSearchOpen(false);
@@ -275,10 +301,8 @@ export default function VisualNodeCanvas({
         }
       }
 
-      // If user is actively typing in an input, don't trigger canvas shortcuts
       if (isInput) return;
 
-      // Ctrl+K / Cmd+K or "/" to open spotlight search
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setIsSearchOpen(true);
@@ -290,12 +314,10 @@ export default function VisualNodeCanvas({
         return;
       }
 
-      // Space key for panning
       if (e.code === "Space" && !e.repeat) {
         setIsSpaceDown(true);
       }
 
-      // "F" to focus selected node or fit entire graph
       if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (selectedNodeId) {
@@ -305,23 +327,23 @@ export default function VisualNodeCanvas({
         }
       }
 
-      // "1" to reset zoom to 100%
       if (e.key === "1") {
         e.preventDefault();
         setTransform((prev) => ({ ...prev, scale: 1.0 }));
       }
 
-      // "M" to toggle minimap
       if (e.key === "m" || e.key === "M") {
         setIsMinimapVisible((v) => !v);
       }
 
-      // "G" to toggle grid snap
       if (e.key === "g" || e.key === "G") {
         setSnapToGrid((v) => !v);
       }
 
-      // "?" to toggle hotkeys cheat sheet
+      if (e.key === "p" || e.key === "P") {
+        setShowFormPreview((v) => !v);
+      }
+
       if (e.key === "?") {
         e.preventDefault();
         setShowHotkeysHelp((v) => !v);
@@ -407,6 +429,36 @@ export default function VisualNodeCanvas({
       };
 
       onControlsChange([...controls, newControl]);
+    }
+  };
+
+  // Inline value mutator (updates control default and workflow value if callback provided)
+  const handleUpdateInputValue = (nodeId: string, inputName: string, newValue: unknown) => {
+    // 1. Update control if exposed
+    const ctrl = getExistingControl(nodeId, inputName);
+    if (ctrl) {
+      onControlsChange(
+        controls.map((c) =>
+          c.id === ctrl.id
+            ? { ...c, default: newValue as string | number | boolean, value: newValue as string | number | boolean }
+            : c
+        )
+      );
+    }
+
+    // 2. Update preview mock state
+    setPreviewValues((prev) => ({ ...prev, [`${nodeId}.${inputName}`]: newValue }));
+
+    // 3. Update raw workflow graph if onWorkflowChange is connected
+    if (onWorkflowChange) {
+      const updatedWorkflow = { ...workflow };
+      const nodeObj = updatedWorkflow[nodeId] as Record<string, unknown> | undefined;
+      if (nodeObj && typeof nodeObj === "object") {
+        const inputs = (nodeObj.inputs || {}) as Record<string, unknown>;
+        inputs[inputName] = newValue;
+        nodeObj.inputs = inputs;
+        onWorkflowChange(updatedWorkflow);
+      }
     }
   };
 
@@ -508,6 +560,13 @@ export default function VisualNodeCanvas({
       if (pos.y + n.height > maxY) maxY = pos.y + n.height;
     });
 
+    initialTopology.groups.forEach((g) => {
+      if (g.x < minX) minX = g.x;
+      if (g.y < minY) minY = g.y;
+      if (g.x + g.width > maxX) maxX = g.x + g.width;
+      if (g.y + g.height > maxY) maxY = g.y + g.height;
+    });
+
     if (!isFinite(minX)) {
       minX = 0;
       minY = 0;
@@ -524,7 +583,7 @@ export default function VisualNodeCanvas({
       width: Math.max(maxX - minX + pad * 2, 600),
       height: Math.max(maxY - minY + pad * 2, 400),
     };
-  }, [initialTopology.nodes, getNodePos]);
+  }, [initialTopology.nodes, initialTopology.groups, getNodePos]);
 
   // Interactive Minimap Pan by Click or Drag
   const handleMinimapPointerEvent = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -539,7 +598,7 @@ export default function VisualNodeCanvas({
     const { clientWidth, clientHeight } = containerRef.current;
     setTransform((prev) => ({
       ...prev,
-      x: clientWidth / 2 - worldX * prev.scale,
+      x: ((clientWidth - (showFormPreview ? 340 : 0)) / 2) - worldX * prev.scale,
       y: clientHeight / 2 - worldY * prev.scale,
     }));
   };
@@ -601,6 +660,10 @@ export default function VisualNodeCanvas({
         return "#71717a";
     }
   };
+
+  const exposedControlsList = useMemo(() => {
+    return controls.filter((c) => c.exposed !== false);
+  }, [controls]);
 
   return (
     <div
@@ -710,6 +773,32 @@ export default function VisualNodeCanvas({
             <Magnet className="h-3 w-3" />
             <span className="text-[10px]">Snap</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setShowGroups(!showGroups)}
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+              showGroups
+                ? "bg-[var(--surface-sunken)] border border-[var(--line-strong)] text-[var(--ink)]"
+                : "hover:bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+            }`}
+            title="Toggle Group Containers"
+          >
+            <Layers className="h-3 w-3" />
+            <span className="text-[10px]">Groups</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFlowPulses(!showFlowPulses)}
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+              showFlowPulses
+                ? "bg-[var(--surface-sunken)] border border-[var(--accent)]/30 text-[var(--accent)]"
+                : "hover:bg-[var(--surface-soft)] text-[var(--ink-faint)]"
+            }`}
+            title="Toggle Animated Tensor Flow Particles"
+          >
+            <Waves className="h-3 w-3" />
+            <span className="text-[10px]">Flow</span>
+          </button>
         </div>
 
         <div className="h-3 w-px bg-[var(--line)] mx-0.5" />
@@ -723,6 +812,21 @@ export default function VisualNodeCanvas({
         >
           <Zap className="h-3.5 w-3.5 fill-current" />
           <span className="text-[10px]">Expose Essentials</span>
+        </button>
+
+        {/* Live Form Preview Trigger */}
+        <button
+          type="button"
+          onClick={() => setShowFormPreview(!showFormPreview)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-bold transition-all ${
+            showFormPreview
+              ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-md"
+              : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          }`}
+          title="Toggle End-User Tool Form Preview (Hotkey: P)"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          <span className="text-[10px]">Form Preview ({exposedControlsList.length})</span>
         </button>
 
         {/* Hotkeys Cheat Sheet Trigger */}
@@ -743,14 +847,72 @@ export default function VisualNodeCanvas({
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
         }}
       >
-        {/* SVG Connection Noodles Layer */}
+        {/* SVG Connection Noodles Layer with Flow Pulses */}
         <svg className="absolute inset-0 overflow-visible w-full h-full pointer-events-none z-0">
           <defs>
+            <style>
+              {`
+                @keyframes noodleFlowAnimation {
+                  from { stroke-dashoffset: 24; }
+                  to { stroke-dashoffset: 0; }
+                }
+                .noodle-flow-active {
+                  animation: noodleFlowAnimation 1.1s linear infinite;
+                }
+              `}
+            </style>
             <filter id="noodle-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
+
+          {/* Group Containers (ComfyUI Backdrops) */}
+          {showGroups &&
+            initialTopology.groups.map((group) => {
+              return (
+                <g key={group.id} className="pointer-events-none select-none">
+                  <rect
+                    x={group.x}
+                    y={group.y}
+                    width={group.width}
+                    height={group.height}
+                    rx="14"
+                    fill={group.color}
+                    fillOpacity="0.04"
+                    stroke={group.color}
+                    strokeOpacity="0.25"
+                    strokeWidth="1.5"
+                    strokeDasharray="6 4"
+                  />
+                  {/* Group Title Badge */}
+                  <rect
+                    x={group.x + 12}
+                    y={group.y - 12}
+                    width={Math.min(group.title.length * 7 + 28, group.width - 24)}
+                    height="22"
+                    rx="4"
+                    fill="#18181b"
+                    stroke={group.color}
+                    strokeOpacity="0.4"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={group.x + 20}
+                    y={group.y + 3}
+                    fill={group.color}
+                    fontSize="9.5"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                    letterSpacing="0.05em"
+                  >
+                    {group.title.toUpperCase()}
+                  </text>
+                </g>
+              );
+            })}
+
+          {/* Bezier Noodles */}
           {initialTopology.edges.map((edge) => {
             const srcNode = initialTopology.nodes.find((n) => n.id === edge.source);
             const tgtNode = initialTopology.nodes.find((n) => n.id === edge.target);
@@ -759,10 +921,20 @@ export default function VisualNodeCanvas({
             const srcPos = getNodePos(srcNode);
             const tgtPos = getNodePos(tgtNode);
 
-            // Compute port Y positions
-            const srcY = srcPos.y + 50 + edge.sourceIndex * 24;
+            const isSrcCollapsed = collapsedNodeIds.has(srcNode.id);
+            const isTgtCollapsed = collapsedNodeIds.has(tgtNode.id);
+
+            // Compute exact pixel pin coordinates
+            // Input pin Y
             const tgtInputIndex = tgtNode.inputs.findIndex((inp) => inp.name === edge.targetPort);
-            const tgtY = tgtPos.y + 50 + Math.max(tgtInputIndex, 0) * 24;
+            const tgtY = isTgtCollapsed
+              ? tgtPos.y + 18
+              : tgtPos.y + 37 + 10 + Math.max(tgtInputIndex, 0) * 24 + 10;
+
+            // Output pin Y
+            const srcY = isSrcCollapsed
+              ? srcPos.y + 18
+              : srcPos.y + 37 + 10 + srcNode.inputs.length * 24 + 10 + edge.sourceIndex * 20 + 8;
 
             const x1 = srcPos.x + srcNode.width;
             const y1 = srcY;
@@ -801,6 +973,18 @@ export default function VisualNodeCanvas({
                   filter={isHighlighted ? "url(#noodle-glow)" : undefined}
                   className="transition-all duration-150 group-hover:stroke-white group-hover:stroke-[4px]"
                 />
+                {/* Animated Tensor Direction Pulses */}
+                {showFlowPulses && !isDimmed && (
+                  <path
+                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth={isHighlighted ? "2.5" : "1.8"}
+                    strokeOpacity={isHighlighted ? 0.9 : 0.6}
+                    strokeDasharray="6 14"
+                    className="noodle-flow-active pointer-events-none"
+                  />
+                )}
               </g>
             );
           })}
@@ -812,6 +996,7 @@ export default function VisualNodeCanvas({
             const pos = getNodePos(node);
             const isSelected = selectedNodeId === node.id;
             const isFlashed = flashNodeId === node.id;
+            const isCollapsed = collapsedNodeIds.has(node.id);
             const theme = getCategoryTheme(node.category);
 
             // Upstream/Downstream trace calculation
@@ -848,12 +1033,33 @@ export default function VisualNodeCanvas({
                   setSelectedNodeId(node.id);
                 }}
               >
-                {/* Node Header (Draggable Handle) */}
+                {/* Node Header (Draggable Handle & Collapse Toggle) */}
                 <div
                   onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 cursor-grab active:cursor-grabbing rounded-t-[7px]"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    toggleNodeCollapse(node.id);
+                  }}
+                  className={`flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 cursor-grab active:cursor-grabbing rounded-t-[7px] ${
+                    isCollapsed ? "rounded-b-[7px] border-b-0" : ""
+                  }`}
                 >
                   <div className="flex items-center gap-1.5 truncate">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleNodeCollapse(node.id);
+                      }}
+                      className="p-0.5 rounded hover:bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                      title={isCollapsed ? "Expand Node" : "Collapse Node"}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="h-3 w-3" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3" />
+                      )}
+                    </button>
                     <span
                       className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase border ${theme}`}
                     >
@@ -876,101 +1082,189 @@ export default function VisualNodeCanvas({
                   </div>
                 </div>
 
-                {/* Node Body: Ports & Parameters */}
-                <div className="p-2.5 space-y-2 text-[10px] font-mono">
-                  {/* Inputs List */}
-                  <div className="space-y-1.5">
-                    {node.inputs.map((inp) => {
-                      const isExposed = isControlExposed(node.id, inp.name);
+                {/* Node Body: Ports & Parameters (Hidden when collapsed) */}
+                {!isCollapsed && (
+                  <div className="p-2.5 space-y-2.5 text-[10px] font-mono">
+                    {/* Inputs List */}
+                    <div className="space-y-2">
+                      {node.inputs.map((inp) => {
+                        const isExposed = isControlExposed(node.id, inp.name);
+                        const ctrl = getExistingControl(node.id, inp.name);
+                        const effectiveVal =
+                          previewValues[`${node.id}.${inp.name}`] ?? ctrl?.default ?? ctrl?.value ?? inp.value;
 
-                      return (
-                        <div
-                          key={inp.name}
-                          className="flex items-center justify-between gap-1.5 group/inp"
-                        >
-                          {/* Socket Port Dot */}
-                          <div className="flex items-center gap-1.5 truncate">
-                            <span
-                              className="h-2 w-2 rounded-full shrink-0 border border-black/40"
-                              style={{ backgroundColor: inp.color }}
-                              title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
-                            />
-                            <span
-                              className={`truncate text-[9px] ${
-                                inp.isLinked
-                                  ? "text-[var(--ink-soft)] font-medium"
-                                  : "text-[var(--ink)] font-bold"
-                              }`}
-                            >
-                              {inp.name}
-                            </span>
-                            {!inp.isLinked && isEssentialInput(inp.name) && (
-                              <span
-                                className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
-                                title="Essential Generation Parameter"
-                              >
-                                {inp.name.toLowerCase().includes("seed")
-                                  ? "🎲 Seed"
-                                  : inp.name === "cfg" || inp.name === "guidance"
-                                  ? "🎚️ CFG"
-                                  : inp.name === "steps"
-                                  ? "⏱️ Steps"
-                                  : "📐 Dim"}
-                              </span>
+                        const isNum = typeof inp.value === "number" || typeof effectiveVal === "number";
+                        const isSeed = inp.name.toLowerCase().includes("seed");
+                        const isPrompt =
+                          typeof inp.value === "string" &&
+                          (inp.name.toLowerCase().includes("text") ||
+                            inp.name.toLowerCase().includes("prompt"));
+
+                        return (
+                          <div
+                            key={inp.name}
+                            className="space-y-1 rounded-[5px] bg-[var(--surface-sunken)]/40 p-1.5 border border-transparent hover:border-[var(--line)] transition-all"
+                          >
+                            <div className="flex items-center justify-between gap-1.5 group/inp">
+                              {/* Socket Port Dot */}
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span
+                                  className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
+                                  style={{ backgroundColor: inp.color }}
+                                  title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
+                                />
+                                <span
+                                  className={`truncate text-[9px] ${
+                                    inp.isLinked
+                                      ? "text-[var(--ink-soft)] font-medium"
+                                      : "text-[var(--ink)] font-bold"
+                                  }`}
+                                >
+                                  {inp.name}
+                                </span>
+                                {!inp.isLinked && isEssentialInput(inp.name) && (
+                                  <span
+                                    className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
+                                    title="Essential Generation Parameter"
+                                  >
+                                    {isSeed
+                                      ? "🎲 Seed"
+                                      : inp.name === "cfg" || inp.name === "guidance"
+                                      ? "🎚️ CFG"
+                                      : inp.name === "steps"
+                                      ? "⏱️ Steps"
+                                      : "📐 Dim"}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Unlinked Parameter Action: Toggle Expose Controller */}
+                              {!inp.isLinked ? (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleControlExposure(node, inp.name, inp.value);
+                                    }}
+                                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] font-bold transition-all ${
+                                      isExposed
+                                        ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                                        : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                                    }`}
+                                    title={isExposed ? "Exposed to users (Click to lock)" : "Expose as UI controller"}
+                                  >
+                                    <Zap className="h-2.5 w-2.5" />
+                                    <span>{isExposed ? "Exposed" : "Expose"}</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[8px] text-[var(--ink-faint)] truncate max-w-[60px]">
+                                  wire
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Direct Inline Control Tweakers for Unlinked Inputs */}
+                            {!inp.isLinked && (
+                              <div className="pt-0.5 flex items-center justify-between text-[9px]">
+                                {isSeed ? (
+                                  <div className="flex items-center gap-1.5 w-full">
+                                    <span className="font-mono text-[8px] text-[var(--ink-faint)] truncate flex-1">
+                                      {String(effectiveVal ?? "random")}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const newSeed = Math.floor(Math.random() * 1e14);
+                                        handleUpdateInputValue(node.id, inp.name, newSeed);
+                                      }}
+                                      className="flex items-center gap-0.5 rounded px-1.5 py-0.2 bg-[var(--surface)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
+                                      title="Roll New Random Seed"
+                                    >
+                                      <Dices className="h-2.5 w-2.5" />
+                                      <span>Roll</span>
+                                    </button>
+                                  </div>
+                                ) : isNum ? (
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="text-[8px] text-[var(--ink-faint)]">
+                                      Val: <b className="text-[var(--ink)]">{String(effectiveVal ?? "—")}</b>
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const step = inp.name === "cfg" ? 0.5 : 1;
+                                          const num = Number(effectiveVal) || 0;
+                                          handleUpdateInputValue(node.id, inp.name, Math.max(0, num - step));
+                                        }}
+                                        className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                                      >
+                                        -
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const step = inp.name === "cfg" ? 0.5 : 1;
+                                          const num = Number(effectiveVal) || 0;
+                                          handleUpdateInputValue(node.id, inp.name, num + step);
+                                        }}
+                                        className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : isPrompt ? (
+                                  <textarea
+                                    value={String(effectiveVal ?? "")}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => handleUpdateInputValue(node.id, inp.name, e.target.value)}
+                                    placeholder="Enter prompt text..."
+                                    rows={2}
+                                    className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-1 text-[9px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none focus:border-[var(--accent)] resize-none"
+                                  />
+                                ) : (
+                                  <div className="flex items-center justify-between w-full text-[8px] text-[var(--ink-faint)]">
+                                    <span>Val:</span>
+                                    <span className="truncate max-w-[150px] font-bold text-[var(--ink-soft)]">
+                                      {String(effectiveVal ?? "—")}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
-
-                          {/* Unlinked Parameter Action: Toggle Expose Controller */}
-                          {!inp.isLinked ? (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleControlExposure(node, inp.name, inp.value);
-                                }}
-                                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] font-bold transition-all ${
-                                  isExposed
-                                    ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                                    : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                                }`}
-                                title={isExposed ? "Exposed to users (Click to lock)" : "Expose as UI controller"}
-                              >
-                                <Zap className="h-2.5 w-2.5" />
-                                <span>{isExposed ? "Exposed" : "Expose"}</span>
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-[8px] text-[var(--ink-faint)] truncate max-w-[60px]">
-                              wire
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Outputs List */}
-                  {node.outputs.length > 0 && (
-                    <div className="pt-1.5 border-t border-[var(--line)]/50 space-y-1">
-                      {node.outputs.map((out) => (
-                        <div
-                          key={out.index}
-                          className="flex items-center justify-end gap-1.5 text-right"
-                        >
-                          <span className="text-[8px] text-[var(--ink-faint)] uppercase">
-                            {out.name}
-                          </span>
-                          <span
-                            className="h-2 w-2 rounded-full shrink-0 border border-black/40"
-                            style={{ backgroundColor: out.color }}
-                            title={`${out.name} (Slot ${out.index})`}
-                          />
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
+
+                    {/* Outputs List */}
+                    {node.outputs.length > 0 && (
+                      <div className="pt-2 border-t border-[var(--line)]/50 space-y-1">
+                        {node.outputs.map((out) => (
+                          <div
+                            key={out.index}
+                            className="flex items-center justify-end gap-1.5 text-right"
+                          >
+                            <span className="text-[8px] text-[var(--ink-faint)] uppercase">
+                              {out.name}
+                            </span>
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
+                              style={{ backgroundColor: out.color }}
+                              title={`${out.name} (Slot ${out.index})`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1015,6 +1309,23 @@ export default function VisualNodeCanvas({
                   setIsMinimapDragging(false);
                 }}
               >
+                {/* Mini Group Backdrops */}
+                {initialTopology.groups.map((g) => (
+                  <rect
+                    key={g.id}
+                    x={g.x}
+                    y={g.y}
+                    width={g.width}
+                    height={g.height}
+                    rx="18"
+                    fill={g.color}
+                    fillOpacity="0.08"
+                    stroke={g.color}
+                    strokeWidth="4"
+                    strokeDasharray="8 6"
+                  />
+                ))}
+
                 {/* Mini Nodes */}
                 {initialTopology.nodes.map((n) => {
                   const pos = getNodePos(n);
@@ -1042,7 +1353,7 @@ export default function VisualNodeCanvas({
                   <rect
                     x={-transform.x / transform.scale}
                     y={-transform.y / transform.scale}
-                    width={containerRef.current.clientWidth / transform.scale}
+                    width={(containerRef.current.clientWidth - (showFormPreview ? 340 : 0)) / transform.scale}
                     height={containerRef.current.clientHeight / transform.scale}
                     fill="rgba(213, 240, 111, 0.12)"
                     stroke="#d5f06f"
@@ -1072,8 +1383,8 @@ export default function VisualNodeCanvas({
         )}
       </div>
 
-      {/* Floating Side Inspector Panel (When a Node is Selected) */}
-      {selectedNode && (
+      {/* Floating Side Inspector Panel (When a Node is Selected & Form Preview is NOT open) */}
+      {selectedNode && !showFormPreview && (
         <div className="canvas-hud absolute right-4 top-4 bottom-4 w-[340px] z-30 rounded-[10px] border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 backdrop-blur-xl shadow-2xl flex flex-col justify-between font-mono animate-in slide-in-from-right duration-200">
           <div className="p-4 space-y-4 overflow-y-auto">
             {/* Inspector Header */}
@@ -1210,6 +1521,144 @@ export default function VisualNodeCanvas({
           {/* Inspector Footer */}
           <div className="p-3 border-t border-[var(--line)] bg-[var(--surface-sunken)] text-center text-[9px] text-[var(--ink-faint)]">
             Changes sync dynamically with the Tool Studio catalog.
+          </div>
+        </div>
+      )}
+
+      {/* LIVE END-USER TOOL FORM PREVIEW DRAWER (When showFormPreview is true) */}
+      {showFormPreview && (
+        <div className="canvas-hud absolute right-4 top-4 bottom-4 w-[360px] z-30 rounded-[12px] border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 backdrop-blur-xl shadow-2xl flex flex-col justify-between font-mono animate-in slide-in-from-right duration-200">
+          <div className="p-4 space-y-4 overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-[var(--accent)] font-bold">
+                  <Eye className="h-3.5 w-3.5" />
+                  <span>Live Tool Preview</span>
+                </div>
+                <h3 className="text-xs font-bold text-[var(--ink)]">
+                  End-User Form Mockup
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFormPreview(false)}
+                className="p-1 rounded hover:bg-[var(--surface-soft)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                title="Close Form Preview"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Form Controls List */}
+            {exposedControlsList.length === 0 ? (
+              <div className="rounded-[8px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] p-6 text-center space-y-2">
+                <SlidersHorizontal className="h-6 w-6 text-[var(--ink-faint)] mx-auto" />
+                <p className="text-xs font-bold text-[var(--ink)]">No Parameters Exposed</p>
+                <p className="text-[10px] text-[var(--ink-faint)]">
+                  Click &ldquo;Expose&rdquo; on any node input or use &ldquo;Expose Essentials&rdquo; to build your tool form.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                {exposedControlsList.map((ctrl) => {
+                  const val = previewValues[ctrl.id] ?? ctrl.default ?? ctrl.value;
+                  const isPrompt = ctrl.kind === "prompt" || ctrl.input_name.toLowerCase().includes("prompt");
+                  const isSeed = ctrl.kind === "seed" || ctrl.input_name.toLowerCase().includes("seed");
+                  const isNum = ctrl.numeric || typeof val === "number";
+
+                  return (
+                    <div
+                      key={ctrl.id}
+                      className="rounded-[6px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-[var(--ink)]">
+                          {ctrl.label || ctrl.input_name}
+                        </label>
+                        <span className="font-mono text-[8px] uppercase tracking-wider text-[var(--accent)] bg-[var(--accent)]/10 px-1.5 py-0.2 rounded border border-[var(--accent)]/30">
+                          {ctrl.kind}
+                        </span>
+                      </div>
+
+                      {isPrompt ? (
+                        <textarea
+                          rows={2}
+                          value={String(val ?? "")}
+                          onChange={(e) =>
+                            setPreviewValues((prev) => ({ ...prev, [ctrl.id]: e.target.value }))
+                          }
+                          placeholder="User prompt input placeholder..."
+                          className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)] resize-none"
+                        />
+                      ) : isSeed ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={String(val ?? "")}
+                            onChange={(e) =>
+                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Number(e.target.value) }))
+                            }
+                            className="w-full h-7 rounded border border-[var(--line)] bg-[var(--surface)] px-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Math.floor(Math.random() * 1e14) }))
+                            }
+                            className="h-7 px-2 rounded border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)] shrink-0 flex items-center gap-1 text-[9px] font-bold"
+                          >
+                            <Dices className="h-3 w-3" />
+                            <span>Roll</span>
+                          </button>
+                        </div>
+                      ) : isNum ? (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[9px] text-[var(--ink-faint)]">
+                            <span>Value: {String(val ?? 0)}</span>
+                            <span>Range: {ctrl.minimum ?? 0} — {ctrl.maximum ?? 100}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={ctrl.minimum ?? 0}
+                            max={ctrl.maximum ?? 100}
+                            step={ctrl.step ?? (ctrl.input_name === "cfg" ? 0.5 : 1)}
+                            value={Number(val) || 0}
+                            onChange={(e) =>
+                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Number(e.target.value) }))
+                            }
+                            className="w-full accent-[var(--accent)]"
+                          />
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={String(val ?? "")}
+                          onChange={(e) =>
+                            setPreviewValues((prev) => ({ ...prev, [ctrl.id]: e.target.value }))
+                          }
+                          className="w-full h-7 rounded border border-[var(--line)] bg-[var(--surface)] px-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Form Mockup Footer Action */}
+          <div className="p-3 border-t border-[var(--line)] bg-[var(--surface-sunken)] space-y-2">
+            <button
+              type="button"
+              className="w-full flex items-center justify-center gap-2 rounded-[6px] bg-[var(--accent)] py-2 text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-[0_0_14px_rgba(213,240,111,0.25)] hover:bg-[var(--accent-hover)] transition-all"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              <span>Generate Output ⚡</span>
+            </button>
+            <p className="text-[8px] text-[var(--ink-faint)] text-center">
+              Preview updates live as nodes and parameters are configured.
+            </p>
           </div>
         </div>
       )}
@@ -1392,7 +1841,13 @@ export default function VisualNodeCanvas({
                   G
                 </kbd>
               </div>
-              <div className="flex items-center justify-between rounded border border-[var(--line)] bg-[var(--surface-sunken)] p-2 col-span-2">
+              <div className="flex items-center justify-between rounded border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
+                <span className="text-[var(--ink-soft)]">Live Form Preview</span>
+                <kbd className="rounded bg-[var(--surface)] border border-[var(--line)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
+                  P
+                </kbd>
+              </div>
+              <div className="flex items-center justify-between rounded border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
                 <span className="text-[var(--ink-soft)]">Deselect / Dismiss</span>
                 <kbd className="rounded bg-[var(--surface)] border border-[var(--line)] px-1.5 py-0.5 font-bold text-[var(--accent)]">
                   Escape

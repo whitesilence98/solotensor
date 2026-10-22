@@ -212,6 +212,7 @@ export default function ToolCanvasPage() {
             workflow={workflow}
             controls={controls}
             onControlsChange={setControls}
+            onWorkflowChange={setWorkflow}
             className="h-full w-full"
           />
         ) : (
