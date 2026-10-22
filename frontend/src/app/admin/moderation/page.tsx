@@ -32,6 +32,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { getBaseFilename } from "@/lib/models";
 import {
   api,
   type ModelPendingReviewItem,
@@ -268,7 +269,7 @@ export default function ModerationDashboardPage() {
       try {
         const res = await api.installModelFile(modelId, versionId, fileId);
         setInstalledFiles((prev) => ({ ...prev, [fileId]: true }));
-        setActionToast(`Mounted ${filename} into ComfyUI vault (${res.destination})`);
+        setActionToast(`Mounted ${getBaseFilename(filename)} into ComfyUI vault (${res.destination})`);
         setTimeout(() => setActionToast(null), 3500);
       } catch (err) {
         setActionToast(err instanceof Error ? err.message : "Failed to install to ComfyUI");
