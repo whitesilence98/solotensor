@@ -1837,7 +1837,7 @@ export default function PublicModelDetailPage({
                             <div className="min-w-0 pr-2">
                               <div className="flex items-center gap-1.5">
                                 <p className="font-mono text-xs font-bold text-[var(--ink)] truncate" title={file.filename}>
-                                  {file.filename}
+                                  {getBaseFilename(file.filename)}
                                 </p>
                                 {!file.visible && (
                                   <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 font-mono text-[9px] text-[var(--ink-faint)] uppercase">
@@ -1893,7 +1893,7 @@ export default function PublicModelDetailPage({
                                     }
                                   }}
                                   className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                                  title={`Download ${file.filename}`}
+                                  title={`Download ${getBaseFilename(file.filename)}`}
                                 >
                                   <Download className="h-3 w-3" />
                                   <span>Get</span>
