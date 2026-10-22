@@ -1016,7 +1016,9 @@ class ModelService:
         if size == 0:
             raise ModelError("Model file is empty")
         if size > self.settings.MODEL_MAX_BYTES:
-            raise ModelError("Model file is too large")
+            max_gb = self.settings.MODEL_MAX_BYTES // (1024 * 1024 * 1024)
+            actual_gb = size / (1024 * 1024 * 1024)
+            raise ModelError(f"Model file is too large ({actual_gb:.1f} GB > {max_gb} GB limit)")
 
         record = self._read(model_id)
         version = self._version(record, version_id)
@@ -1027,7 +1029,7 @@ class ModelService:
         digest = hashlib.sha256()
         try:
             with source.open("rb") as source_file:
-                while chunk := source_file.read(1024 * 1024):
+                while chunk := source_file.read(8 * 1024 * 1024):
                     digest.update(chunk)
         except OSError as exc:
             raise ModelError("Could not read local ComfyUI model file") from exc
@@ -1279,7 +1281,9 @@ class ModelService:
         if not data:
             raise ModelError("Model file is empty")
         if len(data) > self.settings.MODEL_MAX_BYTES:
-            raise ModelError("Model file is too large")
+            max_gb = self.settings.MODEL_MAX_BYTES // (1024 * 1024 * 1024)
+            actual_gb = len(data) / (1024 * 1024 * 1024)
+            raise ModelError(f"Model file is too large ({actual_gb:.1f} GB > {max_gb} GB limit)")
         file_id = uuid.uuid4().hex
         target = self.root / model_id / version_id / "files" / f"{file_id}{suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)

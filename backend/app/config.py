@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # --- Model publishing -------------------------------------------------
     # Creator models are kept separate from generated assets and tool data.
     MODELS_DIR: str = "models"
-    MODEL_MAX_BYTES: int = 20 * 1024 * 1024 * 1024
+    MODEL_MAX_BYTES: int = 200 * 1024 * 1024 * 1024  # 200 GB default (supports large video/diffusion models like LTX, Qwen, Wan, Flux)
     MODEL_SAMPLE_MAX_BYTES: int = 20 * 1024 * 1024
     MODEL_FILE_EXTENSIONS: str = ".safetensors,.ckpt,.pt,.pth,.bin,.gguf"
     # Optional same-host ComfyUI filesystem root. Installation is disabled when unset.
