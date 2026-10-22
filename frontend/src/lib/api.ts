@@ -109,6 +109,7 @@ export interface GeneratePayload {
   client_id?: string;
   reference_images?: string[];
   lora_adapters?: LoraAdapterPayload[];
+  is_private?: boolean;
 }
 
 export interface ClipOptions {

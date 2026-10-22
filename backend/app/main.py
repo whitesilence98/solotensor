@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     File,
@@ -1144,6 +1145,16 @@ async def workflow_template_info() -> dict[str, Any]:
         return {"has_template": False, "error": str(exc)}
 
 
+async def _bg_auto_tag_asset(key: str) -> None:
+    """Non-blocking background auto-tagger running WD14 interrogation for public assets."""
+    try:
+        tagger = get_tagger_service()
+        tags = await tagger.auto_tag_asset(key)
+        logger.info("Background auto-tag completed for %s (%d tags detected)", key, len(tags))
+    except Exception as exc:
+        logger.warning("Background auto-tag skipped/failed for %s: %s", key, exc)
+
+
 # ---------------------------------------------------------------------- #
 # Generation
 # ---------------------------------------------------------------------- #
@@ -1153,6 +1164,7 @@ async def workflow_template_info() -> dict[str, Any]:
 @app.post("/api/generate", response_model=GenerationResult)
 async def generate(
     req: GenerateRequest,
+    background_tasks: BackgroundTasks,
     user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
@@ -1434,6 +1446,7 @@ async def generate(
         )
 
     user_id = user.id
+    is_public = not req.is_private
     assets: list[UploadedAsset] = []
     metadata = {
         "prompt_id": prompt_id,
@@ -1480,6 +1493,8 @@ async def generate(
                     **metadata,
                     "source_filename": image["filename"],
                     "user_id": user_id,
+                    "gallery_saved": is_public,
+                    "is_private": req.is_private,
                 },
                 namespace=user_id,
             )
@@ -1489,6 +1504,10 @@ async def generate(
             rel_key = (
                 url.split("/files/")[-1] if "/files/" in url else image["filename"]
             )
+
+            # Auto-tag public generations in background
+            if is_public:
+                background_tasks.add_task(_bg_auto_tag_asset, rel_key)
 
             # Prepare LoRAs list for relational DB
             loras_list = []
@@ -1525,7 +1544,7 @@ async def generate(
                         "status": "completed",
                         "elapsed_ms": elapsed_ms,
                         "origin": "generation",
-                        "gallery_saved": 1,
+                        "gallery_saved": 1 if is_public else 0,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "metadata_json": json.dumps(
                             {
@@ -1726,6 +1745,7 @@ async def _run_tool(
     client_id: str | None = None,
     save_to_gallery: bool = True,
     user_id: str | None = None,
+    background_tasks: BackgroundTasks | None = None,
 ) -> ToolExecutionResult:
     tools = get_ai_tool_service()
     try:
@@ -1859,6 +1879,10 @@ async def _run_tool(
                 rel_key = "tools/" + tool_id + "/" + url.split(f"tools/{tool_id}/")[-1]
             else:
                 rel_key = output["filename"]
+
+            # Auto-tag public tool output in background
+            if save_to_gallery and background_tasks is not None:
+                background_tasks.add_task(_bg_auto_tag_asset, rel_key)
             try:
                 get_db().insert_generation(
                     {
@@ -1901,6 +1925,7 @@ async def _run_tool(
 @app.post("/api/tools/execute", response_model=ToolExecutionResult)
 async def execute_tool(
     req: ToolExecuteRequest,
+    background_tasks: BackgroundTasks,
     user: UserResponse = Depends(get_current_user),
 ) -> ToolExecutionResult:
     return await _run_tool(
@@ -1912,12 +1937,14 @@ async def execute_tool(
         client_id=req.client_id,
         save_to_gallery=req.save_to_gallery,
         user_id=user.id,
+        background_tasks=background_tasks,
     )
 
 
 @app.post("/api/tools/{tool_id}/run", response_model=ToolExecutionResult)
 async def run_tool(
     tool_id: str,
+    background_tasks: BackgroundTasks,
     prompt: str = Form(""),
     aspect_ratio: ToolAspectRatio | None = Form(None),
     values: str = Form("{}"),
@@ -1955,6 +1982,7 @@ async def run_tool(
         client_id=client_id,
         save_to_gallery=save_to_gallery,
         user_id=user.id,
+        background_tasks=background_tasks,
     )
 
 
@@ -2186,9 +2214,16 @@ async def asset_detail(key: str) -> GalleryItem:
 
 
 @app.patch("/api/v1/assets/{key:path}", response_model=GalleryItem)
-async def save_asset(key: str, saved: bool) -> GalleryItem:
+async def save_asset(
+    key: str,
+    saved: bool,
+    background_tasks: BackgroundTasks,
+) -> GalleryItem:
     try:
-        return storage.set_saved(key, saved)
+        item = storage.set_saved(key, saved)
+        if saved and not (item.metadata or {}).get("tags"):
+            background_tasks.add_task(_bg_auto_tag_asset, key)
+        return item
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
     except StorageError as exc:

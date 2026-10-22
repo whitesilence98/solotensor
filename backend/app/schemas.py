@@ -407,6 +407,7 @@ class GenerateRequest(BaseModel):
     client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
     reference_images: list[str] = Field(default_factory=list)
     lora_adapters: list[LoraAdapterSelection] = Field(default_factory=list)
+    is_private: bool = Field(False, description="If true, image is confidential and excluded from public auto-tagging/feeds")
 
     @field_validator("prompt")
     @classmethod

@@ -158,3 +158,46 @@ class TaggerApiTests(unittest.TestCase):
             resp = client.post("/api/v1/assets/sample/img.png/tags/auto")
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["metadata"]["tags"], ["cyberpunk", "city"])
+
+    @patch("app.main.get_tagger_service")
+    def test_save_asset_triggers_background_auto_tag_when_no_tags(self, mock_tagger_get) -> None:
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(return_value=["vintage", "portrait"])
+
+        p = Path(self.temp.name) / "sample"
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "img2.png").write_bytes(b"data")
+
+        with patch("app.main.storage", self.storage):
+            client = TestClient(app)
+            # Patching saved=true on an asset with no tags should trigger background auto-tag
+            resp = client.patch("/api/v1/assets/sample/img2.png?saved=true")
+            self.assertEqual(resp.status_code, 200)
+            mock_tagger.auto_tag_asset.assert_called_once_with("sample/img2.png")
+
+    @patch("app.main.get_tagger_service")
+    def test_save_asset_does_not_tag_when_saved_is_false(self, mock_tagger_get) -> None:
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock()
+
+        p = Path(self.temp.name) / "sample"
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "img3.png").write_bytes(b"data")
+
+        with patch("app.main.storage", self.storage):
+            client = TestClient(app)
+            resp = client.patch("/api/v1/assets/sample/img3.png?saved=false")
+            self.assertEqual(resp.status_code, 200)
+            mock_tagger.auto_tag_asset.assert_not_called()
+
+    @patch("app.main.get_tagger_service")
+    def test_bg_auto_tag_helper_handles_exceptions_gracefully(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(side_effect=RuntimeError("ComfyUI unreachable"))
+
+        # Should not raise exception
+        asyncio.run(_bg_auto_tag_asset("sample/failed.png"))
+        mock_tagger.auto_tag_asset.assert_called_once_with("sample/failed.png")

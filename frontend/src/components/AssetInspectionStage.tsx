@@ -198,7 +198,6 @@ export default function AssetInspectionStage({
 
   // Tagging State
   const [tags, setTags] = useState<string[]>(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
-  const [isTagging, setIsTagging] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
   const [newTagDraft, setNewTagDraft] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -268,26 +267,6 @@ export default function AssetInspectionStage({
     setTags(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags : []);
     setTagError(null);
   }, [asset.key, asset.metadata?.tags]);
-
-  const handleAutoTag = async () => {
-    if (isTagging) return;
-    setIsTagging(true);
-    setTagError(null);
-    try {
-      const updated = await api.autoTagAsset(asset.key);
-      const newTags = Array.isArray(updated.metadata?.tags) ? updated.metadata.tags : [];
-      setTags(newTags);
-      if (asset.metadata) {
-        asset.metadata.tags = newTags;
-      }
-      setTagToast("WD14 tags detected!");
-      setTimeout(() => setTagToast(null), 2500);
-    } catch (err) {
-      setTagError(err instanceof Error ? err.message : "Auto-tagging failed");
-    } finally {
-      setIsTagging(false);
-    }
-  };
 
   const handleRemoveTag = async (tagToRemove: string) => {
     const nextTags = tags.filter((t) => t !== tagToRemove);
@@ -933,20 +912,6 @@ export default function AssetInspectionStage({
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={handleAutoTag}
-                disabled={isTagging}
-                className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] font-bold text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition disabled:opacity-50"
-                title="Run WD14 Tagger workflow to auto-detect tags"
-              >
-                {isTagging ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3 w-3" />
-                )}
-                <span>{isTagging ? "Detecting…" : "Auto-tag (WD14)"}</span>
-              </button>
             </div>
 
             {tagError && (

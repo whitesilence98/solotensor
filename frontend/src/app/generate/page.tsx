@@ -85,6 +85,7 @@ export default function StudioPage() {
   const [customWidth, setCustomWidth] = useState("768");
   const [customHeight, setCustomHeight] = useState("1344");
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -378,6 +379,7 @@ export default function StudioPage() {
         format_name: format,
         client_id: clientId,
         lora_adapters: loraAdapters,
+        is_private: isPrivate,
       };
 
       const result: GenerationResult = await api.generate(payload);
@@ -410,6 +412,7 @@ export default function StudioPage() {
     format,
     customWidth,
     customHeight,
+    isPrivate,
     busy,
     refreshGallery,
   ]);
@@ -598,6 +601,8 @@ export default function StudioPage() {
             onCustomHeightChange={setCustomHeight}
             format={format}
             onFormatChange={setFormat}
+            isPrivate={isPrivate}
+            onPrivateChange={setIsPrivate}
             busy={busy}
             canGenerate={canGenerate}
             onGenerate={handleGenerate}

@@ -24,6 +24,12 @@ class PromptValidationTests(unittest.TestCase):
         request = GenerateRequest(prompt="word " * 1_000, **IDS)
         self.assertEqual(len(request.prompt.split()), 1_000)
 
+    def test_accepts_is_private_flag(self) -> None:
+        req_public = GenerateRequest(prompt="test", is_private=False, **IDS)
+        self.assertFalse(req_public.is_private)
+        req_private = GenerateRequest(prompt="test", is_private=True, **IDS)
+        self.assertTrue(req_private.is_private)
+
     def test_rejects_more_than_one_thousand_words(self) -> None:
         with self.assertRaises(ValidationError):
             GenerateRequest(prompt="word " * 1_001, **IDS)
