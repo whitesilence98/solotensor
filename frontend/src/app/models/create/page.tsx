@@ -61,7 +61,7 @@ import {
   isArchitectureInList,
   isArchitectureCompatible,
 } from "@/lib/baseModelArchitectures";
-import { detectPrecisionFromFilename } from "@/lib/models";
+import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
 
@@ -1527,7 +1527,7 @@ export default function CreateModelPage() {
                                 .filter((opt) => !resolvedBaseModel || isArchitectureCompatible(opt.base_model || opt.filename, resolvedBaseModel))
                                 .map((opt) => ({
                                   value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
-                                  label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                                  label: `${opt.title} · ${getBaseFilename(opt.filename)} (${opt.model_type})`,
                                 })),
                             ]}
                             className="w-full"
@@ -2156,8 +2156,8 @@ export default function CreateModelPage() {
                                 >
                                   <div className="flex items-center gap-2 min-w-0 mr-2">
                                     <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
-                                    <span className="truncate font-mono text-[11px]">
-                                      {item.filename}
+                                    <span className="truncate font-mono text-[11px] font-bold" title={item.filename}>
+                                      {getBaseFilename(item.filename)}
                                     </span>
                                     <span
                                       className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider border ${
@@ -2235,7 +2235,7 @@ export default function CreateModelPage() {
                                   <div className="flex items-center gap-2 min-w-0">
                                     <FileCode2 className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
                                     <span className="truncate font-bold text-[var(--ink)]" title={file.filename}>
-                                      {file.filename}
+                                      {getBaseFilename(file.filename)}
                                     </span>
                                     {(modelType === "Checkpoint" ||
                                       file.local?.category === "diffusion_models" ||
@@ -2697,7 +2697,7 @@ export default function CreateModelPage() {
                   <span className="font-semibold text-[var(--ink)] truncate max-w-[140px]">
                     {totalFilesCount > 0
                       ? totalFilesCount === 1
-                        ? versions[0]?.files[0]?.filename || "1 attached"
+                        ? getBaseFilename(versions[0]?.files[0]?.filename) || "1 attached"
                         : `${totalFilesCount} files (${versions.length} release${versions.length > 1 ? "s" : ""})`
                       : "Pending…"}
                   </span>

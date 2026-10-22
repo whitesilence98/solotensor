@@ -1924,7 +1924,7 @@ export default function PublicModelDetailPage({
                                     onClick={() => void install(file, activeVersion.version_id)}
                                     disabled={installing === file.file_id}
                                     className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                                    title={`Install ${file.filename} into ComfyUI (Moderator Tool)`}
+                                    title={`Install ${getBaseFilename(file.filename)} into ComfyUI (Moderator Tool)`}
                                   >
                                     <HardDriveDownload className="h-3 w-3" />
                                     <span>{installing === file.file_id ? "Installing…" : "Install to ComfyUI"}</span>
@@ -2520,7 +2520,9 @@ export default function PublicModelDetailPage({
                               : "hover:bg-[var(--surface-raised)] text-[var(--ink)] border border-transparent"
                             }`}
                         >
-                          <span className="truncate pr-2">{item.filename}</span>
+                          <span className="truncate pr-2 font-bold" title={item.filename}>
+                            {getBaseFilename(item.filename)}
+                          </span>
                           <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--ink-faint)]">
                             {item.category}
                           </span>
@@ -2581,7 +2583,7 @@ export default function PublicModelDetailPage({
           onClose={() => {
             if (!deletingFile) setFileToDelete(null);
           }}
-          title={`Delete file "${fileToDelete.filename}"?`}
+          title={`Delete file "${getBaseFilename(fileToDelete.filename)}"?`}
           description={`Remove this weight file from release version "${activeVersion.name}".`}
           destructive
           eyebrow="Warning"

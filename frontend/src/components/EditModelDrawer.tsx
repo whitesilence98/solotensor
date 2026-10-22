@@ -45,6 +45,7 @@ import {
   isArchitectureCompatible,
 } from "@/lib/baseModelArchitectures";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
+import { getBaseFilename } from "@/lib/models";
 
 export const isPromptableModelType = (t: string): boolean =>
   ![
@@ -1092,7 +1093,7 @@ export default function EditModelDrawer({
                         .filter((opt) => !resolvedBaseModel || isArchitectureCompatible(opt.base_model || opt.filename, resolvedBaseModel))
                         .map((opt) => ({
                           value: `${opt.model_id}:${opt.version_id}:${opt.file_id}`,
-                          label: `${opt.title} · ${opt.filename} (${opt.model_type})`,
+                          label: `${opt.title} · ${getBaseFilename(opt.filename)} (${opt.model_type})`,
                         })),
                     ]}
                     className="w-full"
