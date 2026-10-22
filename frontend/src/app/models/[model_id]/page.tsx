@@ -1845,7 +1845,7 @@ export default function PublicModelDetailPage({
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5">
+                              <div className="flex items-center gap-2 font-mono text-[10px] text-[var(--ink-faint)] mt-0.5 whitespace-nowrap">
                                 <span className="rounded bg-[var(--surface-raised)] border border-[var(--line)] px-1 py-0.2 text-[var(--accent)] font-semibold">
                                   {file.precision}
                                 </span>
@@ -1864,11 +1864,12 @@ export default function PublicModelDetailPage({
                                       : "border-[var(--warning)]/40 bg-[var(--warning)]/10 text-[var(--warning)] hover:bg-[var(--warning)]/20"
                                     }`}
                                   title={file.visible ? "Visible in catalog (click to hide)" : "Hidden from catalog (click to show)"}
+                                  aria-label={file.visible ? "Hide file from catalog" : "Show file in catalog"}
                                 >
                                   {file.visible ? (
-                                    <Eye className="h-3 w-3" />
+                                    <Eye className="h-3.5 w-3.5" />
                                   ) : (
-                                    <EyeOff className="h-3 w-3" />
+                                    <EyeOff className="h-3.5 w-3.5" />
                                   )}
                                 </button>
                                 <button
@@ -1876,8 +1877,9 @@ export default function PublicModelDetailPage({
                                   onClick={() => setFileToDelete(file)}
                                   className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--danger)] hover:border-[var(--danger)]/50 transition-colors"
                                   title="Delete file from version"
+                                  aria-label="Delete file from version"
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </Can>
 
@@ -1892,42 +1894,46 @@ export default function PublicModelDetailPage({
                                       openAuthModal("download_weights");
                                     }
                                   }}
-                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                                  className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
                                   title={`Download ${getBaseFilename(file.filename)}`}
+                                  aria-label={`Download ${getBaseFilename(file.filename)}`}
                                 >
-                                  <Download className="h-3 w-3" />
-                                  <span>Get</span>
+                                  <Download className="h-3.5 w-3.5" />
                                 </a>
                               ) : (
                                 <button
                                   type="button"
                                   disabled
-                                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[10px] font-bold text-[var(--ink-faint)] cursor-not-allowed opacity-50"
+                                  className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] cursor-not-allowed opacity-50"
                                   title="Direct download disabled by model creator"
+                                  aria-label="Direct download disabled"
                                 >
-                                  <Download className="h-3 w-3" />
-                                  <span>Get</span>
+                                  <Download className="h-3.5 w-3.5" />
                                 </button>
                               )}
                               {isAuthenticated && (isAdmin || isMod) && (
                                 (file.from_vault || file.in_vault || installedFileIds.has(file.file_id)) ? (
                                   <span
-                                    className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-950/30 px-2 py-1 font-mono text-[10px] font-bold text-emerald-400"
-                                    title={file.from_vault ? "Imported from local ComfyUI vault" : "Already installed in ComfyUI vault"}
+                                    className="inline-flex items-center justify-center h-6 w-6 rounded border border-emerald-500/30 bg-emerald-950/30 text-emerald-400"
+                                    title={file.from_vault ? "Vault Source: Weights sourced directly from local ComfyUI vault" : "In Vault: Weights already mounted into ComfyUI vault"}
+                                    aria-label={file.from_vault ? "Vault Source" : "In Vault"}
                                   >
-                                    <Check className="h-3 w-3" />
-                                    <span>{file.from_vault ? "Vault Source" : "In Vault"}</span>
+                                    <Check className="h-3.5 w-3.5 text-emerald-400" />
                                   </span>
                                 ) : (
                                   <button
                                     type="button"
                                     onClick={() => void install(file, activeVersion.version_id)}
                                     disabled={installing === file.file_id}
-                                    className="inline-flex items-center gap-1 rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2 py-1 font-mono text-[10px] font-bold text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
+                                    className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
                                     title={`Install ${getBaseFilename(file.filename)} into ComfyUI (Moderator Tool)`}
+                                    aria-label={`Install ${getBaseFilename(file.filename)} into ComfyUI`}
                                   >
-                                    <HardDriveDownload className="h-3 w-3" />
-                                    <span>{installing === file.file_id ? "Installing…" : "Install to ComfyUI"}</span>
+                                    {installing === file.file_id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <HardDriveDownload className="h-3.5 w-3.5" />
+                                    )}
                                   </button>
                                 )
                               )}
