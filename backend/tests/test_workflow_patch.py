@@ -451,6 +451,9 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertIn("679:660", with_det)
         self.assertIn("save_detailer_output", with_det)
         self.assertEqual(with_det["679:665"]["inputs"]["seed"], 888)
+        self.assertIn("679:659", with_det)
+        self.assertEqual(with_det["679:659"]["inputs"]["clip"], ["1043", 1])
+        self.assertIn(with_det["679:659"]["inputs"]["clip"][0], with_det)
 
     def test_build_gallery_workflow_enable_detailer(self) -> None:
         # Modular workflow

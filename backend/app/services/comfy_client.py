@@ -303,10 +303,38 @@ class ComfyClient:
                     else:
                         neg_ref = pos_ref
 
-        # 6. Detailer seed
+        # 6. Identify active CLIP source for detailer pipe
+        if "1043" in patched and patched["1043"].get("class_type") == "Power Lora Loader (rgthree)":
+            clip_ref = ["1043", 1]
+        elif "623" in patched and isinstance(patched["623"].get("inputs"), dict) and "clip" in patched["623"]["inputs"]:
+            clip_ref = patched["623"]["inputs"]["clip"]
+        elif "700" in patched and isinstance(patched["700"].get("inputs"), dict) and "clip" in patched["700"]["inputs"]:
+            clip_ref = patched["700"]["inputs"]["clip"]
+        else:
+            clip_loaders = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") in ("CLIPLoader", "CheckpointLoaderSimple")
+            ]
+            if clip_loaders:
+                if patched[clip_loaders[0]].get("class_type") == "CheckpointLoaderSimple":
+                    clip_ref = [clip_loaders[0], 1]
+                else:
+                    clip_ref = [clip_loaders[0], 0]
+            else:
+                text_encs = [
+                    nid for nid, node in patched.items()
+                    if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+                    and "clip" in node.get("inputs", {})
+                ]
+                if text_encs:
+                    clip_ref = patched[text_encs[0]]["inputs"]["clip"]
+                else:
+                    clip_ref = None
+
+        # 7. Detailer seed
         final_detailer_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
 
-        # 7. Add detailer nodes, omitting redundant loaders ("681", "1027:615", "1027:616", "1027:617", "682", "683")
+        # 8. Add detailer nodes, omitting redundant loaders ("681", "1027:615", "1027:616", "1027:617", "682", "683")
         def _get_node(node_id: str, default_class: str, default_title: str) -> dict[str, Any]:
             if node_id in template:
                 return json.loads(json.dumps(template[node_id]))
@@ -326,6 +354,10 @@ class ComfyClient:
         node_659 = _get_node("679:659", "ToDetailerPipe", "ToDetailerPipe")
         node_659.setdefault("inputs", {})
         node_659["inputs"]["model"] = model_ref
+        if clip_ref:
+            node_659["inputs"]["clip"] = clip_ref
+        elif "clip" in node_659["inputs"]:
+            del node_659["inputs"]["clip"]
         node_659["inputs"]["vae"] = vae_ref
         node_659["inputs"]["positive"] = pos_ref
         node_659["inputs"]["negative"] = neg_ref
