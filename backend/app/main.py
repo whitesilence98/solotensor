@@ -2212,10 +2212,13 @@ async def paginated_gallery(
 
 
 @app.get("/api/v1/tags", response_model=TagSummaryList)
-async def list_popular_tags(limit: int = 50) -> TagSummaryList:
+async def list_popular_tags(
+    limit: int = 50,
+    user_id: str | None = None,
+) -> TagSummaryList:
     if limit < 1 or limit > 200:
         limit = 50
-    tags = storage.list_popular_tags(limit=limit)
+    tags = storage.list_popular_tags(limit=limit, user_id=user_id)
     return TagSummaryList(items=[TagSummary(**item) for item in tags])
 
 

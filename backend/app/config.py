@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # itself under /files (StaticFiles mount) — no external object store.
     STORAGE_DIR: str = "generated"
     FILES_PUBLIC_BASE: str = "http://localhost:8000"  # base URL handed to the browser
-    GALLERY_LIMIT: int = 60
+    GALLERY_LIMIT: int = 500
 
     # --- AI Tool Studio ---------------------------------------------------
     # Kept separate from STORAGE_DIR because tool definitions are private

@@ -30,6 +30,8 @@ import {
   type TagSummary,
 } from "@/lib/api";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
+import { ProtectedRoute } from "@/components/rbac";
 
 const PAGE_SIZE = 24;
 
@@ -46,6 +48,7 @@ function formatCount(n: number): string {
 
 export default function AssetsPage() {
   const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,8 +141,9 @@ export default function AssetsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!isAuthenticated) return;
     void api
-      .getPopularTags(40)
+      .getPopularTags(40, user?.id)
       .then((items) => {
         if (!cancelled) setPopularTags(items);
       })
@@ -147,7 +151,7 @@ export default function AssetsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAuthenticated, user?.id]);
 
   // Sync initial query params (?tags=... or ?tag=...)
   useEffect(() => {
@@ -265,8 +269,10 @@ export default function AssetsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!isAuthenticated) return;
+    setLoading(true);
     api
-      .getGallery(200, origin === "all" ? {} : { origin })
+      .getMyGallery(500, origin === "all" ? {} : { origin })
       .then((items) => {
         if (!cancelled) setAssets(withTypes(items));
       })
@@ -282,7 +288,7 @@ export default function AssetsPage() {
     return () => {
       cancelled = true;
     };
-  }, [origin, retryKey]);
+  }, [isAuthenticated, origin, retryKey]);
 
   // "/" focuses search, like every gallery tool.
   useEffect(() => {
@@ -341,7 +347,12 @@ export default function AssetsPage() {
   };
 
   return (
-    <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
+    <ProtectedRoute
+      requireAuth={true}
+      title="Asset Library Access"
+      description="Sign in to view, search, and manage your personal creations and asset history."
+    >
+      <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
       {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
       <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
         {/* Command Bar Toolbar: Type Switcher + Search + Source Selector + New Render */}
@@ -447,7 +458,7 @@ export default function AssetsPage() {
 
               {/* New Render CTA */}
               <Link
-                href="/"
+                href="/generate"
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-sm hover:shadow-md"
               >
                 <Sparkles className="h-3.5 w-3.5" />
@@ -586,6 +597,23 @@ export default function AssetsPage() {
             <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check that the local API is running, then retry.</p>
             <button type="button" onClick={() => { setLoading(true); setError(null); setRetryKey((key) => key + 1); }} className="workspace-action-secondary mt-4 px-3 py-2 text-xs">Try again</button>
           </div>
+        ) : assets.length === 0 ? (
+          <div className="workspace-empty workspace-bezel flex min-h-[420px] flex-col items-center justify-center p-1.5 text-center">
+            <div className="workspace-core flex h-full w-full flex-col items-center justify-center px-6 py-16">
+              <div className="workspace-icon-island h-16 w-16 border border-[var(--accent-ambient)] text-[var(--accent)] shadow-ambient-glow rounded-2xl bg-[var(--surface-soft)]">
+                <Sparkles className="h-7 w-7" strokeWidth={1.5} />
+              </div>
+              <div className="workspace-kicker mt-8">Your private gallery</div>
+              <h3 className="workspace-heading mt-3 text-xl font-semibold text-[var(--ink)]">No creations yet</h3>
+              <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ink-soft)]">
+                Every artwork, upscale, and design you generate in the studio will be curated in your private library.
+              </p>
+              <Link href="/generate" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
+                <Sparkles className="h-4.5 w-4.5" strokeWidth={1.5} />
+                Open Studio &rarr;
+              </Link>
+            </div>
+          </div>
         ) : filtered.length === 0 ? (
           query ? (
             <EmptyState kind="image" onClearSearch={clearSearch} />
@@ -688,5 +716,6 @@ export default function AssetsPage() {
         </div>
       )}
     </main>
+    </ProtectedRoute>
   );
 }

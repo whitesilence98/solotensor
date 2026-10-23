@@ -139,6 +139,7 @@ export interface UploadedAsset {
   poster_url?: string | null;
   saved?: boolean;
   before_detailer_url?: string | null;
+  user_id?: string | null;
 }
 
 export interface ToolControl {
@@ -285,6 +286,7 @@ export interface GenerationMetadata {
   elapsed_ms: number;
   source_filename?: string;
   before_detailer_url?: string | null;
+  user_id?: string | null;
 }
 
 export interface GalleryMetadata extends GenerationMetadata {
@@ -306,6 +308,7 @@ export interface GalleryItem {
   metadata: GalleryMetadata | null;
   thumbnail_url?: string;
   before_detailer_url?: string | null;
+  user_id?: string | null;
 }
 
 export type NotificationCategory = "moderation" | "generation" | "social" | "system";
@@ -1384,16 +1387,21 @@ export const api = {
       tool_id?: string;
       tool_type?: string;
       tag?: string;
-      tags?: string[];
+      tags?: string[] | string;
       tag_mode?: "all" | "any";
       user_id?: string;
     } = {}
   ): Promise<GalleryItem[]> {
-    const params = new URLSearchParams({ limit: String(limit) });
+    const safeLimit = Math.min(Math.max(1, limit), 500);
+    const params = new URLSearchParams({ limit: String(safeLimit) });
     Object.entries(filters).forEach(([key, value]) => {
       if (!value) return;
-      if (key === "tags" && Array.isArray(value)) {
-        if (value.length > 0) params.set("tags", value.join(","));
+      if (key === "tags") {
+        if (Array.isArray(value)) {
+          if (value.length > 0) params.set("tags", value.join(","));
+        } else if (typeof value === "string" && value.trim()) {
+          params.set("tags", value.trim());
+        }
       } else if (typeof value === "string") {
         params.set(key, value);
       }
@@ -1412,15 +1420,20 @@ export const api = {
       tool_id?: string;
       tool_type?: string;
       tag?: string;
-      tags?: string[];
+      tags?: string[] | string;
       tag_mode?: "all" | "any";
     } = {}
   ): Promise<GalleryItem[]> {
-    const params = new URLSearchParams({ limit: String(limit) });
+    const safeLimit = Math.min(Math.max(1, limit), 500);
+    const params = new URLSearchParams({ limit: String(safeLimit) });
     Object.entries(filters).forEach(([key, value]) => {
       if (!value) return;
-      if (key === "tags" && Array.isArray(value)) {
-        if (value.length > 0) params.set("tags", value.join(","));
+      if (key === "tags") {
+        if (Array.isArray(value)) {
+          if (value.length > 0) params.set("tags", value.join(","));
+        } else if (typeof value === "string" && value.trim()) {
+          params.set("tags", value.trim());
+        }
       } else if (typeof value === "string") {
         params.set(key, value);
       }
@@ -1440,7 +1453,7 @@ export const api = {
       tool_id?: string;
       tool_type?: string;
       tag?: string;
-      tags?: string[];
+      tags?: string[] | string;
       tag_mode?: "all" | "any";
     } = {}
   ): Promise<GalleryItem[]> {
@@ -1454,7 +1467,7 @@ export const api = {
       tool_id?: string;
       tool_type?: string;
       tag?: string;
-      tags?: string[];
+      tags?: string[] | string;
       tag_mode?: "all" | "any";
     } = {}
   ): Promise<GalleryItem[]> {
@@ -1576,8 +1589,15 @@ export const api = {
     return this.getAsset(key);
   },
 
-  async getPopularTags(limit = 50): Promise<TagSummary[]> {
-    const resp = await request<{ items: TagSummary[] }>(`/api/v1/tags?limit=${limit}`);
+  async getPopularTags(
+    limit = 40,
+    userId?: string
+  ): Promise<TagSummary[]> {
+    const trimmedId = typeof userId === "string" ? userId.trim() : undefined;
+    const path = trimmedId
+      ? `/api/v1/tags?limit=${limit}&user_id=${encodeURIComponent(trimmedId)}`
+      : `/api/v1/tags?limit=${limit}`;
+    const resp = await request<{ items: TagSummary[] }>(path);
     return resp.items || [];
   },
 

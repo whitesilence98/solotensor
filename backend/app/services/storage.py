@@ -245,13 +245,17 @@ class StorageService:
             raise StorageError("Could not update asset tags") from exc
         return self._gallery_item(path)
 
-    def list_popular_tags(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_popular_tags(
+        self, limit: int = 50, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         self.ensure_root()
         counts: dict[str, int] = {}
         for p in self.root.rglob("*.json"):
             try:
                 raw = json.loads(p.read_text(encoding="utf-8"))
                 if isinstance(raw, dict):
+                    if user_id and raw.get("user_id") != user_id:
+                        continue
                     for tag in raw.get("tags") or []:
                         if isinstance(tag, str) and tag.strip():
                             norm = tag.strip().lower()

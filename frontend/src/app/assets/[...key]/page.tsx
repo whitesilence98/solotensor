@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ImageIcon, Sparkles } from "lucide-react";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import { api, type GalleryItem, type InstalledGalleryModel } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { ProtectedRoute } from "@/components/rbac";
 
 function basename(value: string): string {
   return value.split(/[\\/]/).pop() ?? value;
@@ -13,6 +15,7 @@ function basename(value: string): string {
 
 export default function AssetDetailPage() {
   const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
   const params = useParams<{ key?: string[] | string }>();
   const rawKey = params?.key;
   const key = Array.isArray(rawKey)
@@ -30,7 +33,7 @@ export default function AssetDetailPage() {
   // Load asset
   useEffect(() => {
     let cancelled = false;
-    if (!key) return;
+    if (!key || !isAuthenticated) return;
     setLoading(true);
     setError(null);
 
@@ -82,7 +85,12 @@ export default function AssetDetailPage() {
   const filename = key ? basename(key) : "";
 
   return (
-    <main
+    <ProtectedRoute
+      requireAuth={true}
+      title="Asset Access"
+      description="Sign in to view asset details and reproduction parameters."
+    >
+      <main
       id="main-content"
       className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
     >
@@ -99,7 +107,7 @@ export default function AssetDetailPage() {
           </Link>
           <span className="text-[var(--ink-faint)] select-none">/</span>
           <Link
-            href="/"
+            href="/generate"
             className="flex items-center gap-1.5 text-xs font-medium text-[var(--ink-faint)] transition hover:text-[var(--accent)]"
             title="Return to Studio"
           >
@@ -172,16 +180,42 @@ export default function AssetDetailPage() {
             </div>
           </section>
         ) : asset ? (
-          <AssetInspectionStage
-            mode="standalone"
-            asset={asset}
-            items={[asset]}
-            modelOptions={modelOptions}
-            backHref="/assets"
-            onDeleteOutput={handleDelete}
-          />
+          asset.metadata?.user_id && user?.id && asset.metadata.user_id !== user.id ? (
+            <section
+              className="mx-auto my-auto flex max-w-md flex-col items-center justify-center p-8 text-center"
+              role="alert"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-soft)] text-[var(--accent)]">
+                <ImageIcon className="h-6 w-6" />
+              </div>
+              <h1 className="mt-4 text-xl font-bold text-[var(--ink)]">
+                Private Asset
+              </h1>
+              <p className="mt-2 text-xs leading-relaxed text-[var(--ink-soft)]">
+                This asset belongs to another account or is private to its creator.
+              </p>
+              <div className="mt-6 flex items-center gap-3">
+                <Link
+                  href="/assets"
+                  className="workspace-action-primary px-4 py-2 text-xs font-bold"
+                >
+                  Back to library
+                </Link>
+              </div>
+            </section>
+          ) : (
+            <AssetInspectionStage
+              mode="standalone"
+              asset={asset}
+              items={[asset]}
+              modelOptions={modelOptions}
+              backHref="/assets"
+              onDeleteOutput={handleDelete}
+            />
+          )
         ) : null}
       </div>
     </main>
+    </ProtectedRoute>
   );
 }

@@ -521,6 +521,7 @@ class GenerationMetadata(BaseModel):
     aspect_ratio: str | None = None
     kind: Literal["image", "video"] = "image"
     gallery_saved: bool = True
+    user_id: str | None = None
     controls: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1907,6 +1908,7 @@ class GenerationRecordResponse(BaseModel):
     elapsed_ms: Optional[int] = None
     origin: str = "generation"
     gallery_saved: bool = True
+    user_id: str | None = None
     created_at: str
     metadata: Optional[dict[str, Any]] = None
     model_title: Optional[str] = None
