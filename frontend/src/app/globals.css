@@ -526,16 +526,20 @@
 }
 
 .workspace-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: .75rem 1.5rem;
+  width: 100%;
   margin-top: auto;
   border-top: 1px solid var(--line);
+  background: var(--ground);
   color: var(--ink-faint);
-  font-size: .6875rem;
+  font-size: .75rem;
   line-height: 1.5;
-  padding: 1.5rem 0 .25rem;
+  padding: 2.5rem 0 3rem;
+}
+
+@media (max-width: 767px) {
+  .workspace-footer {
+    padding-bottom: calc(var(--mobile-nav-height) + 2rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .workspace-range {

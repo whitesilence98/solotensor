@@ -345,9 +345,10 @@ export default function ToolStudioPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll relative flex h-full min-h-0 w-full flex-1 flex-col justify-between overflow-y-auto bg-[var(--ground)]"
+      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
     >
-      <section className="mx-auto w-full max-w-[1600px] flex-1 flex flex-col min-h-0 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-12 sm:px-6 sm:pt-6 sm:pb-16 lg:px-8">
+        <section className="flex-1 flex flex-col">
         {/* Unified Tactile Command Bar Surface: Mode Filters + Search + Create Tool CTA */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
@@ -540,7 +541,7 @@ export default function ToolStudioPage() {
               <div className="relative z-10 max-w-xl mx-auto space-y-4">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-xl">
                   {isDraggingOverDropzone ? (
-                    <FolderDown className="h-7 w-7 animate-bounce" />
+                    <FolderDown className="h-7 w-7 text-[var(--accent)] animate-pulse" />
                   ) : (
                     <FileCode2 className="h-7 w-7 stroke-[1.75]" />
                   )}
@@ -641,11 +642,10 @@ export default function ToolStudioPage() {
           </div>
         )}
       </section>
-
-      {/* Footer pinned cleanly at bottom without overlapping */}
-      <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8 mt-auto">
-        <WorkspaceFooter />
       </div>
+
+      {/* Footer */}
+      <WorkspaceFooter containerClassName="max-w-[1600px]" />
 
       {/* Deletion Modal */}
       <WorkspaceModal

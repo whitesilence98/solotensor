@@ -280,10 +280,11 @@ export default function ModelsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll relative flex h-full min-h-0 w-full flex-1 flex-col justify-between overflow-y-auto bg-[var(--ground)]"
+      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
     >
-      {/* Main Content Container */}
-      <section className="mx-auto w-full max-w-[1600px] flex-1 flex flex-col min-h-0 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-12 sm:px-6 sm:pt-6 sm:pb-16 lg:px-8">
+        {/* Main Content Container */}
+        <section className="flex-1 flex flex-col">
         {/* Model Submission Pending Review Alert */}
         {createdBanner && (
           <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-200 animate-in fade-in duration-200">
@@ -606,6 +607,7 @@ export default function ModelsPage() {
           </div>
         )}
       </section>
+      </div>
 
       {/* Slide-Over Smart Filters Drawer */}
       <ModelFilterDrawer
@@ -628,9 +630,7 @@ export default function ModelsPage() {
       />
 
       {/* Footer */}
-      <div className="shrink-0 pt-6">
-        <WorkspaceFooter />
-      </div>
+      <WorkspaceFooter containerClassName="max-w-[1600px]" />
     </main>
   );
 }

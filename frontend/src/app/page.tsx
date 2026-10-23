@@ -94,9 +94,9 @@ export default function HomePage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)]"
-    >
-      <div className="mx-auto max-w-[1720px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 space-y-10">
+      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]">
+      <div className="mx-auto flex min-h-full w-full max-w-[1720px] flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="flex-1 space-y-10">
         {/* Error Notice */}
         {error && (
           <div className="rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-4 flex items-center justify-between">
@@ -132,9 +132,6 @@ export default function HomePage() {
           onOpenAsset={openAssetInspection}
         />
 
-        {/* Footer */}
-        <div className="pt-4">
-          <WorkspaceFooter />
         </div>
       </div>
 
@@ -156,6 +153,8 @@ export default function HomePage() {
           />
         </WorkspaceModal>
       )}
+      {/* Footer */}
+      <WorkspaceFooter containerClassName="max-w-[1720px]" />
     </main>
   );
 }

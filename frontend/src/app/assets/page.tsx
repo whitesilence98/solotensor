@@ -638,7 +638,6 @@ export default function AssetsPage() {
             )}
           </>
         )}
-        <WorkspaceFooter />
       </section>
 
       {/* Shallow History Inspection Modal */}
@@ -715,7 +714,8 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
-    </main>
+      <WorkspaceFooter />
+      </main>
     </ProtectedRoute>
   );
 }

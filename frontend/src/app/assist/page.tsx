@@ -285,8 +285,10 @@ export default function AssistPage() {
           </pre>
         </section>
       )}
-      <WorkspaceFooter />
       </div>
+
+      {/* Footer */}
+      <WorkspaceFooter />
     </main>
   );
 }

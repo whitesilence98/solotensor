@@ -350,7 +350,7 @@ export default function UserProfilePage({
   const articlesCount = 0;
 
   return (
-    <div className="workspace-page workspace-scroll bg-[var(--ground)] text-[var(--ink)] min-h-screen">
+    <div className="workspace-page workspace-scroll bg-[var(--ground)] text-[var(--ink)] min-h-screen flex flex-col justify-between">
       {/* Toast Notification */}
       {shareToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[var(--accent)] bg-[var(--surface-raised)] px-4 py-2.5 text-xs font-semibold text-[var(--accent)] shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">

@@ -241,8 +241,10 @@ export default function SettingsPage() {
             </button>
           </div>
         </section>
-        <WorkspaceFooter />
       </div>
+
+      {/* Footer */}
+      <WorkspaceFooter />
     </main>
   );
 }
