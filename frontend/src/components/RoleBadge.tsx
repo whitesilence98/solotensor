@@ -87,6 +87,17 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
     icon: Sparkles,
     description: "SoloTensor Creator • Daily Energy Pool & Generation Enclave",
   },
+  user: {
+    label: "USER",
+    shortLabel: "USER",
+    classes:
+      "border-neutral-700/80 bg-neutral-900/80 text-neutral-300 ring-1 ring-inset ring-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+    subtleClasses:
+      "border-neutral-800 bg-neutral-950/60 text-neutral-400 ring-1 ring-inset ring-white/[0.02]",
+    iconClasses: "text-neutral-400",
+    icon: Sparkles,
+    description: "Standard User • Generation & Community Participation",
+  },
   guest: {
     label: "VISITOR",
     shortLabel: "GUEST",

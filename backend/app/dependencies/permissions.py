@@ -12,23 +12,48 @@ from ..services.rbac_service import RBACService, get_rbac_service
 
 
 class RequirePermission:
-    """FastAPI dependency enforcing a specific permission codename."""
+    """FastAPI dependency enforcing one or more permission codenames."""
 
-    def __init__(self, permission: str) -> None:
-        self.permission = permission
+    def __init__(self, *permissions: str) -> None:
+        self.permissions = permissions
+        self.permission = permissions[0] if permissions else ""
 
     async def __call__(
         self,
         user: UserResponse = Depends(get_current_user),
         rbac: RBACService = Depends(get_rbac_service),
     ) -> UserResponse:
-        has_perm = await rbac.has_permission(user.id, self.permission)
-        if not has_perm:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"PERMISSION_DENIED: Requires '{self.permission}'",
-            )
-        return user
+        for perm in self.permissions:
+            if await rbac.has_permission(user.id, perm):
+                return user
+        if len(self.permissions) == 1:
+            detail = f"PERMISSION_DENIED: Requires '{self.permission}'"
+        else:
+            detail = f"PERMISSION_DENIED: Requires one of {list(self.permissions)}"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=detail,
+        )
+
+
+class RequireAnyPermission:
+    """FastAPI dependency enforcing at least one of the specified permissions."""
+
+    def __init__(self, *permissions: str) -> None:
+        self.permissions = permissions
+
+    async def __call__(
+        self,
+        user: UserResponse = Depends(get_current_user),
+        rbac: RBACService = Depends(get_rbac_service),
+    ) -> UserResponse:
+        for perm in self.permissions:
+            if await rbac.has_permission(user.id, perm):
+                return user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"PERMISSION_DENIED: Requires one of {list(self.permissions)}",
+        )
 
 
 class RequireOwnerOrPermission:

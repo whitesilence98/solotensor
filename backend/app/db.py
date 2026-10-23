@@ -2273,6 +2273,29 @@ class Database:
             "created_at": now,
         }
 
+    def add_notification(
+        self,
+        user_id: str,
+        title: str,
+        message: str,
+        category: str = "system",
+        type: str = "general",
+        actor_id: Optional[str] = None,
+        link: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Insert and return a new notification record (alias for create_notification)."""
+        return self.create_notification(
+            user_id=user_id,
+            title=title,
+            message=message,
+            category=category,
+            type=type,
+            actor_id=actor_id,
+            link=link,
+            metadata=metadata,
+        )
+
     def get_notification_by_id(self, notification_id: str) -> Optional[dict[str, Any]]:
         """Fetch a single notification by ID with actor info joined."""
         with self.get_connection() as conn:

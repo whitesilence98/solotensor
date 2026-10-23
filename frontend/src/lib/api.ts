@@ -442,87 +442,15 @@ export function getSecondsUntilMidnight(): number {
 }
 
 export type UserRole =
-  | "guest"
-  | "creator"
-  | "pro_creator"
-  | "verified_creator"
+  | "admin"
   | "moderator"
-  | "admin";
+  | "verified_creator"
+  | "pro_creator"
+  | "creator"
+  | "user"
+  | "guest";
 
-export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
-  guest: [],
-  creator: [
-    "generation:create_standard",
-    "generation:delete_own",
-    "model:publish",
-    "model:download_weights",
-    "model:edit_own",
-    "model:delete_own",
-    "tool:execute",
-    "tool:publish",
-    "tool:delete_own",
-    "credits:claim_daily",
-    "moderation:flag_content",
-  ],
-  pro_creator: [
-    "generation:create_standard",
-    "generation:create_pro",
-    "generation:create_private",
-    "generation:batch_multirun",
-    "generation:delete_own",
-    "model:publish",
-    "model:download_weights",
-    "model:edit_own",
-    "model:delete_own",
-    "tool:execute",
-    "tool:publish",
-    "tool:delete_own",
-    "credits:claim_daily",
-    "credits:manage_billing",
-    "moderation:flag_content",
-  ],
-  verified_creator: [
-    "generation:create_standard",
-    "generation:create_pro",
-    "generation:create_private",
-    "generation:batch_multirun",
-    "generation:delete_own",
-    "model:publish",
-    "model:download_weights",
-    "model:edit_own",
-    "model:delete_own",
-    "model:verified_badge",
-    "tool:execute",
-    "tool:publish",
-    "tool:delete_own",
-    "credits:claim_daily",
-    "credits:transfer",
-    "credits:manage_billing",
-    "moderation:flag_content",
-  ],
-  moderator: [
-    "generation:create_standard",
-    "generation:create_pro",
-    "generation:create_private",
-    "generation:batch_multirun",
-    "generation:delete_own",
-    "generation:delete_any",
-    "model:publish",
-    "model:download_weights",
-    "model:edit_own",
-    "model:edit_any",
-    "model:delete_own",
-    "model:delete_any",
-    "tool:execute",
-    "tool:publish",
-    "tool:delete_own",
-    "tool:delete_any",
-    "credits:claim_daily",
-    "moderation:flag_content",
-    "moderation:review_queue",
-    "moderation:ban_user",
-    "moderation:inspect_telemetry",
-  ],
+export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   admin: [
     "generation:create_standard",
     "generation:create_pro",
@@ -530,12 +458,14 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "generation:batch_multirun",
     "generation:delete_own",
     "generation:delete_any",
+    "generation:complete_any",
     "model:publish",
     "model:download_weights",
     "model:edit_own",
     "model:edit_any",
     "model:delete_own",
     "model:delete_any",
+    "model:install_vault",
     "tool:execute",
     "tool:publish",
     "tool:delete_own",
@@ -548,12 +478,93 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "moderation:review_queue",
     "moderation:ban_user",
     "moderation:inspect_telemetry",
-    "admin:full_access",
     "agent:dispatch_jobs",
     "agent:sync_models",
     "agent:audit_safety",
   ],
+  moderator: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "moderation:flag_content",
+    "generation:delete_any",
+    "model:edit_any",
+    "model:delete_any",
+    "model:install_vault",
+    "tool:delete_any",
+    "moderation:review_queue",
+    "moderation:ban_user",
+    "moderation:inspect_telemetry",
+  ],
+  verified_creator: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "moderation:flag_content",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "credits:manage_billing",
+  ],
+  pro_creator: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "moderation:flag_content",
+    "generation:create_pro",
+    "generation:create_private",
+    "generation:batch_multirun",
+    "credits:manage_billing",
+  ],
+  creator: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "model:publish",
+    "model:download_weights",
+    "model:edit_own",
+    "model:delete_own",
+    "tool:execute",
+    "tool:publish",
+    "tool:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "moderation:flag_content",
+  ],
+  user: [
+    "generation:create_standard",
+    "generation:delete_own",
+    "credits:claim_daily",
+    "credits:transfer",
+    "moderation:flag_content",
+  ],
+  guest: [],
 };
+
+export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = DEFAULT_ROLE_PERMISSIONS;
 
 export function normalizeRoleName(role?: string | null): UserRole {
   if (!role) return "creator";
@@ -562,6 +573,7 @@ export function normalizeRoleName(role?: string | null): UserRole {
   if (r === "verified" || r === "verified_creator" || r === "author") return "verified_creator";
   if (r === "moderator" || r === "mod") return "moderator";
   if (r === "admin" || r === "administrator" || r === "staff") return "admin";
+  if (r === "user" || r === "standard") return "user";
   if (r === "guest" || r === "anonymous") return "guest";
   return "creator";
 }
@@ -635,10 +647,28 @@ export interface RegisterPayload {
   displayName?: string;
 }
 
+export interface ErrorDetail {
+  loc?: (string | number)[];
+  msg: string;
+  type?: string;
+}
+
+export interface ErrorEnvelope {
+  detail: string | ErrorDetail[] | Record<string, unknown>;
+  status_code?: number;
+}
+
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  public detail?: string | ErrorDetail[] | Record<string, unknown>;
+
+  constructor(
+    public status: number,
+    message: string,
+    detail?: string | ErrorDetail[] | Record<string, unknown>
+  ) {
     super(message);
     this.name = "ApiError";
+    this.detail = detail;
   }
 }
 
@@ -728,8 +758,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (!resp.ok) {
+    let rawDetail: any = undefined;
+    try {
+      const cloned = await resp.clone().json();
+      rawDetail = cloned?.detail ?? cloned?.message;
+    } catch {
+      // non-JSON error
+    }
     const message = await parseErrorResponse(resp, resp.statusText);
-    throw new ApiError(resp.status, message);
+    throw new ApiError(resp.status, message, rawDetail);
   }
   if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
@@ -883,9 +920,47 @@ export interface PublicModelSummary {
 
 export type ModerationTargetType = "model" | "post" | "comment" | "user";
 
+export interface ContentFlagCreateRequest {
+  target_type: ModerationTargetType | string;
+  target_id: string;
+  reason: string;
+  details?: string;
+}
+
+export interface ContentFlagResponse {
+  id: string;
+  user_id?: string | null;
+  target_type: ModerationTargetType | string;
+  target_id: string;
+  reason: string;
+  status: "pending" | "resolved" | "dismissed" | string;
+  resolution_notes?: string | null;
+  resolved_by?: string | null;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface ContentFlagResolveRequest {
+  flag_id?: string | null;
+  target_id?: string | null;
+  action?: string | null;
+  status?: "resolved" | "dismissed";
+  resolution_notes?: string | null;
+  notes?: string | null;
+}
+
+export interface ModerationQueueResponse {
+  items: ContentFlagResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  has_more: boolean;
+}
+
 export interface ModerationQueueItem {
   id: string;
-  target_type: ModerationTargetType;
+  target_type: ModerationTargetType | string;
   target_id: string;
   title: string;
   preview_url: string | null;
@@ -893,12 +968,16 @@ export interface ModerationQueueItem {
   author_role?: string;
   reporter_username: string;
   reason: string;
-  details?: string;
+  details?: string | null;
   flag_count: number;
   created_at: string;
-  status: "pending" | "resolved" | "dismissed";
+  status: "pending" | "resolved" | "dismissed" | string;
   severity: "low" | "medium" | "high" | "critical";
   tags?: string[];
+  user_id?: string | null;
+  resolution_notes?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface SecurityAuditLogEntry {
@@ -909,16 +988,22 @@ export interface SecurityAuditLogEntry {
   resource_type: string;
   resource_id: string;
   details: string;
-  ip_address?: string;
+  ip_address?: string | null;
   created_at: string;
 }
 
+export interface SecurityAuditLogsResponse {
+  items: SecurityAuditLogEntry[];
+  total: number;
+}
+
 export interface ModerationActionPayload {
-  target_type: ModerationTargetType;
+  target_type: ModerationTargetType | string;
   target_id: string;
-  action: "approve" | "hide" | "toggle_nsfw" | "takedown" | "ban_user";
+  action: "approve" | "hide" | "toggle_nsfw" | "takedown" | "ban_user" | "resolved" | "dismissed" | string;
   reason?: string;
   notes?: string;
+  feedback_notes?: string;
 }
 
 export interface ModelInstallResponse {
@@ -933,23 +1018,25 @@ export interface ModelInstallResponse {
   sha256: string;
 }
 
-export type ModelReviewActionType = "approve" | "reject" | "request_changes";
+export type ModelReviewAction = "approve" | "reject" | "request_changes";
+export type ModelReviewActionType = ModelReviewAction;
 
 export interface ModelReviewRequest {
-  action: ModelReviewActionType;
-  notes?: string;
+  action: ModelReviewAction;
+  notes?: string | null;
+  feedback_notes?: string | null;
   install_to_comfy?: boolean;
-  version_id?: string;
-  file_id?: string;
+  version_id?: string | null;
+  file_id?: string | null;
 }
 
 export interface ModelReviewResponse {
   model_id: string;
   moderation_status: ModelModerationStatus;
-  moderation_notes: string | null;
+  moderation_notes?: string | null;
   action_taken: string;
   installed: boolean;
-  installed_file: string | null;
+  installed_file?: string | null;
   reviewed_at: string;
 }
 
@@ -1141,6 +1228,10 @@ export const api = {
 
   async installModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
     return request<ModelInstallResponse>(`/api/v1/models/public/${encodeURIComponent(modelId)}/versions/${encodeURIComponent(versionId)}/files/${encodeURIComponent(fileId)}/install`, { method: "POST" });
+  },
+
+  async installPublicModelFile(modelId: string, versionId: string, fileId: string): Promise<ModelInstallResponse> {
+    return this.installModelFile(modelId, versionId, fileId);
   },
 
   async listLocalModels(query = "", category?: string): Promise<LocalModelListResponse> {
@@ -1859,6 +1950,16 @@ export const api = {
     }
   },
 
+  async reviewModelSubmission(
+    modelId: string,
+    payload: ModelReviewRequest
+  ): Promise<ModelReviewResponse> {
+    return this.reviewModelPublication(modelId, {
+      ...payload,
+      notes: payload.notes || payload.feedback_notes,
+    });
+  },
+
   async reviewModelPublication(
     modelId: string,
     payload: ModelReviewRequest
@@ -1896,6 +1997,21 @@ export const api = {
     }
   },
 
+  async takeDownAsset(
+    targetType: ModerationTargetType | string,
+    targetId: string,
+    reason?: string,
+    notes?: string
+  ): Promise<{ success: boolean; message: string }> {
+    return this.takeModerationAction({
+      target_type: targetType as ModerationTargetType,
+      target_id: targetId,
+      action: "takedown",
+      reason,
+      notes: notes || reason || "Asset taken down by moderator",
+    });
+  },
+
   async takeModerationAction(payload: ModerationActionPayload): Promise<{ success: boolean; message: string }> {
     try {
       const res = await request<{ id: string; status: string }>("/api/v1/moderation/resolve", {
@@ -1919,9 +2035,27 @@ export const api = {
     }
   },
 
-  async getSecurityAuditLogs(): Promise<SecurityAuditLogEntry[]> {
+  async getSecurityAuditLogs(
+    paramsOrLimit?: { limit?: number; offset?: number; action?: string; resource_type?: string } | number,
+    offset?: number,
+    action?: string,
+    resourceType?: string
+  ): Promise<SecurityAuditLogEntry[]> {
     try {
-      const res = await request<SecurityAuditLogEntry[]>("/api/v1/moderation/audit-logs");
+      const search = new URLSearchParams();
+      if (typeof paramsOrLimit === "object" && paramsOrLimit !== null) {
+        if (paramsOrLimit.limit) search.set("limit", String(paramsOrLimit.limit));
+        if (paramsOrLimit.offset) search.set("offset", String(paramsOrLimit.offset));
+        if (paramsOrLimit.action) search.set("action", paramsOrLimit.action);
+        if (paramsOrLimit.resource_type) search.set("resource_type", paramsOrLimit.resource_type);
+      } else {
+        if (typeof paramsOrLimit === "number") search.set("limit", String(paramsOrLimit));
+        if (typeof offset === "number") search.set("offset", String(offset));
+        if (action) search.set("action", action);
+        if (resourceType) search.set("resource_type", resourceType);
+      }
+      const qs = search.toString();
+      const res = await request<SecurityAuditLogEntry[]>(`/api/v1/moderation/audit-logs${qs ? `?${qs}` : ""}`);
       return res;
     } catch (err) {
       if (
@@ -1935,13 +2069,16 @@ export const api = {
     }
   },
 
-  async flagContent(targetType: string, targetId: string, reason: string, details?: string): Promise<{ success: boolean; message: string }> {
+  async flagContent(targetType: string, targetId: string, reason: string, details?: string): Promise<{ success: boolean; message: string; id?: string }> {
     try {
-      const res = await request<{ success: boolean; message: string }>("/api/moderation/flag", {
+      const res = await request<ContentFlagResponse | { success: boolean; message: string }>("/api/v1/moderation/flag", {
         method: "POST",
         body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details }),
       });
-      return res;
+      if (res && "id" in res) {
+        return { success: true, message: "Content report submitted successfully.", id: res.id };
+      }
+      return { success: true, message: (res as any)?.message || "Content report submitted successfully." };
     } catch (err) {
       if (
         (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||

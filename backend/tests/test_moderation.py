@@ -161,6 +161,8 @@ class ModerationAndVaultEndpointsTests(unittest.TestCase):
         set_auth_provider(None)
         set_credit_service(None)
         set_rbac_service(None)
+        from app.services.notification_service import set_notification_service
+        set_notification_service(None)
         self.temp_dir.cleanup()
 
     def _create_public_model_with_file(self) -> tuple[str, str, str]:
@@ -514,6 +516,207 @@ class ModerationAndVaultEndpointsTests(unittest.TestCase):
         logs_admin = resp_admin.json()
         self.assertIsInstance(logs_admin, list)
         self.assertEqual(len(logs_v1), len(logs_admin))
+
+
+
+    # --- 4. Detailed Feedback Notes and Notification Verification Tests ---
+
+    def test_review_model_records_feedback_notes_and_notifies_author(self) -> None:
+        """Verify POST /api/v1/moderation/models/{id}/review supports feedback_notes,
+        records it in disk and DB, logs to security_audit_logs, and sends notification to author via add_notification."""
+        model_id, version_id, file_id = self._create_public_model_with_file()
+
+        # Submit review using feedback_notes field
+        review_notes = "Submission violates section 4.2 of community guidelines."
+        resp = self.client.post(
+            f"/api/v1/moderation/models/{model_id}/review",
+            headers={"Authorization": f"Bearer {self.mod_token}"},
+            json={
+                "action": "reject",
+                "feedback_notes": review_notes,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["moderation_status"], "rejected")
+        self.assertEqual(data["action_taken"], "reject")
+        self.assertEqual(data["feedback_notes"], review_notes)
+        self.assertEqual(data["moderation_notes"], review_notes)
+
+        # 1. Verify recorded in model disk JSON record
+        record = self.model_service._read(model_id)
+        self.assertEqual(record["feedback_notes"], review_notes)
+        self.assertEqual(record["moderation_notes"], review_notes)
+        self.assertEqual(record["moderation_status"], "rejected")
+
+        # 2. Verify recorded in database models table raw_json
+        with self.db.get_connection() as conn:
+            cursor = conn.execute("SELECT raw_json FROM models WHERE id = ?", (model_id,))
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            db_record = json.loads(row["raw_json"])
+            self.assertEqual(db_record["feedback_notes"], review_notes)
+
+        # 3. Verify security audit log trail
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM security_audit_logs WHERE action = 'model:moderation_reject' AND resource_id = ?",
+                (model_id,),
+            )
+            audit = cursor.fetchone()
+            self.assertIsNotNone(audit)
+            self.assertEqual(audit["actor_id"], self.mod_user.id)
+            details = json.loads(audit["details"])
+            self.assertEqual(details["feedback_notes"], review_notes)
+            self.assertEqual(details["action"], "reject")
+
+        # 4. Verify in-app notification sent to author
+        notifs, total, unread = self.db.get_notifications(user_id=self.creator_user.id)
+        self.assertGreaterEqual(total, 1)
+        author_notif = notifs[0]
+        self.assertEqual(author_notif["category"], "moderation")
+        self.assertEqual(author_notif["type"], "model_rejected")
+        self.assertEqual(author_notif["actor_id"], self.mod_user.id)
+        self.assertIn("violates", author_notif["message"])
+        self.assertEqual(author_notif["metadata"]["feedback_notes"], review_notes)
+
+    def test_review_model_request_changes_records_feedback_and_notifies(self) -> None:
+        """Verify request_changes records feedback_notes and notifies author."""
+        model_id, version_id, file_id = self._create_public_model_with_file()
+
+        feedback = "Please upload high-resolution cover preview and trigger words."
+        resp = self.client.post(
+            f"/api/v1/moderation/models/{model_id}/review",
+            headers={"Authorization": f"Bearer {self.mod_token}"},
+            json={
+                "action": "request_changes",
+                "feedback_notes": feedback,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["moderation_status"], "draft")
+        self.assertEqual(data["feedback_notes"], feedback)
+
+        # Check notification dispatched to author
+        notifs, total, _ = self.db.get_notifications(user_id=self.creator_user.id)
+        self.assertGreaterEqual(total, 1)
+        self.assertEqual(notifs[0]["metadata"]["feedback_notes"], feedback)
+
+    # --- 5. Content Flagging and Queue Verification Tests ---
+
+    def test_content_flag_enforces_permission_and_populates_queue(self) -> None:
+        """Verify POST /api/v1/moderation/flag enforces moderation:flag_content and creates queue entry."""
+        # Unauthenticated request fails
+        unauth_resp = self.client.post(
+            "/api/v1/moderation/flag",
+            json={
+                "target_type": "model",
+                "target_id": "model_flag_test_1",
+                "reason": "Explicit unauthorized upload",
+            },
+        )
+        self.assertEqual(unauth_resp.status_code, 401)
+
+        # Guest user (no moderation:flag_content permission) fails 403
+        guest_user = self.auth.create_user(
+            email="guest_flag@example.com",
+            username="guest_flag_user",
+            password="password123",
+        )
+        with self.db.get_connection() as conn:
+            conn.execute("UPDATE users SET role = ? WHERE id = ?", ("guest", guest_user.id))
+            conn.execute("DELETE FROM user_roles WHERE user_id = ?", (guest_user.id,))
+        self.db.assign_user_role(guest_user.id, "guest")
+        self.rbac.invalidate_user_cache(guest_user.id)
+        guest_user.role = "guest"
+        guest_user.roles = ["guest"]
+        guest_token = self.auth.create_token(guest_user)
+
+        guest_resp = self.client.post(
+            "/api/v1/moderation/flag",
+            headers={"Authorization": f"Bearer {guest_token}"},
+            json={
+                "target_type": "model",
+                "target_id": "model_flag_test_1",
+                "reason": "Test reason",
+            },
+        )
+        self.assertEqual(guest_resp.status_code, 403)
+
+        # Creator with moderation:flag_content succeeds (201 Created)
+        creator_resp = self.client.post(
+            "/api/v1/moderation/flag",
+            headers={"Authorization": f"Bearer {self.creator_token}"},
+            json={
+                "target_type": "model",
+                "target_id": "model_flag_test_1",
+                "reason": "Explicit unauthorized upload",
+            },
+        )
+        self.assertEqual(creator_resp.status_code, 201)
+        flag_data = creator_resp.json()
+        self.assertEqual(flag_data["target_type"], "model")
+        self.assertEqual(flag_data["target_id"], "model_flag_test_1")
+        self.assertEqual(flag_data["status"], "pending")
+        self.assertEqual(flag_data["user_id"], self.creator_user.id)
+        flag_id = flag_data["id"]
+
+        # Verify entry created in moderation report queue (GET /api/v1/moderation/queue)
+        queue_resp = self.client.get(
+            "/api/v1/moderation/queue?status=pending",
+            headers={"Authorization": f"Bearer {self.mod_token}"},
+        )
+        self.assertEqual(queue_resp.status_code, 200)
+        q_data = queue_resp.json()
+        self.assertGreaterEqual(q_data["total"], 1)
+        matching_flags = [f for f in q_data["items"] if f["id"] == flag_id]
+        self.assertEqual(len(matching_flags), 1)
+        self.assertEqual(matching_flags[0]["reason"], "Explicit unauthorized upload")
+
+    # --- 6. Security Audit Logs RBAC Verification Tests ---
+
+    def test_audit_logs_enforces_review_queue_or_admin_full_access(self) -> None:
+        """Verify GET /api/v1/moderation/audit-logs enforces moderation:review_queue or admin:full_access."""
+        # 1. Unauthenticated request -> 401
+        self.assertEqual(self.client.get("/api/v1/moderation/audit-logs").status_code, 401)
+
+        # 2. Creator (no moderation:review_queue or admin:full_access) -> 403
+        resp_creator = self.client.get(
+            "/api/v1/moderation/audit-logs",
+            headers={"Authorization": f"Bearer {self.creator_token}"},
+        )
+        self.assertEqual(resp_creator.status_code, 403)
+
+        # 3. Moderator with moderation:review_queue -> 200 OK
+        resp_mod = self.client.get(
+            "/api/v1/moderation/audit-logs",
+            headers={"Authorization": f"Bearer {self.mod_token}"},
+        )
+        self.assertEqual(resp_mod.status_code, 200)
+        self.assertIsInstance(resp_mod.json(), list)
+
+        # 4. User possessing admin:full_access -> 200 OK
+        full_access_user = self.auth.create_user(
+            email="fulladmin@example.com",
+            username="fulladminuser",
+            password="password123",
+        )
+        # Create a custom role that grants only admin:full_access
+        with self.db.get_connection() as conn:
+            conn.execute("INSERT OR IGNORE INTO roles (name, display_name) VALUES ('custom_full_admin', 'Custom Admin');")
+            conn.execute("INSERT OR IGNORE INTO permissions (codename, category, description) VALUES ('admin:full_access', 'admin', 'Full platform access');")
+            conn.execute("INSERT OR IGNORE INTO role_permissions (role_name, permission_codename) VALUES ('custom_full_admin', 'admin:full_access');")
+        self.db.assign_user_role(full_access_user.id, "custom_full_admin")
+        self.rbac.invalidate_user_cache(full_access_user.id)
+        full_access_token = self.auth.create_token(full_access_user)
+
+        resp_full = self.client.get(
+            "/api/v1/moderation/audit-logs",
+            headers={"Authorization": f"Bearer {full_access_token}"},
+        )
+        self.assertEqual(resp_full.status_code, 200)
+        self.assertIsInstance(resp_full.json(), list)
 
 
 if __name__ == "__main__":

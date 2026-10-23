@@ -1116,19 +1116,45 @@ class ModelReviewRequest(BaseModel):
 
     action: ModelReviewAction
     notes: Optional[str] = Field(None, max_length=2000)
+    feedback_notes: Optional[str] = Field(None, max_length=2000)
     install_to_comfy: bool = False
     version_id: Optional[str] = None
     file_id: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def unify_notes(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            notes = data.get("notes")
+            feedback = data.get("feedback_notes")
+            if notes is None and feedback is not None:
+                data["notes"] = feedback
+            elif feedback is None and notes is not None:
+                data["feedback_notes"] = notes
+        return data
 
 
 class ModelReviewResponse(BaseModel):
     model_id: str
     moderation_status: ModelModerationStatus
     moderation_notes: Optional[str] = None
+    feedback_notes: Optional[str] = None
     action_taken: str
     installed: bool = False
     installed_file: Optional[str] = None
     reviewed_at: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_feedback(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            notes = data.get("moderation_notes")
+            feedback = data.get("feedback_notes")
+            if feedback is None and notes is not None:
+                data["feedback_notes"] = notes
+            elif notes is None and feedback is not None:
+                data["moderation_notes"] = feedback
+        return data
 
 
 class ModelPendingReviewItem(BaseModel):
@@ -1273,6 +1299,132 @@ class UserLoginRequest(BaseModel):
         extra_ident = (self.__pydantic_extra__ or {}).get("emailOrUsername") if hasattr(self, "__pydantic_extra__") else None
         val = self.email_or_username or self.emailOrUsername or extra_ident or self.username or self.email or ""
         return val.strip()
+
+
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MODERATOR = "moderator"
+    VERIFIED_CREATOR = "verified_creator"
+    PRO_CREATOR = "pro_creator"
+    CREATOR = "creator"
+    USER = "user"
+    GUEST = "guest"
+
+
+DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "admin": [
+        "generation:create_standard",
+        "generation:create_pro",
+        "generation:create_private",
+        "generation:batch_multirun",
+        "generation:delete_own",
+        "generation:delete_any",
+        "generation:complete_any",
+        "model:publish",
+        "model:download_weights",
+        "model:edit_own",
+        "model:edit_any",
+        "model:delete_own",
+        "model:delete_any",
+        "model:install_vault",
+        "tool:execute",
+        "tool:publish",
+        "tool:delete_own",
+        "tool:delete_any",
+        "credits:claim_daily",
+        "credits:transfer",
+        "credits:manage_billing",
+        "credits:grant_manual",
+        "moderation:flag_content",
+        "moderation:review_queue",
+        "moderation:ban_user",
+        "moderation:inspect_telemetry",
+        "agent:dispatch_jobs",
+        "agent:sync_models",
+        "agent:audit_safety",
+    ],
+    "moderator": [
+        "generation:create_standard",
+        "generation:delete_own",
+        "model:publish",
+        "model:download_weights",
+        "model:edit_own",
+        "model:delete_own",
+        "tool:execute",
+        "tool:publish",
+        "tool:delete_own",
+        "credits:claim_daily",
+        "credits:transfer",
+        "moderation:flag_content",
+        "generation:delete_any",
+        "model:edit_any",
+        "model:delete_any",
+        "model:install_vault",
+        "tool:delete_any",
+        "moderation:review_queue",
+        "moderation:ban_user",
+        "moderation:inspect_telemetry",
+    ],
+    "verified_creator": [
+        "generation:create_standard",
+        "generation:delete_own",
+        "model:publish",
+        "model:download_weights",
+        "model:edit_own",
+        "model:delete_own",
+        "tool:execute",
+        "tool:publish",
+        "tool:delete_own",
+        "credits:claim_daily",
+        "credits:transfer",
+        "moderation:flag_content",
+        "generation:create_pro",
+        "generation:create_private",
+        "generation:batch_multirun",
+        "credits:manage_billing",
+    ],
+    "pro_creator": [
+        "generation:create_standard",
+        "generation:delete_own",
+        "model:publish",
+        "model:download_weights",
+        "model:edit_own",
+        "model:delete_own",
+        "tool:execute",
+        "tool:publish",
+        "tool:delete_own",
+        "credits:claim_daily",
+        "credits:transfer",
+        "moderation:flag_content",
+        "generation:create_pro",
+        "generation:create_private",
+        "generation:batch_multirun",
+        "credits:manage_billing",
+    ],
+    "creator": [
+        "generation:create_standard",
+        "generation:delete_own",
+        "model:publish",
+        "model:download_weights",
+        "model:edit_own",
+        "model:delete_own",
+        "tool:execute",
+        "tool:publish",
+        "tool:delete_own",
+        "credits:claim_daily",
+        "credits:transfer",
+        "moderation:flag_content",
+    ],
+    "user": [
+        "generation:create_standard",
+        "generation:delete_own",
+        "credits:claim_daily",
+        "credits:transfer",
+        "moderation:flag_content",
+    ],
+    "guest": [],
+}
 
 
 class UserResponse(BaseModel):
@@ -1462,12 +1614,70 @@ class ApiKeyListItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ModerationTargetType(str, Enum):
+    MODEL = "model"
+    POST = "post"
+    COMMENT = "comment"
+    USER = "user"
+
+
+class ModerationActionType(str, Enum):
+    APPROVE = "approve"
+    HIDE = "hide"
+    TOGGLE_NSFW = "toggle_nsfw"
+    TAKEDOWN = "takedown"
+    BAN_USER = "ban_user"
+
+
+class ModerationActionPayload(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    target_type: str
+    target_id: str
+    action: str
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    feedback_notes: Optional[str] = None
+
+
+class ModerationQueueItem(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    id: str
+    user_id: Optional[str] = None
+    target_type: str
+    target_id: str
+    reason: str
+    status: str = "pending"
+    resolution_notes: Optional[str] = None
+    resolved_by: Optional[str] = None
+    created_at: str
+    resolved_at: Optional[str] = None
+    title: Optional[str] = None
+    preview_url: Optional[str] = None
+    author_username: Optional[str] = None
+    author_role: Optional[str] = None
+    reporter_username: Optional[str] = None
+    details: Optional[str] = None
+    flag_count: int = 1
+    severity: str = "medium"
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("created_at", "resolved_at", mode="before")
+    @classmethod
+    def serialize_datetime(cls, v: Any) -> Optional[str]:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else None
+
+
 class ContentFlagCreateRequest(BaseModel):
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "ignore"}
 
     target_type: str = Field(..., min_length=1, max_length=50)
     target_id: str = Field(..., min_length=1, max_length=100)
     reason: str = Field(..., min_length=1, max_length=1000)
+    details: Optional[str] = Field(None, max_length=2000)
 
 
 class ContentFlagResponse(BaseModel):
@@ -1491,11 +1701,28 @@ class ContentFlagResponse(BaseModel):
 
 
 class ContentFlagResolveRequest(BaseModel):
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "ignore"}
 
     flag_id: Optional[str] = None
+    target_id: Optional[str] = None
+    action: Optional[str] = None
     status: Literal["resolved", "dismissed"] = "resolved"
     resolution_notes: Optional[str] = Field(None, max_length=2000)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_fallbacks(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            res = dict(data)
+            if not res.get("flag_id") and res.get("target_id"):
+                res["flag_id"] = res["target_id"]
+            if not res.get("resolution_notes") and res.get("notes"):
+                res["resolution_notes"] = res["notes"]
+            if not res.get("status") and res.get("action"):
+                res["status"] = "resolved" if res["action"] in ("approve", "resolved") else "dismissed"
+            return res
+        return data
 
 
 class ModerationQueueResponse(BaseModel):
@@ -1527,6 +1754,20 @@ class SecurityAuditLogEntry(BaseModel):
             return v.isoformat()
         return str(v) if v is not None else None
 
+
+
+class ErrorDetail(BaseModel):
+    loc: Optional[list[str | int]] = None
+    msg: str
+    type: Optional[str] = None
+
+
+class HTTPErrorEnvelope(BaseModel):
+    detail: str | list[ErrorDetail] | dict[str, Any]
+    status_code: Optional[int] = None
+
+
+ErrorResponse = HTTPErrorEnvelope
 
 class SecurityAuditLogsResponse(BaseModel):
     items: list[SecurityAuditLogEntry]

@@ -19,8 +19,39 @@ class NotificationService:
     """Service layer managing in-app notifications and fan-out dispatch."""
 
     def __init__(self, db: Optional[Database] = None) -> None:
-        self.db: Database = db or get_db()
+        self._db: Optional[Database] = db
         self._unread_cache: dict[str, tuple[float, int]] = {}
+
+    @property
+    def db(self) -> Database:
+        return self._db if self._db is not None else get_db()
+
+    @db.setter
+    def db(self, val: Optional[Database]) -> None:
+        self._db = val
+
+    def add_notification(
+        self,
+        user_id: str,
+        title: str,
+        message: str,
+        category: str = "system",
+        type: str = "general",
+        actor_id: Optional[str] = None,
+        link: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Dispatch a single in-app notification to a user (alias for notify_user)."""
+        return self.notify_user(
+            user_id=user_id,
+            title=title,
+            message=message,
+            category=category,
+            type=type,
+            actor_id=actor_id,
+            link=link,
+            metadata=metadata,
+        )
 
     def notify_user(
         self,
@@ -36,6 +67,17 @@ class NotificationService:
         """Dispatch a single in-app notification to a specific user."""
         self._unread_cache.pop(user_id, None)
         try:
+            if hasattr(self.db, "add_notification"):
+                return self.db.add_notification(
+                    user_id=user_id,
+                    title=title,
+                    message=message,
+                    category=category,
+                    type=type,
+                    actor_id=actor_id,
+                    link=link,
+                    metadata=metadata or {},
+                )
             return self.db.create_notification(
                 user_id=user_id,
                 title=title,

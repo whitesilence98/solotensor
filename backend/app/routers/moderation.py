@@ -19,8 +19,12 @@ from ..schemas import (
     ModelPendingReviewItem,
     ModelPendingReviewQueueResponse,
     ModelReviewRequest,
+    ModelReviewAction,
     ModelReviewResponse,
+    ModerationActionPayload,
+    ModerationQueueItem,
     ModerationQueueResponse,
+    UserRole,
     SecurityAuditLogEntry,
     UserResponse,
 )
@@ -63,7 +67,7 @@ async def submit_content_flag(
         action="moderation:flag_created",
         resource_type=req.target_type,
         resource_id=req.target_id,
-        details={"flag_id": flag_dict["id"], "reason": req.reason},
+        details={"flag_id": flag_dict["id"], "reason": req.reason, **({"details": req.details} if req.details else {})},
     )
 
     try:
@@ -139,7 +143,7 @@ async def resolve_content_flag(
     rbac: RBACService = Depends(get_rbac_service),
 ) -> ContentFlagResponse:
     """Resolve or dismiss a report with resolution notes and audit logging."""
-    target_id = flag_id or req.flag_id
+    target_id = flag_id or req.flag_id or getattr(req, 'target_id', None)
     if not target_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,7 +154,7 @@ async def resolve_content_flag(
         flag_id=target_id,
         status=req.status,
         resolved_by=user.id,
-        resolution_notes=req.resolution_notes,
+        resolution_notes=req.resolution_notes or getattr(req, 'notes', None),
     )
     if not resolved:
         raise HTTPException(
@@ -223,14 +227,18 @@ async def review_model_endpoint(
     model_storage: ModelService = Depends(get_model_service),
 ) -> ModelReviewResponse:
     """Submit a moderation review decision for a model."""
+    effective_notes = req.notes or req.feedback_notes
     try:
         res = model_storage.review_model(
             model_id=model_id,
             action=req.action.value,
-            notes=req.notes,
+            notes=effective_notes,
+            feedback_notes=effective_notes,
             install_to_comfy=req.install_to_comfy,
             version_id=req.version_id,
             file_id=req.file_id,
+            reviewer_id=user.id,
+            actor_id=user.id,
         )
     except ModelNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -243,7 +251,8 @@ async def review_model_endpoint(
 
     details = {
         "action": req.action.value,
-        "notes": req.notes,
+        "notes": effective_notes,
+        "feedback_notes": effective_notes,
         "install_to_comfy": req.install_to_comfy,
         "version_id": req.version_id,
         "file_id": req.file_id,
@@ -280,7 +289,7 @@ async def get_security_audit_logs(
     offset: int = Query(0, ge=0),
     action: Optional[str] = Query(None),
     resource_type: Optional[str] = Query(None),
-    user: UserResponse = Depends(RequirePermission("moderation:review_queue")),
+    user: UserResponse = Depends(RequirePermission("moderation:review_queue", "admin:full_access")),
     db: Database = Depends(get_db),
 ) -> list[SecurityAuditLogEntry]:
     """Inspect sensitive administrative and moderation security audit logs."""

@@ -12,6 +12,7 @@ import time
 from typing import Any, Optional, Set
 
 from ..db import Database, get_db
+from ..schemas import DEFAULT_ROLE_PERMISSIONS, UserRole
 
 logger = logging.getLogger("solotensor.rbac")
 
@@ -21,11 +22,13 @@ TIER_MAP = {
     "verified_creator": 3,
     "pro_creator": 2,
     "creator": 1,
+    "user": 1,
     "guest": 0,
 }
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
     "admin": [
+        "admin:full_access",
         "generation:create_standard",
         "generation:create_pro",
         "generation:create_private",
@@ -186,7 +189,7 @@ class RBACService:
     async def has_permission(self, user_id: str, permission: str) -> bool:
         """Check whether a user possesses the requested permission codename."""
         perms = await self.get_user_permissions(user_id)
-        if "*" in perms or permission in perms:
+        if "*" in perms or "admin:full_access" in perms or permission in perms:
             return True
         roles = await self.get_user_roles(user_id)
         if "admin" in roles:

@@ -104,14 +104,14 @@ export default function UserNavProfile() {
           {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
           <span
             aria-hidden="true"
-            className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#38bdf8] border border-[#0c0e12] shadow-[0_0_6px_#38bdf8] z-20"
+            className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sky-400 border border-[var(--ground)] shadow-[0_0_6px_rgba(56,189,248,0.8)] z-20"
           />
           <span
             aria-hidden="true"
-            className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#d5f06f] border border-[#0c0e12] shadow-[0_0_6px_#d5f06f] z-20"
+            className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_rgba(213,240,111,0.8)] z-20"
           />
           {/* Tooltip on desktop */}
-          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[#15171e] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider uppercase text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
+          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider uppercase text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
             Sign In
           </span>
         </button>
@@ -144,16 +144,16 @@ export default function UserNavProfile() {
         {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
         <span
           aria-hidden="true"
-          className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#38bdf8] border border-[#0c0e12] shadow-[0_0_6px_#38bdf8] z-20"
+          className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sky-400 border border-[var(--ground)] shadow-[0_0_6px_rgba(56,189,248,0.8)] z-20"
         />
         <span
           aria-hidden="true"
-          className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#d5f06f] border border-[#0c0e12] shadow-[0_0_6px_#d5f06f] z-20"
+          className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_rgba(213,240,111,0.8)] z-20"
         />
 
         {/* Tooltip on desktop when menu is closed */}
         {!menuOpen && (
-          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[#15171e] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
+          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
             {user?.displayName || user?.username}
           </span>
         )}
@@ -216,66 +216,49 @@ export default function UserNavProfile() {
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1">
-              <button
-                type="button"
-                disabled={switchingRole}
-                onClick={async () => {
-                  setSwitchingRole(true);
-                  try {
-                    await switchRoleDemo("creator");
-                  } finally {
-                    setSwitchingRole(false);
-                  }
-                }}
-                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
-                  primaryRole === "creator"
-                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                }`}
-                title="Switch to Creator (@cyber_artisan)"
-              >
-                Creator
-              </button>
-              <button
-                type="button"
-                disabled={switchingRole}
-                onClick={async () => {
-                  setSwitchingRole(true);
-                  try {
-                    await switchRoleDemo("moderator");
-                  } finally {
-                    setSwitchingRole(false);
-                  }
-                }}
-                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
-                  primaryRole === "moderator"
-                    ? "bg-[#0284c7] text-white"
-                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[#38bdf8]"
-                }`}
-                title="Switch to Moderator (@sentinel_mod)"
-              >
-                Mod
-              </button>
-              <button
-                type="button"
-                disabled={switchingRole}
-                onClick={async () => {
-                  setSwitchingRole(true);
-                  try {
-                    await switchRoleDemo("admin");
-                  } finally {
-                    setSwitchingRole(false);
-                  }
-                }}
-                className={`rounded py-1 font-mono text-[10px] uppercase font-bold transition disabled:opacity-50 ${
-                  primaryRole === "admin"
-                    ? "bg-[#e11d48] text-white"
-                    : "bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[#fb7185]"
-                }`}
-                title="Switch to Admin (@winnguyen282)"
-              >
-                Admin
-              </button>
+              {[
+                { role: "creator" as const, label: "Creator", title: "Standard Creator (@cyber_artisan)" },
+                { role: "pro_creator" as const, label: "Pro VIP", title: "Pro Creator (@neon_architect)" },
+                { role: "verified_creator" as const, label: "Verified", title: "Verified Author (@lora_mastermind)" },
+                { role: "moderator" as const, label: "Mod", title: "Community Moderator (@sentinel_mod)" },
+                { role: "admin" as const, label: "Admin", title: "System Admin (@winnguyen282)" },
+                { role: "guest" as const, label: "Guest", title: "Anonymous Guest Session" },
+              ].map(({ role: r, label, title }) => {
+                const isActive = primaryRole === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    disabled={switchingRole}
+                    onClick={async () => {
+                      setSwitchingRole(true);
+                      try {
+                        await switchRoleDemo(r);
+                      } finally {
+                        setSwitchingRole(false);
+                      }
+                    }}
+                    className={`rounded py-1 px-1 font-mono text-[9px] uppercase font-bold transition disabled:opacity-50 text-center truncate ${
+                      isActive
+                        ? r === "pro_creator"
+                          ? "border border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.2)]"
+                          : r === "verified_creator"
+                          ? "border border-amber-500/40 bg-amber-950/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                          : r === "moderator"
+                          ? "border border-sky-500/40 bg-sky-950/40 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
+                          : r === "admin"
+                          ? "border border-rose-500/40 bg-rose-950/40 text-rose-300 shadow-[0_0_8px_rgba(251,113,133,0.2)]"
+                          : r === "guest"
+                          ? "border border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
+                          : "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--accent)]"
+                        : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]"
+                    }`}
+                    title={title}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

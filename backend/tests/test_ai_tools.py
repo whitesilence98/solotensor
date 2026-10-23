@@ -920,6 +920,150 @@ class ToolApiEndpointTests(unittest.TestCase):
         self.assertEqual(created["controls"][0]["value"], 8.5)
 
 
+    def test_post_tools_rbac_guard_and_attribution(self) -> None:
+        from app.routers.auth import get_current_user
+
+        payload = {
+            "workflow_api": self.workflow,
+            "name": "RBAC Tested Tool",
+            "mode": "text-to-image",
+            "aspect_ratio": "1:1",
+        }
+
+        # 1. Unauthenticated -> 401
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.post("/api/tools", json=payload)
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+        # 2. Authenticated but lacking tool:publish -> 403
+        self.mock_rbac.has_permission = AsyncMock(return_value=False)
+        resp = self.client.post("/api/tools", json=payload)
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("tool:publish", resp.json().get("detail", ""))
+
+        # 3. Authenticated with tool:publish -> 200 with proper user attribution
+        self.mock_rbac.has_permission = AsyncMock(
+            side_effect=lambda uid, perm: perm == "tool:publish"
+        )
+        resp = self.client.post("/api/tools", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        tool_data = resp.json()
+        self.assertEqual(tool_data["user_id"], self.mock_user.id)
+        self.assertEqual(tool_data["author_username"], self.mock_user.username)
+
+    def test_post_tools_create_multipart_rbac_guard_and_attribution(self) -> None:
+        from app.routers.auth import get_current_user
+
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        form_data = {
+            "name": "Multipart RBAC Tool",
+            "mode": "text-to-image",
+            "aspect_ratio": "1:1",
+            "user_id": "spoofed-user-id",  # Attempt to spoof owner
+        }
+
+        # 1. Unauthenticated -> 401
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.post("/api/tools/create", files=files, data=form_data)
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+        # 2. Authenticated but lacking tool:publish -> 403
+        self.mock_rbac.has_permission = AsyncMock(return_value=False)
+        resp = self.client.post("/api/tools/create", files=files, data=form_data)
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("tool:publish", resp.json().get("detail", ""))
+
+        # 3. Authenticated with tool:publish -> 200 with user attribution ignoring spoofed user_id
+        self.mock_rbac.has_permission = AsyncMock(
+            side_effect=lambda uid, perm: perm == "tool:publish"
+        )
+        resp = self.client.post("/api/tools/create", files=files, data=form_data)
+        self.assertEqual(resp.status_code, 200)
+        tool_data = resp.json()
+        self.assertEqual(tool_data["user_id"], self.mock_user.id)
+        self.assertNotEqual(tool_data["user_id"], "spoofed-user-id")
+        self.assertEqual(tool_data["author_username"], self.mock_user.username)
+
+    def test_delete_tool_rbac_ownership_and_moderation(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+
+        # Create tool owned by self.mock_user
+        self.mock_rbac.has_permission = AsyncMock(return_value=True)
+        payload = {
+            "workflow_api": self.workflow,
+            "name": "RBAC Deletion Tool",
+            "mode": "text-to-image",
+            "aspect_ratio": "1:1",
+        }
+        create_resp = self.client.post("/api/tools", json=payload)
+        self.assertEqual(create_resp.status_code, 200)
+        tool_id = create_resp.json()["tool_id"]
+
+        stranger_user = UserResponse(
+            id="stranger-user-id",
+            email="stranger@test.com",
+            username="stranger",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+        moderator_user = UserResponse(
+            id="moderator-user-id",
+            email="moderator@test.com",
+            username="moderator",
+            role="moderator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+
+        # 1. Unauthenticated -> 401
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.delete(f"/api/tools/{tool_id}")
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+        # 2. Stranger without tool:delete_any -> 403 Forbidden
+        app.dependency_overrides[get_current_user] = lambda: stranger_user
+        self.mock_rbac.has_permission = AsyncMock(return_value=False)
+        resp = self.client.delete(f"/api/tools/{tool_id}")
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("Requires ownership or 'tool:delete_any'", resp.json().get("detail", ""))
+
+        # 3. Moderator with tool:delete_any -> 200 OK (Moderator override)
+        app.dependency_overrides[get_current_user] = lambda: moderator_user
+        self.mock_rbac.has_permission = AsyncMock(
+            side_effect=lambda uid, perm: perm == "tool:delete_any"
+        )
+        resp = self.client.delete(f"/api/tools/{tool_id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["deleted"])
+
+        # 4. Re-create and test owner deletion
+        app.dependency_overrides[get_current_user] = lambda: self.mock_user
+        self.mock_rbac.has_permission = AsyncMock(return_value=True)
+        create_resp2 = self.client.post("/api/tools", json=payload)
+        self.assertEqual(create_resp2.status_code, 200)
+        tool_id2 = create_resp2.json()["tool_id"]
+
+        # Owner deletes own tool -> 200 OK
+        resp = self.client.delete(f"/api/tools/{tool_id2}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["deleted"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

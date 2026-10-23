@@ -441,7 +441,55 @@ class ModelServiceTests(unittest.TestCase):
         self.assertEqual(install["category"], "diffusion_models")
         expected_dest = Path(self.comfy.name) / "models" / "diffusion_models" / "unet_upload.safetensors"
         self.assertTrue(expected_dest.is_file())
- 
+
+    def test_install_file_extension_bounds(self) -> None:
+        data = b"dummy weight bytes"
+        uploaded = self.service.add_file(
+            self.model.model_id,
+            self.version.version_id,
+            "test_model.safetensors",
+            data,
+            ModelPrecision.FP16,
+        )
+        file_id = uploaded.versions[0].files[0].file_id
+        self.service.publish(self.model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC), is_moderator=True)
+
+        # Mutate filename in storage definition to invalid extensions
+        rec = self.service._read(self.model.model_id)
+        for invalid_name in ("malicious.exe", "script.sh", "code.py", "payload.bin.bat"):
+            rec["versions"][0]["files"][0]["filename"] = invalid_name
+            self.service._write(rec)
+            with self.assertRaises(ModelError) as cm:
+                self.service.install_file(self.model.model_id, self.version.version_id, file_id)
+            self.assertIn("Unsupported model file type", str(cm.exception))
+
+        # Valid model vault extensions: .safetensors, .sft, .ckpt, .gguf
+        for valid_ext in (".safetensors", ".sft", ".ckpt", ".gguf"):
+            rec["versions"][0]["files"][0]["filename"] = f"model_valid{valid_ext}"
+            self.service._write(rec)
+            res = self.service.install_file(self.model.model_id, self.version.version_id, file_id)
+            self.assertTrue(res["installed"])
+
+    def test_install_file_path_containment(self) -> None:
+        data = b"dummy weights"
+        uploaded = self.service.add_file(
+            self.model.model_id,
+            self.version.version_id,
+            "containment_test.safetensors",
+            data,
+            ModelPrecision.FP16,
+        )
+        file_id = uploaded.versions[0].files[0].file_id
+        self.service.publish(self.model.model_id, ModelPublishRequest(visibility=ModelVisibility.PUBLIC), is_moderator=True)
+
+        rec = self.service._read(self.model.model_id)
+        # Attempt traversal outside category folder
+        for traversal_name in ("../../escaped.safetensors", "../escaped.safetensors", "/absolute/path.safetensors"):
+            rec["versions"][0]["files"][0]["filename"] = traversal_name
+            self.service._write(rec)
+            with self.assertRaises(ModelError):
+                self.service.install_file(self.model.model_id, self.version.version_id, file_id)
+
     def test_create_non_promptable_models_without_presets(self) -> None:
         target_types = [
             CreatorModelType.VAE,

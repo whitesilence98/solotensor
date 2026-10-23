@@ -106,6 +106,12 @@ const ROLE_PALETTES: Record<
     border: "rgba(203, 213, 225, 0.25)",
     badgeName: "Creator",
   },
+  user: {
+    accent: "#cbd5e1", // slate-300
+    glow: "rgba(203, 213, 225, 0.15)",
+    border: "rgba(203, 213, 225, 0.25)",
+    badgeName: "User",
+  },
   guest: {
     accent: "#858e82", // ink-faint
     glow: "rgba(133, 142, 130, 0.15)",

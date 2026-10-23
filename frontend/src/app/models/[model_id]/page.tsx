@@ -37,6 +37,9 @@ import {
   FilePlus,
   ImagePlus,
   Loader2,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
 } from "lucide-react";
 import {
   api,
@@ -198,6 +201,119 @@ export default function PublicModelDetailPage({
   const [sampleActionError, setSampleActionError] = useState<string | null>(null);
   const [sampleToDelete, setSampleToDelete] = useState<string | null>(null);
   const [deletingSample, setDeletingSample] = useState(false);
+
+  // Phase 4: Inline Mod Tools State & Handlers
+  const [showTakedownModal, setShowTakedownModal] = useState(false);
+  const [takedownAction, setTakedownAction] = useState<"reject" | "unlist">("reject");
+  const [takedownFeedback, setTakedownFeedback] = useState("");
+  const [takedownBusy, setTakedownBusy] = useState(false);
+  const [takedownError, setTakedownError] = useState<string | null>(null);
+  const [modToast, setModToast] = useState<string | null>(null);
+  const [togglingMature, setTogglingMature] = useState(false);
+  const [showAuditPopover, setShowAuditPopover] = useState(false);
+
+  const isMature = useMemo(() => {
+    if (!model?.tags) return false;
+    return model.tags.some(
+      (t) => t.toLowerCase() === "mature" || t.toLowerCase() === "nsfw" || t.toLowerCase() === "18+"
+    );
+  }, [model?.tags]);
+
+  const handleTakedownOrUnlist = async () => {
+    if (!model) return;
+    setTakedownBusy(true);
+    setTakedownError(null);
+    try {
+      if (takedownAction === "reject") {
+        await api.reviewModelSubmission(model.model_id, {
+          action: "reject",
+          feedback_notes: takedownFeedback.trim() || undefined,
+          notes: takedownFeedback.trim() || undefined,
+        });
+        setModel((prev) =>
+          prev
+            ? {
+                ...prev,
+                moderation_status: "rejected",
+                moderation_notes: takedownFeedback.trim() || "Rejected by moderator",
+              }
+            : prev
+        );
+        setModToast("Model rejected and removed from public feed.");
+      } else {
+        await api.publishCreatorModel(model.model_id, "Unlisted");
+        setModel((prev) =>
+          prev
+            ? {
+                ...prev,
+                visibility: "Unlisted",
+              }
+            : prev
+        );
+        setModToast("Model visibility set to Unlisted.");
+      }
+      setTimeout(() => setModToast(null), 3500);
+      setShowTakedownModal(false);
+      setTakedownFeedback("");
+    } catch (err) {
+      setTakedownError(err instanceof Error ? err.message : "Failed to execute moderation action");
+    } finally {
+      setTakedownBusy(false);
+    }
+  };
+
+  const handleToggleMature = async () => {
+    if (!model || togglingMature) return;
+    setTogglingMature(true);
+    try {
+      const willBeMature = !isMature;
+      let nextTags = [...(model.tags || [])];
+      if (willBeMature) {
+        if (!nextTags.some((t) => t.toLowerCase() === "mature")) {
+          nextTags.push("mature");
+        }
+      } else {
+        nextTags = nextTags.filter(
+          (t) =>
+            t.toLowerCase() !== "mature" &&
+            t.toLowerCase() !== "nsfw" &&
+            t.toLowerCase() !== "18+"
+        );
+      }
+
+      const updated = await api.updateCreatorModel(model.model_id, {
+        title: model.title,
+        description: model.description,
+        category: model.category,
+        model_type: model.model_type,
+        tags: nextTags,
+        compatibility: model.compatibility,
+        generation: model.generation,
+        permissions: model.permissions,
+        visibility: model.visibility,
+      });
+
+      try {
+        await api.flagContent(
+          "model",
+          model.model_id,
+          willBeMature ? "mature_content_flagged" : "mature_content_cleared",
+          willBeMature ? "Marked as Mature (18+) by moderator" : "Cleared mature tag by moderator"
+        );
+      } catch {
+        /* telemetry callback */
+      }
+
+      setModel(updated);
+      setModToast(willBeMature ? "Content safety: Marked as Mature (18+)" : "Content safety: Cleared Mature flag");
+      setTimeout(() => setModToast(null), 3500);
+    } catch (err) {
+      setModToast(err instanceof Error ? err.message : "Failed to update safety tag");
+      setTimeout(() => setModToast(null), 3500);
+    } finally {
+      setTogglingMature(false);
+    }
+  };
 
   // Phase 4 Handlers
   const handleCreateVersion = async (e: React.FormEvent) => {
@@ -704,7 +820,8 @@ export default function PublicModelDetailPage({
             </div>
           </div>
         </div>
-      </main>
+
+    </main>
     );
   }
 
@@ -878,6 +995,144 @@ export default function PublicModelDetailPage({
                   <span>Delete Model</span>
                 </button>
               </Can>
+
+              {/* Inline [Mod Tools] Toolbar for Moderators & Admins */}
+              {(isAdmin || isMod) && (
+                <div className="relative inline-flex items-center">
+                  <div
+                    role="toolbar"
+                    aria-label="Moderation Tools"
+                    className="flex items-center gap-1 rounded-lg border border-sky-500/35 bg-sky-950/30 p-1 font-mono text-[11px] shadow-[0_0_12px_rgba(56,189,248,0.12)] backdrop-blur-sm"
+                  >
+                    {/* Darkroom Quick Review / Status indicator */}
+                    <Link
+                      href="/admin/moderation"
+                      className="inline-flex items-center gap-1.5 rounded px-2 py-1 font-bold tracking-wider text-sky-300 hover:bg-sky-500/20 hover:text-white transition-colors"
+                      title="Inspect in Moderation Darkroom (/admin/moderation)"
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5 text-sky-400" />
+                      <span className="hidden sm:inline">MOD TOOLS</span>
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          model.moderation_status === "approved"
+                            ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
+                            : model.moderation_status === "pending_review"
+                            ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] animate-pulse"
+                            : model.moderation_status === "rejected"
+                            ? "bg-rose-400 shadow-[0_0_6px_rgba(251,113,133,0.8)]"
+                            : "bg-neutral-400"
+                        }`}
+                        title={`Status: ${model.moderation_status || "approved"}`}
+                      />
+                    </Link>
+
+                    <span className="h-3 w-px bg-sky-500/25" />
+
+                    {/* Content Safety / Mature Tag Toggle */}
+                    <button
+                      type="button"
+                      onClick={handleToggleMature}
+                      disabled={togglingMature}
+                      className={`inline-flex items-center gap-1 rounded px-2 py-1 font-semibold transition-colors disabled:opacity-50 ${
+                        isMature
+                          ? "bg-rose-950/60 text-rose-300 border border-rose-500/40"
+                          : "text-sky-300 hover:bg-sky-500/20 hover:text-white"
+                      }`}
+                      title={
+                        isMature
+                          ? "Marked as Mature (18+) • Click to clear tag"
+                          : "Toggle Mature (18+) Tag"
+                      }
+                    >
+                      <Flame className={`h-3 w-3 ${isMature ? "text-rose-400 fill-rose-400" : "text-sky-400"}`} />
+                      <span>{isMature ? "18+ Mature" : "Tag 18+"}</span>
+                    </button>
+
+                    <span className="h-3 w-px bg-sky-500/25" />
+
+                    {/* Direct Takedown / Unlist */}
+                    <button
+                      type="button"
+                      onClick={() => setShowTakedownModal(true)}
+                      className="inline-flex items-center gap-1 rounded px-2 py-1 font-semibold text-rose-300 hover:bg-rose-950/60 hover:text-rose-200 transition-colors"
+                      title="Direct Takedown or Unlist Model"
+                    >
+                      <ShieldAlert className="h-3 w-3 text-rose-400" />
+                      <span>Takedown</span>
+                    </button>
+
+                    <span className="h-3 w-px bg-sky-500/25" />
+
+                    {/* Quick Audit Trail Popover Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAuditPopover((prev) => !prev)}
+                      aria-expanded={showAuditPopover}
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-sky-300 hover:bg-sky-500/20 hover:text-white transition-colors ${
+                        showAuditPopover ? "bg-sky-500/20 text-white" : ""
+                      }`}
+                      title="View Moderation Audit Trail & Telemetry"
+                    >
+                      <Clock className="h-3 w-3 text-sky-400" />
+                      <span className="text-[10px] hidden md:inline">Audit</span>
+                    </button>
+                  </div>
+
+                  {/* Audit Trail Telemetry Popover */}
+                  {showAuditPopover && (
+                    <div className="absolute right-0 top-full mt-2 z-50 w-72 sm:w-80 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-3.5 shadow-2xl font-mono text-xs animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between border-b border-[var(--line)] pb-2 mb-2.5">
+                        <span className="font-bold text-[var(--ink)] uppercase tracking-wider text-[10px]">
+                          Moderation Telemetry
+                        </span>
+                        <span className="text-[10px] uppercase text-sky-400 font-bold">
+                          {model.moderation_status || "APPROVED"}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-[11px]">
+                        <div className="flex justify-between border-b border-[var(--line)]/50 pb-1">
+                          <span className="text-[var(--ink-faint)]">Visibility:</span>
+                          <span className="text-[var(--ink)] font-bold">{model.visibility}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-[var(--line)]/50 pb-1">
+                          <span className="text-[var(--ink-faint)]">Content Safety:</span>
+                          <span className={isMature ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
+                            {isMature ? "Mature (18+)" : "Standard Safe"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-[var(--line)]/50 pb-1">
+                          <span className="text-[var(--ink-faint)]">Author:</span>
+                          <span className="text-[var(--ink)]">@{model.author_username || model.user_id || "creator"}</span>
+                        </div>
+                        {model.moderation_notes && (
+                          <div className="pt-1">
+                            <span className="text-[var(--ink-faint)] block text-[10px]">Feedback Notes:</span>
+                            <p className="mt-0.5 rounded bg-[var(--surface-sunken)] p-2 text-[var(--ink-soft)] text-[10px] leading-relaxed border border-[var(--line)]">
+                              {model.moderation_notes}
+                            </p>
+                          </div>
+                        )}
+                        <div className="pt-2 flex items-center justify-between">
+                          <Link
+                            href="/admin/moderation"
+                            className="text-[10px] font-bold text-sky-400 hover:underline flex items-center gap-1"
+                          >
+                            <span>Open Darkroom &rarr;</span>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => setShowAuditPopover(false)}
+                            className="rounded px-2 py-0.5 text-[10px] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="button"
@@ -2668,6 +2923,123 @@ export default function PublicModelDetailPage({
             </div>
           </div>
         </WorkspaceModal>
+      )}
+      {/* Moderation Direct Takedown / Unlist Confirmation Modal */}
+      {showTakedownModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-xl border border-[var(--danger-line)] bg-[var(--surface-raised)] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+              <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase text-[var(--danger)]">
+                <ShieldAlert className="h-4 w-4" />
+                <span>Moderation Action // {model.title}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTakedownModal(false)}
+                className="rounded p-1 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="font-mono text-xs text-[var(--ink-soft)] leading-relaxed">
+              Choose the moderation action to enforce on this model. All actions are logged to the immutable security audit timeline.
+            </p>
+
+            {/* Action Type Selector */}
+            <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setTakedownAction("reject")}
+                className={`p-3 rounded-lg border text-left transition ${
+                  takedownAction === "reject"
+                    ? "border-[var(--danger)] bg-[var(--danger-surface)] text-[var(--danger)]"
+                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)]"
+                }`}
+              >
+                <span className="font-bold block uppercase text-[10px]">Reject & Takedown</span>
+                <span className="text-[10px] opacity-80 leading-tight block mt-0.5">
+                  Rejects submission & removes from public feed
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTakedownAction("unlist")}
+                className={`p-3 rounded-lg border text-left transition ${
+                  takedownAction === "unlist"
+                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
+                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)]"
+                }`}
+              >
+                <span className="font-bold block uppercase text-[10px]">Mark Unlisted</span>
+                <span className="text-[10px] opacity-80 leading-tight block mt-0.5">
+                  Restricts discovery to direct link only
+                </span>
+              </button>
+            </div>
+
+            {/* Feedback notes input */}
+            <div className="space-y-1.5">
+              <label className="font-mono text-[10px] uppercase tracking-wider text-[var(--ink-faint)] font-bold block">
+                Audit Feedback & Creator Reason
+              </label>
+              <textarea
+                rows={3}
+                value={takedownFeedback}
+                onChange={(e) => setTakedownFeedback(e.target.value)}
+                placeholder={
+                  takedownAction === "reject"
+                    ? "e.g. Violates community terms: copyrighted weights / missing license documentation."
+                    : "e.g. Unlisted due to incomplete model card metadata pending creator revisions."
+                }
+                className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none focus:border-[var(--accent)] resize-none"
+              />
+            </div>
+
+            {takedownError && (
+              <p className="font-mono text-xs text-[var(--danger)] bg-[var(--danger-surface)] p-2 rounded border border-[var(--danger-line)]">
+                {takedownError}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--line)]">
+              <button
+                type="button"
+                onClick={() => setShowTakedownModal(false)}
+                className="px-3.5 py-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] font-mono text-xs text-[var(--ink-soft)] hover:text-[var(--ink)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={takedownBusy}
+                onClick={handleTakedownOrUnlist}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-mono text-xs font-bold uppercase tracking-wider text-white transition ${
+                  takedownAction === "reject"
+                    ? "bg-[var(--danger)] hover:bg-rose-600"
+                    : "bg-amber-600 hover:bg-amber-500"
+                } disabled:opacity-50`}
+              >
+                {takedownBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>
+                  {takedownBusy
+                    ? "Processing…"
+                    : takedownAction === "reject"
+                    ? "Confirm Takedown"
+                    : "Confirm Unlist"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mod Action Toast Feedback */}
+      {modToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[var(--accent)] bg-[var(--surface-raised)] px-4 py-2.5 font-mono text-xs font-bold text-[var(--accent)] shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <CheckCircle2 className="h-4 w-4" />
+          <span>{modToast}</span>
+        </div>
       )}
     </main>
   );

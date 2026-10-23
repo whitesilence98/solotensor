@@ -405,32 +405,32 @@ export default function UserProfilePage({
             {/* Row 3: Achievement Medals Strip */}
             <div className="flex items-center gap-2 pt-0.5 flex-wrap">
               <div
-                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-[#78591c]/50 bg-[#382b12]/80 text-[#f6d376] shadow-sm hover:scale-105 transition"
+                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-amber-600/50 bg-amber-950/80 text-amber-300 shadow-sm hover:scale-105 transition"
                 title="Verified Studio Creator"
               >
                 <Award className="h-3.5 w-3.5" />
               </div>
 
               <div
-                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-[#52575f]/50 bg-[#25282e]/80 px-1.5 text-[#e2e8f0] shadow-sm hover:scale-105 transition"
+                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-slate-600/50 bg-slate-900/80 px-1.5 text-slate-200 shadow-sm hover:scale-105 transition"
                 title="Active Node Engineer"
               >
-                <Medal className="h-3.5 w-3.5 text-[#cbd5e1]" />
+                <Medal className="h-3.5 w-3.5 text-slate-300" />
                 <span className="font-mono text-[10px] font-bold">1</span>
               </div>
 
               <div
-                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-[#7c4d23]/50 bg-[#341e0f]/80 text-[#ea985a] shadow-sm hover:scale-105 transition"
+                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-orange-600/50 bg-orange-950/80 text-orange-300 shadow-sm hover:scale-105 transition"
                 title="Pipeline Performance Excellence"
               >
                 <Trophy className="h-3.5 w-3.5" />
               </div>
 
               <div
-                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-[#6b21a8]/50 bg-[#3b0764]/80 px-1.5 text-[#e9d5ff] shadow-sm hover:scale-105 transition"
+                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-purple-600/50 bg-purple-950/80 px-1.5 text-purple-200 shadow-sm hover:scale-105 transition"
                 title="SoloTensor Pioneer"
               >
-                <Gift className="h-3.5 w-3.5 text-[#d8b4fe]" />
+                <Gift className="h-3.5 w-3.5 text-purple-300" />
                 <span className="font-mono text-[10px] font-bold">★</span>
               </div>
             </div>
@@ -1287,7 +1287,7 @@ function CreatorToolCard({ tool }: { tool: ToolSummary }) {
           className="asset-zoom-media absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="asset-zoom-media absolute inset-0 bg-gradient-to-br from-[#1c1f26] via-[#121418] to-[#0a0b0d] flex flex-col justify-center items-center text-center p-3">
+        <div className="asset-zoom-media absolute inset-0 bg-gradient-to-br from-[var(--surface-raised)] via-[var(--surface)] to-[var(--ground)] flex flex-col justify-center items-center text-center p-3">
           <div className="font-sans font-black text-lg tracking-tighter text-white/90 drop-shadow-md line-clamp-1">
             {tool.name}
           </div>

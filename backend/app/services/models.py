@@ -626,11 +626,15 @@ class ModelService:
         install_to_comfy: bool = False,
         version_id: str | None = None,
         file_id: str | None = None,
+        reviewer_id: str | None = None,
+        actor_id: str | None = None,
+        feedback_notes: str | None = None,
     ) -> dict[str, Any]:
         record = self._read(model_id)
         action_lower = action.lower()
         reviewed_at = datetime.now(timezone.utc).isoformat()
         now_str = self._now()
+        effective_notes = notes if notes is not None else feedback_notes
 
         if action_lower == "approve":
             new_status = ModelModerationStatus.APPROVED.value
@@ -648,7 +652,8 @@ class ModelService:
             raise ModelConflict(f"Invalid review action: {action}")
 
         record["moderation_status"] = new_status
-        record["moderation_notes"] = notes
+        record["moderation_notes"] = effective_notes
+        record["feedback_notes"] = effective_notes
         record["reviewed_at"] = reviewed_at
         record["updated_at"] = now_str
         self._write(record)
@@ -692,14 +697,21 @@ class ModelService:
                     reason_msg = f": {notes}" if notes else ". Please review your submission."
                     message = f"A moderator requested changes on '{m_name}'{reason_msg}"
 
-                service.notify_user(
+                m_effective_actor = reviewer_id or actor_id
+                service.add_notification(
                     user_id=user_id,
                     title=title,
                     message=message,
                     category="moderation",
                     type=n_type,
+                    actor_id=m_effective_actor,
                     link=f"/models/{model_id}",
-                    metadata={"model_id": model_id, "action": action_lower, "notes": notes},
+                    metadata={
+                        "model_id": model_id,
+                        "action": action_lower,
+                        "notes": effective_notes,
+                        "feedback_notes": effective_notes,
+                    },
                 )
             except Exception as exc:
                 logger.warning("Could not dispatch notification for model review: %s", exc)
@@ -707,7 +719,8 @@ class ModelService:
         return {
             "model_id": model_id,
             "moderation_status": new_status,
-            "moderation_notes": notes,
+            "moderation_notes": effective_notes,
+            "feedback_notes": effective_notes,
             "action_taken": action,
             "installed": installed,
             "installed_file": installed_file,
@@ -1089,6 +1102,9 @@ class ModelService:
         destination_root = (root / "models" / category).resolve()
         destination_root.mkdir(parents=True, exist_ok=True)
         filename = self._clean_relative_filename(item["filename"])
+        ext = Path(filename).suffix.lower()
+        if ext not in {".safetensors", ".sft", ".ckpt", ".gguf", ".pt", ".pth", ".bin"}:
+            raise ModelError(f"Unsupported model file type: {ext}")
         destination = (destination_root / filename).resolve()
         if (
             destination != destination_root

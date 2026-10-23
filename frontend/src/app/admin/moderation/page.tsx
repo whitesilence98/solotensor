@@ -148,10 +148,10 @@ export default function ModerationDashboardPage() {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
-          item.title.toLowerCase().includes(q) ||
-          item.reason.toLowerCase().includes(q) ||
-          item.author_username.toLowerCase().includes(q) ||
-          item.target_id.toLowerCase().includes(q)
+          (item.title || "").toLowerCase().includes(q) ||
+          (item.reason || "").toLowerCase().includes(q) ||
+          (item.author_username || "").toLowerCase().includes(q) ||
+          (item.target_id || "").toLowerCase().includes(q)
         );
       }
 
@@ -305,6 +305,10 @@ export default function ModerationDashboardPage() {
         } else if (key === "a" && selectedPendingModel) {
           e.preventDefault();
           void handleReviewModel("approve", false);
+        } else if (key === "c" && selectedPendingModel) {
+          e.preventDefault();
+          setRequestChanges(true);
+          setShowRejectModal(true);
         } else if (key === "r" && selectedPendingModel) {
           e.preventDefault();
           setRequestChanges(false);
@@ -381,7 +385,7 @@ export default function ModerationDashboardPage() {
               Access Restricted // Moderator Clearance Required
             </h1>
             <p className="mt-1 font-mono text-xs text-[var(--ink-faint)]">
-              The Moderation Darkroom requires role <code className="text-[#38bdf8]">moderator</code> or <code className="text-[#fb7185]">admin</code>.
+              The Moderation Darkroom requires role <code className="text-sky-400">moderator</code> or <code className="text-rose-400">admin</code>.
             </p>
           </div>
 
@@ -415,7 +419,7 @@ export default function ModerationDashboardPage() {
                     setIsSwitchingRole(false);
                   }
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#0c4a6e] bg-[#082f49] py-2 font-mono text-xs font-bold text-[#38bdf8] hover:bg-[#0c4a6e]/50 transition disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-950/40 py-2 font-mono text-xs font-bold text-sky-400 hover:bg-sky-950/60 transition disabled:opacity-50"
               >
                 <Shield className="h-3.5 w-3.5" />
                 <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator"}</span>
@@ -433,7 +437,7 @@ export default function ModerationDashboardPage() {
                     setIsSwitchingRole(false);
                   }
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#881337] bg-[#4c0519] py-2 font-mono text-xs font-bold text-[#fb7185] hover:bg-[#881337]/50 transition disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-950/40 py-2 font-mono text-xs font-bold text-rose-400 hover:bg-rose-950/60 transition disabled:opacity-50"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
                 <span>{isSwitchingRole ? "Authenticating…" : "Switch to Admin"}</span>
@@ -459,7 +463,7 @@ export default function ModerationDashboardPage() {
     <div className="min-h-screen bg-[var(--ground)] text-[var(--ink)] flex flex-col font-sans">
       {/* Toast Feedback */}
       {actionToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[#38bdf8] bg-[var(--surface-raised)] px-4 py-2.5 font-mono text-xs font-bold text-[#38bdf8] shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-sky-500/40 bg-[var(--surface-raised)] px-4 py-2.5 font-mono text-xs font-bold text-sky-400 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
           <Shield className="h-4 w-4" />
           <span>{actionToast}</span>
         </div>
@@ -479,7 +483,7 @@ export default function ModerationDashboardPage() {
 
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                <span className="flex h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
                 <h1 className="text-base font-bold tracking-tight text-[var(--ink)]">
                   MODERATION DARKROOM // GOVERNANCE CONSOLE
                 </h1>
@@ -494,7 +498,7 @@ export default function ModerationDashboardPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1 font-mono text-xs">
               <span className="text-[var(--ink-faint)]">Pending:</span>
-              <span className="font-bold text-[#38bdf8]">{stats.totalPending}</span>
+              <span className="font-bold text-sky-400">{stats.totalPending}</span>
               {stats.criticalCount > 0 && (
                 <span className="ml-1 rounded bg-rose-900/50 px-1 text-[10px] font-bold text-rose-300 border border-rose-700/50">
                   {stats.criticalCount} Critical
@@ -582,7 +586,7 @@ export default function ModerationDashboardPage() {
               }}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-mono text-xs font-bold uppercase tracking-wider transition ${
                 activeTab === "models"
-                  ? "border border-[#0c4a6e] bg-[#082f49] text-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.2)]"
+                  ? "border border-sky-500/40 bg-sky-950/40 text-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.2)]"
                   : "border border-transparent text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface)]"
               }`}
             >
@@ -602,7 +606,7 @@ export default function ModerationDashboardPage() {
               }}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-mono text-xs font-bold uppercase tracking-wider transition ${
                 activeTab === "posts"
-                  ? "border border-[#0c4a6e] bg-[#082f49] text-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.2)]"
+                  ? "border border-sky-500/40 bg-sky-950/40 text-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.2)]"
                   : "border border-transparent text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface)]"
               }`}
             >
@@ -622,7 +626,7 @@ export default function ModerationDashboardPage() {
               }}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-lg font-mono text-xs font-bold uppercase tracking-wider transition ${
                 activeTab === "audit"
-                  ? "border border-[#881337] bg-[#4c0519] text-[#fb7185] shadow-[0_0_12px_rgba(251,113,133,0.2)]"
+                  ? "border border-rose-500/40 bg-rose-950/40 text-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.2)]"
                   : "border border-transparent text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface)]"
               }`}
             >
@@ -804,7 +808,7 @@ export default function ModerationDashboardPage() {
                           setIsSwitchingRole(false);
                         }
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#0284c7] px-3 py-1.5 font-mono text-xs font-bold text-white hover:bg-[#0369a1] transition shadow-md disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 font-mono text-xs font-bold text-white hover:bg-sky-500 transition shadow-md disabled:opacity-50"
                     >
                       <Shield className="h-3.5 w-3.5" />
                       <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator (@sentinel_mod)"}</span>
@@ -814,7 +818,7 @@ export default function ModerationDashboardPage() {
 
                 {filteredPendingModels.length === 0 && !authError && (
                   <div className="p-12 text-center text-xs text-[var(--ink-faint)] space-y-2">
-                    <CheckCircle2 className="h-8 w-8 text-[#38bdf8] mx-auto opacity-70" />
+                    <CheckCircle2 className="h-8 w-8 text-sky-400 mx-auto opacity-70" />
                     <p className="font-bold text-[var(--ink)]">Approval Queue Clear</p>
                     <p className="font-mono text-[11px]">
                       No pending model submissions awaiting moderation review.
@@ -843,7 +847,7 @@ export default function ModerationDashboardPage() {
                         <Link
                           href={`/models/${selectedPendingModel.model_id}`}
                           target="_blank"
-                          className="inline-flex items-center gap-1 text-[#38bdf8] hover:underline"
+                          className="inline-flex items-center gap-1 text-sky-400 hover:underline"
                         >
                           <span>Public Page Preview</span>
                           <ExternalLink className="h-3 w-3" />
@@ -957,7 +961,7 @@ export default function ModerationDashboardPage() {
                                 <span className="font-mono text-xs font-bold text-[var(--ink)]">
                                   v{version.name}
                                 </span>
-                                <span className="rounded bg-black/40 px-1.5 py-0.2 font-mono text-[9px] text-[#38bdf8] border border-[var(--line)]">
+                                <span className="rounded bg-black/40 px-1.5 py-0.2 font-mono text-[9px] text-sky-400 border border-[var(--line)]">
                                   {selectedPendingModel.base_model}
                                 </span>
                               </div>
@@ -1084,7 +1088,7 @@ export default function ModerationDashboardPage() {
                             type="button"
                             disabled={actionLoading}
                             onClick={() => handleReviewModel("approve", true)}
-                            className="flex items-center gap-2 rounded-lg border border-[#0c4a6e] bg-[#082f49] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-[#38bdf8] hover:bg-[#0c4a6e]/70 transition shadow-sm"
+                            className="flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-950/40 px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-sky-400 hover:bg-sky-950/70 transition shadow-sm"
                             title="Approve model and install primary weights into ComfyUI vault"
                           >
                             <Zap className="h-4 w-4" />
@@ -1106,7 +1110,7 @@ export default function ModerationDashboardPage() {
                         title="Request revisions from model creator"
                       >
                         <AlertCircle className="h-4 w-4" />
-                        <span>Request Changes</span>
+                        <span>[C] Request Changes</span>
                       </button>
 
                       <button
@@ -1153,7 +1157,7 @@ export default function ModerationDashboardPage() {
                       onClick={() => setSelectedIndex(idx)}
                       className={`p-4 cursor-pointer transition text-left flex flex-col gap-2 ${
                         isSelected
-                          ? "bg-[var(--surface-raised)] border-l-2 border-[#38bdf8]"
+                          ? "bg-[var(--surface-raised)] border-l-2 border-sky-500/40"
                           : "hover:bg-[var(--surface-soft)]"
                       }`}
                     >
@@ -1179,7 +1183,7 @@ export default function ModerationDashboardPage() {
 
                       <h3
                         className={`text-xs font-bold line-clamp-1 ${
-                          isSelected ? "text-[#38bdf8]" : "text-[var(--ink)]"
+                          isSelected ? "text-sky-400" : "text-[var(--ink)]"
                         }`}
                       >
                         {item.title}
@@ -1214,7 +1218,7 @@ export default function ModerationDashboardPage() {
 
                 {filteredItems.length === 0 && (
                   <div className="p-12 text-center text-xs text-[var(--ink-faint)] space-y-2">
-                    <CheckCircle2 className="h-8 w-8 text-[#38bdf8] mx-auto opacity-70" />
+                    <CheckCircle2 className="h-8 w-8 text-sky-400 mx-auto opacity-70" />
                     <p className="font-bold text-[var(--ink)]">Queue is Clear</p>
                     <p className="font-mono text-[11px]">
                       No flagged {activeTab} matching the current filters.
@@ -1231,7 +1235,7 @@ export default function ModerationDashboardPage() {
                   {/* Inspection Header */}
                   <div className="border-b border-[var(--line)] p-5 bg-[var(--surface-sunken)] space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-[10px] font-bold tracking-widest text-[#38bdf8] uppercase">
+                      <span className="font-mono text-[10px] font-bold tracking-widest text-sky-400 uppercase">
                         TARGET INSPECTION // {selectedItem.target_type.toUpperCase()}
                       </span>
                       <span className="font-mono text-[10px] text-[var(--ink-faint)]">
@@ -1414,7 +1418,7 @@ export default function ModerationDashboardPage() {
                         </div>
                       </td>
                       <td className="px-6 py-3.5 whitespace-nowrap">
-                        <span className="rounded bg-[var(--surface-sunken)] px-2 py-0.5 font-bold text-[#38bdf8] border border-[#0c4a6e]/40">
+                        <span className="rounded bg-[var(--surface-sunken)] px-2 py-0.5 font-bold text-sky-400 border border-sky-500/30">
                           {log.action}
                         </span>
                       </td>
@@ -1548,6 +1552,10 @@ export default function ModerationDashboardPage() {
               <div className="flex items-center justify-between py-1 border-b border-[var(--line)]">
                 <span className="text-[var(--ink-soft)]">Approve & Publish / Clear Flag:</span>
                 <kbd className="rounded bg-[var(--surface-sunken)] px-2 py-0.5 border border-[var(--line)] font-bold text-emerald-400">A</kbd>
+              </div>
+              <div className="flex items-center justify-between py-1 border-b border-[var(--line)]">
+                <span className="text-[var(--ink-soft)]">Request Revisions from Author:</span>
+                <kbd className="rounded bg-[var(--surface-sunken)] px-2 py-0.5 border border-[var(--line)] font-bold text-amber-400">C</kbd>
               </div>
               <div className="flex items-center justify-between py-1 border-b border-[var(--line)]">
                 <span className="text-[var(--ink-soft)]">Reject Model Submission:</span>
