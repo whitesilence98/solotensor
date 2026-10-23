@@ -57,6 +57,7 @@ import AssetInspectionStage from "@/components/AssetInspectionStage";
 import EditModelDrawer from "@/components/EditModelDrawer";
 import UserAvatar from "@/components/UserAvatar";
 import Carousel from "@/components/Carousel";
+import WorkspaceFooter from "@/components/WorkspaceFooter";
 import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 
 interface CommentItem {
@@ -821,7 +822,7 @@ export default function PublicModelDetailPage({
           </div>
         </div>
 
-    </main>
+      </main>
     );
   }
 
@@ -846,7 +847,7 @@ export default function PublicModelDetailPage({
             </button>
           </div>
         </div>
-      </main>
+        </main>
     );
   }
 
@@ -863,7 +864,7 @@ export default function PublicModelDetailPage({
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] text-[var(--ink-soft)]"
+      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink-soft)]"
     >
       {/* Moderation Status Alert Banners */}
       {model.moderation_status === "pending_review" && (
@@ -3041,6 +3042,8 @@ export default function PublicModelDetailPage({
           <span>{modToast}</span>
         </div>
       )}
+            {/* Footer */}
+      <WorkspaceFooter containerClassName="max-w-[1400px]" />
     </main>
   );
 }

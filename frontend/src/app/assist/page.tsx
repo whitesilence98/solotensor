@@ -113,7 +113,7 @@ export default function AssistPage() {
   };
 
   return (
-    <main id="main-content" className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
+    <main id="main-content" className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
       <WorkspaceNavbar
         subtitle="CODE ASSIST // LOCAL GUIDANCE"
         href="/assist"
@@ -137,7 +137,7 @@ export default function AssistPage() {
           ) : undefined
         }
       />
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+      <div className="mx-auto w-full max-w-4xl flex-1 flex flex-col px-4 py-6 sm:px-6">
         <WorkspacePageHeader
           eyebrow={
             <>
@@ -288,7 +288,7 @@ export default function AssistPage() {
       </div>
 
       {/* Footer */}
-      <WorkspaceFooter />
+      <WorkspaceFooter containerClassName="max-w-4xl" />
     </main>
   );
 }

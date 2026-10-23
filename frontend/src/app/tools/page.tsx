@@ -347,7 +347,7 @@ export default function ToolStudioPage() {
       id="main-content"
       className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
     >
-      <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-12 sm:px-6 sm:pt-6 sm:pb-16 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-6 sm:px-6 sm:pt-6 sm:pb-8 lg:px-8">
         <section className="flex-1 flex flex-col">
         {/* Unified Tactile Command Bar Surface: Mode Filters + Search + Create Tool CTA */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">

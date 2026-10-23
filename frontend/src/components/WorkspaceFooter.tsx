@@ -23,7 +23,7 @@ export default function WorkspaceFooter({
     >
       <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${containerClassName}`}>
         {/* Main Grid: Studio Brand & Telemetry vs Navigation */}
-        <div className="grid grid-cols-1 gap-10 py-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-8">
+        <div className="grid grid-cols-1 gap-8 py-8 sm:grid-cols-2 lg:grid-cols-5 lg:gap-8">
           {/* Col 1 & 2: Brand Identity & Privacy Statement */}
           <div className="space-y-4 sm:col-span-2 lg:col-span-2">
             <Link
@@ -176,7 +176,7 @@ export default function WorkspaceFooter({
         </div>
 
         {/* Hairline Sub-Footer Bar */}
-        <div className="flex flex-col gap-4 border-t border-[var(--line)] pt-6 pb-2 text-[11px] text-[var(--ink-faint)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 border-t border-[var(--line)] pt-5 pb-6 text-[11px] text-[var(--ink-faint)] sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-semibold text-[var(--ink-soft)]">
               Solo. Studio

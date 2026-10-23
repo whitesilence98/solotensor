@@ -25,6 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import WorkspaceNavbar from "@/components/WorkspaceNavbar";
+import WorkspaceFooter from "@/components/WorkspaceFooter";
 import { useAuth } from "@/lib/auth-context";
 import {
   api,
@@ -227,7 +228,7 @@ export default function NotificationsPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="min-h-screen bg-[var(--ground)] text-[var(--ink)] flex flex-col">
+    <div className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink)]">
       <WorkspaceNavbar
         subtitle="Signal Stream"
         href="/notifications"
@@ -514,6 +515,7 @@ export default function NotificationsPage() {
           </div>
         )}
       </main>
+      <WorkspaceFooter containerClassName="max-w-[1200px]" />
     </div>
   );
 }

@@ -78,7 +78,7 @@ export default function SettingsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll h-full min-h-0 bg-[var(--ground)] pb-28 md:pb-10 antialiased"
+      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased"
     >
       <WorkspaceNavbar
         subtitle="SYSTEM SETTINGS // CONFIGURATION"
@@ -96,7 +96,7 @@ export default function SettingsPage() {
           </button>
         }
       />
-      <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
+      <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-8 md:py-8">
         <header className="border-b border-[var(--line)] pb-5 md:pb-6">
           <div className="flex flex-col gap-2">
             <h1 className="workspace-title">
@@ -244,7 +244,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Footer */}
-      <WorkspaceFooter />
+      <WorkspaceFooter containerClassName="max-w-4xl" />
     </main>
   );
 }

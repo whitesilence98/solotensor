@@ -95,7 +95,7 @@ export default function HomePage() {
     <main
       id="main-content"
       className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]">
-      <div className="mx-auto flex min-h-full w-full max-w-[1720px] flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[1720px] flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="flex-1 space-y-10">
         {/* Error Notice */}
         {error && (

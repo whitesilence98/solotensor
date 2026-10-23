@@ -350,7 +350,7 @@ export default function UserProfilePage({
   const articlesCount = 0;
 
   return (
-    <div className="workspace-page workspace-scroll bg-[var(--ground)] text-[var(--ink)] min-h-screen flex flex-col justify-between">
+    <div className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink)]">
       {/* Toast Notification */}
       {shareToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-[var(--accent)] bg-[var(--surface-raised)] px-4 py-2.5 text-xs font-semibold text-[var(--accent)] shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -360,7 +360,7 @@ export default function UserProfilePage({
       )}
 
       {/* Main Container */}
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 py-6">
+      <div className="mx-auto w-full max-w-[1440px] flex-1 px-4 sm:px-6 lg:px-8 py-6">
         {/* ========================================================= */}
         {/* HEADER PROFILE CARD                                       */}
         {/* ========================================================= */}
@@ -1261,7 +1261,7 @@ export default function UserProfilePage({
         </div>
       )}
 
-      <WorkspaceFooter />
+      <WorkspaceFooter containerClassName="max-w-[1440px]" />
     </div>
   );
 }

@@ -533,7 +533,7 @@
   color: var(--ink-faint);
   font-size: .75rem;
   line-height: 1.5;
-  padding: 2.5rem 0 3rem;
+  padding: 0;
 }
 
 @media (max-width: 767px) {

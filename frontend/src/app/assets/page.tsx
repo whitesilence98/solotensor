@@ -352,7 +352,8 @@ export default function AssetsPage() {
       title="Asset Library Access"
       description="Sign in to view, search, and manage your personal creations and asset history."
     >
-      <main id="main-content" className="assets-root workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] antialiased">
+      <main id="main-content" className="assets-root workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
+        <div className="flex-1 flex flex-col">
       {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
       <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
         {/* Command Bar Toolbar: Type Switcher + Search + Source Selector + New Render */}
@@ -552,7 +553,7 @@ export default function AssetsPage() {
       </div>
 
       {/* ---------------- Grid ---------------- */}
-      <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-[calc(var(--mobile-nav-height)+2rem)] pt-6 sm:px-6 sm:pb-8" aria-label="Asset results">
+      <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-8 pt-6 sm:px-6" aria-label="Asset results">
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
           <div className="flex items-center gap-2 flex-wrap">
             <p aria-live="polite">
@@ -714,7 +715,8 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
-      <WorkspaceFooter />
+        </div>
+        <WorkspaceFooter containerClassName="max-w-[1600px]" />
       </main>
     </ProtectedRoute>
   );
