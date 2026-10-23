@@ -101,6 +101,7 @@ export default function Carousel<T = unknown>({
   const [dragOffset, setDragOffset] = useState(0);
 
   const pointerStartX = useRef<number | null>(null);
+  const pointerStartTime = useRef<number>(0);
   const isPointerDown = useRef(false);
 
   const isControlled = controlledIndex !== undefined;
@@ -237,9 +238,10 @@ export default function Carousel<T = unknown>({
     return () => clearInterval(timer);
   }, [autoplay, isPaused, isDragging, totalSlides, autoplayInterval, next]);
 
-  // Pointer / Touch gestures for responsive swipe
+  // Pointer / Touch gestures for responsive swipe with momentum
   const handlePointerDown = (clientX: number) => {
     pointerStartX.current = clientX;
+    pointerStartTime.current = performance.now();
     isPointerDown.current = true;
     setIsDragging(false);
     setDragOffset(0);
@@ -248,9 +250,13 @@ export default function Carousel<T = unknown>({
   const handlePointerMove = (clientX: number) => {
     if (!isPointerDown.current || pointerStartX.current === null) return;
     const delta = clientX - pointerStartX.current;
-    if (Math.abs(delta) > 8) {
+    if (Math.abs(delta) > 6) {
       setIsDragging(true);
-      setDragOffset(delta);
+      // Elastic rubber-band resistance when dragging beyond boundaries without loop
+      const isAtStart = currentIndex === 0 && delta > 0;
+      const isAtEnd = currentIndex >= maxIndex && delta < 0;
+      const dampened = (isAtStart || isAtEnd) && !loop ? delta * 0.35 : delta;
+      setDragOffset(dampened);
     }
   };
 
@@ -258,7 +264,11 @@ export default function Carousel<T = unknown>({
     if (!isPointerDown.current) return;
     isPointerDown.current = false;
 
-    if (Math.abs(dragOffset) > 40) {
+    const elapsed = Math.max(1, performance.now() - pointerStartTime.current);
+    const velocity = Math.abs(dragOffset) / elapsed; // px per ms
+
+    // Fast flick (>0.3 px/ms) or distance threshold (>40px) triggers slide
+    if (velocity > 0.3 || Math.abs(dragOffset) > 40) {
       if (dragOffset < 0) {
         next();
       } else {
@@ -293,22 +303,27 @@ export default function Carousel<T = unknown>({
     };
   }, [isPaged, currentPerView, gap]);
 
-  // Precise translation in pixels or percentage for ultra-smooth 60fps hardware acceleration
+  // Precise translation in percentage or pixels for ultra-smooth 60/120fps hardware acceleration
   const transformStyle = useMemo(() => {
-    if (containerWidth <= 0 || totalSlides === 0) {
+    if (totalSlides === 0) {
       return `translate3d(0px, 0, 0)`;
     }
 
     if (isPaged || currentPerView <= 1) {
-      const baseOffset = currentIndex * containerWidth;
-      const totalOffset = -baseOffset + dragOffset;
-      return `translate3d(${totalOffset}px, 0, 0)`;
+      if (dragOffset === 0) {
+        return `translate3d(-${currentIndex * 100}%, 0, 0)`;
+      }
+      return `translate3d(calc(-${currentIndex * 100}% + ${dragOffset}px), 0, 0)`;
+    }
+
+    if (containerWidth <= 0) {
+      return `translate3d(0px, 0, 0)`;
     }
 
     const singleItemWidth = (containerWidth - (currentPerView - 1) * gap) / currentPerView;
     const baseOffset = currentIndex * (singleItemWidth + gap);
     const totalOffset = -baseOffset + dragOffset;
-    return `translate3d(${totalOffset}px, 0, 0)`;
+    return `translate3d(${totalOffset.toFixed(2)}px, 0, 0)`;
   }, [containerWidth, totalSlides, isPaged, currentPerView, gap, currentIndex, dragOffset]);
 
   const arrowSizeClass =
@@ -353,7 +368,15 @@ export default function Carousel<T = unknown>({
 
       {/* Main Track Viewport */}
       <div
-        className="relative overflow-hidden rounded-xl"
+        className="carousel-viewport relative overflow-hidden rounded-xl"
+        style={{
+          contain: "paint",
+          isolation: "isolate",
+          WebkitTransform: "translateZ(0)",
+          transform: "translateZ(0)",
+          backfaceVisibility: "hidden",
+          WebkitBackfaceVisibility: "hidden",
+        }}
         onTouchStart={(e) => handlePointerDown(e.touches[0].clientX)}
         onTouchMove={(e) => handlePointerMove(e.touches[0].clientX)}
         onTouchEnd={handlePointerUp}
@@ -369,21 +392,31 @@ export default function Carousel<T = unknown>({
         onMouseUp={handlePointerUp}
       >
         <div
-          className={`flex ${trackClassName}`}
+          data-carousel-track="true"
+          data-dragging={isDragging ? "true" : undefined}
+          className={`carousel-track flex ${trackClassName}`}
           style={{
             transform: transformStyle,
             transition: isDragging
               ? "none"
-              : "transform 600ms cubic-bezier(0.16, 1, 0.3, 1)",
+              : "transform 700ms cubic-bezier(0.22, 1, 0.36, 1)",
             gap: isPaged || currentPerView <= 1 ? "0px" : `${gap}px`,
             willChange: "transform",
+            transformStyle: "preserve-3d",
+            backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
           }}
         >
           {slideNodes.map((node, idx) => (
             <div
               key={idx}
-              style={slideWidthStyle}
-              className={`shrink-0 ${slideClassName}`}
+              style={{
+                ...slideWidthStyle,
+                transform: "translateZ(0)",
+                WebkitTransform: "translateZ(0)",
+                backfaceVisibility: "hidden",
+              }}
+              className={`carousel-slide shrink-0 ${slideClassName}`}
             >
               {node}
             </div>
@@ -443,7 +476,7 @@ export default function Carousel<T = unknown>({
                 type="button"
                 onClick={() => goTo(idx)}
                 aria-label={`Go to slide ${idx + 1}`}
-                className={`h-1.5 rounded-full transition-all duration-400 ease-out ${
+                className={`carousel-indicator h-1.5 rounded-full transition-all duration-500 ease-out ${
                   isActive
                     ? "w-7 bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]"
                     : "w-2 bg-white/20 hover:bg-white/40"

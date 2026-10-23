@@ -578,7 +578,7 @@ export default function UserProfilePage({
           <nav
             role="tablist"
             aria-label="Creator content categories"
-            className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-1"
+            className="flex flex-wrap items-center gap-1 sm:gap-2 py-1"
           >
             {/* Tab: All */}
             <button
@@ -874,7 +874,7 @@ export default function UserProfilePage({
                 </div>
 
                 {/* Filter Chips */}
-                <div className="flex items-center gap-2 overflow-x-auto">
+                <div className="flex flex-wrap items-center gap-2">
                   {["all", "video", "image"].map((filter) => (
                     <button
                       key={filter}
@@ -937,7 +937,7 @@ export default function UserProfilePage({
                 </div>
 
                 {/* Model Type Filters */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                <div className="flex flex-wrap items-center gap-2 pb-1">
                   {["all", "Checkpoint", "LoRA", "ControlNet", "VAE", "Embedding", "LyCORIS", "DoRA", "SVD"].map((type) => (
                     <button
                       key={type}

@@ -20,7 +20,7 @@ export default function ToolStudioLoading() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="h-11 flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] shimmer" />
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <div className="flex flex-wrap items-center gap-1.5 pb-1 sm:pb-0">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="h-10 w-24 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] shimmer" />
               ))}

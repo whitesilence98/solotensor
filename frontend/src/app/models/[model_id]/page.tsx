@@ -53,6 +53,7 @@ import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import EditModelDrawer from "@/components/EditModelDrawer";
 import UserAvatar from "@/components/UserAvatar";
+import Carousel from "@/components/Carousel";
 import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 
 interface CommentItem {
@@ -465,57 +466,7 @@ export default function PublicModelDetailPage({
   const prevSample = currentSamples[prevSampleIndex];
   const nextSample = currentSamples[nextSampleIndex];
 
-  const showcaseScrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
   const [naturalRatios, setNaturalRatios] = useState<Record<string, string>>({});
-
-  const checkScrollLimits = useCallback(() => {
-    const el = showcaseScrollRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    setCanScrollLeft(scrollLeft > 10);
-    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
-  }, []);
-
-  useEffect(() => {
-    const el = showcaseScrollRef.current;
-    if (!el) return;
-
-    checkScrollLimits();
-    el.addEventListener("scroll", checkScrollLimits, { passive: true });
-    window.addEventListener("resize", checkScrollLimits);
-    const ro =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => checkScrollLimits())
-        : null;
-    if (ro) ro.observe(el);
-
-    return () => {
-      el.removeEventListener("scroll", checkScrollLimits);
-      window.removeEventListener("resize", checkScrollLimits);
-      if (ro) ro.disconnect();
-    };
-  }, [checkScrollLimits, currentSamples, naturalRatios]);
-
-  const scrollShowcase = (direction: "left" | "right") => {
-    if (!showcaseScrollRef.current) return;
-    const container = showcaseScrollRef.current;
-    const scrollAmount = container.clientWidth * 0.75;
-    container.scrollBy({
-      left: direction === "left" ? -scrollAmount : scrollAmount,
-      behavior: "smooth",
-    });
-    setTimeout(checkScrollLimits, 400);
-  };
-
-  const handlePrev = () => {
-    scrollShowcase("left");
-  };
-
-  const handleNext = () => {
-    scrollShowcase("right");
-  };
 
   const handleSelectSample = (idx: number) => {
     setActiveSampleIndex(idx);
@@ -1099,39 +1050,17 @@ export default function PublicModelDetailPage({
               </Can>
             </div>
 
-            {/* Horizontal Multi-Card Portrait Showcase matching reference */}
+            {/* Multi-Card Portrait Showcase Carousel */}
             <div className="relative group/showcase w-full overflow-hidden rounded-2xl select-none">
-              {/* Floating Left Navigation Chevron */}
-              {canScrollLeft && (
-                <button
-                  type="button"
-                  onClick={handlePrev}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:bg-black/80 hover:scale-105 active:scale-95"
-                  title="Previous sample"
-                  aria-label="Previous showcase sample"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-              )}
-
-              {/* Floating Right Navigation Chevron */}
-              {canScrollRight && (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white shadow-xl backdrop-blur-md transition-all duration-200 hover:bg-black/80 hover:scale-105 active:scale-95"
-                  title="Next sample"
-                  aria-label="Next showcase sample"
-                >
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              )}
-
-              {/* Horizontal Scroll Track */}
-              <div
-                ref={showcaseScrollRef}
-                className="flex items-center gap-2.5 sm:gap-3 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory py-1"
-                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              <Carousel
+                itemsPerView={{ base: 1, sm: 2, md: 3, lg: 3 }}
+                gap={12}
+                loop={false}
+                showIndicators={false}
+                showArrows={true}
+                arrowPosition="inset"
+                arrowSize="md"
+                ariaLabel="Showcase samples carousel"
               >
                 {currentSamples.map((sample, idx) => {
                   const isSelected = activeSampleIndex === idx;
@@ -1154,7 +1083,7 @@ export default function PublicModelDetailPage({
                       key={sampleKey}
                       onClick={() => handleSelectSample(idx)}
                       style={{ aspectRatio: cardRatio }}
-                      className={`group relative h-[440px] sm:h-[480px] md:h-[520px] w-auto max-w-[85vw] shrink-0 snap-start cursor-pointer overflow-hidden rounded-xl transition-all duration-300 select-none ${isSelected
+                      className={`group relative h-[440px] sm:h-[480px] md:h-[520px] w-full cursor-pointer overflow-hidden rounded-xl transition-all duration-300 select-none ${isSelected
                           ? "opacity-100 shadow-2xl scale-[1.005]"
                           : "opacity-85 hover:opacity-100"
                         }`}
@@ -1260,7 +1189,7 @@ export default function PublicModelDetailPage({
                       setShowAddSampleModal(true);
                     }}
                     style={{ aspectRatio: "3 / 4" }}
-                    className="relative flex h-[440px] sm:h-[480px] md:h-[520px] w-auto shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)]/40 hover:border-[var(--accent)] hover:bg-[var(--accent)]/5 transition text-[var(--ink-soft)] hover:text-[var(--accent)]"
+                    className="relative flex h-[440px] sm:h-[480px] md:h-[520px] w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--line-strong)] bg-[var(--surface-raised)]/40 hover:border-[var(--accent)] hover:bg-[var(--accent)]/5 transition text-[var(--ink-soft)] hover:text-[var(--accent)]"
                     title="Add new sample media"
                   >
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface-raised)] border border-[var(--line-strong)] mb-2 group-hover:border-[var(--accent)]">
@@ -1274,7 +1203,7 @@ export default function PublicModelDetailPage({
                     </span>
                   </div>
                 </Can>
-              </div>
+              </Carousel>
             </div>
 
             {/* Model Description & Prose */}

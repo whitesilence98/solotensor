@@ -134,8 +134,8 @@ export default function HomeModelsSection({
         </div>
       </div>
 
-      {/* Horizontal Category Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+      {/* Category Filter Pills (Wrapping without horizontal scroll) */}
+      <div className="flex flex-wrap items-center gap-2 pb-1 text-xs">
         {MODEL_CATEGORY_PILLS.map((pill) => {
           const isActive = activeCategory === pill.id;
           return (

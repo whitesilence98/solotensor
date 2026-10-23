@@ -409,9 +409,9 @@ export default function ModelsPage() {
           </div>
         </div>
 
-        {/* Streamlined Quick-Pill Row */}
-        <div className="flex items-center justify-between gap-3 overflow-x-auto w-full py-1 no-scrollbar mb-1">
-          <div className="flex items-center gap-1.5">
+        {/* Streamlined Quick-Pill Row (Wrapping without horizontal scroll) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full py-1 mb-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             {/* All Types Pill */}
             <button
               type="button"

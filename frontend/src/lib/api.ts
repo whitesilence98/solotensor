@@ -110,6 +110,7 @@ export interface GeneratePayload {
   reference_images?: string[];
   lora_adapters?: LoraAdapterPayload[];
   is_private?: boolean;
+  enable_detailer?: boolean;
 }
 
 export interface ClipOptions {
@@ -137,6 +138,7 @@ export interface UploadedAsset {
   kind?: "image" | "video";
   poster_url?: string | null;
   saved?: boolean;
+  before_detailer_url?: string | null;
 }
 
 export interface ToolControl {
@@ -282,6 +284,7 @@ export interface GenerationMetadata {
   created_at: string;
   elapsed_ms: number;
   source_filename?: string;
+  before_detailer_url?: string | null;
 }
 
 export interface GalleryMetadata extends GenerationMetadata {

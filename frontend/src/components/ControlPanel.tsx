@@ -542,7 +542,7 @@ export default function ControlPanel(props: Props) {
   <aside className="workspace-core relative flex flex-col h-full min-h-0 w-full shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[var(--surface)] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.16)] lg:h-full lg:w-[24.5rem]">
    {/* Top Mode Tabs: Text2Img, Img2Img, Edit, Video, Prime */}
    <div className="flex items-center justify-between border-b border-[var(--line)] px-3 pt-2 shrink-0">
-    <div className="flex items-center gap-1 overflow-x-auto workspace-scroll-x">
+    <div className="flex flex-wrap items-center gap-1">
      {MODES.map((mode) => {
       const active = activeMode === mode.id;
       return (
@@ -1540,7 +1540,7 @@ export default function ControlPanel(props: Props) {
        </div>
 
        {/* Category Pills */}
-       <div className="flex items-center gap-1.5 overflow-x-auto workspace-scroll-x pb-1">
+       <div className="flex flex-wrap items-center gap-1.5 pb-1">
         {[
          { id: "all", label: "All Types" },
          { id: "Checkpoint", label: "Checkpoints" },
@@ -1758,7 +1758,7 @@ export default function ControlPanel(props: Props) {
 
        {/* Category Filter Pills (dynamically derived from installed LoRAs) */}
        {availableLoraItems.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto workspace-scroll-x pb-1">
+        <div className="flex flex-wrap items-center gap-1.5 pb-1">
          {Array.from(new Set(["all", ...availableLoraItems.map((item) => item.category.toLowerCase())])).map(
           (cat) => {
            const active = loraCategoryFilter === cat;

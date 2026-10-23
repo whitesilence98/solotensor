@@ -300,6 +300,226 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(graph["618:616"]["inputs"]["clip_name"], "clip_l.safetensors")
         self.assertEqual(graph["618:617"]["inputs"]["vae_name"], "ae.safetensors")
 
+    def test_load_detailer_template_returns_valid_graph(self) -> None:
+        tmpl = self.client.load_detailer_template()
+        self.assertIsNotNone(tmpl)
+        self.assertIn("679:654", tmpl)
+        self.assertIn("679:659", tmpl)
+        self.assertIn("679:660", tmpl)
+        self.assertIn("679:661", tmpl)
+        self.assertIn("679:662", tmpl)
+        self.assertIn("679:665", tmpl)
+
+    def test_attach_detailer_nodes_on_exported_workflow(self) -> None:
+        base_graph = self.client.patch_workflow_template(self.template, prompt="portrait of a woman")
+        graph_copy = json.loads(json.dumps(base_graph))
+        detailed = self.client.attach_detailer_nodes(base_graph, seed=99999)
+
+        # Base graph is not mutated
+        self.assertEqual(base_graph, graph_copy)
+
+        # Standalone loaders are omitted
+        for redundant in ("681", "1027:615", "1027:616", "1027:617", "682", "683"):
+            self.assertNotIn(redundant, detailed)
+
+        # Required detailer nodes are attached
+        for node_id in ("679:654", "679:659", "679:660", "679:661", "679:662", "679:665", "save_detailer_output"):
+            self.assertIn(node_id, detailed)
+
+        # 679:654 UltralyticsDetectorProvider
+        self.assertEqual(detailed["679:654"]["class_type"], "UltralyticsDetectorProvider")
+        self.assertEqual(detailed["679:654"]["inputs"]["model_name"], "bbox/yolov11l-face.pt")
+
+        # 679:659 ToDetailerPipe inputs wiring
+        pipe_inputs = detailed["679:659"]["inputs"]
+        self.assertEqual(pipe_inputs["model"], ["1043", 0])
+        self.assertEqual(pipe_inputs["vae"], ["618:617", 0])
+        self.assertEqual(pipe_inputs["positive"], ["623", 0])
+        self.assertEqual(pipe_inputs["negative"], ["700", 0])
+        self.assertEqual(pipe_inputs["bbox_detector"], ["679:654", 0])
+
+        # 679:660 FaceDetailerPipe inputs wiring
+        face_inputs = detailed["679:660"]["inputs"]
+        self.assertEqual(face_inputs["image"], ["1027", 0])
+        self.assertEqual(face_inputs["detailer_pipe"], ["679:659", 0])
+        self.assertEqual(face_inputs["seed"], ["679:665", 0])
+
+        # 679:661 ImageAddNoise inputs wiring
+        noise_inputs = detailed["679:661"]["inputs"]
+        self.assertEqual(noise_inputs["image"], ["679:660", 0])
+        self.assertEqual(noise_inputs["seed"], ["679:665", 0])
+        self.assertEqual(noise_inputs["strength"], 0.02)
+
+        # 679:662 Image Style Filter inputs wiring
+        filter_inputs = detailed["679:662"]["inputs"]
+        self.assertEqual(filter_inputs["image"], ["679:661", 0])
+        self.assertEqual(filter_inputs["style"], "clarendon")
+
+        # 679:665 SeedSelector inputs wiring
+        seed_inputs = detailed["679:665"]["inputs"]
+        self.assertEqual(seed_inputs["seed"], 99999)
+
+        # save_detailer_output SaveImage
+        save_inputs = detailed["save_detailer_output"]["inputs"]
+        self.assertEqual(detailed["save_detailer_output"]["class_type"], "SaveImage")
+        self.assertEqual(save_inputs["filename_prefix"], "detailer_studio")
+        self.assertEqual(save_inputs["images"], ["679:662", 0])
+
+    def test_attach_detailer_nodes_fallback_model_and_vae_and_prompts(self) -> None:
+        custom_graph = {
+            "unet": {"class_type": "UNETLoader", "inputs": {"unet_name": "model.safetensors"}},
+            "vae": {"class_type": "VAELoader", "inputs": {"vae_name": "vae.safetensors"}},
+            "pos": {"class_type": "CLIPTextEncode", "inputs": {"text": "nice face"}, "_meta": {"title": "Positive Prompt"}},
+            "neg": {"class_type": "CLIPTextEncode", "inputs": {"text": "bad face"}, "_meta": {"title": "Negative Prompt"}},
+            "decode": {"class_type": "VAEDecode", "inputs": {"samples": ["sampler", 0], "vae": ["vae", 0]}},
+        }
+        detailed = self.client.attach_detailer_nodes(custom_graph, seed=42)
+        pipe_inputs = detailed["679:659"]["inputs"]
+        self.assertEqual(pipe_inputs["model"], ["unet", 0])
+        self.assertEqual(pipe_inputs["vae"], ["vae", 0])
+        self.assertEqual(pipe_inputs["positive"], ["pos", 0])
+        self.assertEqual(pipe_inputs["negative"], ["neg", 0])
+        self.assertEqual(detailed["679:660"]["inputs"]["image"], ["decode", 0])
+        self.assertEqual(detailed["679:665"]["inputs"]["seed"], 42)
+
+    def test_attach_detailer_nodes_random_seed_generation(self) -> None:
+        base_graph = self.client.patch_workflow_template(self.template, prompt="portrait")
+        detailed = self.client.attach_detailer_nodes(base_graph, seed=None)
+        det_seed = detailed["679:665"]["inputs"]["seed"]
+        self.assertIsInstance(det_seed, int)
+        self.assertGreaterEqual(det_seed, 0)
+        self.assertLessEqual(det_seed, 2**32 - 1)
+
+    def test_attach_detailer_missing_template_raises(self) -> None:
+        client = ComfyClient()
+        client.load_detailer_template = lambda: None  # type: ignore[method-assign]
+        with self.assertRaises(ComfyClientError):
+            client.attach_detailer_nodes({"1027": {"class_type": "VAEDecode"}})
+
+    def test_patch_detailer_template_standalone(self) -> None:
+        detailer_tmpl = self.client.load_detailer_template()
+        self.assertIsNotNone(detailer_tmpl)
+        original = json.loads(json.dumps(detailer_tmpl))
+        patched = self.client.patch_detailer_template(
+            detailer_tmpl,
+            image="test_input.png",
+            prompt="detailed face",
+            negative_prompt="blurry face",
+            seed=55555,
+            steps=8,
+            cfg=1.2,
+            denoise=0.35,
+            style="vintage",
+            unet_name="custom_unet.safetensors",
+            clip_name="custom_clip.safetensors",
+            clip_type="custom_type",
+            vae_name="custom_vae.safetensors",
+        )
+        self.assertEqual(detailer_tmpl, original)
+        self.assertEqual(patched["681"]["inputs"]["image"], "test_input.png")
+        self.assertEqual(patched["682"]["inputs"]["text"], "detailed face")
+        self.assertEqual(patched["683"]["inputs"]["text"], "blurry face")
+        self.assertEqual(patched["1027:615"]["inputs"]["unet_name"], "custom_unet.safetensors")
+        self.assertEqual(patched["1027:616"]["inputs"]["clip_name"], "custom_clip.safetensors")
+        self.assertEqual(patched["1027:616"]["inputs"]["type"], "custom_type")
+        self.assertEqual(patched["1027:617"]["inputs"]["vae_name"], "custom_vae.safetensors")
+        self.assertEqual(patched["679:660"]["inputs"]["steps"], 8)
+        self.assertEqual(patched["679:660"]["inputs"]["cfg"], 1.2)
+        self.assertEqual(patched["679:660"]["inputs"]["denoise"], 0.35)
+        self.assertEqual(patched["679:662"]["inputs"]["style"], "vintage")
+        self.assertEqual(patched["679:665"]["inputs"]["seed"], 55555)
+        self.assertIn("save_detailer_output", patched)
+        self.assertEqual(patched["save_detailer_output"]["inputs"]["filename_prefix"], "detailer_studio")
+
+    def test_build_detailer_workflow_helper(self) -> None:
+        graph = self.client.build_detailer_workflow(
+            image="portrait.png",
+            prompt="sharpen details",
+            seed=777,
+        )
+        self.assertEqual(graph["681"]["inputs"]["image"], "portrait.png")
+        self.assertEqual(graph["682"]["inputs"]["text"], "sharpen details")
+        self.assertEqual(graph["679:665"]["inputs"]["seed"], 777)
+        self.assertIn("save_detailer_output", graph)
+
+    def test_patch_workflow_template_enable_detailer_flag(self) -> None:
+        without_det = self.client.patch_workflow_template(self.template, prompt="test")
+        self.assertNotIn("679:660", without_det)
+        self.assertNotIn("save_detailer_output", without_det)
+
+        with_det = self.client.patch_workflow_template(self.template, prompt="test", enable_detailer=True, seed=888)
+        self.assertIn("679:660", with_det)
+        self.assertIn("save_detailer_output", with_det)
+        self.assertEqual(with_det["679:665"]["inputs"]["seed"], 888)
+
+    def test_build_gallery_workflow_enable_detailer(self) -> None:
+        # Modular workflow
+        mod_graph = self.client.build_gallery_workflow(
+            model_type="Diffusion Model",
+            filename="flux_unet.safetensors",
+            prompt="cyber woman",
+            enable_detailer=True,
+            seed=12345,
+        )
+        self.assertIn("679:660", mod_graph)
+        self.assertIn("save_detailer_output", mod_graph)
+        self.assertEqual(mod_graph["679:665"]["inputs"]["seed"], 12345)
+
+        # Builtin checkpoint workflow
+        ckpt_graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="sd15.safetensors",
+            prompt="cyber woman",
+            is_modular=False,
+            enable_detailer=True,
+            seed=23456,
+        )
+        self.assertIn("679:660", ckpt_graph)
+        self.assertIn("save_detailer_output", ckpt_graph)
+        self.assertEqual(ckpt_graph["679:665"]["inputs"]["seed"], 23456)
+
+        # Checkpoint with LoRAs
+        lora_graph = self.client.build_gallery_workflow(
+            model_type="Checkpoint",
+            filename="sd15.safetensors",
+            prompt="cyber woman",
+            loras=[{"lora": "cyber.safetensors", "strength": 0.8, "on": True}],
+            is_modular=False,
+            enable_detailer=True,
+            seed=34567,
+        )
+        self.assertIn("679:660", lora_graph)
+        self.assertIn("save_detailer_output", lora_graph)
+        self.assertEqual(lora_graph["679:665"]["inputs"]["seed"], 34567)
+
+    def test_build_lora_workflow_enable_detailer(self) -> None:
+        # Modular LoRA workflow
+        mod_lora = self.client.build_lora_workflow(
+            base_model_type="Diffusion Model",
+            base_filename="flux_unet.safetensors",
+            lora_filename="style.safetensors",
+            prompt="portrait",
+            enable_detailer=True,
+            seed=45678,
+        )
+        self.assertIn("679:660", mod_lora)
+        self.assertIn("save_detailer_output", mod_lora)
+        self.assertEqual(mod_lora["679:665"]["inputs"]["seed"], 45678)
+
+        # Builtin Checkpoint LoRA workflow
+        ckpt_lora = self.client.build_lora_workflow(
+            base_model_type="Checkpoint",
+            base_filename="base.safetensors",
+            lora_filename="style.safetensors",
+            prompt="portrait",
+            is_modular=False,
+            enable_detailer=True,
+            seed=56789,
+        )
+        self.assertIn("679:660", ckpt_lora)
+        self.assertIn("save_detailer_output", ckpt_lora)
+        self.assertEqual(ckpt_lora["679:665"]["inputs"]["seed"], 56789)
+
 
 if __name__ == "__main__":
     unittest.main()

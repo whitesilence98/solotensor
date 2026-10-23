@@ -156,6 +156,323 @@ class ComfyClient:
         except (OSError, json.JSONDecodeError):
             return None
 
+    def load_detailer_template(self) -> Optional[dict[str, Any]]:
+        """Load workflows/workflow_generate_detailer.json if present."""
+        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_generate_detailer.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) and data else None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def attach_detailer_nodes(
+        self,
+        graph: dict[str, Any],
+        seed: Optional[int] = None,
+        detailer_template: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Splice detailer pipeline nodes onto a base generation graph."""
+        patched = json.loads(json.dumps(graph))
+        template = detailer_template if detailer_template is not None else self.load_detailer_template()
+        if template is None:
+            raise ComfyClientError("Detailer workflow template not found")
+
+        # 1. Identify decoded image source: ["1027", 0] (from VAEDecode) or active VAEDecode
+        if "1027" in patched and patched["1027"].get("class_type") == "VAEDecode":
+            image_ref = ["1027", 0]
+        else:
+            vae_decodes = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") == "VAEDecode"
+            ]
+            if "1027" in vae_decodes:
+                image_ref = ["1027", 0]
+            elif vae_decodes:
+                image_ref = [vae_decodes[0], 0]
+            elif "1027" in patched:
+                image_ref = ["1027", 0]
+            else:
+                raise ComfyClientError("Could not identify VAEDecode node for detailer image source")
+
+        # 2. Identify model source: if "1043" (Power Lora Loader) is in graph, use ["1043", 0], else look for UNETLoader
+        if "1043" in patched:
+            model_ref = ["1043", 0]
+        else:
+            unet_nodes = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") == "UNETLoader"
+            ]
+            if unet_nodes:
+                model_ref = [unet_nodes[0], 0]
+            else:
+                ksampler_nodes = [
+                    nid for nid, node in patched.items()
+                    if isinstance(node, dict) and node.get("class_type") in ("KSampler", "KSamplerAdvanced")
+                ]
+                if ksampler_nodes and "model" in patched[ksampler_nodes[0]].get("inputs", {}):
+                    model_ref = patched[ksampler_nodes[0]]["inputs"]["model"]
+                else:
+                    ckpt_nodes = [
+                        nid for nid, node in patched.items()
+                        if isinstance(node, dict) and node.get("class_type") == "CheckpointLoaderSimple"
+                    ]
+                    if ckpt_nodes:
+                        model_ref = [ckpt_nodes[0], 0]
+                    else:
+                        raise ComfyClientError("Could not identify model source for detailer")
+
+        # 3. Identify VAE source: ["618:617", 0] or active VAE loader
+        if "618:617" in patched:
+            vae_ref = ["618:617", 0]
+        else:
+            vae_loaders = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") == "VAELoader"
+            ]
+            if vae_loaders:
+                vae_ref = [vae_loaders[0], 0]
+            else:
+                vae_decodes = [
+                    nid for nid, node in patched.items()
+                    if isinstance(node, dict) and node.get("class_type") == "VAEDecode"
+                ]
+                if vae_decodes and "vae" in patched[vae_decodes[0]].get("inputs", {}):
+                    vae_ref = patched[vae_decodes[0]]["inputs"]["vae"]
+                elif "1027" in patched and "vae" in patched["1027"].get("inputs", {}):
+                    vae_ref = patched["1027"]["inputs"]["vae"]
+                elif any(n.get("class_type") == "CheckpointLoaderSimple" for n in patched.values()):
+                    ckpt_id = [nid for nid, n in patched.items() if n.get("class_type") == "CheckpointLoaderSimple"][0]
+                    vae_ref = [ckpt_id, 2]
+                else:
+                    raise ComfyClientError("Could not identify VAE source for detailer")
+
+        # 4. Identify positive conditioning: ["623", 0] if present, else find positive CLIPTextEncode
+        if "623" in patched:
+            pos_ref = ["623", 0]
+        else:
+            ksampler_nodes = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") in ("KSampler", "KSamplerAdvanced")
+            ]
+            if ksampler_nodes and "positive" in patched[ksampler_nodes[0]].get("inputs", {}):
+                pos_ref = patched[ksampler_nodes[0]]["inputs"]["positive"]
+            else:
+                pos_candidates = [
+                    nid for nid, node in patched.items()
+                    if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+                    and "positive" in node.get("_meta", {}).get("title", "").lower()
+                ]
+                if pos_candidates:
+                    pos_ref = [pos_candidates[0], 0]
+                else:
+                    all_clip = [
+                        nid for nid, node in patched.items()
+                        if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+                    ]
+                    if all_clip:
+                        pos_ref = [all_clip[0], 0]
+                    else:
+                        raise ComfyClientError("Could not identify positive prompt conditioning for detailer")
+
+        # 5. Identify negative conditioning: ["700", 0] if present, else find negative CLIPTextEncode
+        if "700" in patched:
+            neg_ref = ["700", 0]
+        else:
+            ksampler_nodes = [
+                nid for nid, node in patched.items()
+                if isinstance(node, dict) and node.get("class_type") in ("KSampler", "KSamplerAdvanced")
+            ]
+            if ksampler_nodes and "negative" in patched[ksampler_nodes[0]].get("inputs", {}):
+                neg_ref = patched[ksampler_nodes[0]]["inputs"]["negative"]
+            else:
+                neg_candidates = [
+                    nid for nid, node in patched.items()
+                    if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+                    and "negative" in node.get("_meta", {}).get("title", "").lower()
+                ]
+                if neg_candidates:
+                    neg_ref = [neg_candidates[0], 0]
+                else:
+                    other_clip = [
+                        nid for nid, node in patched.items()
+                        if isinstance(node, dict) and node.get("class_type") == "CLIPTextEncode"
+                        and [nid, 0] != pos_ref
+                    ]
+                    if other_clip:
+                        neg_ref = [other_clip[0], 0]
+                    else:
+                        neg_ref = pos_ref
+
+        # 6. Detailer seed
+        final_detailer_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
+
+        # 7. Add detailer nodes, omitting redundant loaders ("681", "1027:615", "1027:616", "1027:617", "682", "683")
+        def _get_node(node_id: str, default_class: str, default_title: str) -> dict[str, Any]:
+            if node_id in template:
+                return json.loads(json.dumps(template[node_id]))
+            return {
+                "class_type": default_class,
+                "inputs": {},
+                "_meta": {"title": default_title},
+            }
+
+        # Node "679:654": UltralyticsDetectorProvider
+        node_654 = _get_node("679:654", "UltralyticsDetectorProvider", "UltralyticsDetectorProvider")
+        node_654.setdefault("inputs", {})
+        node_654["inputs"].setdefault("model_name", "bbox/yolov11l-face.pt")
+        patched["679:654"] = node_654
+
+        # Node "679:659": ToDetailerPipe
+        node_659 = _get_node("679:659", "ToDetailerPipe", "ToDetailerPipe")
+        node_659.setdefault("inputs", {})
+        node_659["inputs"]["model"] = model_ref
+        node_659["inputs"]["vae"] = vae_ref
+        node_659["inputs"]["positive"] = pos_ref
+        node_659["inputs"]["negative"] = neg_ref
+        node_659["inputs"]["bbox_detector"] = ["679:654", 0]
+        patched["679:659"] = node_659
+
+        # Node "679:665": SeedSelector
+        node_665 = _get_node("679:665", "SeedSelector", "Seed Selector")
+        node_665.setdefault("inputs", {})
+        node_665["inputs"]["seed"] = final_detailer_seed
+        node_665["inputs"].setdefault("mode", True)
+        node_665["inputs"].setdefault("fixed_seed", 0)
+        patched["679:665"] = node_665
+
+        # Node "679:660": FaceDetailerPipe
+        node_660 = _get_node("679:660", "FaceDetailerPipe", "FaceDetailer (pipe)")
+        node_660.setdefault("inputs", {})
+        node_660["inputs"]["image"] = image_ref
+        node_660["inputs"]["detailer_pipe"] = ["679:659", 0]
+        node_660["inputs"]["seed"] = ["679:665", 0]
+        patched["679:660"] = node_660
+
+        # Node "679:661": ImageAddNoise
+        node_661 = _get_node("679:661", "ImageAddNoise", "Add Noise to Image")
+        node_661.setdefault("inputs", {})
+        node_661["inputs"]["image"] = ["679:660", 0]
+        node_661["inputs"]["seed"] = ["679:665", 0]
+        node_661["inputs"].setdefault("strength", 0.02)
+        patched["679:661"] = node_661
+
+        # Node "679:662": Image Style Filter
+        node_662 = _get_node("679:662", "Image Style Filter", "Image Style Filter")
+        node_662.setdefault("inputs", {})
+        node_662["inputs"]["image"] = ["679:661", 0]
+        node_662["inputs"]["style"] = "clarendon"
+        patched["679:662"] = node_662
+
+        # Node "save_detailer_output": SaveImage
+        patched["save_detailer_output"] = {
+            "class_type": "SaveImage",
+            "inputs": {
+                "filename_prefix": "detailer_studio",
+                "images": ["679:662", 0],
+            },
+            "_meta": {
+                "title": "Save Detailer Output",
+            },
+        }
+
+        return patched
+
+    def patch_detailer_template(
+        self,
+        template: dict[str, Any],
+        *,
+        image: str = "",
+        prompt: str = "",
+        negative_prompt: str = "",
+        seed: Optional[int] = None,
+        steps: int = 6,
+        cfg: float = 1.0,
+        denoise: float = 0.43,
+        style: str = "clarendon",
+        unet_name: str = "krea2\\krea2_turbo_fp8_scaled.safetensors",
+        clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+        clip_type: str = "krea2",
+        vae_name: str = "wan_2.1_vae.safetensors",
+    ) -> dict[str, Any]:
+        """Patch the standalone detailer workflow template."""
+        graph = json.loads(json.dumps(template))
+        final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
+
+        if "681" in graph:
+            graph["681"].setdefault("inputs", {})
+            if image:
+                graph["681"]["inputs"]["image"] = image
+        if "682" in graph:
+            graph["682"].setdefault("inputs", {})["text"] = prompt
+        if "683" in graph:
+            graph["683"].setdefault("inputs", {})["text"] = negative_prompt
+        if "1027:615" in graph:
+            graph["1027:615"].setdefault("inputs", {})["unet_name"] = unet_name
+        if "1027:616" in graph:
+            graph["1027:616"].setdefault("inputs", {})["clip_name"] = clip_name
+            graph["1027:616"]["inputs"]["type"] = clip_type
+        if "1027:617" in graph:
+            graph["1027:617"].setdefault("inputs", {})["vae_name"] = vae_name
+        if "679:660" in graph:
+            graph["679:660"].setdefault("inputs", {})
+            graph["679:660"]["inputs"]["steps"] = steps
+            graph["679:660"]["inputs"]["cfg"] = cfg
+            graph["679:660"]["inputs"]["denoise"] = denoise
+        if "679:662" in graph:
+            graph["679:662"].setdefault("inputs", {})["style"] = style
+        if "679:665" in graph:
+            graph["679:665"].setdefault("inputs", {})["seed"] = final_seed
+
+        if "save_detailer_output" not in graph and not any(n.get("class_type") == "SaveImage" for n in graph.values()):
+            target_image = ["679:662", 0] if "679:662" in graph else ["679:660", 0]
+            graph["save_detailer_output"] = {
+                "class_type": "SaveImage",
+                "inputs": {
+                    "filename_prefix": "detailer_studio",
+                    "images": target_image,
+                },
+                "_meta": {
+                    "title": "Save Detailer Output",
+                },
+            }
+
+        return graph
+
+    def build_detailer_workflow(
+        self,
+        *,
+        image: str,
+        prompt: str = "",
+        negative_prompt: str = "",
+        seed: Optional[int] = None,
+        steps: int = 6,
+        cfg: float = 1.0,
+        denoise: float = 0.43,
+        style: str = "clarendon",
+        unet_name: str = "krea2\\krea2_turbo_fp8_scaled.safetensors",
+        clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+        clip_type: str = "krea2",
+        vae_name: str = "wan_2.1_vae.safetensors",
+    ) -> dict[str, Any]:
+        template = self.load_detailer_template()
+        if template is None:
+            raise ComfyClientError("Detailer workflow template not found")
+        return self.patch_detailer_template(
+            template,
+            image=image,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            cfg=cfg,
+            denoise=denoise,
+            style=style,
+            unet_name=unet_name,
+            clip_name=clip_name,
+            clip_type=clip_type,
+            vae_name=vae_name,
+        )
+
     def patch_workflow_template(
         self,
         template: dict[str, Any],
@@ -176,6 +493,7 @@ class ComfyClient:
         loras: Optional[list[dict[str, Any]]] = None,
         width: int = 768,
         height: int = 1344,
+        enable_detailer: bool = False,
     ) -> dict[str, Any]:
         """Patch the exported Text-to-Image graph by its stable node IDs."""
         graph = json.loads(json.dumps(template))
@@ -252,6 +570,9 @@ class ComfyClient:
                 "lora": str(selection["lora"]),
                 "strength": float(selection.get("strength", 1.0)),
             }
+
+        if enable_detailer:
+            graph = self.attach_detailer_nodes(graph, seed=final_seed)
         return graph
 
     def build_workflow(
@@ -274,6 +595,7 @@ class ComfyClient:
         loras: Optional[list[dict[str, Any]]] = None,
         width: int = 768,
         height: int = 1344,
+        enable_detailer: bool = False,
     ) -> dict[str, Any]:
         """Build the exported Text-to-Image workflow."""
         template = self.load_workflow_template()
@@ -296,10 +618,11 @@ class ComfyClient:
                 loras=loras,
                 width=width,
                 height=height,
+                enable_detailer=enable_detailer,
             )
         if loras:
             raise ComfyClientError("LoRAs require the exported Power Lora Loader workflow")
-        return self._build_builtin_workflow(
+        graph = self._build_builtin_workflow(
             prompt=prompt,
             negative_prompt=negative_prompt,
             model=model,
@@ -313,6 +636,9 @@ class ComfyClient:
             width=width,
             height=height,
         )
+        if enable_detailer:
+            graph = self.attach_detailer_nodes(graph, seed=seed)
+        return graph
 
     def build_gallery_workflow(
         self,
@@ -334,6 +660,7 @@ class ComfyClient:
         loras: Optional[list[dict[str, Any]]] = None,
         category: Optional[str] = None,
         is_modular: Optional[bool] = None,
+        enable_detailer: bool = False,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or model_type == "Diffusion Model")
@@ -358,6 +685,7 @@ class ComfyClient:
                 loras=loras or [],
                 width=width,
                 height=height,
+                enable_detailer=enable_detailer,
             )
 
         if model_type not in ("Checkpoint", "SVD"):
@@ -366,7 +694,7 @@ class ComfyClient:
         if loras:
             active_loras = [item for item in loras if item.get("on", True)]
             if active_loras:
-                return self._build_builtin_lora_workflow(
+                graph = self._build_builtin_lora_workflow(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
                     seed=seed,
@@ -383,8 +711,11 @@ class ComfyClient:
                     clip_name=clip_name,
                     clip_type=clip_type,
                 )
+                if enable_detailer:
+                    graph = self.attach_detailer_nodes(graph, seed=seed)
+                return graph
 
-        return self._build_builtin_workflow(
+        graph = self._build_builtin_workflow(
             prompt=prompt,
             negative_prompt=negative_prompt,
             seed=seed,
@@ -399,6 +730,9 @@ class ComfyClient:
             clip_type=clip_type,
             vae_name=vae_name,
         )
+        if enable_detailer:
+            graph = self.attach_detailer_nodes(graph, seed=seed)
+        return graph
 
     def build_lora_workflow(
         self,
@@ -421,6 +755,7 @@ class ComfyClient:
         loras: Optional[list[dict[str, Any]]] = None,
         category: Optional[str] = None,
         is_modular: Optional[bool] = None,
+        enable_detailer: bool = False,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or base_model_type == "Diffusion Model")
@@ -446,10 +781,11 @@ class ComfyClient:
                 loras=active_loras,
                 width=width,
                 height=height,
+                enable_detailer=enable_detailer,
             )
         if base_model_type not in ("Checkpoint", "SVD"):
             raise ComfyClientError("LoRA bases must be Checkpoint, SVD, or Diffusion Model gallery files")
-        return self._build_builtin_lora_workflow(
+        graph = self._build_builtin_lora_workflow(
             prompt=prompt,
             negative_prompt=negative_prompt,
             seed=seed,
@@ -466,6 +802,9 @@ class ComfyClient:
             clip_name=clip_name,
             clip_type=clip_type,
         )
+        if enable_detailer:
+            graph = self.attach_detailer_nodes(graph, seed=seed)
+        return graph
 
     def _build_builtin_lora_workflow(
         self,

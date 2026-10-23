@@ -491,8 +491,8 @@ export default function AssetsPage() {
             {/* Horizontal Scroll Track */}
             <div
               ref={tagsScrollRef}
-              className="flex items-center gap-1.5 overflow-x-auto w-full no-scrollbar scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth py-0.5"
-              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              className="flex flex-wrap items-center gap-1.5 w-full py-0.5"
+              
               aria-label="Tag filters"
             >
               <button

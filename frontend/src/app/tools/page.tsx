@@ -351,8 +351,8 @@ export default function ToolStudioPage() {
         {/* Unified Tactile Command Bar Surface: Mode Filters + Search + Create Tool CTA */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
-            {/* Workflow Mode Filter Segmented Control */}
-            <div className="flex items-center overflow-x-auto pb-0.5 sm:pb-0 gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 shrink-0 no-scrollbar h-9">
+            {/* Workflow Mode Filter Segmented Control (Wrapping without horizontal scroll) */}
+            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1 shrink-0 min-h-9">
               {MODE_FILTERS.map((filter) => {
                 const active = mode === filter.value;
                 return (

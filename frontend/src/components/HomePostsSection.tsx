@@ -272,8 +272,8 @@ export default function HomePostsSection({
           </div>
         </div>
 
-        {/* Center: Category Filter Pills Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+        {/* Center: Category Filter Pills Bar (Wrapping without horizontal scroll) */}
+        <div className="flex flex-wrap items-center gap-2 pb-1 text-xs">
           {POST_CATEGORY_PILLS.map((pill) => {
             const isActive = activeCategory === pill.id;
             return (

@@ -5,10 +5,12 @@ from pydantic import ValidationError
 from app.schemas import (
     AssistantRequest,
     GenerateRequest,
+    GeneratedAsset,
     LoraAdapterSelection,
     ModelCompatibility,
     ModelGenerationSettings,
     SUPPORTED_BASE_MODELS,
+    UploadedAsset,
 )
 
 
@@ -29,6 +31,14 @@ class PromptValidationTests(unittest.TestCase):
         self.assertFalse(req_public.is_private)
         req_private = GenerateRequest(prompt="test", is_private=True, **IDS)
         self.assertTrue(req_private.is_private)
+
+    def test_accepts_enable_detailer_flag(self) -> None:
+        req_default = GenerateRequest(prompt="test", **IDS)
+        self.assertFalse(req_default.enable_detailer)
+        req_enabled = GenerateRequest(prompt="test", enable_detailer=True, **IDS)
+        self.assertTrue(req_enabled.enable_detailer)
+        req_disabled = GenerateRequest(prompt="test", enable_detailer=False, **IDS)
+        self.assertFalse(req_disabled.enable_detailer)
 
     def test_rejects_more_than_one_thousand_words(self) -> None:
         with self.assertRaises(ValidationError):
@@ -276,6 +286,30 @@ class ModelModerationSchemaTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             ModelReviewRequest(action="invalid_action")
+
+
+class GeneratedAssetSchemaTests(unittest.TestCase):
+    def test_generated_asset_before_detailer_url(self) -> None:
+        asset_default = GeneratedAsset(filename="output.png", url="/static/output.png")
+        self.assertIsNone(asset_default.before_detailer_url)
+
+        asset_with_url = GeneratedAsset(
+            filename="output.png",
+            url="/static/output.png",
+            before_detailer_url="/static/before_detailer.png",
+        )
+        self.assertEqual(asset_with_url.before_detailer_url, "/static/before_detailer.png")
+
+    def test_uploaded_asset_alias_before_detailer_url(self) -> None:
+        asset_default = UploadedAsset(filename="output.png", url="/static/output.png")
+        self.assertIsNone(asset_default.before_detailer_url)
+
+        asset_with_url = UploadedAsset(
+            filename="output.png",
+            url="/static/output.png",
+            before_detailer_url="/static/before_detailer.png",
+        )
+        self.assertEqual(asset_with_url.before_detailer_url, "/static/before_detailer.png")
 
 
 if __name__ == "__main__":

@@ -408,6 +408,7 @@ class GenerateRequest(BaseModel):
     reference_images: list[str] = Field(default_factory=list)
     lora_adapters: list[LoraAdapterSelection] = Field(default_factory=list)
     is_private: bool = Field(False, description="If true, image is confidential and excluded from public auto-tagging/feeds")
+    enable_detailer: bool = Field(False, description="Enable secondary face & image detailer pass")
 
     @field_validator("prompt")
     @classmethod
@@ -469,6 +470,7 @@ class GeneratedAsset(BaseModel):
     kind: Literal["image", "video"] = "image"
     poster_url: str | None = None
     saved: bool = True
+    before_detailer_url: str | None = Field(None, description="URL of base image before detailer pass")
 
 
 # Kept as an import-compatible name for existing callers.

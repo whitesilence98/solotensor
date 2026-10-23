@@ -1381,6 +1381,7 @@ async def generate(
                 category=base_category
                 or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
+                enable_detailer=req.enable_detailer,
             )
         else:
             graph = comfy.build_gallery_workflow(
@@ -1402,6 +1403,7 @@ async def generate(
                 category=selected_model.get("category")
                 or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
+                enable_detailer=req.enable_detailer,
             )
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
@@ -1483,7 +1485,46 @@ async def generate(
         "user_id": user_id,
     }
     try:
-        for image in await comfy.list_images(prompt_id):
+        raw_images = await comfy.list_images(prompt_id)
+        if req.enable_detailer:
+            detailer_imgs = [
+                img for img in raw_images if "detailer" in img.get("filename", "").lower()
+            ]
+            base_imgs = [
+                img for img in raw_images if "detailer" not in img.get("filename", "").lower()
+            ]
+        else:
+            detailer_imgs = []
+            base_imgs = raw_images
+
+        # If detailer outputs exist, upload base images first to obtain their URLs
+        base_urls: list[str] = []
+        for b_img in base_imgs:
+            b_blob = await comfy.fetch_image_bytes(b_img)
+            b_url = await storage.upload_image(
+                b_blob,
+                prompt_id,
+                b_img["filename"],
+                metadata={
+                    **metadata,
+                    "source_filename": b_img["filename"],
+                    "user_id": user_id,
+                    "gallery_saved": is_public,
+                    "is_private": req.is_private,
+                    "is_base_pre_detailer": bool(detailer_imgs),
+                },
+                namespace=user_id,
+            )
+            base_urls.append(b_url)
+
+        # Primary images to return in GenerationResult
+        primary_images = detailer_imgs if detailer_imgs else base_imgs
+        for idx, image in enumerate(primary_images):
+            before_detailer_url = (
+                base_urls[idx]
+                if (detailer_imgs and idx < len(base_urls))
+                else (base_urls[0] if base_urls and detailer_imgs else None)
+            )
             blob = await comfy.fetch_image_bytes(image)
             url = await storage.upload_image(
                 blob,
@@ -1495,10 +1536,21 @@ async def generate(
                     "user_id": user_id,
                     "gallery_saved": is_public,
                     "is_private": req.is_private,
+                    **(
+                        {"before_detailer_url": before_detailer_url}
+                        if before_detailer_url
+                        else {}
+                    ),
                 },
                 namespace=user_id,
             )
-            assets.append(UploadedAsset(filename=image["filename"], url=url))
+            assets.append(
+                UploadedAsset(
+                    filename=image["filename"],
+                    url=url,
+                    before_detailer_url=before_detailer_url,
+                )
+            )
 
             # Extract key from url
             rel_key = (
@@ -1551,6 +1603,11 @@ async def generate(
                                 **metadata,
                                 "source_filename": image["filename"],
                                 "user_id": user_id,
+                                **(
+                                    {"before_detailer_url": before_detailer_url}
+                                    if before_detailer_url
+                                    else {}
+                                ),
                             }
                         ),
                     },
