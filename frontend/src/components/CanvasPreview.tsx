@@ -114,7 +114,22 @@ function CanvasListCard({
      />
     </div>
     <div className="min-w-0">
-     <p className="truncate text-xs font-medium text-[var(--ink)]">{promptText}</p>
+     <div className="flex items-center gap-1.5">
+      <p className="truncate text-xs font-medium text-[var(--ink)]">{promptText}</p>
+      {Boolean(
+        item.before_detailer_url ||
+        (item as any)?.has_detailer ||
+        (item as any)?.enable_detailer ||
+        meta?.before_detailer_url ||
+        (meta as any)?.has_detailer ||
+        (meta as any)?.enable_detailer
+      ) && (
+        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-black/60 border border-[var(--accent)]/30 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-[var(--accent)]">
+          <Sparkles className="h-2.5 w-2.5 fill-current" />
+          <span>Detailer</span>
+        </span>
+      )}
+     </div>
      <p className="mt-1 truncate font-mono text-[11px] text-[var(--ink-faint)]">
       {meta?.model_title ?? "ComfyUI"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
      </p>

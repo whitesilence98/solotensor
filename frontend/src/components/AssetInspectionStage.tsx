@@ -186,6 +186,13 @@ export default function AssetInspectionStage({
 
   const [isZoomed, setIsZoomed] = useState(false);
   const detailerBeforeUrl = (asset as any)?.before_detailer_url || asset.metadata?.before_detailer_url || null;
+  const isDetailer = Boolean(
+    detailerBeforeUrl ||
+    (asset as any)?.has_detailer ||
+    (asset as any)?.enable_detailer ||
+    asset.metadata?.has_detailer ||
+    (asset.metadata as any)?.enable_detailer
+  );
   const [showComparison, setShowComparison] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -536,6 +543,14 @@ export default function AssetInspectionStage({
           <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
         </div>
 
+
+        {/* Detailer Badge on Stage */}
+        {isDetailer && (
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 rounded-md bg-black/75 backdrop-blur-md border border-[var(--accent)]/40 px-2.5 py-1 font-mono text-[10px] font-semibold text-[var(--accent)] shadow-md pointer-events-none">
+            <Sparkles className="h-3 w-3 fill-current" />
+            <span>2-Pass Face Detailer</span>
+          </div>
+        )}
 
         {/* Previous / Next Floating Chevrons */}
         {hasCarousel && (
@@ -1128,6 +1143,38 @@ export default function AssetInspectionStage({
               INFERENCE SPECS
             </span>
             <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 col-span-2">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  PIPELINE
+                </span>
+                <div className="mt-0.5 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    {isDetailer ? (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+                        <span className="font-mono text-xs font-semibold text-[var(--accent)]">
+                          Base + Face Detailer (2-Pass)
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-mono text-xs font-semibold text-[var(--ink)]">
+                        Standard Single-Pass
+                      </span>
+                    )}
+                  </div>
+                  {isDetailer && detailerBeforeUrl && !isVideo && (
+                    <button
+                      type="button"
+                      onClick={() => setShowComparison((s) => !s)}
+                      className="font-mono text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Toggle comparison slider"
+                    >
+                      <span>{showComparison ? "View Detailed" : "Compare Before/After"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
                 <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
                   SEED

@@ -7,6 +7,7 @@ import {
   Box,
   Download,
   Play,
+  Sparkles,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -113,6 +114,14 @@ export default function AssetCard({
 
   const type = getAssetType(asset);
   const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
+
+  const isDetailer = Boolean(
+    (asset as any)?.before_detailer_url ||
+    (asset as any)?.has_detailer ||
+    asset.metadata?.before_detailer_url ||
+    asset.metadata?.has_detailer ||
+    (asset.metadata as any)?.enable_detailer
+  );
 
   // Resolve aspect ratio deterministically to prevent CLS
   const computedAspect = useMemo(() => {
@@ -237,25 +246,33 @@ export default function AssetCard({
         </div>
       </button>
 
-      {/* Floating Top Header Bar (Smooth fade and slide-down on hover) */}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between p-2.5 opacity-0 -translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
-        {/* Top-left Specs / Type Chips */}
-        <div className="flex flex-wrap items-center gap-1 pointer-events-auto">
-          {type === "video" && (
-            <span className="inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90">
-              <Play className="h-2.5 w-2.5 text-[var(--accent)] fill-current" />
-              <span>Motion</span>
-            </span>
-          )}
-          {type === "3d" && (
-            <span className="inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md border border-white/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90">
-              <Box className="h-2.5 w-2.5 text-[var(--accent)]" />
-              <span>3D</span>
-            </span>
-          )}
-        </div>
+      {/* Top-left Specs / Type Badges (Always visible at rest, with high-contrast obsidian styling) */}
+      <div className="absolute top-2.5 left-2.5 z-20 flex flex-wrap items-center gap-1 pointer-events-auto">
+        {type === "video" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-md border border-white/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90 shadow-sm">
+            <Play className="h-2.5 w-2.5 text-[var(--accent)] fill-current" />
+            <span>Motion</span>
+          </span>
+        )}
+        {type === "3d" && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-md border border-white/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90 shadow-sm">
+            <Box className="h-2.5 w-2.5 text-[var(--accent)]" />
+            <span>3D</span>
+          </span>
+        )}
+        {isDetailer && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md bg-black/75 backdrop-blur-md border border-[var(--accent)]/40 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--accent)] shadow-sm"
+            title="Processed with Face & Image Detailer (2-Pass)"
+          >
+            <Sparkles className="h-2.5 w-2.5 text-[var(--accent)] fill-current" />
+            <span>Detailer</span>
+          </span>
+        )}
+      </div>
 
-        {/* Top-right Quick Actions */}
+      {/* Top-right Quick Actions (Smooth fade and slide-down on hover) */}
+      <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 opacity-0 -translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
         <div className="flex items-center gap-1 pointer-events-auto">
           <button
             type="button"

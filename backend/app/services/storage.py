@@ -82,12 +82,28 @@ class StorageService:
                 metadata = raw if isinstance(raw, dict) else None
         except (OSError, json.JSONDecodeError):
             logger.warning("Could not read metadata for %s", path)
+        before_detailer_url = (
+            metadata.get("before_detailer_url") if isinstance(metadata, dict) else None
+        )
+        has_detailer = (
+            bool(metadata.get("has_detailer"))
+            if isinstance(metadata, dict) and "has_detailer" in metadata
+            else (bool(before_detailer_url) if before_detailer_url else False)
+        )
+        enable_detailer = (
+            bool(metadata.get("enable_detailer"))
+            if isinstance(metadata, dict) and "enable_detailer" in metadata
+            else has_detailer
+        )
         return GalleryItem(
             key=rel,
             url=self._file_url(rel),
             size=stat.st_size,
             last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
             metadata=metadata,
+            before_detailer_url=before_detailer_url,
+            has_detailer=has_detailer,
+            enable_detailer=enable_detailer,
         )
 
     async def upload_asset(

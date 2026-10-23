@@ -447,6 +447,10 @@ class GalleryItem(BaseModel):
     size: int
     last_modified: str
     metadata: dict[str, Any] | None = None
+    thumbnail_url: str | None = None
+    before_detailer_url: str | None = None
+    enable_detailer: bool | None = None
+    has_detailer: bool | None = None
 
 
 class GalleryResponse(BaseModel):
@@ -498,6 +502,9 @@ class GenerationMetadata(BaseModel):
     width: int | None = None
     height: int | None = None
     format_name: str = ""
+    enable_detailer: bool = False
+    has_detailer: bool = False
+    before_detailer_url: str | None = None
     model_id: str = ""
     version_id: str = ""
     file_id: str = ""

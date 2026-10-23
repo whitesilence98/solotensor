@@ -311,6 +311,41 @@ class GeneratedAssetSchemaTests(unittest.TestCase):
         )
         self.assertEqual(asset_with_url.before_detailer_url, "/static/before_detailer.png")
 
+    def test_gallery_item_detailer_metadata(self) -> None:
+        from app.schemas import GalleryItem, GenerationMetadata
+
+        item_default = GalleryItem(
+            key="workspace/test/image.png",
+            url="/static/image.png",
+            size=1024,
+            last_modified="2026-10-23T00:00:00Z",
+        )
+        self.assertIsNone(item_default.before_detailer_url)
+        self.assertIsNone(item_default.has_detailer)
+        self.assertIsNone(item_default.enable_detailer)
+
+        item_detailed = GalleryItem(
+            key="workspace/test/image.png",
+            url="/static/image.png",
+            size=1024,
+            last_modified="2026-10-23T00:00:00Z",
+            before_detailer_url="/static/before.png",
+            has_detailer=True,
+            enable_detailer=True,
+        )
+        self.assertEqual(item_detailed.before_detailer_url, "/static/before.png")
+        self.assertTrue(item_detailed.has_detailer)
+        self.assertTrue(item_detailed.enable_detailer)
+
+        meta = GenerationMetadata(
+            enable_detailer=True,
+            has_detailer=True,
+            before_detailer_url="/static/before.png",
+        )
+        self.assertTrue(meta.enable_detailer)
+        self.assertTrue(meta.has_detailer)
+        self.assertEqual(meta.before_detailer_url, "/static/before.png")
+
 
 if __name__ == "__main__":
     unittest.main()

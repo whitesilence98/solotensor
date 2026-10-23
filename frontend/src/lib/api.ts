@@ -286,6 +286,8 @@ export interface GenerationMetadata {
   elapsed_ms: number;
   source_filename?: string;
   before_detailer_url?: string | null;
+  enable_detailer?: boolean;
+  has_detailer?: boolean;
   user_id?: string | null;
 }
 
@@ -308,6 +310,8 @@ export interface GalleryItem {
   metadata: GalleryMetadata | null;
   thumbnail_url?: string;
   before_detailer_url?: string | null;
+  enable_detailer?: boolean;
+  has_detailer?: boolean;
   user_id?: string | null;
 }
 

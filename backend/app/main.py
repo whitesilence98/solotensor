@@ -1462,6 +1462,7 @@ async def generate(
         "width": req.width,
         "height": req.height,
         "format_name": req.format_name,
+        "enable_detailer": bool(req.enable_detailer),
         "model_id": selected_model["model_id"],
         "version_id": selected_model["version_id"],
         "file_id": selected_model["file_id"],
@@ -1537,6 +1538,7 @@ async def generate(
                     "user_id": user_id,
                     "gallery_saved": is_public,
                     "is_private": req.is_private,
+                    "has_detailer": bool(detailer_imgs),
                     **(
                         {"before_detailer_url": before_detailer_url}
                         if before_detailer_url
@@ -1604,6 +1606,7 @@ async def generate(
                                 **metadata,
                                 "source_filename": image["filename"],
                                 "user_id": user_id,
+                                "has_detailer": bool(detailer_imgs),
                                 **(
                                     {"before_detailer_url": before_detailer_url}
                                     if before_detailer_url
