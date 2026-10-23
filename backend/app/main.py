@@ -1497,25 +1497,26 @@ async def generate(
             detailer_imgs = []
             base_imgs = raw_images
 
-        # If detailer outputs exist, upload base images first to obtain their URLs
+        # If detailer outputs exist, upload base images first as internal reference to obtain their URLs
         base_urls: list[str] = []
-        for b_img in base_imgs:
-            b_blob = await comfy.fetch_image_bytes(b_img)
-            b_url = await storage.upload_image(
-                b_blob,
-                prompt_id,
-                b_img["filename"],
-                metadata={
-                    **metadata,
-                    "source_filename": b_img["filename"],
-                    "user_id": user_id,
-                    "gallery_saved": is_public,
-                    "is_private": req.is_private,
-                    "is_base_pre_detailer": bool(detailer_imgs),
-                },
-                namespace=user_id,
-            )
-            base_urls.append(b_url)
+        if detailer_imgs:
+            for b_img in base_imgs:
+                b_blob = await comfy.fetch_image_bytes(b_img)
+                b_url = await storage.upload_image(
+                    b_blob,
+                    prompt_id,
+                    b_img["filename"],
+                    metadata={
+                        **metadata,
+                        "source_filename": b_img["filename"],
+                        "user_id": user_id,
+                        "gallery_saved": False,  # Hide intermediate pre-detailer base image from public gallery
+                        "is_private": req.is_private,
+                        "is_base_pre_detailer": True,
+                    },
+                    namespace=user_id,
+                )
+                base_urls.append(b_url)
 
         # Primary images to return in GenerationResult
         primary_images = detailer_imgs if detailer_imgs else base_imgs
