@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ComparisonSlider from "./ComparisonSlider";
 import Link from "next/link";
 import {
  AlertCircle,
@@ -62,94 +63,6 @@ interface Props {
  activeModelTitle?: string;
  aspectRatio?: string;
 }
-
-function ComparisonSlider({ before, after }: { before: string; after: string }) {
- const [position, setPosition] = useState(50);
- const [dragging, setDragging] = useState(false);
- const frameRef = useRef<HTMLDivElement>(null);
-
- const updatePosition = (clientX: number) => {
-  const frame = frameRef.current;
-  if (!frame) return;
-  const bounds = frame.getBoundingClientRect();
-  setPosition(Math.min(100, Math.max(0, ((clientX - bounds.left) / bounds.width) * 100)));
- };
-
- useEffect(() => {
-  if (!dragging) return;
-  const onMove = (event: PointerEvent) => updatePosition(event.clientX);
-  const onUp = () => setDragging(false);
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp);
-  return () => {
-   window.removeEventListener("pointermove", onMove);
-   window.removeEventListener("pointerup", onUp);
-  };
- }, [dragging]);
-
- return (
-  <div
-   ref={frameRef}
-   className="media-frame group relative isolate mx-auto w-full max-w-[64rem] overflow-hidden rounded-2xl border border-white/10 bg-[var(--surface-raised)] shadow-[0_18px_48px_rgba(0,0,0,.2)] select-none touch-none "
-   style={{ aspectRatio: "16 / 10" }}
-   onPointerDown={(event) => {
-    setDragging(true);
-    updatePosition(event.clientX);
-   }}
-   onKeyDown={(event) => {
-    const step = event.shiftKey ? 10 : 1;
-    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
-     event.preventDefault();
-     setPosition((value) => Math.max(0, value - step));
-    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-     event.preventDefault();
-     setPosition((value) => Math.min(100, value + step));
-    } else if (event.key === "Home") {
-     event.preventDefault();
-     setPosition(0);
-    } else if (event.key === "End") {
-     event.preventDefault();
-     setPosition(100);
-    }
-   }}
-   role="slider"
-   tabIndex={0}
-   aria-label="Before and after comparison"
-   aria-valuemin={0}
-   aria-valuemax={100}
-   aria-valuenow={Math.round(position)}
-  >
-   {/* eslint-disable-next-line @next/next/no-img-element */}
-   <img
-    src={after}
-    alt="Generated image"
-    className="absolute inset-0 h-full w-full object-contain"
-    draggable={false}
-   />
-   {/* eslint-disable-next-line @next/next/no-img-element */}
-   <img
-    src={before}
-    alt="Reference image"
-    className="absolute inset-0 h-full w-full object-contain"
-    style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-    draggable={false}
-   />
-   <span className="pointer-events-none absolute left-3 top-3 rounded-xl bg-[var(--media-scrim-strong)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--ink)] ">
-    Before
-   </span>
-   <span className="pointer-events-none absolute right-3 top-3 rounded-xl bg-[var(--accent)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent-ink)]">
-    After
-   </span>
-   <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: `${position}%` }}>
-    <span className="absolute inset-y-0 -translate-x-1/2 border-l border-[var(--ink)] " />
-    <span className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-xl border border-[var(--ink)] bg-[var(--media-control)] text-[var(--media-control-ink)] ">
-     <span className="text-sm font-bold" aria-hidden>↔</span>
-    </span>
-   </div>
-  </div>
- );
-}
-
 
 function CanvasListCard({
  item,
@@ -343,7 +256,15 @@ export default function CanvasPreview(props: Props) {
  }, [gallery, activeTab]);
 
  const latest = filteredGallery[0];
- const canCompare = Boolean(referenceImage && latest && !busy);
+ const detailerBeforeUrl = (latest as any)?.before_detailer_url || latest?.metadata?.before_detailer_url || null;
+ const canCompare = Boolean((referenceImage || detailerBeforeUrl) && latest && !busy);
+ const comparisonBefore = detailerBeforeUrl
+  ? (resolveMediaUrl(detailerBeforeUrl) || detailerBeforeUrl)
+  : (referenceImage || "");
+ const comparisonAfter = resolveMediaUrl(latest?.url) || latest?.url || "";
+ const comparisonLabel = detailerBeforeUrl
+  ? "Face & Image Detailer Comparison (Before vs After)"
+  : "Before / After Comparison";
 
  const selectedIndex = selectedAsset
   ? filteredGallery.findIndex((item) => item.key === selectedAsset.key)
@@ -550,13 +471,21 @@ export default function CanvasPreview(props: Props) {
      </section>
     )}
 
-    {/* Before / After Comparison Slider if reference image exists */}
+    {/* Before / After Comparison Slider if detailer before or reference image exists */}
     {canCompare && (
      <section className="mb-8">
       <div className="mb-3 flex items-center justify-between">
-       <span className="text-xs font-semibold text-[var(--ink-faint)]">Before / After Comparison</span>
+       <span className="text-xs font-semibold text-[var(--ink-faint)] flex items-center gap-1.5">
+        {detailerBeforeUrl && <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />}
+        <span>{comparisonLabel}</span>
+       </span>
       </div>
-      <ComparisonSlider before={referenceImage!} after={resolveMediaUrl(latest.url) || latest.url} />
+      <ComparisonSlider
+       before={comparisonBefore}
+       after={comparisonAfter}
+       beforeLabel={detailerBeforeUrl ? "Original Base" : "Reference"}
+       afterLabel={detailerBeforeUrl ? "Detailed Output" : "Generated"}
+      />
      </section>
     )}
 

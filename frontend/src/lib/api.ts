@@ -305,6 +305,7 @@ export interface GalleryItem {
   last_modified: string;
   metadata: GalleryMetadata | null;
   thumbnail_url?: string;
+  before_detailer_url?: string | null;
 }
 
 export type NotificationCategory = "moderation" | "generation" | "social" | "system";

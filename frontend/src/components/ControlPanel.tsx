@@ -165,6 +165,8 @@ interface Props {
  onResetDefaults?: () => void;
  isPrivate?: boolean;
  onPrivateChange?: (v: boolean) => void;
+ enableDetailer?: boolean;
+ onDetailerChange?: (v: boolean) => void;
 }
 
 export default function ControlPanel(props: Props) {
@@ -206,7 +208,21 @@ export default function ControlPanel(props: Props) {
   onResetDefaults,
   isPrivate,
   onPrivateChange,
+  enableDetailer,
+  onDetailerChange,
  } = props;
+
+ const [internalDetailer, setInternalDetailer] = useState(false);
+ const isDetailerActive = props.enableDetailer !== undefined ? props.enableDetailer : internalDetailer;
+
+ const handleToggleDetailer = () => {
+  const next = !isDetailerActive;
+  if (props.onDetailerChange) {
+   props.onDetailerChange(next);
+  } else {
+   setInternalDetailer(next);
+  }
+ };
 
  const { isPro, isAdmin, switchRoleDemo, isAuthenticated, openAuthModal } = useAuth();
  const isProUser = isPro || isAdmin;
@@ -1397,6 +1413,27 @@ export default function ControlPanel(props: Props) {
         PRO
        </span>
       )}
+     </button>
+     <button
+      type="button"
+      onClick={handleToggleDetailer}
+      disabled={busy}
+      className={`group inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11px] font-semibold transition ${
+       isDetailerActive
+        ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.15)]"
+        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]"
+      }`}
+      title="Face & Image Detailer: Enhances face fidelity, skin textures, and micro-contrast using FaceDetailer pipe."
+     >
+      <Sparkles className={`h-3 w-3 ${isDetailerActive ? "text-[var(--accent)]" : "text-[var(--ink-faint)]"}`} />
+      <span>Face Detailer</span>
+      <span className={`rounded px-1 py-0.2 text-[8px] font-bold border ${
+       isDetailerActive
+        ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/30"
+        : "bg-white/5 text-[var(--ink-faint)] border-white/10"
+      }`}>
+       2-PASS
+      </span>
      </button>
 
      {/* Fast-Lane Queue Readout */}

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { formatBytes } from "@/components/AssetCard";
 import UserAvatar from "@/components/UserAvatar";
+import ComparisonSlider from "@/components/ComparisonSlider";
 import {
   api,
   assetTypeOf,
@@ -184,6 +185,8 @@ export default function AssetInspectionStage({
   const effectiveModelOptions = internalModelOptions.length > 0 ? internalModelOptions : modelOptions;
 
   const [isZoomed, setIsZoomed] = useState(false);
+  const detailerBeforeUrl = (asset as any)?.before_detailer_url || asset.metadata?.before_detailer_url || null;
+  const [showComparison, setShowComparison] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -571,7 +574,15 @@ export default function AssetInspectionStage({
               : "p-2 sm:p-4"
             }`}
         >
-          {isVideo ? (
+          {showComparison && detailerBeforeUrl && !isVideo ? (
+            <ComparisonSlider
+              before={resolveMediaUrl(detailerBeforeUrl) || detailerBeforeUrl}
+              after={mediaUrl}
+              beforeLabel="Original Base"
+              afterLabel="Detailed"
+              className="w-full max-h-[78vh]"
+            />
+          ) : isVideo ? (
             <video
               src={mediaUrl}
               controls
@@ -596,6 +607,22 @@ export default function AssetInspectionStage({
 
         {/* Bottom-Right Media Viewport Action Controls */}
         <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20 flex items-center gap-2 drop-shadow-md">
+          {/* Before/After Detailer Compare Toggle */}
+          {detailerBeforeUrl && !isVideo && (
+            <button
+              type="button"
+              onClick={() => setShowComparison((s) => !s)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold backdrop-blur-md transition shadow-md ${
+                showComparison
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                  : "border-white/10 bg-black/60 text-white/90 hover:border-white/30 hover:bg-black/80 hover:text-white"
+              }`}
+              title="Toggle Before/After Face Detailer comparison slider"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{showComparison ? "Exit Compare" : "Compare Before/After"}</span>
+            </button>
+          )}
           {/* Reference Image CTA */}
           {onSetReferenceImage && (
             <button
