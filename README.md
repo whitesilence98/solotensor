@@ -61,12 +61,14 @@ For complete system architecture, the 16 model types specification, and dynamic 
 | `docs/ARCHITECTURE.md` | Authoritative system taxonomy, 16 model types, conditioning stack contracts |
 | `DESIGN.md` | Obsidian & acid-lime brutalist design system & component rules |
 | `backend/app/config.py` | pydantic-settings, all env-tunable |
-| `backend/app/schemas.py` | Typed request/response models (`CreatorModelType`, `ModelCompatibility`) |
+| `backend/app/schemas.py` | Typed request/response models (`UpscaleConfig`, `DetailerConfig`) |
+| `backend/app/services/workflow_router.py` | Dynamic workflow template selector & graph patcher |
+| `backend/app/services/workflow_bypass.py` | Extensible BypassEngine & sequential cascade rewiring |
 | `backend/app/services/models.py` | Model catalog storage, ComfyUI folder mappings, `.safetensors`/`.sft` scanning |
 | `backend/app/services/comfy_client.py` | Workflow builder, `/prompt` queue, WS progress stream, `/history` + `/view` fetch |
 | `backend/app/services/storage.py` | Disk writes under `STORAGE_DIR`, public `/files` URLs, gallery listing |
 | `backend/app/main.py` | `POST /api/v1/generate`, `WS /api/v1/ws/progress/{client_id}`, `/api/v1/models/*` |
-| `frontend/src/components/` | `ControlPanel`, `CreateModelDrawer`, `TensorModelCard`, `CanvasPreview` |
+| `frontend/src/components/` | `ControlPanel`, `UpscalePanel`, `DetailerPanel`, `CanvasPreview` |
 | `frontend/src/lib/api.ts` | Typed fetch + WebSocket client |
 
 ## Code Assist (optional)

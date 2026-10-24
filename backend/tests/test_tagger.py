@@ -201,3 +201,58 @@ class TaggerApiTests(unittest.TestCase):
         # Should not raise exception
         asyncio.run(_bg_auto_tag_asset("sample/failed.png"))
         mock_tagger.auto_tag_asset.assert_called_once_with("sample/failed.png")
+
+    def test_interrogate_image_with_embedded_metadata(self) -> None:
+        import io
+        from PIL import Image
+        from PIL.PngImagePlugin import PngInfo
+
+        buf = io.BytesIO()
+        im = Image.new("RGB", (64, 64), color="red")
+        info = PngInfo()
+        info.add_text(
+            "parameters",
+            "masterpiece, best quality, 1girl, cyberpunk city\nNegative prompt: worst quality, blurry\nSteps: 28, Sampler: DPM++ 2M Karras, CFG scale: 6.5, Seed: 987654321, Size: 832x1216, Model: animeIllust_v1",
+        )
+        im.save(buf, format="PNG", pnginfo=info)
+        png_bytes = buf.getvalue()
+
+        client = TestClient(app)
+        files = {"file": ("test_ai.png", png_bytes, "image/png")}
+        resp = client.post("/api/v1/tagger/interrogate", files=files)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["has_metadata"])
+        self.assertIsNotNone(data["metadata"])
+        self.assertEqual(data["metadata"]["prompt"], "masterpiece, best quality, 1girl, cyberpunk city")
+        self.assertEqual(data["metadata"]["negative_prompt"], "worst quality, blurry")
+        self.assertEqual(data["metadata"]["seed"], 987654321)
+        self.assertEqual(data["metadata"]["steps"], 28)
+        self.assertEqual(data["metadata"]["cfg"], 6.5)
+        self.assertEqual(data["metadata"]["width"], 832)
+        self.assertEqual(data["metadata"]["height"], 1216)
+        self.assertIn("cyberpunk city", data["tags"])
+
+    @patch("app.main.get_tagger_service")
+    def test_interrogate_image_without_metadata_falls_back_to_wd14(self, mock_tagger_get) -> None:
+        import io
+        from PIL import Image
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.interrogate_image = AsyncMock(return_value=["solo", "outdoors", "scenery"])
+
+        buf = io.BytesIO()
+        im = Image.new("RGB", (64, 64), color="blue")
+        im.save(buf, format="PNG")
+        plain_png = buf.getvalue()
+
+        client = TestClient(app)
+        files = {"file": ("plain.png", plain_png, "image/png")}
+        resp = client.post("/api/v1/tagger/interrogate", files=files)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["has_metadata"])
+        self.assertIsNone(data["metadata"])
+        self.assertEqual(data["tags"], ["solo", "outdoors", "scenery"])
+        mock_tagger.interrogate_image.assert_called_once()
+

@@ -275,3 +275,51 @@ cmd /c npx tsc --noEmit
 cmd /c npm run build
 ```
 *Expected: All routes compiled with exit code `0`.*
+
+
+---
+
+## 7. Multi-Pass Generation Pipeline & Extensible Bypass Engine
+
+SoloTensor includes a multi-stage post-processing pipeline for the `/generate` studio with dynamic ComfyUI graph pruning.
+
+### Generation Workflow Matrix
+
+The backend (`services/workflow_router.py`) selects the optimal ComfyUI workflow based on generation flags:
+
+| Active Features | Workflow Template | Processing Characteristics |
+| :--- | :--- | :--- |
+| **Upscale ON** or **Detailer ON** | `workflows/workflow_generate_t2i.json` | High-fidelity multi-pass pipeline. Pruned and dynamically rewired via `apply_t2i_pipeline()`. |
+| **Standalone Detailer** (legacy) | `workflows/workflow_generate_detailer.json` | Lightweight single-pass FaceDetailer pipe. |
+| **Base T2I** (Upscale OFF & Detailer OFF) | `workflows/workflow_api.json` | Fast, lean direct generation without intermediate passes. |
+
+### Sequential Cascade Architecture
+
+In `workflow_generate_t2i.json`, inference flows through a sequential filter chain:
+
+```mermaid
+flowchart LR
+    A["VAEDecode (1064)"] --> B{"Upscale Enabled?"}
+    B -->|Yes| C["SeedVR2VideoUpscaler (1075)"]
+    B -->|No| D["First Active Detailer / Post-Process"]
+    C --> D
+    D --> E["Face (1080:660)"]
+    E --> F["Foot (1080:649)"]
+    F --> G["Breast (1080:650)"]
+    G --> H["Hand (1080:653)"]
+    H --> I["Vagina (1080:651)"]
+    I --> J["ImageAddNoise (1080:661)"]
+    J --> K["Image Style Filter (1080:662)"]
+    K --> L["SaveImage (1086)"]
+```
+
+### Extensible Bypass Engine (`services/workflow_bypass.py`)
+- **`BypassEngine`**: Generic, rule-based node pruning engine configurable via JSON (`config/bypass_rules.json`) or programmatically at runtime.
+- **`apply_t2i_pipeline()`**: Re-links sequential image inputs so that any disabled pass (SeedVR2 or individual Face/Foot/Breast/Hand/Vagina detailers) is completely purged along with its auxiliary detector and pipe loader nodes, rewiring downstream inputs to the preceding active output with **zero broken node references**.
+- **Parameter Injection**: Dynamic injection of user overrides for:
+  - SeedVR2: Target resolution (calculated from scale factor), color correction mode (`lab`/`rgb`/`none`), input noise scale, and latent noise scale.
+  - Detailers: Per-pass steps, CFG scale, denoise strength, bbox confidence threshold, bbox dilation, and custom detector models.
+
+### Studio UI Components
+- **`UpscalePanel.tsx`**: Multi-engine upscale controller supporting SeedVR2 DiT AI (with dynamic resolution preview) and Model/ESRGAN (4x-UltraSharp).
+- **`DetailerPanel.tsx`**: ADetailer-inspired multi-pass manager featuring active basic model banner, quick-toggle target chips, and per-target accordion controls.

@@ -5,8 +5,11 @@ import ControlPanel, {
   type ActiveEmbedding,
   type ActiveLora,
   type FormatKey,
+  type TensorMode,
 } from "@/components/ControlPanel";
 import CanvasPreview from "@/components/CanvasPreview";
+import { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
+import { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
 import {
   api,
   uuid,
@@ -63,7 +66,17 @@ function galleryModelKey(model: InstalledGalleryModel): string {
 
 export default function StudioPage() {
   const { user } = useAuth();
-  const [mode] = useState<GenerationMode>("text-to-image");
+  const [mode, setMode] = useState<GenerationMode>("text-to-image");
+  const [activeTensorMode, setActiveTensorMode] = useState<TensorMode>("Text2Img");
+
+  const handleTensorModeChange = useCallback((newMode: TensorMode) => {
+    setActiveTensorMode(newMode);
+    if (newMode === "Img2Img") {
+      setMode("image-to-image");
+    } else {
+      setMode("text-to-image");
+    }
+  }, []);
   const [prompt, setPrompt] = useState(DEFAULT_SAMPLE_PROMPT);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [selection, setSelection] = useState<ModelIdentity | null>(null);
@@ -87,6 +100,8 @@ export default function StudioPage() {
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [enableDetailer, setEnableDetailer] = useState(false);
+  const [upscaleConfig, setUpscaleConfig] = useState<UpscaleConfig>(DEFAULT_UPSCALE_CONFIG);
+  const [detailerConfig, setDetailerConfig] = useState<DetailerConfig>(DEFAULT_DETAILER_CONFIG);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -190,6 +205,8 @@ export default function StudioPage() {
     setFormat(settings.defaultFormat);
     setLoras([]);
     setSelection(null);
+    setUpscaleConfig(DEFAULT_UPSCALE_CONFIG);
+    setDetailerConfig(DEFAULT_DETAILER_CONFIG);
     try {
       localStorage.removeItem(SAVED_INPUTS_KEY);
       localStorage.removeItem("solotensor:last-successful-inputs:v4");
@@ -270,11 +287,16 @@ export default function StudioPage() {
 
   const canGenerate = useMemo(() => {
     if (!prompt.trim() || busy) return false;
+    if (mode === "image-to-image" && !referenceImage) return false;
     return true;
-  }, [prompt, busy]);
+  }, [prompt, busy, mode, referenceImage]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || busy) return;
+    if (mode === "image-to-image" && !referenceImage) {
+      setError("Please upload a reference image for Img2Img generation.");
+      return;
+    }
 
     // Determine effective model to use
     let targetModel = selectedModel;
@@ -368,6 +390,7 @@ export default function StudioPage() {
             }
           : {}),
         mode,
+        ...(mode === "image-to-image" && referenceImage ? { reference_images: [referenceImage] } : {}),
         prompt,
         negative_prompt: negativePrompt,
         seed: parsedSeed,
@@ -381,7 +404,35 @@ export default function StudioPage() {
         client_id: clientId,
         lora_adapters: loraAdapters,
         is_private: isPrivate,
-        enable_detailer: enableDetailer,
+        enable_detailer: enableDetailer || detailerConfig.enabled,
+        upscale: {
+          enabled: upscaleConfig.enabled,
+          scale: upscaleConfig.scale === 0 ? (upscaleConfig.customScale ?? 2) : upscaleConfig.scale,
+          dit_model: upscaleConfig.ditModel,
+          color_correction: upscaleConfig.colorCorrection,
+          input_noise_scale: upscaleConfig.inputNoiseScale,
+          latent_noise_scale: upscaleConfig.latentNoiseScale,
+          upscaler: upscaleConfig.upscaler,
+          hires_steps: upscaleConfig.hiresSteps,
+          denoising_strength: upscaleConfig.denoisingStrength,
+        },
+        detailer: {
+          enabled: detailerConfig.enabled,
+          items: detailerConfig.items.map((item) => ({
+            type: item.type,
+            enabled: item.enabled,
+            detector_model: item.detectorModel || undefined,
+            prompt: item.prompt,
+            negative_prompt: item.negativePrompt,
+            steps: item.steps,
+            cfg_scale: item.cfgScale,
+            denoising_strength: item.denoisingStrength,
+            inpaint_mask_blur: item.inpaintMaskBlur,
+            inpaint_only_masked: item.inpaintOnlyMasked,
+            bbox_threshold: item.bboxThreshold,
+            bbox_dilation: item.bboxDilation,
+          })),
+        },
       };
 
       const result: GenerationResult = await api.generate(payload);
@@ -416,6 +467,9 @@ export default function StudioPage() {
     customHeight,
     isPrivate,
     enableDetailer,
+    upscaleConfig,
+    detailerConfig,
+    referenceImage,
     busy,
     refreshGallery,
   ]);
@@ -562,6 +616,10 @@ export default function StudioPage() {
           }`}
         >
           <ControlPanel
+            activeMode={activeTensorMode}
+            onActiveModeChange={handleTensorModeChange}
+            referenceImage={referenceImage}
+            onReferenceImageChange={setReferenceImage}
             prompt={prompt}
             onPromptChange={setPrompt}
             selectedModel={selectedModel}
@@ -608,6 +666,10 @@ export default function StudioPage() {
             onPrivateChange={setIsPrivate}
             enableDetailer={enableDetailer}
             onDetailerChange={setEnableDetailer}
+            upscaleConfig={upscaleConfig}
+            onUpscaleConfigChange={setUpscaleConfig}
+            detailerConfig={detailerConfig}
+            onDetailerConfigChange={setDetailerConfig}
             busy={busy}
             canGenerate={canGenerate}
             onGenerate={handleGenerate}

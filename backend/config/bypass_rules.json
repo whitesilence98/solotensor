@@ -1,0 +1,27 @@
+{
+  "upscale_seedvr2": {
+    "nodes": ["1073", "1074", "1075", "1085"],
+    "replacement": "1064",
+    "_comment": "SeedVR2 upscaler pass in workflow_generate_t2i.json"
+  },
+  "detailer_face": {
+    "nodes": ["1080:660", "1080:654", "1080:659"],
+    "_comment": "FaceDetailerPipe, bbox detector, and ToDetailerPipe"
+  },
+  "detailer_foot": {
+    "nodes": ["1080:649", "1080:655", "1080:676"],
+    "_comment": "FootDetailerPipe, bbox detector, and ToDetailerPipe"
+  },
+  "detailer_breast": {
+    "nodes": ["1080:650", "1080:656", "1080:646"],
+    "_comment": "BreastDetailerPipe, bbox detector, and ToDetailerPipe"
+  },
+  "detailer_hand": {
+    "nodes": ["1080:653", "1080:657", "1080:678"],
+    "_comment": "HandDetailerPipe, bbox detector, and ToDetailerPipe"
+  },
+  "detailer_vagina": {
+    "nodes": ["1080:651", "1080:658", "1080:648"],
+    "_comment": "VaginaDetailerPipe, bbox detector, and ToDetailerPipe"
+  }
+}

@@ -380,6 +380,47 @@ class LoraAdapterSelection(BaseModel):
         return self
 
 
+class UpscaleConfig(BaseModel):
+    """Upscale pass configuration for SeedVR2."""
+
+    enabled: bool = False
+    scale: float = Field(1.5, ge=1.0, le=4.0, description="Upscale factor (1x, 1.5x, 2x, 3x, 4x)")
+    dit_model: str = Field("seedvr2_ema_3b_fp8_e4m3fn.safetensors", description="SeedVR2 DiT model weights")
+    color_correction: str = Field("lab", description="Color correction mode: 'lab', 'rgb', or 'none'")
+    input_noise_scale: float = Field(0.0, ge=0.0, le=1.0)
+    latent_noise_scale: float = Field(0.0, ge=0.0, le=1.0)
+    upscaler: Optional[str] = Field("SeedVR2", description="Upscaler engine")
+    hires_steps: Optional[int] = Field(25, ge=1, le=100)
+    denoising_strength: Optional[float] = Field(0.5, ge=0.0, le=1.0)
+
+
+class DetailerItemConfig(BaseModel):
+    """Per-detailer configuration."""
+
+    type: str = Field(..., description="One of: face, foot, breast, hand, vagina")
+    enabled: bool = True
+    detector_model: str | None = Field(None, description="Override .pt detector filename (e.g. bbox/face_yolov8s.pt)")
+    prompt: str = ""
+    negative_prompt: str = ""
+    steps: int = Field(25, ge=1, le=100)
+    cfg_scale: float = Field(7.0, ge=1.0, le=30.0)
+    denoising_strength: float = Field(0.27, ge=0.0, le=1.0)
+    inpaint_mask_blur: int = Field(4, ge=0, le=64)
+    inpaint_only_masked: bool = True
+    bbox_threshold: float = Field(0.5, ge=0.0, le=1.0)
+    bbox_dilation: int = Field(10, ge=0, le=128)
+
+
+class DetailerConfig(BaseModel):
+    """ADetailer-style detailer pass configuration."""
+
+    enabled: bool = False
+    items: list[DetailerItemConfig] = Field(
+        default_factory=list,
+        description="Per-detailer settings. Empty list = all detailers active with defaults when enabled=True",
+    )
+
+
 class GenerateRequest(BaseModel):
     """Body for POST /api/v1/generate."""
 
@@ -409,6 +450,8 @@ class GenerateRequest(BaseModel):
     lora_adapters: list[LoraAdapterSelection] = Field(default_factory=list)
     is_private: bool = Field(False, description="If true, image is confidential and excluded from public auto-tagging/feeds")
     enable_detailer: bool = Field(False, description="Enable secondary face & image detailer pass")
+    upscale: UpscaleConfig = Field(default_factory=UpscaleConfig)
+    detailer: DetailerConfig = Field(default_factory=DetailerConfig)
 
     @field_validator("prompt")
     @classmethod
@@ -1253,9 +1296,26 @@ class TagUpdateRequest(BaseModel):
     tags: list[str] = Field(..., max_length=100)
 
 
+class ImageMetadataExtracted(BaseModel):
+    has_metadata: bool = False
+    source: Optional[str] = None
+    prompt: Optional[str] = None
+    negative_prompt: Optional[str] = None
+    seed: Optional[int] = None
+    steps: Optional[int] = None
+    cfg: Optional[float] = None
+    sampler_name: Optional[str] = None
+    model_name: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    raw_parameters: Optional[str] = None
+
+
 class TagInterrogateResponse(BaseModel):
-    tags: list[str]
-    elapsed_ms: int
+    tags: list[str] = Field(default_factory=list)
+    has_metadata: bool = False
+    metadata: Optional[ImageMetadataExtracted] = None
+    elapsed_ms: int = 0
 
 
 # ---------------------------------------------------------------------------

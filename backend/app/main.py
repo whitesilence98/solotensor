@@ -74,6 +74,7 @@ from .schemas import (
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
     PublicModelListResponse,
+    ImageMetadataExtracted,
     TagInterrogateResponse,
     TagSummary,
     TagSummaryList,
@@ -105,6 +106,10 @@ from .services.rbac_service import RBACService, get_rbac_service
 from .services.redis_service import get_redis_service
 from .services.storage import StorageError, get_storage
 from .services.tagger import TaggerError, get_tagger_service
+from .services.workflow_router import (
+    patch_seedvr_upscaler_workflow,
+    patch_detailer_workflow,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -1168,10 +1173,10 @@ async def generate(
     user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
-    if req.mode != "text-to-image":
+    if req.mode not in ("text-to-image", "image-to-image"):
         raise HTTPException(
-            status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Image-to-Image generation is not implemented yet",
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported generation mode: {req.mode}",
         )
 
     # Deduction for authenticated creators (TensorArt quota model)
@@ -1360,6 +1365,42 @@ async def generate(
                 await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
             )
 
+        source_image_filename = None
+        if req.mode == "image-to-image":
+            if not req.reference_images:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="image-to-image mode requires at least one reference image",
+                )
+            raw_ref = req.reference_images[0]
+            try:
+                if raw_ref.startswith("data:image/"):
+                    _, b64_data = raw_ref.split(",", 1)
+                    source_bytes = base64.b64decode(b64_data)
+                elif "/files/" in raw_ref:
+                    rel_key = raw_ref.split("/files/")[-1].split("?")[0]
+                    source_bytes = await storage.get_image_bytes(rel_key)
+                elif raw_ref.startswith("http://") or raw_ref.startswith("https://"):
+                    rel_key = raw_ref.split("/")[-1].split("?")[0]
+                    source_bytes = await storage.get_image_bytes(rel_key)
+                else:
+                    try:
+                        source_bytes = base64.b64decode(raw_ref)
+                    except Exception:
+                        source_bytes = await storage.get_image_bytes(raw_ref)
+
+                source_image_filename = await comfy.upload_image(
+                    source_bytes, f"input_img2img_{client_id or uuid.uuid4().hex[:8]}.png"
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.error("Failed to process reference image for img2img: %s", exc)
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to process reference image: {exc}",
+                ) from exc
+
         if is_lora:
             graph = comfy.build_lora_workflow(
                 base_model_type=base_model["model_type"],
@@ -1382,6 +1423,9 @@ async def generate(
                 or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
                 enable_detailer=req.enable_detailer,
+                upscale=req.upscale,
+                detailer=req.detailer,
+                source_image_filename=source_image_filename,
             )
         else:
             graph = comfy.build_gallery_workflow(
@@ -1404,6 +1448,9 @@ async def generate(
                 or ("diffusion_models" if is_modular else "checkpoints"),
                 is_modular=is_modular,
                 enable_detailer=req.enable_detailer,
+                upscale=req.upscale,
+                detailer=req.detailer,
+                source_image_filename=source_image_filename,
             )
         prompt_id = await comfy.queue_prompt(graph, client_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
@@ -1487,77 +1534,148 @@ async def generate(
     }
     try:
         raw_images = await comfy.list_images(prompt_id)
-        if req.enable_detailer:
-            detailer_imgs = [
-                img for img in raw_images if "detailer" in img.get("filename", "").lower()
-            ]
-            base_imgs = [
-                img for img in raw_images if "detailer" not in img.get("filename", "").lower()
-            ]
-        else:
-            detailer_imgs = []
-            base_imgs = raw_images
-
-        # If detailer outputs exist, upload base images first as internal reference to obtain their URLs
-        base_urls: list[str] = []
-        if detailer_imgs:
-            for b_img in base_imgs:
-                b_blob = await comfy.fetch_image_bytes(b_img)
-                b_url = await storage.upload_image(
-                    b_blob,
-                    prompt_id,
-                    b_img["filename"],
-                    metadata={
-                        **metadata,
-                        "source_filename": b_img["filename"],
-                        "user_id": user_id,
-                        "gallery_saved": False,  # Hide intermediate pre-detailer base image from public gallery
-                        "is_private": req.is_private,
-                        "is_base_pre_detailer": True,
-                    },
-                    namespace=user_id,
-                )
-                base_urls.append(b_url)
-
-        # Primary images to return in GenerationResult
-        primary_images = detailer_imgs if detailer_imgs else base_imgs
-        for idx, image in enumerate(primary_images):
-            before_detailer_url = (
-                base_urls[idx]
-                if (detailer_imgs and idx < len(base_urls))
-                else (base_urls[0] if base_urls and detailer_imgs else None)
-            )
-            blob = await comfy.fetch_image_bytes(image)
-            url = await storage.upload_image(
-                blob,
-                prompt_id,
-                image["filename"],
-                metadata={
-                    **metadata,
-                    "source_filename": image["filename"],
-                    "user_id": user_id,
-                    "gallery_saved": is_public,
-                    "is_private": req.is_private,
-                    "has_detailer": bool(detailer_imgs),
-                    **(
-                        {"before_detailer_url": before_detailer_url}
-                        if before_detailer_url
-                        else {}
-                    ),
-                },
-                namespace=user_id,
-            )
-            assets.append(
-                UploadedAsset(
-                    filename=image["filename"],
-                    url=url,
-                    before_detailer_url=before_detailer_url,
-                )
+        if not raw_images:
+            return GenerationResult(
+                prompt_id=prompt_id,
+                status="completed",
+                images=[],
+                elapsed_ms=elapsed_ms,
             )
 
+        # 1. Base Image: upload and preserve in local storage
+        base_img = raw_images[0]
+        base_blob = await comfy.fetch_image_bytes(base_img)
+        has_upscale = bool(req.upscale and req.upscale.enabled)
+        has_detailer = bool((req.detailer and req.detailer.enabled) or req.enable_detailer)
+
+        # Hide base image from public gallery if downstream stages (upscale/detailer) are active
+        base_url = await storage.upload_image(
+            base_blob,
+            prompt_id,
+            base_img["filename"],
+            metadata={
+                **metadata,
+                "source_filename": base_img["filename"],
+                "user_id": user_id,
+                "gallery_saved": is_public if not (has_upscale or has_detailer) else False,
+                "is_private": req.is_private,
+                "is_base_pre_detailer": bool(has_upscale or has_detailer),
+                "mode": req.mode,
+                "source_image_filename": source_image_filename or "",
+            },
+            namespace=user_id,
+        )
+
+        active_blob = base_blob
+        active_url = base_url
+        active_filename = base_img["filename"]
+        before_detailer_url = None
+
+        # 2. Sequential Stage 2: SeedVR2 DiT Super-Resolution (if enabled)
+        if has_upscale:
+            upscaler_template = comfy.load_seedvr_upscaler_template()
+            if upscaler_template:
+                try:
+                    uploaded_input_name = await comfy.upload_image(
+                        active_blob, f"input_upscale_{prompt_id}.png"
+                    )
+                    upscale_graph = patch_seedvr_upscaler_workflow(
+                        upscaler_template,
+                        image_filename=uploaded_input_name,
+                        upscale_cfg=req.upscale,
+                        base_width=req.width,
+                        base_height=req.height,
+                    )
+                    upscale_pid = await comfy.queue_prompt(upscale_graph, client_id)
+                    up_status = await comfy.wait_until_done(upscale_pid, client_id)
+                    if up_status == "completed":
+                        up_raw = await comfy.list_images(upscale_pid)
+                        if up_raw:
+                            up_img = up_raw[0]
+                            up_blob = await comfy.fetch_image_bytes(up_img)
+                            up_url = await storage.upload_image(
+                                up_blob,
+                                upscale_pid,
+                                up_img["filename"],
+                                metadata={
+                                    **metadata,
+                                    "source_filename": up_img["filename"],
+                                    "user_id": user_id,
+                                    "gallery_saved": is_public if not has_detailer else False,
+                                    "is_private": req.is_private,
+                                    "is_upscaled": True,
+                                    "before_upscale_url": base_url,
+                                },
+                                namespace=user_id,
+                            )
+                            before_detailer_url = base_url
+                            active_blob = up_blob
+                            active_url = up_url
+                            active_filename = up_img["filename"]
+                except Exception as exc:
+                    logger.warning("Stage 2 SeedVR2 upscaler pass failed, retaining base image: %s", exc)
+
+        # 3. Sequential Stage 3: Cascading Detailers & Styling (if enabled)
+        if has_detailer:
+            detailer_template = comfy.load_modular_detailer_template() or comfy.load_detailer_template()
+            if detailer_template:
+                try:
+                    uploaded_input_name = await comfy.upload_image(
+                        active_blob, f"input_detail_{prompt_id}.png"
+                    )
+                    detail_graph = patch_detailer_workflow(
+                        detailer_template,
+                        image_filename=uploaded_input_name,
+                        detailer_cfg=req.detailer,
+                        prompt=req.prompt,
+                        negative_prompt=req.negative_prompt,
+                        unet_name=resolved_base,
+                        clip_name=resolved_clip,
+                        clip_type=resolved_clip_type,
+                        vae_name=resolved_vae,
+                        loras=active_loras,
+                    )
+                    detail_pid = await comfy.queue_prompt(detail_graph, client_id)
+                    det_status = await comfy.wait_until_done(detail_pid, client_id)
+                    if det_status == "completed":
+                        det_raw = await comfy.list_images(detail_pid)
+                        if det_raw:
+                            det_img = det_raw[0]
+                            det_blob = await comfy.fetch_image_bytes(det_img)
+                            det_url = await storage.upload_image(
+                                det_blob,
+                                detail_pid,
+                                det_img["filename"],
+                                metadata={
+                                    **metadata,
+                                    "source_filename": det_img["filename"],
+                                    "user_id": user_id,
+                                    "gallery_saved": is_public,
+                                    "is_private": req.is_private,
+                                    "has_detailer": True,
+                                    "before_detailer_url": active_url,
+                                },
+                                namespace=user_id,
+                            )
+                            before_detailer_url = active_url
+                            active_blob = det_blob
+                            active_url = det_url
+                            active_filename = det_img["filename"]
+                except Exception as exc:
+                    logger.warning("Stage 3 Detailer pass failed, retaining current image: %s", exc)
+
+        assets.append(
+            UploadedAsset(
+                filename=active_filename,
+                url=active_url,
+                before_detailer_url=before_detailer_url,
+            )
+        )
+
+        for asset in assets:
             # Extract key from url
             rel_key = (
-                url.split("/files/")[-1] if "/files/" in url else image["filename"]
+                asset.url.split("/files/")[-1] if "/files/" in asset.url else asset.filename
             )
 
             # Auto-tag public generations in background
@@ -1584,8 +1702,8 @@ async def generate(
                         "model_id": selected_model.get("model_id"),
                         "version_id": selected_model.get("version_id"),
                         "file_id": selected_model.get("file_id"),
-                        "filename": image["filename"],
-                        "url": url,
+                        "filename": asset.filename,
+                        "url": asset.url,
                         "key": rel_key,
                         "prompt": req.prompt,
                         "negative_prompt": req.negative_prompt,
@@ -1604,12 +1722,12 @@ async def generate(
                         "metadata_json": json.dumps(
                             {
                                 **metadata,
-                                "source_filename": image["filename"],
+                                "source_filename": asset.filename,
                                 "user_id": user_id,
-                                "has_detailer": bool(detailer_imgs),
+                                "has_detailer": bool(has_detailer),
                                 **(
-                                    {"before_detailer_url": before_detailer_url}
-                                    if before_detailer_url
+                                    {"before_detailer_url": asset.before_detailer_url}
+                                    if asset.before_detailer_url
                                     else {}
                                 ),
                             }
@@ -2232,6 +2350,20 @@ async def interrogate_image(file: UploadFile = File(...)) -> TagInterrogateRespo
     content = await file.read(25 * 1024 * 1024)
     if not content:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty image file")
+
+    # Tier 1: Check for embedded generation metadata (instant byte read)
+    from .services.image_metadata import extract_image_metadata
+    meta = extract_image_metadata(content)
+    if meta.has_metadata:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return TagInterrogateResponse(
+            tags=meta.tags,
+            has_metadata=True,
+            metadata=ImageMetadataExtracted(**meta.to_dict()),
+            elapsed_ms=elapsed_ms,
+        )
+
+    # Tier 2: Fallback to ComfyUI WD14 Vision Tagger
     tagger = get_tagger_service()
     try:
         tags = await tagger.interrogate_image(
@@ -2240,7 +2372,12 @@ async def interrogate_image(file: UploadFile = File(...)) -> TagInterrogateRespo
     except TaggerError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     elapsed_ms = int((time.monotonic() - started) * 1000)
-    return TagInterrogateResponse(tags=tags, elapsed_ms=elapsed_ms)
+    return TagInterrogateResponse(
+        tags=tags,
+        has_metadata=False,
+        metadata=None,
+        elapsed_ms=elapsed_ms,
+    )
 
 
 @app.post("/api/v1/assets/{key:path}/tags/auto", response_model=GalleryItem)

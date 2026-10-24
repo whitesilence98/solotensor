@@ -88,6 +88,38 @@ export interface LoraAdapterPayload {
   on: boolean;
 }
 
+export interface UpscaleConfigPayload {
+  enabled: boolean;
+  scale?: number;
+  dit_model?: string;
+  color_correction?: "lab" | "rgb" | "none";
+  input_noise_scale?: number;
+  latent_noise_scale?: number;
+  upscaler?: string;
+  hires_steps?: number;
+  denoising_strength?: number;
+}
+
+export interface DetailerItemPayload {
+  type: string;
+  enabled: boolean;
+  detector_model?: string;
+  prompt: string;
+  negative_prompt: string;
+  steps: number;
+  cfg_scale: number;
+  denoising_strength: number;
+  inpaint_mask_blur: number;
+  inpaint_only_masked: boolean;
+  bbox_threshold: number;
+  bbox_dilation: number;
+}
+
+export interface DetailerConfigPayload {
+  enabled: boolean;
+  items: DetailerItemPayload[];
+}
+
 export interface GeneratePayload {
   model_id: string;
   version_id: string;
@@ -111,6 +143,8 @@ export interface GeneratePayload {
   lora_adapters?: LoraAdapterPayload[];
   is_private?: boolean;
   enable_detailer?: boolean;
+  upscale?: UpscaleConfigPayload;
+  detailer?: DetailerConfigPayload;
 }
 
 export interface ClipOptions {
@@ -377,8 +411,25 @@ export interface TagSummary {
   count: number;
 }
 
+export interface ImageMetadataExtracted {
+  has_metadata: boolean;
+  source?: "a1111" | "comfyui" | "novelai" | "fooocus" | "exif";
+  prompt?: string | null;
+  negative_prompt?: string | null;
+  seed?: number | null;
+  steps?: number | null;
+  cfg?: number | null;
+  sampler_name?: string | null;
+  model_name?: string | null;
+  width?: number | null;
+  height?: number | null;
+  raw_parameters?: string | null;
+}
+
 export interface TagInterrogateResult {
   tags: string[];
+  has_metadata?: boolean;
+  metadata?: ImageMetadataExtracted | null;
   elapsed_ms: number;
 }
 
@@ -1628,9 +1679,10 @@ export const api = {
     };
   },
 
-  async interrogateImage(file: File): Promise<TagInterrogateResult> {
+  async interrogateImage(file: File | Blob, filename = "image.png"): Promise<TagInterrogateResult> {
     const form = new FormData();
-    form.append("file", file, file.name);
+    const fname = file instanceof File ? file.name : filename;
+    form.append("file", file, fname);
     const resp = await fetch(`${API_BASE}/api/v1/tagger/interrogate`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -2699,4 +2751,20 @@ export function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+export function dataUrlToBlob(dataUrl: string): Blob {
+  try {
+    const parts = dataUrl.split(";base64,");
+    const contentType = parts[0].split(":")[1] || "image/png";
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  } catch {
+    return new Blob([], { type: "image/png" });
+  }
 }

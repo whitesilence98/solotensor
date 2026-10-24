@@ -1,3 +1,4 @@
+from .workflow_router import patch_full_t2i_workflow
 """Async HTTP + WebSocket client for a headless ComfyUI instance.
 
 Queues API-format workflows, streams execution progress, and fetches the
@@ -144,12 +145,38 @@ class ComfyClient:
         )
 
     def load_workflow_template(self) -> Optional[dict[str, Any]]:
-        """Load workflows/workflow_api.json if present (exported from the ComfyUI UI).
+        """Load workflow_api.json template from workflows or test fixtures."""
+        for base in [Path(__file__).resolve().parents[2] / "workflows", Path(__file__).resolve().parents[2] / "tests" / "fixtures"]:
+            path = base / "workflow_api.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data:
+                    return data
+            except (OSError, json.JSONDecodeError):
+                continue
+        return None
 
-        When a template exists it is used for every generation, patched by
-        class_type/node lookup; the built-in txt2img graph is only a fallback.
-        """
-        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_api.json"
+    def load_full_t2i_template(self) -> Optional[dict[str, Any]]:
+        """Load workflows/workflow_generate_t2i.json if present."""
+        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_generate_t2i.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) and data else None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def load_seedvr_upscaler_template(self) -> Optional[dict[str, Any]]:
+        """Load workflows/workflow_seedvr_upscaler.json if present."""
+        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_seedvr_upscaler.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) and data else None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def load_modular_detailer_template(self) -> Optional[dict[str, Any]]:
+        """Load workflows/workflow_detailer.json if present."""
+        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_detailer.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) and data else None
@@ -157,13 +184,16 @@ class ComfyClient:
             return None
 
     def load_detailer_template(self) -> Optional[dict[str, Any]]:
-        """Load workflows/workflow_generate_detailer.json if present."""
-        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_generate_detailer.json"
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) and data else None
-        except (OSError, json.JSONDecodeError):
-            return None
+        """Load workflow_generate_detailer.json template from workflows or test fixtures."""
+        for base in [Path(__file__).resolve().parents[2] / "workflows", Path(__file__).resolve().parents[2] / "tests" / "fixtures"]:
+            path = base / "workflow_generate_detailer.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data:
+                    return data
+            except (OSError, json.JSONDecodeError):
+                continue
+        return None
 
     def attach_detailer_nodes(
         self,
@@ -693,12 +723,61 @@ class ComfyClient:
         category: Optional[str] = None,
         is_modular: Optional[bool] = None,
         enable_detailer: bool = False,
+        upscale: Optional[Any] = None,
+        detailer: Optional[Any] = None,
+        source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or model_type == "Diffusion Model")
 
         if is_modular:
+            has_upscale = bool(upscale and getattr(upscale, "enabled", False))
+            has_structured_detailer = bool(detailer and getattr(detailer, "enabled", False))
+            if has_upscale or has_structured_detailer or source_image_filename:
+                t2i_template = self.load_full_t2i_template()
+                if t2i_template:
+                    return patch_full_t2i_workflow(
+                        t2i_template,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
+                        steps=steps,
+                        image_count=image_count,
+                        width=width,
+                        height=height,
+                        unet_name=filename,
+                        clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                        clip_type=clip_type or "krea2",
+                        vae_name=vae_name or "wan_2.1_vae.safetensors",
+                        loras=loras or [],
+                        upscale_cfg=upscale,
+                        detailer_cfg=detailer,
+                        source_image_filename=source_image_filename,
+                        denoise=denoise,
+                    )
             template = self.load_workflow_template()
+            if template is None:
+                t2i_template = self.load_full_t2i_template()
+                if t2i_template:
+                    return patch_full_t2i_workflow(
+                        t2i_template,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
+                        steps=steps,
+                        image_count=image_count,
+                        width=width,
+                        height=height,
+                        unet_name=filename,
+                        clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                        clip_type=clip_type or "krea2",
+                        vae_name=vae_name or "wan_2.1_vae.safetensors",
+                        loras=loras or [],
+                        upscale_cfg=upscale,
+                        detailer_cfg=detailer,
+                        source_image_filename=source_image_filename,
+                        denoise=denoise,
+                    )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
             return self.patch_workflow_template(
@@ -788,13 +867,62 @@ class ComfyClient:
         category: Optional[str] = None,
         is_modular: Optional[bool] = None,
         enable_detailer: bool = False,
+        upscale: Optional[Any] = None,
+        detailer: Optional[Any] = None,
+        source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or base_model_type == "Diffusion Model")
 
         active_loras = loras if loras is not None else [{"lora": lora_filename, "on": True, "strength": 1.0}]
         if is_modular:
+            has_upscale = bool(upscale and getattr(upscale, "enabled", False))
+            has_structured_detailer = bool(detailer and getattr(detailer, "enabled", False))
+            if has_upscale or has_structured_detailer or source_image_filename:
+                t2i_template = self.load_full_t2i_template()
+                if t2i_template:
+                    return patch_full_t2i_workflow(
+                        t2i_template,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
+                        steps=steps,
+                        image_count=image_count,
+                        width=width,
+                        height=height,
+                        unet_name=base_filename,
+                        clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                        clip_type=clip_type or "krea2",
+                        vae_name=vae_name or "wan_2.1_vae.safetensors",
+                        loras=active_loras,
+                        upscale_cfg=upscale,
+                        detailer_cfg=detailer,
+                        source_image_filename=source_image_filename,
+                        denoise=denoise,
+                    )
             template = self.load_workflow_template()
+            if template is None:
+                t2i_template = self.load_full_t2i_template()
+                if t2i_template:
+                    return patch_full_t2i_workflow(
+                        t2i_template,
+                        prompt=prompt,
+                        negative_prompt=negative_prompt,
+                        seed=seed,
+                        steps=steps,
+                        image_count=image_count,
+                        width=width,
+                        height=height,
+                        unet_name=base_filename,
+                        clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                        clip_type=clip_type or "krea2",
+                        vae_name=vae_name or "wan_2.1_vae.safetensors",
+                        loras=active_loras,
+                        upscale_cfg=upscale,
+                        detailer_cfg=detailer,
+                        source_image_filename=source_image_filename,
+                        denoise=denoise,
+                    )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
             return self.patch_workflow_template(

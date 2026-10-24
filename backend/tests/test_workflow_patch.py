@@ -10,6 +10,8 @@ class WorkflowPatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         path = Path(__file__).parents[1] / "workflows" / "workflow_api.json"
+        if not path.exists():
+            path = Path(__file__).parent / "fixtures" / "workflow_api.json"
         cls.template = json.loads(path.read_text(encoding="utf-8"))
         cls.client = ComfyClient()
 
