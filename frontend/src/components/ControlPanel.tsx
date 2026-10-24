@@ -5,6 +5,9 @@ import Link from "next/link";
 import {
  AlertCircle,
  Box,
+ Brush,
+ Crown,
+ Film,
  Check,
  ChevronDown,
  ChevronRight,
@@ -49,6 +52,7 @@ import SeedInput from "@/components/SeedInput";
 import AspectRatioSelector from "@/components/AspectRatioSelector";
 import UpscalePanel, { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
 import DetailerPanel, { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
+import PromptComposer from "@/components/PromptComposer";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -182,6 +186,20 @@ interface Props {
  onActiveModeChange?: (mode: TensorMode) => void;
  referenceImage?: string | null;
  onReferenceImageChange?: (image: string | null) => void;
+ maskImage?: string | null;
+ onMaskImageChange?: (mask: string | null) => void;
+ maskBlur?: number;
+ onMaskBlurChange?: (blur: number) => void;
+ inpaintFill?: "original" | "latent_noise" | "latent_zero";
+ onInpaintFillChange?: (fill: "original" | "latent_noise" | "latent_zero") => void;
+ motionBucketId?: number;
+ onMotionBucketIdChange?: (id: number) => void;
+ videoFrames?: number;
+ onVideoFramesChange?: (frames: number) => void;
+ videoFps?: number;
+ onVideoFpsChange?: (fps: number) => void;
+ primePreset?: string;
+ onPrimePresetChange?: (preset: string) => void;
 }
 
 export default function ControlPanel(props: Props) {
@@ -229,6 +247,20 @@ export default function ControlPanel(props: Props) {
   onUpscaleConfigChange,
   detailerConfig,
   onDetailerConfigChange,
+  maskImage = props.maskImage,
+  onMaskImageChange = props.onMaskImageChange,
+  maskBlur = props.maskBlur ?? 8,
+  onMaskBlurChange = props.onMaskBlurChange,
+  inpaintFill = props.inpaintFill ?? "original",
+  onInpaintFillChange = props.onInpaintFillChange,
+  motionBucketId = props.motionBucketId ?? 127,
+  onMotionBucketIdChange = props.onMotionBucketIdChange,
+  videoFrames = props.videoFrames ?? 25,
+  onVideoFramesChange = props.onVideoFramesChange,
+  videoFps = props.videoFps ?? 16,
+  onVideoFpsChange = props.onVideoFpsChange,
+  primePreset = props.primePreset ?? "portrait_pro",
+  onPrimePresetChange = props.onPrimePresetChange,
  } = props;
 
  const [internalUpscale, setInternalUpscale] = useState<UpscaleConfig>(DEFAULT_UPSCALE_CONFIG);
@@ -375,7 +407,6 @@ export default function ControlPanel(props: Props) {
  const [advancedOpen, setAdvancedOpen] = useState(false);
 
  // Image Interrogation & Metadata Extraction State
- const tagFileInputRef = useRef<HTMLInputElement>(null);
  const [interrogating, setInterrogating] = useState(false);
  const [interrogateToast, setInterrogateToast] = useState<string | null>(null);
 
@@ -443,14 +474,7 @@ export default function ControlPanel(props: Props) {
    setTimeout(() => setInterrogateToast(null), 3500);
   } finally {
    setInterrogating(false);
-   if (tagFileInputRef.current) tagFileInputRef.current.value = "";
   }
- };
-
- const handleInterrogateFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  await executeInterrogation(file, file.name);
  };
 
  const handleAutoPromptFromReference = async () => {
@@ -1065,51 +1089,24 @@ export default function ControlPanel(props: Props) {
         </button>
        </div>
 
-       {/* 4. Prompt & Negative Prompt */}
-       <div className="space-y-3">
-        <div className="space-y-1.5">
-         <div className="flex items-center justify-between">
-          <label htmlFor="img2img-prompt" className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-           PROMPT
-          </label>
-         </div>
-         <textarea
-          id="img2img-prompt"
-          value={prompt ?? ""}
-          onChange={(e) => onPromptChange?.(e.target.value)}
-          rows={3}
-          placeholder="Describe desired modifications, atmosphere, details, and style…"
-          disabled={busy}
-          className="w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[5rem]"
-         />
-        </div>
-
-        <div className="space-y-1.5">
-         <div className="flex items-center justify-between">
-          <label htmlFor="img2img-neg-prompt" className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-           NEGATIVE PROMPT
-          </label>
-          {negativePrompt && (
-           <button
-            type="button"
-            onClick={() => onNegativePromptChange?.("")}
-            className="text-[10px] text-[var(--ink-faint)] hover:text-[var(--danger)] transition"
-           >
-            Clear
-           </button>
-          )}
-         </div>
-         <textarea
-          id="img2img-neg-prompt"
-          value={negativePrompt ?? ""}
-          onChange={(e) => onNegativePromptChange?.(e.target.value)}
-          rows={2}
-          placeholder="blurry, distorted, artifacts, bad anatomy…"
-          disabled={busy}
-          className="w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[3.5rem]"
-         />
-        </div>
-       </div>
+       {/* 4. Prompt Composer (Reused Component) */}
+       <PromptComposer
+        idPrefix="img2img"
+        prompt={prompt}
+        onPromptChange={onPromptChange}
+        negativePrompt={negativePrompt}
+        onNegativePromptChange={onNegativePromptChange}
+        busy={busy}
+        canGenerate={canGenerate}
+        onGenerate={onGenerate}
+        onInterrogateFile={(file) => executeInterrogation(file, file.name)}
+        interrogating={interrogating}
+        interrogateToast={interrogateToast}
+        positivePlaceholder="Describe desired modifications, atmosphere, details, and style…"
+        negativePlaceholder="worst quality, low quality, blurry, distorted, extra limbs, bad anatomy…"
+        positiveRows={3}
+        negativeRows={2}
+       />
 
        {/* 5. Format & Dimensions */}
        <div className="space-y-2 border-t border-[var(--line)] pt-3">
@@ -1283,6 +1280,920 @@ export default function ControlPanel(props: Props) {
        </div>
       </div>
      )}
+    </div>
+   ) : activeMode === "Edit" ? (
+    <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
+     {/* Edit Mode Header */}
+     <div className="flex items-center justify-between px-1">
+      <div className="flex items-center gap-2">
+       <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]">
+        <Brush className="h-3 w-3" />
+       </span>
+       <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[var(--ink)]">
+        Inpaint & Regional Edit
+       </span>
+      </div>
+      <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] text-[var(--accent)]">
+       MASK STAGE
+      </span>
+     </div>
+
+     {/* 1. Source Image Input & Preview Card */}
+     <div className="space-y-2">
+      <div className="flex items-center justify-between">
+       <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+         SOURCE IMAGE
+        </span>
+        {props.referenceImage ? (
+         <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+          LOADED
+         </span>
+        ) : (
+         <span className="rounded-xl bg-amber-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-amber-400 border border-amber-500/20">
+          REQUIRED
+         </span>
+        )}
+       </div>
+       {props.referenceImage && (
+        <button
+         type="button"
+         onClick={() => {
+          setSourceImageFile(null);
+          props.onReferenceImageChange?.(null);
+         }}
+         className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
+         title="Remove source image"
+        >
+         <Trash2 className="h-3 w-3" />
+         <span>Clear</span>
+        </button>
+       )}
+      </div>
+
+      {!props.referenceImage ? (
+       <div
+        onDragOver={(e) => {
+         e.preventDefault();
+         setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleImg2ImgDrop}
+        onClick={() => img2imgFileInputRef.current?.click()}
+        className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition cursor-pointer ${
+         isDragOver
+          ? "border-[var(--accent)] bg-[var(--accent)]/5"
+          : "border-[var(--line-strong)] bg-[#0c0d0c] hover:border-[var(--ink-faint)]"
+        }`}
+       >
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
+         <UploadCloud className="h-5 w-5" />
+        </div>
+        <p className="mt-2 text-xs font-semibold text-[var(--ink)]">
+         Drop image to inpaint or <span className="text-[var(--accent)]">browse</span>
+        </p>
+        <p className="mt-1 text-[10px] text-[var(--ink-faint)]">
+         PNG, JPEG, WEBP · Snap to multiples of 8
+        </p>
+       </div>
+      ) : (
+       <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2.5 space-y-2.5">
+        <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-48 group">
+         <img
+          src={props.referenceImage}
+          alt="Inpaint Source"
+          className="max-h-48 w-auto object-contain rounded-md"
+         />
+        </div>
+        <div className="flex items-center gap-2">
+         <button
+          type="button"
+          onClick={handleAutoPromptFromReference}
+          disabled={interrogating}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface)] hover:border-[var(--accent)] text-[10px] font-mono font-medium text-[var(--ink)] transition disabled:opacity-50"
+         >
+          {interrogating ? (
+           <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+           <Tag className="h-3 w-3" />
+          )}
+          <span>{interrogating ? "Reading…" : "Auto-Prompt"}</span>
+         </button>
+         <button
+          type="button"
+          onClick={handleMatchDimensions}
+          disabled={!naturalDimensions}
+          className="flex-1 flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface)] hover:border-[var(--accent)] text-[10px] font-mono font-medium text-[var(--ink)] transition disabled:opacity-50"
+         >
+          <SlidersHorizontal className="h-3 w-3" />
+          <span>Match Ratio</span>
+         </button>
+        </div>
+       </div>
+      )}
+     </div>
+
+     {/* 2. Inpaint Settings Card */}
+     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
+        Inpaint Fill Mode
+       </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-[var(--surface)] p-1 border border-white/5">
+       {[
+        { id: "original", label: "Original", hint: "Preserves underlying colors & shapes" },
+        { id: "latent_noise", label: "Latent Noise", hint: "Drastic object replacement" },
+        { id: "latent_zero", label: "Neutral Tone", hint: "Clean object removal" },
+       ].map((fill) => (
+        <button
+         key={fill.id}
+         type="button"
+         onClick={() => onInpaintFillChange?.(fill.id as any)}
+         className={`py-1.5 px-2 rounded-md text-[10px] font-bold transition text-center ${
+          inpaintFill === fill.id
+           ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+           : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+         }`}
+         title={fill.hint}
+        >
+         {fill.label}
+        </button>
+       ))}
+      </div>
+
+      {/* Mask Blur Slider */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Mask Feathering</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{maskBlur}px</span>
+       </div>
+       <input
+        type="range"
+        min={0}
+        max={32}
+        step={1}
+        value={maskBlur}
+        onChange={(e) => onMaskBlurChange?.(Number(e.target.value))}
+        className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+       />
+      </div>
+
+      {/* Inpaint Denoising Strength */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Inpaint Denoise</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{denoise}</span>
+       </div>
+       <input
+        type="range"
+        min={0.1}
+        max={1.0}
+        step={0.05}
+        value={Number(denoise) || 0.75}
+        onChange={(e) => onDenoiseChange(e.target.value)}
+        className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+       />
+       <div className="flex items-center justify-between gap-1 pt-1">
+        {[
+         { label: "Subtle (0.50)", val: "0.50" },
+         { label: "Balanced (0.75)", val: "0.75" },
+         { label: "Radical (0.95)", val: "0.95" },
+        ].map((chip) => (
+         <button
+          key={chip.val}
+          type="button"
+          onClick={() => onDenoiseChange(chip.val)}
+          className={`flex-1 py-0.5 rounded text-[9px] font-mono border transition ${
+           denoise === chip.val
+            ? "bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)] font-bold"
+            : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+          }`}
+         >
+          {chip.label}
+         </button>
+        ))}
+       </div>
+      </div>
+     </div>
+
+     {/* 3. Generation Model Card */}
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        GENERATION MODEL
+       </span>
+       <button
+        type="button"
+        onClick={() => setModelPickerOpen(true)}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
+       >
+        <RefreshCw className="h-3 w-3" />
+        <span>Change</span>
+       </button>
+      </div>
+
+      <button
+       type="button"
+       onClick={() => setModelPickerOpen(true)}
+       className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
+      >
+       <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
+        {currentModelCover ? (
+         <img
+          src={currentModelCover}
+          alt={selectedModel?.title ?? "Model preview"}
+          className="h-full w-full object-cover"
+         />
+        ) : (
+         <div className="grid h-full w-full place-items-center text-[var(--accent)]">
+          <Box className="h-5 w-5 opacity-75" />
+         </div>
+        )}
+       </div>
+       <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+         <span className="truncate text-xs font-bold text-[var(--ink)]">
+          {selectedModel?.title || "Krea 2 Turbo"}
+         </span>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+         {baseModelTag && (
+          <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
+           {baseModelTag}
+          </span>
+         )}
+         <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+          {selectedModel?.model_type || "Diffusion Model"}
+         </span>
+        </div>
+       </div>
+       <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
+      </button>
+     </div>
+
+     {/* 4. Inpaint Prompt Composer */}
+     <PromptComposer
+      idPrefix="edit"
+      prompt={prompt}
+      onPromptChange={onPromptChange}
+      negativePrompt={negativePrompt}
+      onNegativePromptChange={onNegativePromptChange}
+      busy={busy}
+      canGenerate={canGenerate}
+      onGenerate={onGenerate}
+     />
+
+     {/* 5. Aspect Ratio Selector */}
+     <AspectRatioSelector
+      value={format}
+      onChange={onFormatChange}
+      options={FORMATS}
+      disabled={busy}
+      label="Canvas Bounds"
+      columns={3}
+     />
+
+     {/* 6. LoRA Adapters */}
+     <div className="space-y-2">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        ACTIVE LORAS ({loras.length}/5)
+       </span>
+       <button
+        type="button"
+        disabled={loras.length >= 5}
+        onClick={() => setLoraPickerOpen(true)}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition disabled:opacity-40"
+       >
+        <Plus className="h-3 w-3" />
+        <span>Add LoRA</span>
+       </button>
+      </div>
+      {loras.length === 0 ? (
+       <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center">
+        <p className="text-[11px] text-[var(--ink-faint)]">No active LoRA modifiers attached</p>
+       </div>
+      ) : (
+       <div className="space-y-1.5">
+        {loras.map((l) => (
+         <div
+          key={l.id}
+          className="flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2"
+         >
+          <div className="min-w-0 flex-1">
+           <p className="truncate text-xs font-semibold text-[var(--ink)]">{l.title}</p>
+           <span className="text-[10px] font-mono text-[var(--accent)]">{l.weight.toFixed(2)}x</span>
+          </div>
+          <button
+           type="button"
+           onClick={() => removeLora(l.id)}
+           className="text-[var(--danger)] hover:opacity-80 p-1"
+          >
+           <Trash2 className="h-3.5 w-3.5" />
+          </button>
+         </div>
+        ))}
+       </div>
+      )}
+     </div>
+
+     {/* 7. Sampling Parameters */}
+     <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        SAMPLING PARAMETERS
+       </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">STEPS</label>
+        <input
+         type="number"
+         value={steps}
+         min={1}
+         max={100}
+         onChange={(e) => onStepsChange(e.target.value)}
+         className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
+        />
+       </div>
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">CFG SCALE</label>
+        <input
+         type="number"
+         value={cfg}
+         step={0.5}
+         min={1}
+         max={30}
+         onChange={(e) => onCfgChange(e.target.value)}
+         className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
+        />
+       </div>
+      </div>
+      <SeedInput value={seed} onChange={(val) => onSeedChange(String(val))} />
+     </div>
+    </div>
+   ) : activeMode === "Video" ? (
+    <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
+     {/* Video Studio Header */}
+     <div className="flex items-center justify-between px-1">
+      <div className="flex items-center gap-2">
+       <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]">
+        <Film className="h-3 w-3" />
+       </span>
+       <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[var(--ink)]">
+        SVD Latent Motion Studio
+       </span>
+      </div>
+      <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)]">
+       VIDEO DIFFUSION
+      </span>
+     </div>
+
+     {/* 1. Initial Source Frame Uploader */}
+     <div className="space-y-2">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        INITIAL SOURCE FRAME
+       </span>
+       {props.referenceImage && (
+        <button
+         type="button"
+         onClick={() => {
+          setSourceImageFile(null);
+          props.onReferenceImageChange?.(null);
+         }}
+         className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
+        >
+         <Trash2 className="h-3 w-3" />
+         <span>Clear</span>
+        </button>
+       )}
+      </div>
+
+      {!props.referenceImage ? (
+       <div
+        onDragOver={(e) => {
+         e.preventDefault();
+         setIsDragOver(true);
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleImg2ImgDrop}
+        onClick={() => img2imgFileInputRef.current?.click()}
+        className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition cursor-pointer ${
+         isDragOver
+          ? "border-[var(--accent)] bg-[var(--accent)]/5"
+          : "border-[var(--line-strong)] bg-[#0c0d0c] hover:border-[var(--ink-faint)]"
+        }`}
+       >
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
+         <UploadCloud className="h-5 w-5" />
+        </div>
+        <p className="mt-2 text-xs font-semibold text-[var(--ink)]">
+         Drop initial frame or <span className="text-[var(--accent)]">browse</span>
+        </p>
+        <p className="mt-1 text-[10px] text-[var(--ink-faint)]">
+         Standard SVD: 1024x576 (16:9)
+        </p>
+       </div>
+      ) : (
+       <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2.5 space-y-2.5">
+        <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-48 group">
+         <img
+          src={props.referenceImage}
+          alt="Video Frame Source"
+          className="max-h-48 w-auto object-contain rounded-md"
+         />
+        </div>
+       </div>
+      )}
+     </div>
+
+     {/* 2. Motion & Dynamic Settings */}
+     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
+      {/* Motion Bucket ID */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Motion Magnitude</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{motionBucketId}</span>
+       </div>
+       <input
+        type="range"
+        min={1}
+        max={255}
+        step={1}
+        value={motionBucketId}
+        onChange={(e) => onMotionBucketIdChange?.(Number(e.target.value))}
+        className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+       />
+       <div className="flex items-center justify-between gap-1 pt-1">
+        {[
+         { label: "Subtle (64)", val: 64 },
+         { label: "Cinematic (127)", val: 127 },
+         { label: "Dynamic (200)", val: 200 },
+        ].map((chip) => (
+         <button
+          key={chip.val}
+          type="button"
+          onClick={() => onMotionBucketIdChange?.(chip.val)}
+          className={`flex-1 py-0.5 rounded text-[9px] font-mono border transition ${
+           motionBucketId === chip.val
+            ? "bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)] font-bold"
+            : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+          }`}
+         >
+          {chip.label}
+         </button>
+        ))}
+       </div>
+      </div>
+
+      {/* Frame Count */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Video Length</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{videoFrames} frames</span>
+       </div>
+       <div className="grid grid-cols-3 gap-1">
+        {[14, 25, 49].map((frames) => (
+         <button
+          key={frames}
+          type="button"
+          onClick={() => onVideoFramesChange?.(frames)}
+          className={`py-1.5 px-2 rounded-md text-[10px] font-bold transition text-center ${
+           videoFrames === frames
+            ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+            : "bg-[var(--surface)] border border-white/5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+          }`}
+         >
+          {frames} frames
+         </button>
+        ))}
+       </div>
+      </div>
+
+      {/* Frame Rate (FPS) */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Frame Rate</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{videoFps} FPS</span>
+       </div>
+       <div className="grid grid-cols-4 gap-1">
+        {[6, 12, 16, 24].map((fps) => (
+         <button
+          key={fps}
+          type="button"
+          onClick={() => onVideoFpsChange?.(fps)}
+          className={`py-1.5 px-1 rounded-md text-[10px] font-bold transition text-center ${
+           videoFps === fps
+            ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+            : "bg-[var(--surface)] border border-white/5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+          }`}
+         >
+          {fps} FPS
+         </button>
+        ))}
+       </div>
+      </div>
+
+      {/* Video CFG Scale (Tuned 1.0 - 5.0) */}
+      <div className="space-y-1.5">
+       <div className="flex items-center justify-between text-xs">
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">Video CFG (Guidance)</span>
+        <span className="font-mono text-[11px] font-bold text-[var(--accent)]">{cfg}</span>
+       </div>
+       <input
+        type="range"
+        min={1.0}
+        max={5.0}
+        step={0.1}
+        value={Number(cfg) || 2.5}
+        onChange={(e) => onCfgChange(e.target.value)}
+        className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+       />
+       <p className="text-[9px] text-[var(--ink-faint)]">
+        Video diffusion requires low CFG (2.0 – 3.0) to prevent temporal artifacting.
+       </p>
+      </div>
+     </div>
+
+     {/* 3. Generation Model Card */}
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        GENERATION MODEL
+       </span>
+       <button
+        type="button"
+        onClick={() => setModelPickerOpen(true)}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
+       >
+        <RefreshCw className="h-3 w-3" />
+        <span>Change</span>
+       </button>
+      </div>
+
+      <button
+       type="button"
+       onClick={() => setModelPickerOpen(true)}
+       className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
+      >
+       <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
+        {currentModelCover ? (
+         <img
+          src={currentModelCover}
+          alt={selectedModel?.title ?? "Model preview"}
+          className="h-full w-full object-cover"
+         />
+        ) : (
+         <div className="grid h-full w-full place-items-center text-[var(--accent)]">
+          <Box className="h-5 w-5 opacity-75" />
+         </div>
+        )}
+       </div>
+       <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+         <span className="truncate text-xs font-bold text-[var(--ink)]">
+          {selectedModel?.title || "SVD-XT Video Model"}
+         </span>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+         <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
+          SVD / WAN
+         </span>
+         <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+          {selectedModel?.model_type || "Video Model"}
+         </span>
+        </div>
+       </div>
+       <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
+      </button>
+     </div>
+
+     {/* 4. Motion Prompt */}
+     <PromptComposer
+      idPrefix="video"
+      prompt={prompt}
+      onPromptChange={onPromptChange}
+      negativePrompt={negativePrompt}
+      onNegativePromptChange={onNegativePromptChange}
+      busy={busy}
+      canGenerate={canGenerate}
+      onGenerate={onGenerate}
+     />
+
+     {/* 5. Sampling Parameters */}
+     <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        DIFFUSION SAMPLING
+       </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">STEPS</label>
+        <input
+         type="number"
+         value={steps}
+         min={1}
+         max={100}
+         onChange={(e) => onStepsChange(e.target.value)}
+         className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
+        />
+       </div>
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">SEED</label>
+        <SeedInput value={seed} onChange={(val) => onSeedChange(String(val))} />
+       </div>
+      </div>
+     </div>
+    </div>
+   ) : activeMode === "Prime" ? (
+    <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
+     {/* Prime Luxury Header */}
+     <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-amber-500/10 via-[var(--accent)]/10 to-transparent p-3 border border-amber-500/20">
+      <div className="flex items-center gap-2.5">
+       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+        <Crown className="h-4 w-4" />
+       </span>
+       <div>
+        <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider">SOLOTENSOR PRIME™</h3>
+        <p className="text-[10px] text-[var(--ink-faint)]">Autonomous Multi-Stage Pro Pipeline</p>
+       </div>
+      </div>
+      <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+       PRO SUITE
+      </span>
+     </div>
+
+     {/* 1. Prime Recipe Presets */}
+     <div className="space-y-2">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+       PRIME RECIPE PRESETS
+      </span>
+      <div className="grid grid-cols-1 gap-2">
+       {[
+        {
+         id: "portrait_pro",
+         title: "Photoreal Studio Portrait",
+         desc: "Base SDXL/Flux + 1.5x SeedVR2 DiT Upscale + YOLO Face Detailer",
+         scale: 1.5,
+         detailer: true,
+        },
+        {
+         id: "cinematic",
+         title: "Cinematic Masterpiece",
+         desc: "Filmic 85mm medium format + DiT Super-Resolution + Color Grading",
+         scale: 2.0,
+         detailer: true,
+        },
+        {
+         id: "anime_hd",
+         title: "Hyper-Detail Anime",
+         desc: "Anime Base + Hand & Anatomical Mesh Fix + DiT Sharpening",
+         scale: 1.5,
+         detailer: true,
+        },
+       ].map((recipe) => (
+        <button
+         key={recipe.id}
+         type="button"
+         onClick={() => {
+          onPrimePresetChange?.(recipe.id);
+          handleUpscaleChange({ ...activeUpscale, enabled: true, scale: recipe.scale });
+          handleDetailerCfgChange({ ...activeDetailerCfg, enabled: recipe.detailer });
+         }}
+         className={`group flex flex-col p-2.5 rounded-xl border text-left transition ${
+          primePreset === recipe.id
+           ? "border-amber-500/50 bg-amber-500/10 shadow-sm"
+           : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-amber-500/30"
+         }`}
+        >
+         <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-[var(--ink)] group-hover:text-amber-300">
+           {recipe.title}
+          </span>
+          {primePreset === recipe.id && (
+           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-black">
+            <Check className="h-2.5 w-2.5" />
+           </span>
+          )}
+         </div>
+         <p className="text-[10px] text-[var(--ink-faint)] mt-1">{recipe.desc}</p>
+        </button>
+       ))}
+      </div>
+     </div>
+
+     {/* 2. Active Pipeline Stages Status & Toggles */}
+     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2.5">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+       ACTIVE PIPELINE STAGES
+      </span>
+      {/* Stage 1 */}
+      <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+       <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+        <span className="text-xs font-semibold text-[var(--ink)]">Stage 1: Base Latent Synthesis</span>
+       </div>
+       <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase">ACTIVE</span>
+      </div>
+      {/* Stage 2 */}
+      <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+       <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${activeUpscale.enabled ? "bg-amber-400" : "bg-neutral-600"}`} />
+        <div>
+         <span className="text-xs font-semibold text-[var(--ink)]">Stage 2: DiT Super-Resolution</span>
+         <span className="ml-1.5 text-[9px] font-mono text-amber-300">({activeUpscale.scale}x)</span>
+        </div>
+       </div>
+       <button
+        type="button"
+        onClick={() => handleUpscaleChange({ ...activeUpscale, enabled: !activeUpscale.enabled })}
+        className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border transition ${
+         activeUpscale.enabled
+          ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+        }`}
+       >
+        {activeUpscale.enabled ? "ON" : "OFF"}
+       </button>
+      </div>
+      {/* Stage 3 */}
+      <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+       <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${activeDetailerCfg.enabled ? "bg-[var(--accent)]" : "bg-neutral-600"}`} />
+        <span className="text-xs font-semibold text-[var(--ink)]">Stage 3: Cascading YOLO Detailers</span>
+       </div>
+       <button
+        type="button"
+        onClick={() => handleDetailerCfgChange({ ...activeDetailerCfg, enabled: !activeDetailerCfg.enabled })}
+        className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border transition ${
+         activeDetailerCfg.enabled
+          ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+          : "bg-neutral-800 text-neutral-400 border-neutral-700"
+        }`}
+       >
+        {activeDetailerCfg.enabled ? "ON" : "OFF"}
+       </button>
+      </div>
+     </div>
+
+     {/* 3. Generation Model Card */}
+     <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        GENERATION MODEL
+       </span>
+       <button
+        type="button"
+        onClick={() => setModelPickerOpen(true)}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
+       >
+        <RefreshCw className="h-3 w-3" />
+        <span>Change</span>
+       </button>
+      </div>
+
+      <button
+       type="button"
+       onClick={() => setModelPickerOpen(true)}
+       className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
+      >
+       <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
+        {currentModelCover ? (
+         <img
+          src={currentModelCover}
+          alt={selectedModel?.title ?? "Model preview"}
+          className="h-full w-full object-cover"
+         />
+        ) : (
+         <div className="grid h-full w-full place-items-center text-[var(--accent)]">
+          <Box className="h-5 w-5 opacity-75" />
+         </div>
+        )}
+       </div>
+       <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+         <span className="truncate text-xs font-bold text-[var(--ink)]">
+          {selectedModel?.title || "Krea 2 Turbo"}
+         </span>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+         {baseModelTag && (
+          <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
+           {baseModelTag}
+          </span>
+         )}
+         <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+          {selectedModel?.model_type || "Diffusion Model"}
+         </span>
+        </div>
+       </div>
+       <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
+      </button>
+     </div>
+
+     {/* 4. Prompt Composer */}
+     <PromptComposer
+      idPrefix="prime"
+      prompt={prompt}
+      onPromptChange={onPromptChange}
+      negativePrompt={negativePrompt}
+      onNegativePromptChange={onNegativePromptChange}
+      busy={busy}
+      canGenerate={canGenerate}
+      onGenerate={onGenerate}
+     />
+
+     {/* 5. Aspect Ratio Selector */}
+     <AspectRatioSelector
+      value={format}
+      onChange={onFormatChange}
+      options={FORMATS}
+      disabled={busy}
+      label="Aspect Ratio"
+      columns={3}
+     />
+
+     {/* 6. Active LoRAs */}
+     <div className="space-y-2">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        ACTIVE LORAS ({loras.length}/5)
+       </span>
+       <button
+        type="button"
+        disabled={loras.length >= 5}
+        onClick={() => setLoraPickerOpen(true)}
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition disabled:opacity-40"
+       >
+        <Plus className="h-3 w-3" />
+        <span>Add LoRA</span>
+       </button>
+      </div>
+      {loras.length === 0 ? (
+       <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center">
+        <p className="text-[11px] text-[var(--ink-faint)]">No active LoRA modifiers attached</p>
+       </div>
+      ) : (
+       <div className="space-y-1.5">
+        {loras.map((l) => (
+         <div
+          key={l.id}
+          className="flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2"
+         >
+          <div className="min-w-0 flex-1">
+           <p className="truncate text-xs font-semibold text-[var(--ink)]">{l.title}</p>
+           <span className="text-[10px] font-mono text-[var(--accent)]">{l.weight.toFixed(2)}x</span>
+          </div>
+          <button
+           type="button"
+           onClick={() => removeLora(l.id)}
+           className="text-[var(--danger)] hover:opacity-80 p-1"
+          >
+           <Trash2 className="h-3.5 w-3.5" />
+          </button>
+         </div>
+        ))}
+       </div>
+      )}
+     </div>
+
+     {/* 7. Sampling Parameters */}
+     <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
+      <div className="flex items-center justify-between">
+       <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+        PRO SAMPLING CONFIGURATION
+       </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">STEPS</label>
+        <input
+         type="number"
+         value={steps}
+         min={1}
+         max={100}
+         onChange={(e) => onStepsChange(e.target.value)}
+         className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
+        />
+       </div>
+       <div>
+        <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">CFG SCALE</label>
+        <input
+         type="number"
+         value={cfg}
+         step={0.5}
+         min={1}
+         max={30}
+         onChange={(e) => onCfgChange(e.target.value)}
+         className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
+        />
+       </div>
+      </div>
+      <SeedInput value={seed} onChange={(val) => onSeedChange(String(val))} />
+     </div>
     </div>
    ) : (
     <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
@@ -1815,104 +2726,22 @@ export default function ControlPanel(props: Props) {
     </div>
 
     {/* Prompt Composer Section (Positive Prompt + Negative Prompt Adjacent) */}
-    <div className="border-t border-[var(--line)] pt-4 space-y-3.5">
-     <div className="flex items-center justify-between">
-      <div className="flex items-center gap-1.5">
-       <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-        Prompt Composer
-       </span>
-      </div>
-      <div className="flex items-center gap-2.5">
-       {interrogateToast && (
-        <span className="font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border border-[var(--accent)]/40 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent)] animate-pulse">
-         {interrogateToast}
-        </span>
-       )}
-       <input
-        ref={tagFileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleInterrogateFile}
-        className="hidden"
-       />
-       <button
-        type="button"
-        onClick={() => tagFileInputRef.current?.click()}
-        disabled={interrogating || busy}
-        className="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] hover:underline transition disabled:opacity-50"
-        title="Upload an image to auto-detect and insert WD14 prompt tags"
-       >
-        {interrogating ? (
-         <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-         <Tag className="h-3 w-3" />
-        )}
-        <span>{interrogating ? "Detecting…" : "Auto Prompt"}</span>
-       </button>
-      </div>
-     </div>
-
-     {/* Positive Prompt */}
-     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-       <label htmlFor="positive-prompt" className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)]">
-        <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
-        <span>Prompt</span>
-       </label>
-       <span className="font-mono text-[9px] text-[var(--ink-faint)]">
-        {prompt ? `${prompt.length} chars` : "Required"}
-       </span>
-      </div>
-      <textarea
-       id="positive-prompt"
-       value={prompt ?? ""}
-       onChange={(e) => onPromptChange?.(e.target.value)}
-       onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
-         e.preventDefault();
-         onGenerate?.();
-        }
-       }}
-       rows={4}
-       placeholder="Describe your scene, subjects, atmosphere, style, camera angle, and lighting…"
-       disabled={busy}
-       className="workspace-field w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[5.5rem]"
-      />
-     </div>
-
-     {/* Negative Prompt - Directly Adjacent */}
-     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-       <label htmlFor="neg-prompt" className="flex items-center gap-1.5 text-xs font-semibold text-[var(--ink-soft)]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
-        <span>Negative Prompt</span>
-       </label>
-       {negativePrompt && onNegativePromptChange && (
-        <button
-         type="button"
-         onClick={() => onNegativePromptChange("")}
-         className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
-        >
-         Clear
-        </button>
-       )}
-      </div>
-      <textarea
-       id="neg-prompt"
-       value={negativePrompt ?? ""}
-       onChange={(e) => onNegativePromptChange?.(e.target.value)}
-       onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canGenerate) {
-         e.preventDefault();
-         onGenerate?.();
-        }
-       }}
-       rows={3}
-       placeholder="worst quality, low quality, blurry, distorted, extra limbs, bad anatomy…"
-       disabled={busy}
-       className="workspace-field w-full resize-y rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[4rem]"
-      />
-     </div>
+    <div className="border-t border-[var(--line)] pt-4">
+     <PromptComposer
+      idPrefix="text2img"
+      prompt={prompt}
+      onPromptChange={onPromptChange}
+      negativePrompt={negativePrompt}
+      onNegativePromptChange={onNegativePromptChange}
+      busy={busy}
+      canGenerate={canGenerate}
+      onGenerate={onGenerate}
+      onInterrogateFile={(file) => executeInterrogation(file, file.name)}
+      interrogating={interrogating}
+      interrogateToast={interrogateToast}
+      positiveRows={4}
+      negativeRows={3}
+     />
     </div>
 
     {/* Divider */}
@@ -2174,7 +3003,7 @@ export default function ControlPanel(props: Props) {
      <button
       type="button"
       onClick={handleGenerateClick}
-      disabled={busy || (isAuthenticated && !canGenerate) || (activeMode === "Img2Img" && !props.referenceImage)}
+      disabled={busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !props.referenceImage)}
       className="workspace-action-primary flex h-10 flex-1 items-center justify-between rounded-xl px-4 text-xs font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
      >
       {busy ? (
@@ -2187,7 +3016,7 @@ export default function ControlPanel(props: Props) {
         <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
         <span>Sign In to Generate</span>
        </div>
-      ) : activeMode === "Img2Img" && !props.referenceImage ? (
+      ) : (activeMode === "Img2Img" || activeMode === "Edit") && !props.referenceImage ? (
        <div className="flex items-center gap-1.5">
         <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
         <span>Upload Image to Generate</span>
@@ -2195,7 +3024,17 @@ export default function ControlPanel(props: Props) {
       ) : (
        <div className="flex items-center gap-1.5">
         <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-        <span>{activeMode === "Img2Img" ? "Generate Img2Img" : "Generate"}</span>
+        <span>
+         {activeMode === "Img2Img"
+          ? "Generate Img2Img"
+          : activeMode === "Edit"
+          ? "Generate Inpaint"
+          : activeMode === "Video"
+          ? "Generate Video"
+          : activeMode === "Prime"
+          ? "Generate Prime"
+          : "Generate"}
+        </span>
         {isProUser ? (
          <span className="ml-1 rounded bg-[var(--accent-ink)]/15 px-1.5 py-0.5 font-mono text-[9px] font-extrabold tracking-wider text-[var(--accent-ink)] uppercase">
           ⚡ PRIORITY QUEUE

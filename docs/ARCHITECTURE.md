@@ -323,3 +323,16 @@ flowchart LR
 ### Studio UI Components
 - **`UpscalePanel.tsx`**: Multi-engine upscale controller supporting SeedVR2 DiT AI (with dynamic resolution preview) and Model/ESRGAN (4x-UltraSharp).
 - **`DetailerPanel.tsx`**: ADetailer-inspired multi-pass manager featuring active basic model banner, quick-toggle target chips, and per-target accordion controls.
+
+---
+
+## 8. Multi-Tab Studio Architecture & State Isolation
+
+For complete technical specifications on the `/generate` Studio page multi-tab system (`Text2Img`, `Img2Img`, `Edit`, `Video`, `Prime`), refer to the dedicated specification:
+👉 [Generate Studio Multi-Tab Architecture](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/docs/generate_studio_architecture.md)
+
+### Key Principles
+1. **Isolated Tab State**: Each mode retains its own prompt, negative prompt, model selection, LoRAs, steps, CFG, denoise, and mode-specific parameters.
+2. **Partitioned Storage**: Drafts persist per-mode under `solotensor:studio:draft:<mode>`.
+3. **Graph Patching**: Backend dynamically switches between `EmptyLatentImage` (T2I), `LoadImage` + `VAEEncode` (I2I), and multi-stage cascades (Prime).
+

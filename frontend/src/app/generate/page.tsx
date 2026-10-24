@@ -64,47 +64,306 @@ function galleryModelKey(model: InstalledGalleryModel): string {
   });
 }
 
+interface TabState {
+  prompt: string;
+  negativePrompt: string;
+  selection: ModelIdentity | null;
+  baseSelection: ModelIdentity | null;
+  loras: ActiveLora[];
+  embeddings: ActiveEmbedding[];
+  seed: string;
+  steps: string;
+  imageCount: string;
+  cfg: string;
+  denoise: string;
+  format: FormatKey;
+  customWidth: string;
+  customHeight: string;
+  referenceImage: string | null;
+  isPrivate: boolean;
+  enableDetailer: boolean;
+  upscaleConfig: UpscaleConfig;
+  detailerConfig: DetailerConfig;
+  // Edit mode
+  maskImage: string | null;
+  maskBlur: number;
+  inpaintFill: "original" | "latent_noise" | "latent_zero";
+  // Video mode
+  motionBucketId: number;
+  videoFrames: number;
+  videoFps: number;
+  // Prime mode
+  primePreset: string;
+}
+
+function getTabStorageKey(tensorMode: TensorMode): string {
+  switch (tensorMode) {
+    case "Text2Img":
+      return SAVED_INPUTS_KEY;
+    case "Img2Img":
+      return "solotensor:studio:draft:img2img";
+    case "Edit":
+      return "solotensor:studio:draft:edit";
+    case "Video":
+      return "solotensor:studio:draft:video";
+    case "Prime":
+      return "solotensor:studio:draft:prime";
+  }
+}
+
+function createDefaultTabState(
+  mode: TensorMode,
+  defaultFormat: FormatKey = "9:16",
+  defaultSteps: number = 25
+): TabState {
+  switch (mode) {
+    case "Text2Img":
+      return {
+        prompt: DEFAULT_SAMPLE_PROMPT,
+        negativePrompt: "",
+        selection: null,
+        baseSelection: null,
+        loras: [],
+        embeddings: [],
+        seed: "-1",
+        steps: String(defaultSteps || 25),
+        imageCount: "1",
+        cfg: "7.0",
+        denoise: "1",
+        format: defaultFormat || "9:16",
+        customWidth: "768",
+        customHeight: "1344",
+        referenceImage: null,
+        isPrivate: false,
+        enableDetailer: false,
+        upscaleConfig: DEFAULT_UPSCALE_CONFIG,
+        detailerConfig: DEFAULT_DETAILER_CONFIG,
+        maskImage: null,
+        maskBlur: 8,
+        inpaintFill: "original",
+        motionBucketId: 127,
+        videoFrames: 25,
+        videoFps: 16,
+        primePreset: "portrait_pro",
+      };
+
+    case "Img2Img":
+      return {
+        prompt: "",
+        negativePrompt: "",
+        selection: null,
+        baseSelection: null,
+        loras: [],
+        embeddings: [],
+        seed: "-1",
+        steps: "25",
+        imageCount: "1",
+        cfg: "7.0",
+        denoise: "0.65",
+        format: "custom",
+        customWidth: "1024",
+        customHeight: "1024",
+        referenceImage: null,
+        isPrivate: false,
+        enableDetailer: false,
+        upscaleConfig: DEFAULT_UPSCALE_CONFIG,
+        detailerConfig: DEFAULT_DETAILER_CONFIG,
+        maskImage: null,
+        maskBlur: 8,
+        inpaintFill: "original",
+        motionBucketId: 127,
+        videoFrames: 25,
+        videoFps: 16,
+        primePreset: "portrait_pro",
+      };
+
+    case "Edit":
+      return {
+        prompt: "",
+        negativePrompt: "",
+        selection: null,
+        baseSelection: null,
+        loras: [],
+        embeddings: [],
+        seed: "-1",
+        steps: "30",
+        imageCount: "1",
+        cfg: "7.0",
+        denoise: "0.75",
+        format: "custom",
+        customWidth: "1024",
+        customHeight: "1024",
+        referenceImage: null,
+        isPrivate: false,
+        enableDetailer: false,
+        upscaleConfig: DEFAULT_UPSCALE_CONFIG,
+        detailerConfig: DEFAULT_DETAILER_CONFIG,
+        maskImage: null,
+        maskBlur: 8,
+        inpaintFill: "original",
+        motionBucketId: 127,
+        videoFrames: 25,
+        videoFps: 16,
+        primePreset: "portrait_pro",
+      };
+
+    case "Video":
+      return {
+        prompt: "",
+        negativePrompt: "",
+        selection: null,
+        baseSelection: null,
+        loras: [],
+        embeddings: [],
+        seed: "-1",
+        steps: "25",
+        imageCount: "1",
+        cfg: "2.5",
+        denoise: "1",
+        format: "16:9",
+        customWidth: "1024",
+        customHeight: "576",
+        referenceImage: null,
+        isPrivate: false,
+        enableDetailer: false,
+        upscaleConfig: DEFAULT_UPSCALE_CONFIG,
+        detailerConfig: DEFAULT_DETAILER_CONFIG,
+        maskImage: null,
+        maskBlur: 8,
+        inpaintFill: "original",
+        motionBucketId: 127,
+        videoFrames: 25,
+        videoFps: 16,
+        primePreset: "portrait_pro",
+      };
+
+    case "Prime":
+      return {
+        prompt: DEFAULT_SAMPLE_PROMPT,
+        negativePrompt: "",
+        selection: null,
+        baseSelection: null,
+        loras: [],
+        embeddings: [],
+        seed: "-1",
+        steps: "30",
+        imageCount: "1",
+        cfg: "7.0",
+        denoise: "1",
+        format: defaultFormat || "9:16",
+        customWidth: "768",
+        customHeight: "1344",
+        referenceImage: null,
+        isPrivate: false,
+        enableDetailer: true,
+        upscaleConfig: { ...DEFAULT_UPSCALE_CONFIG, enabled: true, scale: 1.5 },
+        detailerConfig: { ...DEFAULT_DETAILER_CONFIG, enabled: true },
+        maskImage: null,
+        maskBlur: 8,
+        inpaintFill: "original",
+        motionBucketId: 127,
+        videoFrames: 25,
+        videoFps: 16,
+        primePreset: "portrait_pro",
+      };
+  }
+}
+
+function parseSavedTabState(raw: string, defaults: TabState): TabState {
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== "object") return defaults;
+    return {
+      ...defaults,
+      prompt: typeof saved.prompt === "string" ? saved.prompt : defaults.prompt,
+      negativePrompt: typeof saved.negativePrompt === "string" ? saved.negativePrompt : defaults.negativePrompt,
+      seed: typeof saved.seed === "string" ? saved.seed : typeof saved.seed === "number" ? String(saved.seed) : defaults.seed,
+      steps: typeof saved.steps === "string" ? saved.steps : typeof saved.steps === "number" ? String(saved.steps) : defaults.steps,
+      imageCount: typeof saved.imageCount === "string" ? saved.imageCount : defaults.imageCount,
+      cfg: typeof saved.cfg === "string" ? saved.cfg : typeof saved.cfg === "number" ? String(saved.cfg) : defaults.cfg,
+      denoise: typeof saved.denoise === "string" ? saved.denoise : typeof saved.denoise === "number" ? String(saved.denoise) : defaults.denoise,
+      format: typeof saved.format === "string" && FORMAT_KEYS.includes(saved.format) ? saved.format : defaults.format,
+      customWidth: typeof saved.customWidth === "string" ? saved.customWidth : defaults.customWidth,
+      customHeight: typeof saved.customHeight === "string" ? saved.customHeight : defaults.customHeight,
+      referenceImage: typeof saved.referenceImage === "string" ? saved.referenceImage : defaults.referenceImage,
+      selection:
+        saved.modelId && saved.versionId && saved.fileId
+          ? { modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId }
+          : saved.selection || defaults.selection,
+      baseSelection: saved.baseSelection || defaults.baseSelection,
+      loras: Array.isArray(saved.loras)
+        ? saved.loras.map((l: ActiveLora) => ({
+            ...l,
+            weight: typeof l.weight === "number" ? Math.max(0, Math.min(1, l.weight)) : 0.8,
+          }))
+        : defaults.loras,
+      embeddings: Array.isArray(saved.embeddings) ? saved.embeddings : defaults.embeddings,
+      isPrivate: typeof saved.isPrivate === "boolean" ? saved.isPrivate : defaults.isPrivate,
+      enableDetailer: typeof saved.enableDetailer === "boolean" ? saved.enableDetailer : defaults.enableDetailer,
+      upscaleConfig: saved.upscaleConfig ? { ...defaults.upscaleConfig, ...saved.upscaleConfig } : defaults.upscaleConfig,
+      detailerConfig: saved.detailerConfig ? { ...defaults.detailerConfig, ...saved.detailerConfig } : defaults.detailerConfig,
+      maskImage: typeof saved.maskImage === "string" ? saved.maskImage : defaults.maskImage,
+      maskBlur: typeof saved.maskBlur === "number" ? saved.maskBlur : defaults.maskBlur,
+      inpaintFill: ["original", "latent_noise", "latent_zero"].includes(saved.inpaintFill) ? saved.inpaintFill : defaults.inpaintFill,
+      motionBucketId: typeof saved.motionBucketId === "number" ? saved.motionBucketId : defaults.motionBucketId,
+      videoFrames: typeof saved.videoFrames === "number" ? saved.videoFrames : defaults.videoFrames,
+      videoFps: typeof saved.videoFps === "number" ? saved.videoFps : defaults.videoFps,
+      primePreset: typeof saved.primePreset === "string" ? saved.primePreset : defaults.primePreset,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 export default function StudioPage() {
   const { user } = useAuth();
   const [mode, setMode] = useState<GenerationMode>("text-to-image");
   const [activeTensorMode, setActiveTensorMode] = useState<TensorMode>("Text2Img");
 
+  const [tabStates, setTabStates] = useState<Record<TensorMode, TabState>>(() => {
+    const settings = loadSettings();
+    return {
+      Text2Img: createDefaultTabState("Text2Img", settings.defaultFormat, settings.defaultSteps),
+      Img2Img: createDefaultTabState("Img2Img", settings.defaultFormat, settings.defaultSteps),
+      Edit: createDefaultTabState("Edit", settings.defaultFormat, settings.defaultSteps),
+      Video: createDefaultTabState("Video", settings.defaultFormat, settings.defaultSteps),
+      Prime: createDefaultTabState("Prime", settings.defaultFormat, settings.defaultSteps),
+    };
+  });
+
+  const activeTab = tabStates[activeTensorMode];
+
+  const updateActiveTab = useCallback(
+    (patch: Partial<TabState> | ((prev: TabState) => Partial<TabState>)) => {
+      setTabStates((prev) => {
+        const current = prev[activeTensorMode];
+        const update = typeof patch === "function" ? patch(current) : patch;
+        return {
+          ...prev,
+          [activeTensorMode]: {
+            ...current,
+            ...update,
+          },
+        };
+      });
+    },
+    [activeTensorMode]
+  );
+
   const handleTensorModeChange = useCallback((newMode: TensorMode) => {
     setActiveTensorMode(newMode);
-    if (newMode === "Img2Img") {
+    if (newMode === "Img2Img" || newMode === "Edit") {
       setMode("image-to-image");
     } else {
       setMode("text-to-image");
     }
   }, []);
-  const [prompt, setPrompt] = useState(DEFAULT_SAMPLE_PROMPT);
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [selection, setSelection] = useState<ModelIdentity | null>(null);
-  const [baseSelection, setBaseSelection] = useState<ModelIdentity | null>(null);
+
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(true);
 
-  // Active LoRAs & Embeddings (matching Tensor.Art stacked list)
-  const [loras, setLoras] = useState<ActiveLora[]>([]);
-  const [embeddings, setEmbeddings] = useState<ActiveEmbedding[]>([]);
-
-  const [seed, setSeed] = useState("-1");
-  const [steps, setSteps] = useState("25");
-  const [imageCount, setImageCount] = useState("1");
-  const [cfg, setCfg] = useState("7.0");
-  const [denoise, setDenoise] = useState("1");
-  const [format, setFormat] = useState<FormatKey>("9:16");
-  const [customWidth, setCustomWidth] = useState("768");
-  const [customHeight, setCustomHeight] = useState("1344");
-  const [referenceImage, setReferenceImage] = useState<string | null>(null);
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [enableDetailer, setEnableDetailer] = useState(false);
-  const [upscaleConfig, setUpscaleConfig] = useState<UpscaleConfig>(DEFAULT_UPSCALE_CONFIG);
-  const [detailerConfig, setDetailerConfig] = useState<DetailerConfig>(DEFAULT_DETAILER_CONFIG);
-
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
@@ -114,23 +373,22 @@ export default function StudioPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const clientIdRef = useRef<string>("");
 
-  // Find currently selected Basic Model
+  // Find currently selected Basic Model for the active tab
   const selectedModel = useMemo(() => {
-    if (selection) {
+    if (activeTab.selection) {
       return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(selection)) ??
+        modelOptions.find((item) => galleryModelKey(item) === modelKey(activeTab.selection!)) ??
         null
       );
     }
-    // Default to the first Checkpoint or base model if available
     const baseFirst = modelOptions.find((item) => isBaseModel(item.model_type));
     return baseFirst ?? null;
-  }, [modelOptions, selection]);
+  }, [modelOptions, activeTab.selection]);
 
   const baseModel = useMemo(() => {
-    if (baseSelection) {
+    if (activeTab.baseSelection) {
       return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(baseSelection)) ??
+        modelOptions.find((item) => galleryModelKey(item) === modelKey(activeTab.baseSelection!)) ??
         null
       );
     }
@@ -138,7 +396,7 @@ export default function StudioPage() {
       return selectedModel;
     }
     return modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
-  }, [modelOptions, baseSelection, selectedModel]);
+  }, [modelOptions, activeTab.baseSelection, selectedModel]);
 
   const baseModelOptions = useMemo(() => {
     return modelOptions.filter((item) => isBaseModel(item.model_type));
@@ -152,41 +410,26 @@ export default function StudioPage() {
     }
   }, []);
 
-  // Hydrate settings
+  // Hydrate all tab states from partitioned localStorage
   useEffect(() => {
     try {
-      const raw =
-        localStorage.getItem(SAVED_INPUTS_KEY) ??
-        localStorage.getItem("solotensor:last-successful-inputs:v4") ??
-        localStorage.getItem("comfy_studio_saved_inputs") ??
-        "null";
-      const saved = JSON.parse(raw);
-      if (saved && typeof saved === "object") {
-        if (typeof saved.prompt === "string" && saved.prompt) setPrompt(saved.prompt);
-        if (typeof saved.negativePrompt === "string") setNegativePrompt(saved.negativePrompt);
-        if (typeof saved.seed === "string") setSeed(saved.seed || "-1");
-        else if (typeof saved.seed === "number") setSeed(String(saved.seed));
-        if (typeof saved.steps === "string") setSteps(saved.steps);
-        if (typeof saved.imageCount === "string") setImageCount(saved.imageCount);
-        if (typeof saved.cfg === "string") setCfg(saved.cfg);
-        if (typeof saved.denoise === "string") setDenoise(saved.denoise);
-        if (typeof saved.format === "string" && FORMAT_KEYS.includes(saved.format)) setFormat(saved.format);
-        if (saved.modelId && saved.versionId && saved.fileId) {
-          setSelection({ modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId });
+      const settings = loadSettings();
+      const modes: TensorMode[] = ["Text2Img", "Img2Img", "Edit", "Video", "Prime"];
+      const loaded: Partial<Record<TensorMode, TabState>> = {};
+
+      for (const m of modes) {
+        const key = getTabStorageKey(m);
+        let raw = localStorage.getItem(key);
+        if (!raw && m === "Text2Img") {
+          raw =
+            localStorage.getItem("solotensor:last-successful-inputs:v4") ??
+            localStorage.getItem("comfy_studio_saved_inputs");
         }
-        if (Array.isArray(saved.loras) && saved.loras.length > 0) {
-          setLoras(
-            saved.loras.map((l: ActiveLora) => ({
-              ...l,
-              weight: typeof l.weight === "number" ? Math.max(0, Math.min(1, l.weight)) : 0.8,
-            }))
-          );
-        }
-      } else {
-        const settings = loadSettings();
-        setFormat(settings.defaultFormat);
-        setSteps(String(settings.defaultSteps));
+        const def = createDefaultTabState(m, settings.defaultFormat, settings.defaultSteps);
+        loaded[m] = raw ? parseSavedTabState(raw, def) : def;
       }
+
+      setTabStates(loaded as Record<TensorMode, TabState>);
     } catch {
       /* ignore */
     }
@@ -194,53 +437,45 @@ export default function StudioPage() {
   }, []);
 
   const resetStudioDefaults = useCallback(() => {
-    setPrompt(DEFAULT_SAMPLE_PROMPT);
-    setNegativePrompt("");
-    setSeed("-1");
     const settings = loadSettings();
-    setSteps(String(settings.defaultSteps));
-    setImageCount("1");
-    setCfg("7.0");
-    setDenoise("1");
-    setFormat(settings.defaultFormat);
-    setLoras([]);
-    setSelection(null);
-    setUpscaleConfig(DEFAULT_UPSCALE_CONFIG);
-    setDetailerConfig(DEFAULT_DETAILER_CONFIG);
+    const defaultState = createDefaultTabState(
+      activeTensorMode,
+      settings.defaultFormat,
+      settings.defaultSteps
+    );
+    setTabStates((prev) => ({
+      ...prev,
+      [activeTensorMode]: defaultState,
+    }));
     try {
-      localStorage.removeItem(SAVED_INPUTS_KEY);
-      localStorage.removeItem("solotensor:last-successful-inputs:v4");
-      localStorage.removeItem("comfy_studio_saved_inputs");
+      localStorage.removeItem(getTabStorageKey(activeTensorMode));
+      if (activeTensorMode === "Text2Img") {
+        localStorage.removeItem("solotensor:last-successful-inputs:v4");
+        localStorage.removeItem("comfy_studio_saved_inputs");
+      }
     } catch {
       // ignore
     }
-  }, []);
+  }, [activeTensorMode]);
 
-  // Persist settings
+  // Persist the currently active tab whenever it changes
   useEffect(() => {
     if (!hydrated || modelsLoading) return;
     try {
+      const currentState = tabStates[activeTensorMode];
       localStorage.setItem(
-        SAVED_INPUTS_KEY,
+        getTabStorageKey(activeTensorMode),
         JSON.stringify({
-          prompt,
-          negativePrompt,
-          modelId: selectedModel?.model_id ?? "",
-          versionId: selectedModel?.version_id ?? "",
-          fileId: selectedModel?.file_id ?? "",
-          loras,
-          seed,
-          steps,
-          imageCount,
-          cfg,
-          denoise,
-          format,
+          ...currentState,
+          modelId: selectedModel?.model_id ?? currentState.selection?.modelId ?? "",
+          versionId: selectedModel?.version_id ?? currentState.selection?.versionId ?? "",
+          fileId: selectedModel?.file_id ?? currentState.selection?.fileId ?? "",
         })
       );
     } catch {
       /* ignore */
     }
-  }, [hydrated, modelsLoading, prompt, negativePrompt, selectedModel, loras, seed, steps, imageCount, cfg, denoise, format]);
+  }, [hydrated, modelsLoading, activeTensorMode, tabStates, selectedModel]);
 
   // Load models from API
   useEffect(() => {
@@ -250,8 +485,6 @@ export default function StudioPage() {
       .then((items) => {
         if (cancelled) return;
         setModelOptions(items);
-
-
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -278,23 +511,28 @@ export default function StudioPage() {
   }, []);
 
   const outputDimensions = useMemo(() => {
-    const values = format === "custom" ? [Number(customWidth), Number(customHeight)] : FORMATS[format];
+    const values =
+      activeTab.format === "custom"
+        ? [Number(activeTab.customWidth), Number(activeTab.customHeight)]
+        : FORMATS[activeTab.format];
     return {
       width: Number.isFinite(values[0]) && values[0] > 0 ? values[0] : 1024,
       height: Number.isFinite(values[1]) && values[1] > 0 ? values[1] : 1024,
     };
-  }, [format, customWidth, customHeight]);
+  }, [activeTab.format, activeTab.customWidth, activeTab.customHeight]);
 
   const canGenerate = useMemo(() => {
-    if (!prompt.trim() || busy) return false;
-    if (mode === "image-to-image" && !referenceImage) return false;
+    if (!activeTab.prompt.trim() || busy) return false;
+    if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
+      return false;
+    }
     return true;
-  }, [prompt, busy, mode, referenceImage]);
+  }, [activeTab.prompt, busy, activeTensorMode, activeTab.referenceImage]);
 
   const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || busy) return;
-    if (mode === "image-to-image" && !referenceImage) {
-      setError("Please upload a reference image for Img2Img generation.");
+    if (!activeTab.prompt.trim() || busy) return;
+    if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
+      setError(`Please upload a reference image for ${activeTensorMode} generation.`);
       return;
     }
 
@@ -305,7 +543,6 @@ export default function StudioPage() {
     const isPrimaryLora = isAdapterModel(targetModel?.model_type);
 
     if (!targetModel) {
-      // Fallback: pick first available base model if any
       targetModel =
         modelOptions.find((m) => isBaseModel(m.model_type)) ?? modelOptions[0] ?? null;
     }
@@ -315,8 +552,8 @@ export default function StudioPage() {
       return;
     }
 
-    // Build active lora_adapters from the Tensor.Art stacked LoRA cards
-    const loraAdapters: LoraAdapterPayload[] = loras
+    // Build active lora_adapters from the active tab's stacked LoRA cards
+    const loraAdapters: LoraAdapterPayload[] = activeTab.loras
       .filter((l) => Boolean(l.modelId && l.fileId && l.versionId) && l.enabled !== false)
       .map((l) => ({
         model_id: l.modelId!,
@@ -327,15 +564,17 @@ export default function StudioPage() {
       }));
 
     const [resolvedWidth, resolvedHeight] =
-      format === "custom" ? [customWidth, customHeight] : FORMATS[format].map(String);
+      activeTab.format === "custom"
+        ? [activeTab.customWidth, activeTab.customHeight]
+        : FORMATS[activeTab.format].map(String);
 
-    const parsedSteps = Math.max(1, Math.min(100, Number(steps) || 20));
-    const parsedImageCount = Math.max(1, Math.min(4, Number(imageCount) || 1));
-    const parsedCfg = Math.max(0, Math.min(30, Number(cfg) || 7.0));
-    const parsedDenoise = Math.max(0, Math.min(1, Number(denoise) || 1.0));
+    const parsedSteps = Math.max(1, Math.min(100, Number(activeTab.steps) || 20));
+    const parsedImageCount = Math.max(1, Math.min(4, Number(activeTab.imageCount) || 1));
+    const parsedCfg = Math.max(0, Math.min(30, Number(activeTab.cfg) || 7.0));
+    const parsedDenoise = Math.max(0, Math.min(1, Number(activeTab.denoise) || 1.0));
     const parsedWidth = Math.floor((Number(resolvedWidth) || 1024) / 8) * 8;
     const parsedHeight = Math.floor((Number(resolvedHeight) || 1024) / 8) * 8;
-    const rawSeed = seed.trim();
+    const rawSeed = activeTab.seed.trim();
     const rawNum = rawSeed ? Number(rawSeed) : undefined;
     const isRandomSeed =
       rawSeed === "" ||
@@ -377,6 +616,17 @@ export default function StudioPage() {
     });
     wsRef.current = ws;
 
+    // Denoise routing: 1.0 in Text2Img, Video, Prime; configurable in Img2Img and Edit
+    const effectiveDenoise =
+      activeTensorMode === "Img2Img" || activeTensorMode === "Edit"
+        ? parsedDenoise
+        : 1.0;
+
+    const effectiveMode: GenerationMode =
+      activeTensorMode === "Img2Img" || activeTensorMode === "Edit"
+        ? "image-to-image"
+        : "text-to-image";
+
     try {
       const payload: GeneratePayload = {
         model_id: targetModel.model_id,
@@ -389,36 +639,47 @@ export default function StudioPage() {
               base_file_id: effectiveBase.file_id,
             }
           : {}),
-        mode,
-        ...(mode === "image-to-image" && referenceImage ? { reference_images: [referenceImage] } : {}),
-        prompt,
-        negative_prompt: negativePrompt,
+        mode: effectiveMode,
+        ...(effectiveMode === "image-to-image" && activeTab.referenceImage
+          ? { reference_images: [activeTab.referenceImage] }
+          : {}),
+        prompt: activeTab.prompt,
+        negative_prompt: activeTab.negativePrompt,
         seed: parsedSeed,
         steps: parsedSteps,
         image_count: parsedImageCount,
         cfg: parsedCfg,
-        denoise: parsedDenoise,
+        denoise: effectiveDenoise,
         width: parsedWidth,
         height: parsedHeight,
-        format_name: format,
+        format_name: activeTab.format,
         client_id: clientId,
         lora_adapters: loraAdapters,
-        is_private: isPrivate,
-        enable_detailer: enableDetailer || detailerConfig.enabled,
+        is_private: activeTab.isPrivate,
+        enable_detailer:
+          activeTab.enableDetailer ||
+          activeTab.detailerConfig.enabled ||
+          activeTensorMode === "Prime",
         upscale: {
-          enabled: upscaleConfig.enabled,
-          scale: upscaleConfig.scale === 0 ? (upscaleConfig.customScale ?? 2) : upscaleConfig.scale,
-          dit_model: upscaleConfig.ditModel,
-          color_correction: upscaleConfig.colorCorrection,
-          input_noise_scale: upscaleConfig.inputNoiseScale,
-          latent_noise_scale: upscaleConfig.latentNoiseScale,
-          upscaler: upscaleConfig.upscaler,
-          hires_steps: upscaleConfig.hiresSteps,
-          denoising_strength: upscaleConfig.denoisingStrength,
+          enabled: activeTab.upscaleConfig.enabled || activeTensorMode === "Prime",
+          scale:
+            activeTab.upscaleConfig.scale === 0
+              ? activeTab.upscaleConfig.customScale ?? 2
+              : activeTab.upscaleConfig.scale,
+          dit_model: activeTab.upscaleConfig.ditModel,
+          color_correction: activeTab.upscaleConfig.colorCorrection,
+          input_noise_scale: activeTab.upscaleConfig.inputNoiseScale,
+          latent_noise_scale: activeTab.upscaleConfig.latentNoiseScale,
+          upscaler: activeTab.upscaleConfig.upscaler,
+          hires_steps: activeTab.upscaleConfig.hiresSteps,
+          denoising_strength: activeTab.upscaleConfig.denoisingStrength,
         },
         detailer: {
-          enabled: detailerConfig.enabled,
-          items: detailerConfig.items.map((item) => ({
+          enabled:
+            activeTab.detailerConfig.enabled ||
+            activeTab.enableDetailer ||
+            activeTensorMode === "Prime",
+          items: activeTab.detailerConfig.items.map((item) => ({
             type: item.type,
             enabled: item.enabled,
             detector_model: item.detectorModel || undefined,
@@ -450,26 +711,11 @@ export default function StudioPage() {
       setTimeout(() => ws.close(), 1500);
     }
   }, [
-    prompt,
-    negativePrompt,
+    activeTab,
+    activeTensorMode,
     selectedModel,
     baseModel,
-    loras,
     modelOptions,
-    mode,
-    seed,
-    steps,
-    imageCount,
-    cfg,
-    denoise,
-    format,
-    customWidth,
-    customHeight,
-    isPrivate,
-    enableDetailer,
-    upscaleConfig,
-    detailerConfig,
-    referenceImage,
     busy,
     refreshGallery,
   ]);
@@ -496,9 +742,11 @@ export default function StudioPage() {
 
         if (target) {
           if (isAdapterModel(target.model_type)) {
-            setLoras((prev) => {
-              const alreadyExists = prev.some(
-                (l) => l.modelId === target.model_id && (!target.file_id || l.fileId === target.file_id)
+            updateActiveTab((prev) => {
+              const alreadyExists = prev.loras.some(
+                (l) =>
+                  l.modelId === target.model_id &&
+                  (!target.file_id || l.fileId === target.file_id)
               );
               if (alreadyExists) return prev;
               const newLora: ActiveLora = {
@@ -512,7 +760,7 @@ export default function StudioPage() {
                 fileId: target.file_id,
                 thumbnailUrl: target.cover_url,
               };
-              return [...prev, newLora];
+              return { loras: [...prev.loras, newLora] };
             });
 
             if (urlBaseModelId) {
@@ -523,18 +771,22 @@ export default function StudioPage() {
                     (!urlBaseFileId || m.file_id === urlBaseFileId)
                 ) || modelOptions.find((m) => m.model_id === urlBaseModelId);
               if (baseMatch) {
-                setBaseSelection({
-                  modelId: baseMatch.model_id,
-                  versionId: baseMatch.version_id,
-                  fileId: baseMatch.file_id,
+                updateActiveTab({
+                  baseSelection: {
+                    modelId: baseMatch.model_id,
+                    versionId: baseMatch.version_id,
+                    fileId: baseMatch.file_id,
+                  },
                 });
               }
             }
           } else {
-            setSelection({
-              modelId: target.model_id,
-              versionId: target.version_id,
-              fileId: target.file_id,
+            updateActiveTab({
+              selection: {
+                modelId: target.model_id,
+                versionId: target.version_id,
+                fileId: target.file_id,
+              },
             });
           }
         }
@@ -542,65 +794,75 @@ export default function StudioPage() {
     } catch {
       /* ignore */
     }
-  }, [modelOptions]);
+  }, [modelOptions, updateActiveTab]);
 
-  const handleRemix = useCallback((meta: GalleryMetadata) => {
-    if (meta.prompt) setPrompt(meta.prompt);
-    if (typeof meta.negative_prompt === "string") setNegativePrompt(meta.negative_prompt);
-    if (meta.seed !== undefined && meta.seed !== null) setSeed(String(meta.seed));
-    if (meta.steps !== undefined && meta.steps !== null) setSteps(String(meta.steps));
-    if (meta.cfg !== undefined && meta.cfg !== null) setCfg(String(meta.cfg));
-    if (meta.denoise !== undefined && meta.denoise !== null) setDenoise(String(meta.denoise));
-    if (meta.format_name && FORMAT_KEYS.includes(meta.format_name as FormatKey)) {
-      setFormat(meta.format_name as FormatKey);
-    }
-    if (meta.width && meta.height) {
-      setCustomWidth(String(meta.width));
-      setCustomHeight(String(meta.height));
-    }
-    if (meta.model_id && meta.version_id && meta.file_id) {
-      setSelection({
-        modelId: meta.model_id,
-        versionId: meta.version_id,
-        fileId: meta.file_id,
+  const handleRemix = useCallback(
+    (meta: GalleryMetadata) => {
+      updateActiveTab((prev) => {
+        const next: Partial<TabState> = {};
+        if (meta.prompt) next.prompt = meta.prompt;
+        if (typeof meta.negative_prompt === "string") next.negativePrompt = meta.negative_prompt;
+        if (meta.seed !== undefined && meta.seed !== null) next.seed = String(meta.seed);
+        if (meta.steps !== undefined && meta.steps !== null) next.steps = String(meta.steps);
+        if (meta.cfg !== undefined && meta.cfg !== null) next.cfg = String(meta.cfg);
+        if (meta.denoise !== undefined && meta.denoise !== null) next.denoise = String(meta.denoise);
+        if (meta.format_name && FORMAT_KEYS.includes(meta.format_name as FormatKey)) {
+          next.format = meta.format_name as FormatKey;
+        }
+        if (meta.width && meta.height) {
+          next.customWidth = String(meta.width);
+          next.customHeight = String(meta.height);
+        }
+        if (meta.model_id && meta.version_id && meta.file_id) {
+          next.selection = {
+            modelId: meta.model_id,
+            versionId: meta.version_id,
+            fileId: meta.file_id,
+          };
+        }
+        if (Array.isArray(meta.loras) && meta.loras.length > 0) {
+          const activeLoras: ActiveLora[] = meta.loras.map((l, index) => {
+            const matched = findMatchingModel(
+              {
+                modelId: (l as any).model_id || (l as any).modelId,
+                fileId: (l as any).file_id || (l as any).fileId,
+                filename: l.lora,
+                title: (l as any).title,
+              },
+              modelOptions
+            );
+            const resolvedTitle = matched?.title || resolveLoraDisplayName(l, modelOptions);
+            return {
+              id: `remix-${index}-${l.lora}`,
+              title: resolvedTitle,
+              baseModel: matched?.version_name || "SDXL",
+              weight: typeof l.strength === "number" ? Math.max(0, Math.min(1, l.strength)) : 0.8,
+              enabled: l.on,
+              modelId: l.model_id || matched?.model_id,
+              versionId: l.version_id || matched?.version_id,
+              fileId: l.file_id || matched?.file_id,
+              thumbnailUrl: matched?.cover_url,
+            };
+          });
+          next.loras = activeLoras;
+        }
+        return next;
       });
-    }
-    if (Array.isArray(meta.loras) && meta.loras.length > 0) {
-      const activeLoras: ActiveLora[] = meta.loras.map((l, index) => {
-        const matched = findMatchingModel(
-          {
-            modelId: (l as any).model_id || (l as any).modelId,
-            fileId: (l as any).file_id || (l as any).fileId,
-            filename: l.lora,
-            title: (l as any).title,
-          },
-          modelOptions
-        );
-        const resolvedTitle = matched?.title || resolveLoraDisplayName(l, modelOptions);
-        return {
-          id: `remix-${index}-${l.lora}`,
-          title: resolvedTitle,
-          baseModel: matched?.version_name || "SDXL",
-          weight: typeof l.strength === "number" ? Math.max(0, Math.min(1, l.strength)) : 0.8,
-          enabled: l.on,
-          modelId: l.model_id || matched?.model_id,
-          versionId: l.version_id || matched?.version_id,
-          fileId: l.file_id || matched?.file_id,
-          thumbnailUrl: matched?.cover_url,
-        };
-      });
-      setLoras(activeLoras);
-    }
-  }, [modelOptions]);
+    },
+    [modelOptions, updateActiveTab]
+  );
 
-  const handleDeleteOutput = useCallback(async (key: string) => {
-    try {
-      await api.deleteAsset(key);
-      await refreshGallery();
-    } catch (err) {
-      console.error("Failed to delete asset:", err);
-    }
-  }, [refreshGallery]);
+  const handleDeleteOutput = useCallback(
+    async (key: string) => {
+      try {
+        await api.deleteAsset(key);
+        await refreshGallery();
+      } catch (err) {
+        console.error("Failed to delete asset:", err);
+      }
+    },
+    [refreshGallery]
+  );
 
   return (
     <ProtectedRoute
@@ -612,16 +874,18 @@ export default function StudioPage() {
         {/* Left Control Panel (Collapsible) */}
         <div
           className={`min-h-0 shrink-0 ${
-            isSidebarCollapsed ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none" : "h-auto w-full lg:h-full lg:w-[24.5rem]"
+            isSidebarCollapsed
+              ? "hidden lg:block lg:h-full lg:w-0 lg:overflow-hidden lg:opacity-0 lg:pointer-events-none"
+              : "h-auto w-full lg:h-full lg:w-[24.5rem]"
           }`}
         >
           <ControlPanel
             activeMode={activeTensorMode}
             onActiveModeChange={handleTensorModeChange}
-            referenceImage={referenceImage}
-            onReferenceImageChange={setReferenceImage}
-            prompt={prompt}
-            onPromptChange={setPrompt}
+            referenceImage={activeTab.referenceImage}
+            onReferenceImageChange={(img) => updateActiveTab({ referenceImage: img })}
+            prompt={activeTab.prompt}
+            onPromptChange={(p) => updateActiveTab({ prompt: p })}
             selectedModel={selectedModel}
             modelOptions={modelOptions}
             onModelChange={(key) => {
@@ -629,54 +893,68 @@ export default function StudioPage() {
               const next = model
                 ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
                 : null;
-              setSelection(next);
+              updateActiveTab({ selection: next });
               setModelsError(null);
             }}
             baseModel={baseModel}
             baseModelOptions={baseModelOptions}
             onBaseModelChange={(key) => {
               const model = baseModelOptions.find((item) => galleryModelKey(item) === key) ?? null;
-              setBaseSelection(
-                model
+              updateActiveTab({
+                baseSelection: model
                   ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-                  : null
-              );
+                  : null,
+              });
             }}
-            loras={loras}
-            onLorasChange={setLoras}
-            embeddings={embeddings}
-            onEmbeddingsChange={setEmbeddings}
-            seed={seed}
-            onSeedChange={setSeed}
-            steps={steps}
-            onStepsChange={setSteps}
-            cfg={cfg}
-            onCfgChange={setCfg}
-            denoise={denoise}
-            onDenoiseChange={setDenoise}
-            negativePrompt={negativePrompt}
-            onNegativePromptChange={setNegativePrompt}
-            customWidth={customWidth}
-            onCustomWidthChange={setCustomWidth}
-            customHeight={customHeight}
-            onCustomHeightChange={setCustomHeight}
-            format={format}
-            onFormatChange={setFormat}
-            isPrivate={isPrivate}
-            onPrivateChange={setIsPrivate}
-            enableDetailer={enableDetailer}
-            onDetailerChange={setEnableDetailer}
-            upscaleConfig={upscaleConfig}
-            onUpscaleConfigChange={setUpscaleConfig}
-            detailerConfig={detailerConfig}
-            onDetailerConfigChange={setDetailerConfig}
+            loras={activeTab.loras}
+            onLorasChange={(loras) => updateActiveTab({ loras })}
+            embeddings={activeTab.embeddings}
+            onEmbeddingsChange={(embeddings) => updateActiveTab({ embeddings })}
+            seed={activeTab.seed}
+            onSeedChange={(seed) => updateActiveTab({ seed })}
+            steps={activeTab.steps}
+            onStepsChange={(steps) => updateActiveTab({ steps })}
+            cfg={activeTab.cfg}
+            onCfgChange={(cfg) => updateActiveTab({ cfg })}
+            denoise={activeTab.denoise}
+            onDenoiseChange={(denoise) => updateActiveTab({ denoise })}
+            negativePrompt={activeTab.negativePrompt}
+            onNegativePromptChange={(negativePrompt) => updateActiveTab({ negativePrompt })}
+            customWidth={activeTab.customWidth}
+            onCustomWidthChange={(customWidth) => updateActiveTab({ customWidth })}
+            customHeight={activeTab.customHeight}
+            onCustomHeightChange={(customHeight) => updateActiveTab({ customHeight })}
+            format={activeTab.format}
+            onFormatChange={(format) => updateActiveTab({ format })}
+            isPrivate={activeTab.isPrivate}
+            onPrivateChange={(isPrivate) => updateActiveTab({ isPrivate })}
+            enableDetailer={activeTab.enableDetailer}
+            onDetailerChange={(enableDetailer) => updateActiveTab({ enableDetailer })}
+            upscaleConfig={activeTab.upscaleConfig}
+            onUpscaleConfigChange={(upscaleConfig) => updateActiveTab({ upscaleConfig })}
+            detailerConfig={activeTab.detailerConfig}
+            onDetailerConfigChange={(detailerConfig) => updateActiveTab({ detailerConfig })}
+            maskImage={activeTab.maskImage}
+            onMaskImageChange={(maskImage) => updateActiveTab({ maskImage })}
+            maskBlur={activeTab.maskBlur}
+            onMaskBlurChange={(maskBlur) => updateActiveTab({ maskBlur })}
+            inpaintFill={activeTab.inpaintFill}
+            onInpaintFillChange={(inpaintFill) => updateActiveTab({ inpaintFill })}
+            motionBucketId={activeTab.motionBucketId}
+            onMotionBucketIdChange={(motionBucketId) => updateActiveTab({ motionBucketId })}
+            videoFrames={activeTab.videoFrames}
+            onVideoFramesChange={(videoFrames) => updateActiveTab({ videoFrames })}
+            videoFps={activeTab.videoFps}
+            onVideoFpsChange={(videoFps) => updateActiveTab({ videoFps })}
+            primePreset={activeTab.primePreset}
+            onPrimePresetChange={(primePreset) => updateActiveTab({ primePreset })}
             busy={busy}
             canGenerate={canGenerate}
             onGenerate={handleGenerate}
             progress={progress}
             progressLabel={progressLabel}
-            imageCount={imageCount}
-            onImageCountChange={setImageCount}
+            imageCount={activeTab.imageCount}
+            onImageCountChange={(imageCount) => updateActiveTab({ imageCount })}
             modelsLoading={modelsLoading}
             modelsError={modelsError}
             onResetDefaults={resetStudioDefaults}
@@ -685,10 +963,10 @@ export default function StudioPage() {
 
         {/* Main Canvas Area */}
         <CanvasPreview
-          prompt={prompt}
-          onPromptChange={setPrompt}
+          prompt={activeTab.prompt}
+          onPromptChange={(p) => updateActiveTab({ prompt: p })}
           activeModelTitle={selectedModel?.title || "Krea 2 Turbo"}
-          aspectRatio={format}
+          aspectRatio={activeTab.format}
           canGenerate={canGenerate}
           onGenerate={handleGenerate}
           busy={busy}
@@ -698,12 +976,12 @@ export default function StudioPage() {
           error={error}
           outputWidth={outputDimensions.width}
           outputHeight={outputDimensions.height}
-          referenceImage={referenceImage}
+          referenceImage={activeTab.referenceImage}
           isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebarCollapse={() => setIsSidebarCollapsed((v) => !v)}
           onReload={refreshGallery}
           onRemix={handleRemix}
-          onSetReferenceImage={setReferenceImage}
+          onSetReferenceImage={(url) => updateActiveTab({ referenceImage: url })}
           onDeleteOutput={handleDeleteOutput}
           modelOptions={modelOptions}
         />
