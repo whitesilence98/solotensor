@@ -806,7 +806,7 @@ export default function PublicModelDetailPage({
         id="main-content"
         className="workspace-scroll h-full min-h-0 flex-1 bg-[var(--ground)] text-[var(--ink)]"
       >
-        <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="shimmer h-4 w-28 rounded-md" />
           <div className="mt-4 flex items-center justify-between">
             <div className="shimmer h-8 w-72 rounded-md" />
@@ -868,8 +868,8 @@ export default function PublicModelDetailPage({
     >
       {/* Moderation Status Alert Banners */}
       {model.moderation_status === "pending_review" && (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 sm:px-6">
-          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 text-xs">
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 text-amber-300">
               <Clock className="h-4 w-4 shrink-0 text-amber-400 animate-pulse" />
               <span>
@@ -901,8 +901,8 @@ export default function PublicModelDetailPage({
       )}
 
       {model.moderation_status === "rejected" && (
-        <div className="border-b border-rose-500/30 bg-rose-500/10 px-4 py-2.5 sm:px-6">
-          <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 text-xs">
+        <div className="border-b border-rose-500/30 bg-rose-500/10 px-4 py-2.5 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 text-rose-300">
               <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
               <span>
@@ -925,7 +925,7 @@ export default function PublicModelDetailPage({
 
       {/* 1. TOP HEADER & IDENTITY BAR */}
       <header className="z-30 border-b border-[var(--line)] bg-[var(--ground)]/95">
-        <div className="mx-auto max-w-[1400px] px-4 py-3 sm:px-6">
+        <div className="mx-auto max-w-[1600px] px-4 py-3 sm:px-6 lg:px-8">
           <div className="mb-2 flex items-center justify-between">
             {backLink}
             {shareCopied && (
@@ -1278,7 +1278,7 @@ export default function PublicModelDetailPage({
       </header>
 
       {/* 2. MAIN SHOWCASE & TELEMETRY STAGE (2-COLUMN) */}
-      <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_350px]">
           {/* LEFT COLUMN: Media Showcase, Description, Comments, Related */}
           <section className="space-y-6">
@@ -3043,7 +3043,7 @@ export default function PublicModelDetailPage({
         </div>
       )}
             {/* Footer */}
-      <WorkspaceFooter containerClassName="max-w-[1400px]" />
+      <WorkspaceFooter containerClassName="max-w-[1600px]" />
     </main>
   );
 }

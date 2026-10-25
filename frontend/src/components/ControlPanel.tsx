@@ -1214,21 +1214,25 @@ export default function ControlPanel(props: Props) {
        </div>
 
        {/* 7. Advanced Sampling Parameters (Seed, Steps, CFG) */}
-       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
+       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
         <button
          type="button"
          onClick={() => setAdvancedOpen((v) => !v)}
-         className="flex w-full items-center justify-between p-3 text-xs font-semibold text-[var(--ink-faint)] hover:text-[var(--ink)] transition"
+         aria-expanded={advancedOpen}
+         className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-semibold select-none hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
         >
-         <span className="flex items-center gap-2">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
-          <span>Sampling & Generation Parameters</span>
-         </span>
-         <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
+         <div className="flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.5} />
+          <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">Sampling & Generation Parameters</span>
+          <span className="text-[10px] font-mono text-[var(--ink-faint)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-sunken)]">
+           Denoise & Seed
+          </span>
+         </div>
+         <ChevronDown className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${advancedOpen ? "rotate-180" : ""}`} />
         </button>
 
         {advancedOpen && (
-         <div className="border-t border-[var(--line)] p-3 space-y-3">
+         <div className="border-t border-[var(--line)] px-3.5 pb-3.5 pt-2.5 space-y-3.5">
           <div>
            <SeedInput
             id="img2img-param-seed"
@@ -2818,27 +2822,30 @@ export default function ControlPanel(props: Props) {
      />
 
      {/* Advanced Settings Accordion */}
-     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
+     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
       <button
        type="button"
        onClick={() => setAdvancedOpen((v) => !v)}
        aria-expanded={advancedOpen}
        aria-controls="advanced-settings-panel"
-       className="flex w-full items-center justify-between p-3 text-xs font-semibold text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
+       className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-semibold select-none hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
       >
-       <span className="flex items-center gap-2">
-        <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
-        Advanced Settings
-       </span>
+       <div className="flex items-center gap-2">
+        <SlidersHorizontal className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.5} />
+        <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">Advanced Settings</span>
+        <span className="text-[10px] font-mono text-[var(--ink-faint)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-sunken)]">
+         Seed & Sampler
+        </span>
+       </div>
        <ChevronDown
-        className={`h-4 w-4 transition-transform duration-200 ${
+        className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
          advancedOpen ? "rotate-180" : ""
         }`}
        />
       </button>
 
       {advancedOpen && (
-       <div className="space-y-3.5 border-t border-[var(--line)] p-3 pt-3.5">
+       <div className="space-y-3.5 border-t border-[var(--line)] px-3.5 pb-3.5 pt-2.5">
         {/* Unified Seed Control */}
         <SeedInput
          id="param-seed"

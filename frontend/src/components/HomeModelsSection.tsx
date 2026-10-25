@@ -20,7 +20,7 @@ const MODEL_CATEGORY_PILLS = [
   { id: "cozy-healing", label: "Cozy & Healing" },
 ];
 
-const ITEMS_PER_PAGE = 4;
+const ITEMS_PER_PAGE = 5;
 const MAX_TRENDING_MODELS = 20;
 
 interface HomeModelsSectionProps {
@@ -160,8 +160,8 @@ export default function HomeModelsSection({
 
       {/* Models Carousel */}
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <ModelCardSkeleton key={i} index={i} />
           ))}
         </div>
@@ -175,7 +175,7 @@ export default function HomeModelsSection({
           loop={true}
           ariaLabel="Trending models carousel"
           renderPage={(pageItems, pageIdx) => (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
               {pageItems.map((item, itemIdx) => (
                 <TensorModelCard
                   key={item.model_id}

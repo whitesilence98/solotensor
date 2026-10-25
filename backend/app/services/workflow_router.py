@@ -36,13 +36,20 @@ def load_workflow(name: str) -> dict[str, Any]:
 
 
 def select_workflow(req: "GenerateRequest") -> dict[str, Any]:
-    """Return the loaded base T2I workflow graph dict for the given request config."""
-    for candidate in ["workflow_generate_t2i.json", "workflow_api.json"]:
-        try:
-            return load_workflow(candidate)
-        except (FileNotFoundError, RuntimeError):
-            continue
-    raise RuntimeError("Could not find a valid base T2I workflow template")
+    """Return the loaded base T2I or I2I workflow graph dict for the given request config."""
+    if req.mode == "image-to-image":
+        for candidate in ["workflow_generate_i2i.json", "workflow_generate_t2i.json", "workflow_api.json"]:
+            try:
+                return load_workflow(candidate)
+            except (FileNotFoundError, RuntimeError):
+                continue
+    else:
+        for candidate in ["workflow_generate_t2i.json", "workflow_api.json"]:
+            try:
+                return load_workflow(candidate)
+            except (FileNotFoundError, RuntimeError):
+                continue
+    raise RuntimeError(f"Could not find a valid base workflow template for mode '{req.mode}'")
 
 
 def build_enabled_features(req: "GenerateRequest") -> set[str]:
@@ -164,6 +171,87 @@ def patch_base_t2i_workflow(
     return graph
 
 
+def patch_base_i2i_workflow(
+    template: dict[str, Any],
+    *,
+    prompt: str,
+    negative_prompt: str = "",
+    seed: Optional[int] = None,
+    steps: int = 10,
+    cfg: float = 1.0,
+    denoise: float = 0.72,
+    unet_name: str = "krea2\\pornmasterKrea2_v2TurboBF16.safetensors",
+    clip_name: str = "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+    clip_type: str = "krea2",
+    vae_name: str = "wan_2.1_vae.safetensors",
+    source_image_filename: str,
+    loras: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Patch standard generator nodes in native workflow_generate_i2i.json."""
+    graph = json.loads(json.dumps(template))
+
+    # 1. Source Image input (node 30)
+    if "30" in graph:
+        graph["30"].setdefault("inputs", {})["image"] = str(source_image_filename)
+
+    # 2. Positive & Negative Prompts (nodes 6 & 7)
+    if "6" in graph:
+        graph["6"].setdefault("inputs", {})["text"] = prompt
+    if "7" in graph:
+        graph["7"].setdefault("inputs", {})["text"] = negative_prompt
+
+    # 3. KSampler parameters (node 3)
+    final_seed = int(seed if seed is not None and seed >= 0 else 0)
+    if "3" in graph:
+        inputs = graph["3"].setdefault("inputs", {})
+        inputs["seed"] = final_seed
+        inputs["steps"] = int(steps)
+        inputs["cfg"] = float(cfg)
+        inputs["denoise"] = float(denoise)
+
+    # 4. Model Loaders (nodes 593:590, 593:589, 593:588)
+    if "593:590" in graph and unet_name:
+        graph["593:590"].setdefault("inputs", {})["unet_name"] = unet_name
+    if "593:589" in graph and clip_name:
+        inputs = graph["593:589"].setdefault("inputs", {})
+        inputs["clip_name"] = clip_name
+        if clip_type:
+            inputs["type"] = clip_type
+    if "593:588" in graph and vae_name:
+        graph["593:588"].setdefault("inputs", {})["vae_name"] = vae_name
+
+    # 5. LoRAs (chaining standard LoraLoader nodes)
+    active_loras = [item for item in (loras or []) if item.get("on", True) and item.get("lora")]
+    if active_loras:
+        last_model_ref = ["593:590", 0]
+        last_clip_ref = ["593:589", 0]
+        for idx, item in enumerate(active_loras, start=1):
+            lora_node_id = f"lora_loader_{idx}"
+            strength = float(item.get("strength", 1.0))
+            graph[lora_node_id] = {
+                "class_type": "LoraLoader",
+                "inputs": {
+                    "model": last_model_ref,
+                    "clip": last_clip_ref,
+                    "lora_name": str(item["lora"]),
+                    "strength_model": strength,
+                    "strength_clip": strength,
+                },
+                "_meta": {"title": f"LoRA: {item.get('lora', '')}"},
+            }
+            last_model_ref = [lora_node_id, 0]
+            last_clip_ref = [lora_node_id, 1]
+
+        if "3" in graph:
+            graph["3"]["inputs"]["model"] = last_model_ref
+        if "6" in graph:
+            graph["6"]["inputs"]["clip"] = last_clip_ref
+        if "7" in graph:
+            graph["7"]["inputs"]["clip"] = last_clip_ref
+
+    return graph
+
+
 def patch_seedvr_upscaler_workflow(
     template: dict[str, Any],
     *,
@@ -280,8 +368,26 @@ def patch_full_t2i_workflow(
     detailer_cfg: Optional[Any] = None,
     source_image_filename: Optional[str] = None,
     denoise: float = 1.0,
+    cfg: float = 1.0,
 ) -> dict[str, Any]:
     """Patch generator nodes and apply cascade bypass (supporting both modular and legacy graphs)."""
+    if "30" in template and "32" in template and "3" in template and source_image_filename:
+        return patch_base_i2i_workflow(
+            template,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            cfg=cfg,
+            denoise=denoise,
+            unet_name=unet_name,
+            clip_name=clip_name,
+            clip_type=clip_type,
+            vae_name=vae_name,
+            source_image_filename=source_image_filename,
+            loras=loras,
+        )
+
     # Base T2I node patching
     graph = patch_base_t2i_workflow(
         template,

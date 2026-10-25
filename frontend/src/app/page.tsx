@@ -89,7 +89,54 @@ export default function HomePage() {
 
   const openAssetInspection = useCallback((item: AssetRecord | GalleryItem) => {
     setInspectedAsset(item as AssetRecord);
+    try {
+      if (typeof window !== "undefined") {
+        const encoded = item.key.split("/").map(encodeURIComponent).join("/");
+        window.history.pushState({ assetKey: item.key }, "", `/assets/${encoded}`);
+      }
+    } catch {
+      // Ignore in restricted environments
+    }
   }, []);
+
+  const closeAssetInspection = useCallback(() => {
+    setInspectedAsset(null);
+    try {
+      if (typeof window !== "undefined") {
+        window.history.pushState(null, "", "/");
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const selectAssetInModal = useCallback((item: GalleryItem) => {
+    setInspectedAsset(item as AssetRecord);
+    try {
+      if (typeof window !== "undefined") {
+        const encoded = item.key.split("/").map(encodeURIComponent).join("/");
+        window.history.replaceState({ assetKey: item.key }, "", `/assets/${encoded}`);
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  // Listen for browser Back/Forward navigation to sync modal with URL
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && typeof e.state === "object" && "assetKey" in e.state && e.state.assetKey) {
+        const match = assets.find((a) => a.key === e.state.assetKey);
+        if (match) {
+          setInspectedAsset(match);
+          return;
+        }
+      }
+      setInspectedAsset(null);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [assets]);
 
   return (
     <main
@@ -135,24 +182,25 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Asset Inspection Modal Dialog */}
-      {inspectedAsset && (
-        <WorkspaceModal
-          open={Boolean(inspectedAsset)}
-          onClose={() => setInspectedAsset(null)}
-          title={inspectedAsset.metadata?.prompt || inspectedAsset.key}
-          size="media"
-          headless
-        >
+      {/* Asset Inspection Modal Dialog with Deep-Linking */}
+      <WorkspaceModal
+        open={Boolean(inspectedAsset)}
+        onClose={closeAssetInspection}
+        title={inspectedAsset?.metadata?.prompt || inspectedAsset?.key || "Asset Details"}
+        size="media"
+        headless
+      >
+        {inspectedAsset && (
           <AssetInspectionStage
             asset={inspectedAsset}
             items={assets}
             modelOptions={modelOptions}
             mode="modal"
-            onClose={() => setInspectedAsset(null)}
+            onSelectAsset={selectAssetInModal}
+            onClose={closeAssetInspection}
           />
-        </WorkspaceModal>
-      )}
+        )}
+      </WorkspaceModal>
       {/* Footer */}
       <WorkspaceFooter containerClassName="max-w-[1720px]" />
     </main>

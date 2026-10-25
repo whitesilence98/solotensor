@@ -1,4 +1,4 @@
-from .workflow_router import patch_full_t2i_workflow
+from .workflow_router import patch_full_t2i_workflow, patch_base_i2i_workflow
 """Async HTTP + WebSocket client for a headless ComfyUI instance.
 
 Queues API-format workflows, streams execution progress, and fetches the
@@ -159,6 +159,15 @@ class ComfyClient:
     def load_full_t2i_template(self) -> Optional[dict[str, Any]]:
         """Load workflows/workflow_generate_t2i.json if present."""
         path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_generate_t2i.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) and data else None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def load_full_i2i_template(self) -> Optional[dict[str, Any]]:
+        """Load workflows/workflow_generate_i2i.json if present."""
+        path = Path(__file__).resolve().parents[2] / "workflows" / "workflow_generate_i2i.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) and data else None
@@ -734,6 +743,24 @@ class ComfyClient:
             has_upscale = bool(upscale and getattr(upscale, "enabled", False))
             has_structured_detailer = bool(detailer and getattr(detailer, "enabled", False))
             if has_upscale or has_structured_detailer or source_image_filename:
+                if source_image_filename:
+                    i2i_template = self.load_full_i2i_template()
+                    if i2i_template:
+                        return patch_base_i2i_workflow(
+                            i2i_template,
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            seed=seed,
+                            steps=steps,
+                            cfg=cfg,
+                            denoise=denoise,
+                            unet_name=filename,
+                            clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                            clip_type=clip_type or "krea2",
+                            vae_name=vae_name or "wan_2.1_vae.safetensors",
+                            source_image_filename=source_image_filename,
+                            loras=loras or [],
+                        )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
                     return patch_full_t2i_workflow(
@@ -879,6 +906,24 @@ class ComfyClient:
             has_upscale = bool(upscale and getattr(upscale, "enabled", False))
             has_structured_detailer = bool(detailer and getattr(detailer, "enabled", False))
             if has_upscale or has_structured_detailer or source_image_filename:
+                if source_image_filename:
+                    i2i_template = self.load_full_i2i_template()
+                    if i2i_template:
+                        return patch_base_i2i_workflow(
+                            i2i_template,
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            seed=seed,
+                            steps=steps,
+                            cfg=cfg,
+                            denoise=denoise,
+                            unet_name=base_filename,
+                            clip_name=clip_name or "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                            clip_type=clip_type or "krea2",
+                            vae_name=vae_name or "wan_2.1_vae.safetensors",
+                            source_image_filename=source_image_filename,
+                            loras=active_loras,
+                        )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
                     return patch_full_t2i_workflow(
@@ -1176,9 +1221,25 @@ class ComfyClient:
             raise ComfyClientError("ComfyUI returned an invalid uploaded image name")
         return uploaded
 
-    async def queue_prompt(self, graph: dict[str, Any], client_id: str) -> str:
+    async def queue_prompt(
+        self,
+        graph: dict[str, Any],
+        client_id: str,
+        extra_data: dict[str, Any] | None = None,
+    ) -> str:
         """POST an API-format workflow to ComfyUI and return its prompt ID."""
-        payload = {"prompt": graph, "client_id": client_id}
+        payload: dict[str, Any] = {
+            "prompt": graph,
+            "client_id": client_id,
+            "extra_data": extra_data or {
+                "extra_pnginfo": {
+                    "workflow": {
+                        "nodes": [],
+                        "links": [],
+                    }
+                }
+            },
+        }
         async with self._http() as client:
             try:
                 resp = await client.post("/prompt", json=payload)

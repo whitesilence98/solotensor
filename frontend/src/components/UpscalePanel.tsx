@@ -78,7 +78,7 @@ export default function UpscalePanel({ config, onChange, outputWidth, outputHeig
       >
         <div className="flex items-center gap-2">
           <Zap
-            className={`w-4 h-4 transition-colors ${config.enabled ? "text-[var(--accent)]" : "text-[var(--ink-faint)]"}`}
+            className="w-4 h-4 text-[var(--accent)]"
             strokeWidth={1.5}
           />
           <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">Upscale</span>
@@ -98,7 +98,9 @@ export default function UpscalePanel({ config, onChange, outputWidth, outputHeig
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              set({ enabled: !config.enabled });
+              const next = !config.enabled;
+              if (next) setExpanded(true);
+              set({ enabled: next });
             }}
             className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] active:scale-[0.96] ${
               config.enabled ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
@@ -113,11 +115,11 @@ export default function UpscalePanel({ config, onChange, outputWidth, outputHeig
             />
           </button>
 
-          {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 text-[var(--ink-faint)]" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-[var(--ink-faint)]" />
-          )}
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
+              expanded ? "rotate-180" : ""
+            }`}
+          />
         </div>
       </div>
 

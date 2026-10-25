@@ -137,15 +137,56 @@ class TestImg2ImgGeneration(unittest.TestCase):
             # Verify ComfyUI received the uploaded image
             mock_comfy.upload_image.assert_called_once()
 
-            # Verify the queued graph had Img2Img nodes injected
+            # Verify the queued graph used native workflow_generate_i2i.json nodes
             self.assertEqual(len(queued_graphs), 1)
             stage1_graph = queued_graphs[0]
-            self.assertNotIn("1054", stage1_graph)
-            self.assertIn("1054_load", stage1_graph)
-            self.assertEqual(stage1_graph["1054_load"]["inputs"]["image"], "uploaded_source_input.png")
-            self.assertIn("1054_encode", stage1_graph)
-            self.assertEqual(stage1_graph["1056"]["inputs"]["latent_image"], ["1054_encode", 0])
-            self.assertEqual(stage1_graph["1059"]["inputs"]["denoise"], 0.65)
+            self.assertIn("30", stage1_graph)
+            self.assertEqual(stage1_graph["30"]["inputs"]["image"], "uploaded_source_input.png")
+            self.assertIn("32", stage1_graph)
+            self.assertEqual(stage1_graph["32"]["inputs"]["pixels"], ["30", 0])
+            self.assertIn("3", stage1_graph)
+            self.assertEqual(stage1_graph["3"]["inputs"]["latent_image"], ["32", 0])
+            self.assertEqual(stage1_graph["3"]["inputs"]["denoise"], 0.65)
+            self.assertEqual(stage1_graph["6"]["inputs"]["text"], "cyberpunk portrait")
+
+    def test_patch_base_i2i_workflow_unit(self):
+        """Unit test for patch_base_i2i_workflow with model loaders and LoRA chaining."""
+        from app.services.workflow_router import load_workflow, patch_base_i2i_workflow
+
+        template = load_workflow("workflow_generate_i2i.json")
+        patched = patch_base_i2i_workflow(
+            template,
+            prompt="neon cyberpunk street",
+            negative_prompt="blurry, ugly",
+            seed=42,
+            steps=15,
+            cfg=2.0,
+            denoise=0.55,
+            unet_name="custom_model.safetensors",
+            clip_name="custom_clip.safetensors",
+            clip_type="sdxl",
+            vae_name="custom_vae.safetensors",
+            source_image_filename="source_ref.png",
+            loras=[{"lora": "cyber_detail.safetensors", "strength": 0.85, "on": True}],
+        )
+
+        self.assertEqual(patched["30"]["inputs"]["image"], "source_ref.png")
+        self.assertEqual(patched["6"]["inputs"]["text"], "neon cyberpunk street")
+        self.assertEqual(patched["7"]["inputs"]["text"], "blurry, ugly")
+        self.assertEqual(patched["3"]["inputs"]["seed"], 42)
+        self.assertEqual(patched["3"]["inputs"]["steps"], 15)
+        self.assertEqual(patched["3"]["inputs"]["cfg"], 2.0)
+        self.assertEqual(patched["3"]["inputs"]["denoise"], 0.55)
+        self.assertEqual(patched["593:590"]["inputs"]["unet_name"], "custom_model.safetensors")
+        self.assertEqual(patched["593:589"]["inputs"]["clip_name"], "custom_clip.safetensors")
+        self.assertEqual(patched["593:588"]["inputs"]["vae_name"], "custom_vae.safetensors")
+
+        # Verify LoRA loader node was chained
+        self.assertIn("lora_loader_1", patched)
+        self.assertEqual(patched["lora_loader_1"]["inputs"]["lora_name"], "cyber_detail.safetensors")
+        self.assertEqual(patched["lora_loader_1"]["inputs"]["strength_model"], 0.85)
+        self.assertEqual(patched["3"]["inputs"]["model"], ["lora_loader_1", 0])
+        self.assertEqual(patched["6"]["inputs"]["clip"], ["lora_loader_1", 1])
 
 
 if __name__ == "__main__":

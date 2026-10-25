@@ -296,7 +296,7 @@ export default function CanvasPreview(props: Props) {
  const closeAsset = useCallback(() => {
   setSelectedAsset(null);
   if (typeof window !== "undefined") {
-   window.history.pushState(null, "", "/");
+   window.history.pushState(null, "", "/generate");
   }
  }, []);
 

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   ChevronDown,
-  ChevronUp,
   HelpCircle,
   ScanFace,
   Sparkles,
@@ -333,7 +332,7 @@ export default function DetailerPanel({ config, onChange, selectedModel }: Props
       >
         <div className="flex items-center gap-2">
           <ScanFace
-            className={`w-4 h-4 transition-colors ${config.enabled ? "text-[var(--accent)]" : "text-[var(--ink-faint)]"}`}
+            className="w-4 h-4 text-[var(--accent)]"
             strokeWidth={1.5}
           />
           <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">ADetailer</span>
@@ -354,6 +353,7 @@ export default function DetailerPanel({ config, onChange, selectedModel }: Props
             onClick={(e) => {
               e.stopPropagation();
               const nextEnabled = !config.enabled;
+              if (nextEnabled) setExpanded(true);
               // If enabling for first time and items empty, seed default items
               let nextItems = config.items;
               if (nextEnabled && nextItems.length === 0) {
@@ -377,11 +377,11 @@ export default function DetailerPanel({ config, onChange, selectedModel }: Props
             />
           </button>
 
-          {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 text-[var(--ink-faint)]" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-[var(--ink-faint)]" />
-          )}
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
+              expanded ? "rotate-180" : ""
+            }`}
+          />
         </div>
       </div>
 
