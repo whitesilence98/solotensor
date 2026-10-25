@@ -1,6 +1,6 @@
 # SoloTensor Frontend Agent & Developer Guidelines
 
-This document outlines the architecture, design system, and coding standards for all frontend work in `solotensor/frontend`.
+This document outlines the architecture, design system, and coding standards for all frontend work in `frontend`.
 
 ---
 
@@ -14,7 +14,7 @@ This document outlines the architecture, design system, and coding standards for
 ---
 
 ## 2. Design System: Obsidian & Acid Lime Brutalist Studio
-- **Design Spec**: Refer to [`solotensor/DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/DESIGN.md).
+- **Design Spec**: Refer to [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/DESIGN.md).
 - **Core Tokens**:
   - `--ground`: `#0a0b0a` (Deep obsidian backdrop)
   - `--surface`: `#121412` (Panel and inspector surface)
@@ -31,13 +31,14 @@ This document outlines the architecture, design system, and coding standards for
 ## 3. Engineering Conventions
 - **Client Components**: Only use `'use client'` where state, effects, or browser APIs are required.
 - **API Requests**: Route all calls through `src/lib/api.ts`.
+- **Prompt Composer**: Shared `PromptComposer.tsx` component used across both `Text2Img` and `Img2Img` generation tabs for consistent tag autocompletion and prompt crafting.
 - **WebSockets**: Maintain clean event registration and unmount cleanup in `useEffect`.
 - **State Resilience**: Provide clear states for idle, generating, empty, and error scenarios.
 
 ---
 
 ## 4. Model Taxonomy & Compatibility Stack
-- **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/docs/ARCHITECTURE.md) and [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/DESIGN.md#L82).
+- **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/docs/ARCHITECTURE.md) and [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/DESIGN.md#L82).
 - **16 Standardized Types**: Strictly use the `CreatorModelType` union defined in `src/lib/api.ts` (e.g. `Checkpoint`, `LoRA`, `VAE`, `ControlNet`, etc.).
 - **Dual SafeTensors Extensions**: Always accept both `.safetensors` and `.sft` across all file inputs, drag-and-drop dropzones, and ComfyUI enclave model scanners.
 - **Persistent Compatibility Container**: In `CreateModelDrawer.tsx`, keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:
@@ -51,9 +52,9 @@ This document outlines the architecture, design system, and coding standards for
 ---
 
 ## 5. Verification Commands
-Run from `solotensor/frontend`:
+Run from `frontend`:
 ```powershell
-cmd /c npx tsc --noEmit
-cmd /c npm run build
+npx tsc --noEmit
+npm run build
 ```
 Both commands must complete with exit code `0`.

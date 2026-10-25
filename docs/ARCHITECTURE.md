@@ -188,10 +188,10 @@ classDiagram
 
 | Module | Location | Core Responsibilities |
 | :--- | :--- | :--- |
-| **Schemas** | [`solotensor/backend/app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/backend/app/schemas.py) | `CreatorModelType` enum, `ModelCompatibility` Pydantic model with validation, generation parameters. |
-| **Model Storage** | [`solotensor/backend/app/services/models.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/backend/app/services/models.py) | `LOCAL_MODEL_CATEGORIES`, `MODEL_EXTENSIONS`, disk scanning (`local_models()`), import, installation, and database synchronization. |
-| **Comfy Client** | [`solotensor/backend/app/services/comfy_client.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/backend/app/services/comfy_client.py) | Dynamic ComfyUI prompt graph building (`build_gallery_workflow()`, `build_gallery_lora_workflow()`), model name resolution. |
-| **API Controller** | [`solotensor/backend/app/main.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/backend/app/main.py) | FastAPI endpoints for `/api/v1/models/local`, `/api/v1/models/{category}`, `/api/v1/clip-options`, `/api/v1/workflow/template-info`. |
+| **Schemas** | [`backend/app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/schemas.py) | `CreatorModelType` enum, `ModelCompatibility` Pydantic model with validation, generation parameters. |
+| **Model Storage** | [`backend/app/services/models.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/services/models.py) | `LOCAL_MODEL_CATEGORIES`, `MODEL_EXTENSIONS`, disk scanning (`local_models()`), import, installation, and database synchronization. |
+| **Comfy Client** | [`backend/app/services/comfy_client.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/services/comfy_client.py) | Dynamic ComfyUI prompt graph building (`build_gallery_workflow()`, `build_lora_workflow()`), model name resolution, fallback `extra_pnginfo` injection. |
+| **API Controller** | [`backend/app/main.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/main.py) | FastAPI endpoints for `/api/v1/models/local`, `/api/v1/models/{category}`, `/api/v1/clip-options`, `/api/v1/workflow/template-info`. |
 
 ### Dual-Source Enclave Scanning Pattern
 When enumerating available VAEs or text encoders, the backend supports both filesystem-based inspection (via `COMFY_MODEL_ROOT`) and HTTP-based inspection (via live ComfyUI `/models/{category}`):
@@ -210,7 +210,7 @@ async def models(category: str) -> list[str]:
 ```
 
 ### Model Compatibility Validation Rule
-In `ModelCompatibility` ([`app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/backend/app/schemas.py#L428)):
+In `ModelCompatibility` ([`app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/schemas.py#L428)):
 - `vae` is optional (`str | None`).
 - `text_encoder` and `clip_type` are co-dependent: either both are provided, or both are `None`.
 - `base_model_id`, `base_version_id`, and `base_file_id` must be set together when linking to an installed base model.
@@ -223,11 +223,12 @@ In `ModelCompatibility` ([`app/schemas.py`](file:///c:/Users/kenko/Desktop/prije
 
 | Component | Location | Role |
 | :--- | :--- | :--- |
-| **API Client** | [`solotensor/frontend/src/lib/api.ts`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
-| **Model Creation Drawer** | [`solotensor/frontend/src/components/CreateModelDrawer.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
-| **Generation Studio** | [`solotensor/frontend/src/components/ControlPanel.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
-| **Model Card & Badges** | [`solotensor/frontend/src/components/TensorModelCard.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/components/TensorModelCard.tsx) | Visual card with tailored color badge tokens across all 16 types. |
-| **Model Explorer** | [`solotensor/frontend/src/app/models/page.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/app/models/page.tsx) | Multi-category filter bar supporting all 16 model types. |
+| **API Client** | [`frontend/src/lib/api.ts`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
+| **Model Creation Drawer** | [`frontend/src/components/CreateModelDrawer.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
+| **Generation Studio** | [`frontend/src/components/ControlPanel.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
+| **Prompt Composer** | [`frontend/src/components/PromptComposer.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/PromptComposer.tsx) | Reusable tag autocomplete, style pills, and prompt composition component shared across T2I and I2I. |
+| **Model Card & Badges** | [`frontend/src/components/TensorModelCard.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/TensorModelCard.tsx) | Visual card with tailored color badge tokens across all 16 types. |
+| **Model Explorer** | [`frontend/src/app/models/page.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/app/models/page.tsx) | Multi-category filter bar supporting all 16 model types. |
 
 ### Enclave Refresh & Parallel Discovery
 The frontend calls both local disk scanner and live ComfyUI endpoints via `Promise.allSettled`, guaranteeing that files like `ae.sft` are instantly available regardless of deployment configuration:
@@ -254,25 +255,26 @@ Promise.allSettled([
 ## 6. Verification & Quality Assurance Commands
 
 ### Backend Verification
-Run from `solotensor/backend`:
+Run from `backend`:
 ```powershell
-# Run the full test suite (153+ tests)
-python -m unittest discover -s tests
+# Run the full test suite (324+ tests)
+$env:PYTHONPATH='backend'; python -m unittest discover -s tests
 
-# Run specific model tests
+# Run specific model and router tests
 python -m unittest tests/test_models.py
 python -m unittest tests/test_schema_validation.py
+python -m unittest tests/test_img2img_generation.py
 ```
 *Expected: `OK` (0 failures, 0 errors).*
 
 ### Frontend Verification
-Run from `solotensor/frontend`:
+Run from `frontend`:
 ```powershell
 # Typecheck
-cmd /c npx tsc --noEmit
+npx tsc --noEmit
 
 # Production Build
-cmd /c npm run build
+npm run build
 ```
 *Expected: All routes compiled with exit code `0`.*
 
@@ -285,13 +287,14 @@ SoloTensor includes a multi-stage post-processing pipeline for the `/generate` s
 
 ### Generation Workflow Matrix
 
-The backend (`services/workflow_router.py`) selects the optimal ComfyUI workflow based on generation flags:
+The backend (`services/workflow_router.py`) selects the optimal ComfyUI workflow based on generation mode and flags:
 
 | Active Features | Workflow Template | Processing Characteristics |
 | :--- | :--- | :--- |
-| **Upscale ON** or **Detailer ON** | `workflows/workflow_generate_t2i.json` | High-fidelity multi-pass pipeline. Pruned and dynamically rewired via `apply_t2i_pipeline()`. |
-| **Standalone Detailer** (legacy) | `workflows/workflow_generate_detailer.json` | Lightweight single-pass FaceDetailer pipe. |
-| **Base T2I** (Upscale OFF & Detailer OFF) | `workflows/workflow_api.json` | Fast, lean direct generation without intermediate passes. |
+| **Image-to-Image** (`generation_mode == "image-to-image"`) | `workflows/workflow_generate_i2i.json` | Native ComfyUI Img2Img workflow (`LoadImage` 30, `VAEEncode` 32, `KSampler` 3 with native denoise, UNET/CLIP/VAE loaders, dynamic LoRA chaining). |
+| **Base T2I** (`generation_mode == "text-to-image"`) | `workflows/workflow_generate_t2i.json` | High-fidelity pure base text-to-image pipeline with terminal SaveImage (1084). |
+| **Upscale Pass** (SeedVR2 DiT) | `workflows/workflow_seedvr_upscaler.json` | Generative super-resolution pass (1.5x–4.0x) with LAB color correction. |
+| **Detailer Pass** (ADetailer Multi-Target) | `workflows/workflow_detailer.json` | Cascading multi-target YOLO inpainting suite (Face, Hands, Body) with selective bypass pruning. |
 
 ### Sequential Cascade Architecture
 

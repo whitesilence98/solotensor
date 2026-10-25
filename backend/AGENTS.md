@@ -1,7 +1,7 @@
 # SoloTensor Backend Agent Directory
 
 This document outlines the specialized backend agent suite available for SoloTensor.
-For system topology, the 16 model types specification, and ComfyUI enclave contracts, see [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/docs/ARCHITECTURE.md).
+For system topology, the 16 model types specification, and ComfyUI enclave contracts, see [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/docs/ARCHITECTURE.md).
 
 ---
 
@@ -9,12 +9,12 @@ For system topology, the 16 model types specification, and ComfyUI enclave contr
 
 | Agent Name | Spec File | Primary Scope | Typical Tasks |
 | :--- | :--- | :--- | :--- |
-| **`comfy-pipeline`** | [`.claude/agents/comfy-pipeline.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/comfy-pipeline.md) | `services/comfy_client.py`, ComfyUI WebSocket | ComfyUI node graphs, LoRA splicing, latent bounds, live progress streaming |
-| **`api-contracts`** | [`.claude/agents/api-contracts.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/api-contracts.md) | `schemas.py`, `main.py`, `frontend/src/lib/api.ts` | Pydantic v2 schemas, status codes, error handling, TypeScript parity |
-| **`model-manager`** | [`.claude/agents/model-manager.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/model-manager.md) | `services/models.py`, `models/` dir | Checkpoint/LoRA discovery, Civitai API integration, trigger word parsing |
-| **`tool-engine`** | [`.claude/agents/tool-engine.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/tool-engine.md) | `services/ai_tools.py`, `tool_data/` | Parametric `workflow_api.json` tools, dynamic inputs, custom tool runner |
-| **`backend-qa`** | [`.claude/agents/backend-qa.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/backend-qa.md) | `tests/` directory | Python unit tests, mocks, path traversal fuzzing, regression tests |
-| **`backend`** *(General)* | [`.claude/agents/backend.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/.claude/agents/backend.md) | Full `solotensor/backend` | Cross-module orchestration, general refactors, full-stack sync |
+| **`comfy-pipeline`** | [`.claude/agents/comfy-pipeline.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/comfy-pipeline.md) | `services/comfy_client.py`, ComfyUI WebSocket | ComfyUI node graphs, LoRA splicing, latent bounds, live progress streaming |
+| **`api-contracts`** | [`.claude/agents/api-contracts.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/api-contracts.md) | `schemas.py`, `main.py`, `frontend/src/lib/api.ts` | Pydantic v2 schemas, status codes, error handling, TypeScript parity |
+| **`model-manager`** | [`.claude/agents/model-manager.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/model-manager.md) | `services/models.py`, `models/` dir | Checkpoint/LoRA discovery, Civitai API integration, trigger word parsing |
+| **`tool-engine`** | [`.claude/agents/tool-engine.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/tool-engine.md) | `services/ai_tools.py`, `tool_data/` | Parametric `workflow_api.json` tools, dynamic inputs, custom tool runner |
+| **`backend-qa`** | [`.claude/agents/backend-qa.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/backend-qa.md) | `tests/` directory | Python unit tests, mocks, path traversal fuzzing, regression tests |
+| **`backend`** *(General)* | [`.claude/agents/backend.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/.claude/agents/backend.md) | Full `backend` | Cross-module orchestration, general refactors, full-stack sync |
 
 ---
 

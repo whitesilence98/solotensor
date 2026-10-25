@@ -128,13 +128,14 @@ When the user clicks a tab button in `ControlPanel.tsx`:
   - Optional Secondary Passes (Super-Resolution Upscale, Cascading Detailer).
 
 ### 4.2 Tab 2: Img2Img (Latent Variation & Style Transfer)
-- **Primary Generator**: ComfyUI `LoadImage` + `VAEEncode` feeding into `KSampler`.
+- **Primary Generator**: Native ComfyUI `workflow_generate_i2i.json` (`LoadImage` node `30` + `VAEEncode` node `32` + `KSampler` node `3` with native `denoise`).
 - **Denoise**: Configurable slider (`0.05` to `1.0`, default `0.65`).
   - Low values (`0.20 – 0.45`): Subtle color shifts and texture variations.
   - Medium values (`0.50 – 0.70`): Style transfer while retaining spatial composition.
   - High values (`0.75 – 0.95`): Radical re-imagining guided by input geometry.
 - **Controls**:
   - Drag & Drop Source Image Uploader with instant thumbnail preview and clear action.
+  - Reusable Prompt Composer component with tag autocomplete, style pills, and negative prompt management (shared with Text2Img).
   - "Auto-Prompt" Tag Interrogator (deep-extracts prompts and settings from PNG metadata).
   - "Match Source Dimensions" button (reads natural image resolution and sets custom width/height snapped to multiples of 8).
   - Full access to Model picker, LoRAs, and Sampling parameters.
@@ -196,10 +197,14 @@ When `mode == "image-to-image"`:
 1. `main.py` decodes the reference image bytes (base64 data URI or asset storage key).
 2. Uploads the image to ComfyUI via `comfy.upload_image()`.
 3. Invokes `comfy.build_gallery_workflow(..., source_image_filename=filename, denoise=req.denoise)`.
-4. `workflow_router.py` replaces `EmptyLatentImage` (`node 1054`) with:
-   - `node 1054_load` (`LoadImage`)
-   - `node 1054_encode` (`VAEEncode`)
-5. Links `VAEEncode` to `KSampler` latent input and configures `denoise` and `start_at_step`.
+4. `workflow_router.py` selects the dedicated native `workflow_generate_i2i.json` template.
+5. `patch_base_i2i_workflow()` patches native node IDs:
+   - Node `30` (`LoadImage`): Source image filename.
+   - Node `3` (`KSampler`): `seed`, `steps`, `cfg`, and native `denoise`.
+   - Node `6` / `7` (`CLIPTextEncode`): Positive and negative prompts.
+   - Model loaders: UNET (`593:590`), CLIP (`593:589`), VAE (`593:588`).
+   - Dynamically chains `LoraLoader` nodes if LoRAs are requested.
+6. The resulting image from node `9` (`SaveImage`) / `8` (`VAEDecode`) pipes cleanly into downstream Detailer and Upscaler passes if enabled.
 
 ---
 

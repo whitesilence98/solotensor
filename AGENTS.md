@@ -10,13 +10,13 @@ Both Antigravity and Claude Code have access to the exact same 7 specialized age
 
 | Agent Name | Primary Scope | Typical Responsibilities | Verification Command |
 | :--- | :--- | :--- | :--- |
-| **`frontend`** | `solotensor/frontend` | Next.js 15, React 19, TypeScript, Tailwind CSS, Brutalist Obsidian UI, Lucide icons, client-side WebSocket and API client. | `npx tsc --noEmit` & `npm run build` |
-| **`backend`** | `solotensor/backend` | FastAPI routes, Pydantic v2 schemas, async ComfyUI client, asset storage, sidecars, and unit tests. | `python -m unittest discover -s tests` |
-| **`comfy-pipeline`** | `solotensor/backend` | ComfyUI workflow graph construction, latent space math (multiple-of-8), node linking, WebSocket streaming frames. | `python -m unittest tests/test_workflow_patch.py` |
+| **`frontend`** | `frontend` | Next.js 15, React 19, TypeScript, Tailwind CSS, Brutalist Obsidian UI, Lucide icons, client-side WebSocket and API client. | `npx tsc --noEmit` & `npm run build` |
+| **`backend`** | `backend` | FastAPI routes, Pydantic v2 schemas, async ComfyUI client, asset storage, sidecars, and unit tests. | `$env:PYTHONPATH='backend'; python -m unittest discover -s tests` |
+| **`comfy-pipeline`** | `backend` | ComfyUI workflow graph construction, latent space math (multiple-of-8), node linking, WebSocket streaming frames. | `python -m unittest tests/test_workflow_patch.py` |
 | **`api-contracts`** | `backend` & `frontend` | Schema parity between `backend/app/schemas.py` and `frontend/src/lib/api.ts`, error envelope standardization, thin routes. | `python -m unittest tests/test_schema_validation.py` & `npx tsc --noEmit` |
-| **`model-manager`** | `solotensor/backend` | Checkpoint, LoRA, embedding, VAE scanning, Civitai metadata caching, trigger words, download sanitization, path containment. | `python -m unittest tests/test_models.py` |
-| **`tool-engine`** | `solotensor/backend` | Parametric workflow tools, `workflow_api.json` graph interpolation, dynamic schema generation, tool manifest persistence. | `python -m unittest tests/test_ai_tools.py` |
-| **`backend-qa`** | `solotensor/backend` | Mock isolation fixtures, regression testing, filesystem boundary safety, fuzzing, 100% test pass rate. | `python -m unittest discover -s tests` |
+| **`model-manager`** | `backend` | Checkpoint, LoRA, embedding, VAE scanning, Civitai metadata caching, trigger words, download sanitization, path containment. | `python -m unittest tests/test_models.py` |
+| **`tool-engine`** | `backend` | Parametric workflow tools, `workflow_api.json` graph interpolation, dynamic schema generation, tool manifest persistence. | `python -m unittest tests/test_ai_tools.py` |
+| **`backend-qa`** | `backend` | Mock isolation fixtures, regression testing, filesystem boundary safety, fuzzing, 100% test pass rate. | `$env:PYTHONPATH='backend'; python -m unittest discover -s tests` |
 
 ---
 
@@ -25,7 +25,7 @@ Both Antigravity and Claude Code have access to the exact same 7 specialized age
 ### In Claude Code
 - **Slash Commands**: Type `/agent <name>` or `/frontend`, `/backend`, etc.
 - **Agent Mentions**: Type `@frontend`, `@backend`, etc., in your prompt.
-- **Discovery Location**: `.claude/agents/*.md` (mirrored at both workspace root and `solotensor/.claude/agents/`).
+- **Discovery Location**: `.claude/agents/*.md` (mirrored at workspace root).
 
 ### In Google Antigravity
 - **Direct Subagent Spawning (`invoke_subagent`)**:
@@ -51,6 +51,6 @@ Both Antigravity and Claude Code have access to the exact same 7 specialized age
 2. **Strict Filesystem Boundaries**:
    All user uploads, generated assets, and models must remain within their designated directories with path containment checks.
 3. **Pydantic & TypeScript Sync**:
-   Any change to `solotensor/backend/app/schemas.py` must be immediately mirrored in `solotensor/frontend/src/lib/api.ts`.
+   Any change to `backend/app/schemas.py` must be immediately mirrored in `frontend/src/lib/api.ts`.
 4. **Isolated Test Execution**:
    Backend unit tests must run offline without requiring a live ComfyUI instance or GPU.
