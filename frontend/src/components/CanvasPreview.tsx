@@ -62,6 +62,7 @@ interface Props {
  modelOptions?: InstalledGalleryModel[];
  activeModelTitle?: string;
  aspectRatio?: string;
+ className?: string;
 }
 
 function CanvasListCard({
@@ -217,6 +218,7 @@ const STYLE_CATALYSTS = [
 
 export default function CanvasPreview(props: Props) {
  const {
+  className,
   prompt,
   onPromptChange,
   canGenerate,
@@ -332,7 +334,7 @@ export default function CanvasPreview(props: Props) {
  return (
   <main
    id="main-content"
-   className="workspace-core workspace-scroll relative flex h-auto min-h-[36rem] min-w-0 flex-1 flex-col overflow-y-auto rounded-[1.35rem] border border-white/10 bg-[color-mix(in_srgb,var(--ground)_88%,var(--surface))] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.18)] lg:h-full"
+   className={`workspace-core workspace-scroll relative flex h-auto min-h-[36rem] min-w-0 flex-1 flex-col overflow-y-auto rounded-[1.35rem] border border-white/10 bg-[color-mix(in_srgb,var(--ground)_88%,var(--surface))] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.18)] lg:min-h-0 lg:flex-1 ${className || ""}`}
   >
    {/* Viewport Control Strip */}
    <header className="workspace-command top-0 z-30 m-2 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-[var(--line-strong)] bg-[rgba(15,18,15,.85)] px-3.5 py-2.5 shadow-[0_14px_42px_rgba(3,8,4,.32)] backdrop-blur-xl">

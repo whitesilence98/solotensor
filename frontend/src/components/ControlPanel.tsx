@@ -52,7 +52,6 @@ import SeedInput from "@/components/SeedInput";
 import AspectRatioSelector from "@/components/AspectRatioSelector";
 import UpscalePanel, { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
 import DetailerPanel, { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
-import PromptComposer from "@/components/PromptComposer";
 import AdvancedSamplingPanel from "@/components/AdvancedSamplingPanel";
 import LoraStackPanel from "@/components/LoraStackPanel";
 
@@ -1159,24 +1158,7 @@ export default function ControlPanel(props: Props) {
         disabled={busy}
        />
 
-       {/* 5. Prompt Composer (Reused Component) */}
-       <PromptComposer
-        idPrefix="img2img"
-        prompt={prompt}
-        onPromptChange={onPromptChange}
-        negativePrompt={negativePrompt}
-        onNegativePromptChange={onNegativePromptChange}
-        busy={busy}
-        canGenerate={canGenerate}
-        onGenerate={onGenerate}
-        onInterrogateFile={(file) => executeInterrogation(file, file.name)}
-        interrogating={interrogating}
-        interrogateToast={interrogateToast}
-        positivePlaceholder="Describe desired modifications, atmosphere, details, and style…"
-        negativePlaceholder="worst quality, low quality, blurry, distorted, extra limbs, bad anatomy…"
-        positiveRows={3}
-        negativeRows={2}
-       />
+       
 
        {/* 6. Format & Dimensions */}
        <div className="space-y-2 border-t border-[var(--line)] pt-3">
@@ -1490,17 +1472,7 @@ export default function ControlPanel(props: Props) {
       </button>
      </div>
 
-     {/* 4. Inpaint Prompt Composer */}
-     <PromptComposer
-      idPrefix="edit"
-      prompt={prompt}
-      onPromptChange={onPromptChange}
-      negativePrompt={negativePrompt}
-      onNegativePromptChange={onNegativePromptChange}
-      busy={busy}
-      canGenerate={canGenerate}
-      onGenerate={onGenerate}
-     />
+     
 
      {/* 5. Aspect Ratio Selector */}
      <AspectRatioSelector
@@ -1828,17 +1800,7 @@ export default function ControlPanel(props: Props) {
       </button>
      </div>
 
-     {/* 4. Motion Prompt */}
-     <PromptComposer
-      idPrefix="video"
-      prompt={prompt}
-      onPromptChange={onPromptChange}
-      negativePrompt={negativePrompt}
-      onNegativePromptChange={onNegativePromptChange}
-      busy={busy}
-      canGenerate={canGenerate}
-      onGenerate={onGenerate}
-     />
+     
 
      {/* 5. Sampling Parameters */}
      <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
@@ -2052,17 +2014,7 @@ export default function ControlPanel(props: Props) {
       </button>
      </div>
 
-     {/* 4. Prompt Composer */}
-     <PromptComposer
-      idPrefix="prime"
-      prompt={prompt}
-      onPromptChange={onPromptChange}
-      negativePrompt={negativePrompt}
-      onNegativePromptChange={onNegativePromptChange}
-      busy={busy}
-      canGenerate={canGenerate}
-      onGenerate={onGenerate}
-     />
+     
 
      {/* 5. Aspect Ratio Selector */}
      <AspectRatioSelector
@@ -2436,24 +2388,7 @@ export default function ControlPanel(props: Props) {
      </button>
     </div>
 
-    {/* Prompt Composer Section (Positive Prompt + Negative Prompt Adjacent) */}
-    <div className="border-t border-[var(--line)] pt-4">
-     <PromptComposer
-      idPrefix="text2img"
-      prompt={prompt}
-      onPromptChange={onPromptChange}
-      negativePrompt={negativePrompt}
-      onNegativePromptChange={onNegativePromptChange}
-      busy={busy}
-      canGenerate={canGenerate}
-      onGenerate={onGenerate}
-      onInterrogateFile={(file) => executeInterrogation(file, file.name)}
-      interrogating={interrogating}
-      interrogateToast={interrogateToast}
-      positiveRows={4}
-      negativeRows={3}
-     />
-    </div>
+    
 
     {/* Divider */}
     <div className="border-t border-[var(--line)] pt-4 space-y-4">
@@ -2549,9 +2484,9 @@ export default function ControlPanel(props: Props) {
    )}
 
    {/* Sticky Bottom Generation Action Bar */}
-   <div className="sticky bottom-0 z-20 shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_94%,transparent)] backdrop-blur-md p-3.5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+   <div className="sticky bottom-0 z-20 shrink-0 border-t border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_94%,transparent)] backdrop-blur-md px-3.5 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.35)]">
     {/* Studio Pro Controls: Private Output Switch & Fast-Lane Status */}
-    <div className="flex items-center justify-between pb-2.5 text-xs">
+    <div className="flex items-center justify-between text-xs">
      <button
       type="button"
       onClick={handleTogglePrivate}
@@ -2596,99 +2531,6 @@ export default function ControlPanel(props: Props) {
      </div>
     </div>
 
-    <div className="flex items-center gap-2">
-     {/* Batch Image Count Selector */}
-     <div className="relative">
-      <button
-       type="button"
-       onClick={() => setImageCountOpen((v) => !v)}
-       disabled={busy}
-       title="Batch count"
-       className="flex h-10 items-center gap-1.5 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] focus-visible:bg-[var(--surface-soft)] transition shrink-0"
-      >
-       <span>{imageCount || "1"}x</span>
-       <ChevronDown className="h-3 w-3 text-[var(--ink-faint)]" />
-      </button>
-
-      {imageCountOpen && (
-       <div className="absolute bottom-full left-0 mb-1.5 z-40 w-32 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] py-1 shadow-2xl">
-        {["1", "2", "3", "4"].map((n) => (
-         <button
-          key={n}
-          type="button"
-          onClick={() => {
-           onImageCountChange?.(n);
-           setImageCountOpen(false);
-          }}
-          className={`flex w-full items-center justify-between px-3 py-1.5 text-xs text-left transition ${
-           imageCount === n
-            ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent)] font-bold"
-            : "text-[var(--ink)] hover:bg-[var(--surface-soft)]"
-          }`}
-         >
-          <span>{n} {n === "1" ? "image" : "images"}</span>
-          {imageCount === n && <Check className="h-3 w-3" />}
-         </button>
-        ))}
-       </div>
-      )}
-     </div>
-
-     {/* Primary Generate Button */}
-     <button
-      type="button"
-      onClick={handleGenerateClick}
-      disabled={busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !props.referenceImage)}
-      className="workspace-action-primary flex h-10 flex-1 items-center justify-between rounded-xl px-4 text-xs font-bold transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-     >
-      {busy ? (
-       <div className="flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin text-[var(--accent-ink)]" aria-hidden="true" />
-        <span>Rendering {progress ?? 0}%</span>
-       </div>
-      ) : !isAuthenticated ? (
-       <div className="flex items-center gap-1.5">
-        <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-        <span>Sign In to Generate</span>
-       </div>
-      ) : (activeMode === "Img2Img" || activeMode === "Edit") && !props.referenceImage ? (
-       <div className="flex items-center gap-1.5">
-        <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
-        <span>Upload Image to Generate</span>
-       </div>
-      ) : (
-       <div className="flex items-center gap-1.5">
-        <Zap className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
-        <span>
-         {activeMode === "Img2Img"
-          ? "Generate Img2Img"
-          : activeMode === "Edit"
-          ? "Generate Inpaint"
-          : activeMode === "Video"
-          ? "Generate Video"
-          : activeMode === "Prime"
-          ? "Generate Prime"
-          : "Generate"}
-        </span>
-        {isProUser ? (
-         <span className="ml-1 rounded bg-[var(--accent-ink)]/15 px-1.5 py-0.5 font-mono text-[9px] font-extrabold tracking-wider text-[var(--accent-ink)] uppercase">
-          ⚡ PRIORITY QUEUE
-         </span>
-        ) : (
-         <span className="ml-1 rounded bg-[var(--accent-ink)]/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-[var(--accent-ink)] uppercase">
-          STANDARD
-         </span>
-        )}
-       </div>
-      )}
-
-      <div className="flex items-center gap-1.5 opacity-80">
-       <span className="font-mono text-[10px]">
-        {busy ? progressLabel || "Rendering" : !isAuthenticated ? "LOGIN" : isProUser ? "~4s" : "~28s"}
-       </span>
-      </div>
-     </button>
-    </div>
    </div>
 
    {/* =========================================================================

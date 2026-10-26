@@ -8,6 +8,7 @@ import ControlPanel, {
   type TensorMode,
 } from "@/components/ControlPanel";
 import CanvasPreview from "@/components/CanvasPreview";
+import StudioPromptBar from "@/components/StudioPromptBar";
 import { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
 import { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
 import {
@@ -361,6 +362,49 @@ export default function StudioPage() {
 
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [interrogating, setInterrogating] = useState(false);
+  const [interrogateToast, setInterrogateToast] = useState<string | null>(null);
+
+  const handleInterrogateFile = useCallback(
+    async (file: File) => {
+      setInterrogating(true);
+      setInterrogateToast(null);
+      try {
+        const res = await api.interrogateImage(file, file.name);
+        if (res.has_metadata && res.metadata) {
+          const m = res.metadata;
+          updateActiveTab((prev) => {
+            const next: Partial<TabState> = {};
+            if (m.prompt) next.prompt = m.prompt;
+            if (typeof m.negative_prompt === "string") next.negativePrompt = m.negative_prompt;
+            if (m.steps) next.steps = String(m.steps);
+            if (m.cfg) next.cfg = String(m.cfg);
+            if (m.seed !== undefined && m.seed !== null) next.seed = String(m.seed);
+            return next;
+          });
+          const label = m.source ? `✓ Loaded ${m.source.toUpperCase()} metadata!` : "✓ Auto-prompt & settings loaded!";
+          setInterrogateToast(label);
+          setTimeout(() => setInterrogateToast(null), 3500);
+        } else if (res.tags && res.tags.length > 0) {
+          const tagString = res.tags.join(", ");
+          updateActiveTab((prev) => ({
+            prompt: prev.prompt ? `${prev.prompt}, ${tagString}` : tagString,
+          }));
+          setInterrogateToast(`+${res.tags.length} WD14 tags!`);
+          setTimeout(() => setInterrogateToast(null), 3000);
+        } else {
+          setInterrogateToast("No metadata or tags detected");
+          setTimeout(() => setInterrogateToast(null), 2500);
+        }
+      } catch (err) {
+        setInterrogateToast(err instanceof Error ? err.message : "Auto-tagging failed");
+        setTimeout(() => setInterrogateToast(null), 3500);
+      } finally {
+        setInterrogating(false);
+      }
+    },
+    [updateActiveTab]
+  );
   const [modelsLoading, setModelsLoading] = useState(true);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -961,8 +1005,27 @@ export default function StudioPage() {
           />
         </div>
 
-        {/* Main Canvas Area */}
-        <CanvasPreview
+        {/* Right Studio Area: TopBar Prompt Deck + Main Canvas */}
+        <div className="flex flex-1 flex-col min-w-0 h-full gap-2.5 lg:overflow-hidden">
+          <StudioPromptBar
+            prompt={activeTab.prompt}
+            onPromptChange={(p) => updateActiveTab({ prompt: p })}
+            negativePrompt={activeTab.negativePrompt}
+            onNegativePromptChange={(negativePrompt) => updateActiveTab({ negativePrompt })}
+            busy={busy}
+            canGenerate={canGenerate}
+            onGenerate={handleGenerate}
+            progress={progress}
+            progressLabel={progressLabel}
+            onInterrogateFile={handleInterrogateFile}
+            interrogating={interrogating}
+            interrogateToast={interrogateToast}
+            imageCount={activeTab.imageCount}
+            onImageCountChange={(imageCount) => updateActiveTab({ imageCount })}
+            activeMode={activeTensorMode}
+            referenceImage={activeTab.referenceImage}
+          />
+          <CanvasPreview
           prompt={activeTab.prompt}
           onPromptChange={(p) => updateActiveTab({ prompt: p })}
           activeModelTitle={selectedModel?.title || "Krea 2 Turbo"}
@@ -984,7 +1047,8 @@ export default function StudioPage() {
           onSetReferenceImage={(url) => updateActiveTab({ referenceImage: url })}
           onDeleteOutput={handleDeleteOutput}
           modelOptions={modelOptions}
-        />
+          />
+        </div>
       </div>
     </ProtectedRoute>
   );
