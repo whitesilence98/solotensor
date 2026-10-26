@@ -1,42 +1,37 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ChevronDown,
-  Clock,
-  Filter,
-  Grid,
-  Layers,
-  Ratio,
   RotateCcw,
+  SearchX,
   SlidersHorizontal,
   Sparkles,
   Wand2,
-  X,
 } from "lucide-react";
 import type { AssetRecord, GalleryItem } from "@/lib/api";
 import AssetCardList from "@/components/AssetCardList";
-import { AspectRatioIcon } from "@/components/AspectRatioSelector";
+import PostFilterPanel from "@/components/PostFilterPanel";
+import PostFilterChips from "@/components/PostFilterChips";
+import {
+  POST_CATEGORY_PILLS,
+  applyPostFilters,
+  computePostFacetCounts,
+  countActivePostFilters,
+  createDefaultPostFilters,
+  getActivePostFilterDescriptors,
+  hasActivePostFilters,
+  removeActivePostFilter,
+  togglePostFilterValue,
+  type PostFilterDescriptor,
+  type PostFilters,
+} from "@/lib/postFilters";
 
 export type PostSortMode = "explore" | "trending" | "latest";
 
-export const POST_CATEGORY_PILLS = [
-  { id: "all", label: "All" },
-  { id: "video", label: "Video" },
-  { id: "character", label: "Character" },
-  { id: "anime", label: "Anime" },
-  { id: "realistic", label: "Realistic" },
-  { id: "illustration", label: "Illustration" },
-  { id: "sci-fi", label: "Sci-Fi" },
-  { id: "visual-design", label: "Visual Design" },
-  { id: "space-design", label: "Space Design" },
-  { id: "game-design", label: "Game Design" },
-];
-
-export type AspectFilter = "all" | "1:1" | "3:4" | "16:9" | "9:16";
-export type TimeFilter = "all" | "today" | "week" | "month";
-export type OriginFilter = "all" | "workspace" | "tool";
+// Public surface retained for callers importing the taxonomy from this module.
+export { POST_CATEGORY_PILLS };
 
 interface HomePostsSectionProps {
   assets: AssetRecord[];
@@ -44,29 +39,66 @@ interface HomePostsSectionProps {
   onOpenAsset: (asset: AssetRecord | GalleryItem) => void;
 }
 
+const SEARCH_DEBOUNCE_MS = 200;
+
+function trendingScore(key: string): number {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return Math.abs(hash) % 1000;
+}
+
+function sortPosts(assets: AssetRecord[], mode: PostSortMode): AssetRecord[] {
+  if (mode === "latest") {
+    return [...assets].sort((a, b) => {
+      const timeA = new Date(a.last_modified || a.metadata?.created_at || 0).getTime();
+      const timeB = new Date(b.last_modified || b.metadata?.created_at || 0).getTime();
+      return timeB - timeA;
+    });
+  }
+
+  if (mode === "trending") {
+    // Deterministic pseudorandom score based on key hash — no invented engagement.
+    return [...assets].sort(
+      (a, b) => trendingScore(b.key || "") - trendingScore(a.key || "")
+    );
+  }
+
+  return assets;
+}
+
 export default function HomePostsSection({
   assets,
   loading = false,
   onOpenAsset,
 }: HomePostsSectionProps) {
-  // Sort Mode & Dropdown
   const [sortMode, setSortMode] = useState<PostSortMode>("explore");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Category Pill
-  const [activeCategory, setActiveCategory] = useState("all");
-
-  // Advanced Filters Drawer
+  const [filters, setFilters] = useState<PostFilters>(createDefaultPostFilters);
+  const [searchDraft, setSearchDraft] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [aspectFilter, setAspectFilter] = useState<AspectFilter>("all");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
-  const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
 
-  // Close dropdown on outside click
+  const resetFilters = useCallback(() => {
+    setSearchDraft("");
+    setFilters(createDefaultPostFilters());
+  }, []);
+
+  // Debounce the search field into the filter state.
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    if (searchDraft === filters.query) return;
+    const handle = window.setTimeout(() => {
+      setFilters((current) =>
+        current.query === searchDraft ? current : { ...current, query: searchDraft }
+      );
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [searchDraft, filters.query]);
+
+  // Close the sort menu on outside click.
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setSortDropdownOpen(false);
       }
     }
@@ -74,119 +106,69 @@ export default function HomePostsSection({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const activeFilterCount =
-    (aspectFilter !== "all" ? 1 : 0) +
-    (timeFilter !== "all" ? 1 : 0) +
-    (originFilter !== "all" ? 1 : 0);
+  // "/" opens the panel and focuses search, like the assets page.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || active?.isContentEditable) {
+        return;
+      }
+      event.preventDefault();
+      setFiltersOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  const resetAdvancedFilters = () => {
-    setAspectFilter("all");
-    setTimeFilter("all");
-    setOriginFilter("all");
-  };
+  // ESC closes the sort dropdown when the panel is not open.
+  useEffect(() => {
+    if (!sortDropdownOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSortDropdownOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sortDropdownOpen]);
 
-  // Filter & Sort Logic
-  const filteredAssets = useMemo(() => {
-    let result = assets;
+  const facetCounts = useMemo(
+    () => computePostFacetCounts(assets, filters),
+    [assets, filters]
+  );
 
-    // 1. Category Pill Filter
-    if (activeCategory !== "all") {
-      const cat = activeCategory.toLowerCase();
-      result = result.filter((item) => {
-        if (cat === "video") {
-          return item.type === "video" || (item.key || "").match(/\.(mp4|webm|mov)$/i);
-        }
-        const prompt = (item.metadata?.prompt || "").toLowerCase();
-        const modelTitle = (item.metadata?.model_title || "").toLowerCase();
-        const tags = (item.metadata?.tags || []).map((t) => t.toLowerCase());
+  const filteredAssets = useMemo(
+    () => sortPosts(applyPostFilters(assets, filters), sortMode),
+    [assets, filters, sortMode]
+  );
 
-        if (cat === "visual-design") {
-          return prompt.includes("design") || prompt.includes("graphic") || prompt.includes("logo") || tags.some(t => t.includes("design"));
-        }
-        if (cat === "space-design") {
-          return prompt.includes("architecture") || prompt.includes("interior") || prompt.includes("room") || prompt.includes("space") || tags.some(t => t.includes("space") || t.includes("arch"));
-        }
-        if (cat === "game-design") {
-          return prompt.includes("game") || prompt.includes("concept") || prompt.includes("rpg") || tags.some(t => t.includes("game"));
-        }
+  const activeFilterCount = countActivePostFilters(filters);
+  const filtersEngaged = hasActivePostFilters(filters);
+  const activeCategoryCount = filters.categories.length;
+  const activeDescriptors = useMemo(
+    () => getActivePostFilterDescriptors(filters),
+    [filters]
+  );
 
-        const keyword = cat.replace("-", " ");
-        return (
-          prompt.includes(keyword) ||
-          modelTitle.includes(keyword) ||
-          tags.some((t) => t.includes(keyword))
-        );
-      });
-    }
+  // The search field is the sole writer of the draft; the debounce above is
+  // the sole bridge into `filters.query`. Facet toggles therefore only update
+  // their own slice and never clobber an in-flight keystroke.
+  const handleFiltersChange = useCallback((next: PostFilters) => {
+    setFilters(next);
+  }, []);
 
-    // 2. Aspect Ratio Filter
-    if (aspectFilter !== "all") {
-      result = result.filter((item) => {
-        const fmt = item.metadata?.format_name;
-        if (fmt === aspectFilter) return true;
-        const w = item.metadata?.width;
-        const h = item.metadata?.height;
-        if (!w || !h) return false;
-        const ratio = w / h;
-        if (aspectFilter === "1:1") return Math.abs(ratio - 1) < 0.1;
-        if (aspectFilter === "3:4") return Math.abs(ratio - 0.75) < 0.15;
-        if (aspectFilter === "16:9") return Math.abs(ratio - 1.77) < 0.2;
-        if (aspectFilter === "9:16") return Math.abs(ratio - 0.56) < 0.15;
-        return true;
-      });
-    }
+  const handleRemoveChip = useCallback((descriptor: PostFilterDescriptor) => {
+    if (descriptor.facet === "query") setSearchDraft("");
+    setFilters((current) => removeActivePostFilter(current, descriptor));
+  }, []);
 
-    // 3. Time Filter
-    if (timeFilter !== "all") {
-      const now = Date.now();
-      const cutoff =
-        timeFilter === "today"
-          ? 24 * 3600 * 1000
-          : timeFilter === "week"
-          ? 7 * 24 * 3600 * 1000
-          : 30 * 24 * 3600 * 1000;
-
-      result = result.filter((item) => {
-        const dateStr = item.last_modified || item.metadata?.created_at;
-        if (!dateStr) return true;
-        const time = new Date(dateStr).getTime();
-        return now - time <= cutoff;
-      });
-    }
-
-    // 4. Origin Filter
-    if (originFilter !== "all") {
-      result = result.filter((item) => {
-        const source = item.metadata?.source || item.metadata?.origin;
-        if (originFilter === "workspace") return source === "workspace" || !source;
-        if (originFilter === "tool") return source === "tool" || source === "ai_tool_studio";
-        return true;
-      });
-    }
-
-    // 5. Sort Mode
-    if (sortMode === "latest") {
-      return [...result].sort((a, b) => {
-        const tA = new Date(a.last_modified || a.metadata?.created_at || 0).getTime();
-        const tB = new Date(b.last_modified || b.metadata?.created_at || 0).getTime();
-        return tB - tA;
-      });
-    }
-
-    if (sortMode === "trending") {
-      // Deterministic pseudorandom score based on key hash
-      return [...result].sort((a, b) => {
-        let hA = 0;
-        let hB = 0;
-        for (let i = 0; i < (a.key || "").length; i++) hA = (hA * 31 + a.key.charCodeAt(i)) | 0;
-        for (let i = 0; i < (b.key || "").length; i++) hB = (hB * 31 + b.key.charCodeAt(i)) | 0;
-        return (Math.abs(hB) % 1000) - (Math.abs(hA) % 1000);
-      });
-    }
-
-    // 'explore' balanced default
-    return result;
-  }, [assets, activeCategory, aspectFilter, timeFilter, originFilter, sortMode]);
+  const handleCategoryPill = useCallback((id: string) => {
+    setFilters((current) =>
+      id === "all"
+        ? { ...current, categories: [] }
+        : { ...current, categories: togglePostFilterValue(current.categories, id) }
+    );
+  }, []);
 
   const sortLabels: Record<PostSortMode, string> = {
     explore: "Explore",
@@ -196,46 +178,52 @@ export default function HomePostsSection({
 
   return (
     <section className="space-y-4" aria-labelledby="home-posts-heading">
-      {/* Header with Filter Bar */}
+      {/* Header */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
-          {/* Left: Title + Explore Dropdown */}
           <div className="flex items-center gap-3">
             <h2
               id="home-posts-heading"
-              className="font-heading text-lg sm:text-xl font-bold tracking-tight text-[var(--ink)]"
+              className="font-heading text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl"
             >
               Posts
             </h2>
 
-            {/* Explore Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
-                onClick={() => setSortDropdownOpen(!sortDropdownOpen)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 font-sans text-xs font-semibold text-[var(--ink)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all"
+                onClick={() => setSortDropdownOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={sortDropdownOpen}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 font-sans text-xs font-semibold text-[var(--ink)] transition-colors duration-150 hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] motion-reduce:transition-none"
               >
                 <span>{sortLabels[sortMode]}</span>
                 <ChevronDown
-                  className={`h-3.5 w-3.5 text-[var(--ink-soft)] transition-transform duration-200 ${
+                  className={`h-3.5 w-3.5 text-[var(--ink-soft)] transition-transform duration-200 motion-reduce:transition-none ${
                     sortDropdownOpen ? "rotate-180" : ""
                   }`}
                 />
               </button>
 
               {sortDropdownOpen && (
-                <div className="absolute left-0 top-full z-30 mt-1.5 w-36 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in-50 zoom-in-95">
+                <div
+                  role="menu"
+                  aria-label="Sort posts"
+                  className="absolute left-0 top-full z-30 mt-1.5 w-36 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1.5 shadow-2xl"
+                >
                   {(["explore", "trending", "latest"] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
+                      role="menuitemradio"
+                      aria-checked={sortMode === mode}
                       onClick={() => {
                         setSortMode(mode);
                         setSortDropdownOpen(false);
                       }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                         sortMode === mode
-                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
+                          ? "bg-[var(--accent)] font-semibold text-[var(--accent-ink)]"
                           : "text-[var(--ink-soft)] hover:bg-[var(--surface)] hover:text-[var(--ink)]"
                       }`}
                     >
@@ -250,21 +238,21 @@ export default function HomePostsSection({
             </div>
           </div>
 
-          {/* Right: Filters Toggle Button */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
-                filtersOpen || activeFilterCount > 0
-                  ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm"
+              onClick={() => setFiltersOpen(true)}
+              aria-haspopup="dialog"
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors duration-150 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                filtersEngaged
+                  ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]"
                   : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span>Filters</span>
               {activeFilterCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--accent)] text-[9px] font-bold text-[var(--accent-ink)]">
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[9px] font-bold text-[var(--accent-ink)]">
                   {activeFilterCount}
                 </span>
               )}
@@ -272,185 +260,151 @@ export default function HomePostsSection({
           </div>
         </div>
 
-        {/* Center: Category Filter Pills Bar (Wrapping without horizontal scroll) */}
-        <div className="flex flex-wrap items-center gap-2 pb-1 text-xs">
+        {/* Category quick-access — same engine, same counts */}
+        <div
+          className="flex flex-wrap items-center gap-2 pb-1 text-xs"
+          role="group"
+          aria-label="Filter posts by category"
+        >
           {POST_CATEGORY_PILLS.map((pill) => {
-            const isActive = activeCategory === pill.id;
+            const isActive =
+              pill.id === "all"
+                ? activeCategoryCount === 0
+                : filters.categories.includes(pill.id);
+            const count = facetCounts.categories[pill.id] ?? 0;
+            const dimmed = count === 0 && !isActive;
             return (
               <button
                 key={pill.id}
                 type="button"
-                onClick={() => setActiveCategory(pill.id)}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+                aria-pressed={isActive}
+                onClick={() => handleCategoryPill(pill.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                   isActive
-                    ? "bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                    ? "bg-[var(--accent)] font-bold text-[var(--accent-ink)]"
                     : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                }`}
+                } ${dimmed ? "opacity-40" : ""}`}
               >
-                {pill.label}
+                <span>{pill.label}</span>
+                <span
+                  className={`font-mono text-[10px] tabular-nums ${
+                    isActive ? "text-[var(--accent-ink)]/70" : "text-[var(--ink-faint)]"
+                  }`}
+                >
+                  {count}
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Advanced Filters Expandable Drawer */}
-        {filtersOpen && (
-          <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)]/95 p-4 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {/* Aspect Ratio Filter */}
-              <div>
-                <label className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[var(--ink-faint)] mb-2">
-                  <Ratio className="h-3 w-3 text-[var(--accent)]" />
-                  Aspect Ratio
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(
-                    [
-                      { id: "all", label: "All" },
-                      { id: "1:1", label: "Square 1:1" },
-                      { id: "3:4", label: "Portrait 3:4" },
-                      { id: "16:9", label: "Landscape 16:9" },
-                      { id: "9:16", label: "Story 9:16" },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setAspectFilter(opt.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        aspectFilter === opt.id
-                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold shadow-sm"
-                          : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-white"
-                      }`}
-                    >
-                      {opt.id !== "all" && <AspectRatioIcon ratio={opt.id} />}
-                      <span>{opt.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Time Range Filter */}
-              <div>
-                <label className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[var(--ink-faint)] mb-2">
-                  <Clock className="h-3 w-3 text-cyan-400" />
-                  Time Range
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(
-                    [
-                      { id: "all", label: "All Time" },
-                      { id: "today", label: "Today" },
-                      { id: "week", label: "This Week" },
-                      { id: "month", label: "This Month" },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setTimeFilter(opt.id)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        timeFilter === opt.id
-                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
-                          : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-white"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Origin / Source Filter */}
-              <div>
-                <label className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-[var(--ink-faint)] mb-2">
-                  <Layers className="h-3 w-3 text-amber-400" />
-                  Creation Source
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(
-                    [
-                      { id: "all", label: "All Sources" },
-                      { id: "workspace", label: "Studio Canvas" },
-                      { id: "tool", label: "AI Tool Studio" },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setOriginFilter(opt.id)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        originFilter === opt.id
-                          ? "bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
-                          : "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)] hover:text-white"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Drawer Footer Actions */}
-            {activeFilterCount > 0 && (
-              <div className="mt-3 pt-3 border-t border-[var(--line)] flex items-center justify-between">
-                <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                  {activeFilterCount} active filters matching {filteredAssets.length} creations
-                </span>
-                <button
-                  type="button"
-                  onClick={resetAdvancedFilters}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--danger)] hover:underline"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  <span>Reset filters</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        <PostFilterChips
+          filters={filters}
+          onRemove={handleRemoveChip}
+          onClearAll={resetFilters}
+        />
       </div>
 
-      {/* Masonry Fluid Grid (4-6 Columns) */}
+      {/* Grid */}
       {filteredAssets.length > 0 || loading ? (
-        <AssetCardList
-          items={filteredAssets}
-          loading={loading}
-          skeletonCount={16}
-          aspectRatio="natural"
-          onOpen={onOpenAsset}
-        />
-      ) : (
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-12 text-center">
-          <Sparkles className="mx-auto h-9 w-9 text-[var(--ink-faint)] opacity-50" />
-          <h4 className="mt-3 text-base font-semibold text-[var(--ink)]">
-            No creations match your filter criteria
-          </h4>
-          <p className="mt-1 text-xs text-[var(--ink-soft)] max-w-sm mx-auto">
-            Try adjusting your category pill or reset advanced filters to see more community works.
+        <>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--ink-faint)]" aria-live="polite">
+            {loading
+              ? "Loading creations"
+              : `${filteredAssets.length} ${filteredAssets.length === 1 ? "creation" : "creations"}${
+                  filtersEngaged ? ` of ${assets.length}` : ""
+                }`}
           </p>
-          <div className="mt-4 flex items-center justify-center gap-3">
+          <AssetCardList
+            items={filteredAssets}
+            loading={loading}
+            skeletonCount={16}
+            aspectRatio="natural"
+            onOpen={onOpenAsset}
+          />
+        </>
+      ) : filtersEngaged ? (
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-10 text-center">
+          <SearchX className="mx-auto h-8 w-8 text-[var(--ink-faint)]" />
+          <h3 className="mt-3 text-base font-semibold text-[var(--ink)]">
+            No creations match these filters
+          </h3>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[var(--ink-soft)]">
+            {activeFilterCount === 1
+              ? "One filter is narrowing your collection."
+              : `${activeFilterCount} filters are narrowing your collection.`}{" "}
+            Clear them to see your full history.
+          </p>
+          <ul className="mx-auto mt-3 flex max-w-md flex-wrap items-center justify-center gap-1.5">
+            {activeDescriptors.slice(0, 5).map((descriptor) => (
+              <li
+                key={descriptor.id}
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)]"
+              >
+                {descriptor.prefix ? (
+                  <span className="text-[var(--ink-faint)]">{descriptor.prefix}:</span>
+                ) : null}
+                <span className="max-w-[12rem] truncate text-[var(--ink)]">
+                  {descriptor.label}
+                </span>
+              </li>
+            ))}
+            {activeDescriptors.length > 5 && (
+              <li className="font-mono text-[10px] text-[var(--ink-faint)]">
+                +{activeDescriptors.length - 5} more
+              </li>
+            )}
+          </ul>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                setActiveCategory("all");
-                resetAdvancedFilters();
-              }}
-              className="workspace-action-secondary px-4 py-2 text-xs font-semibold"
+              onClick={resetFilters}
+              className="workspace-action-secondary inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold"
             >
-              Clear all filters
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Clear all filters</span>
             </button>
-            <Link
-              href="/generate"
-              className="workspace-action-primary px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5"
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              className="workspace-action-quiet px-3 py-2 text-xs font-semibold"
             >
-              <Wand2 className="h-3.5 w-3.5" />
-              <span>Create something</span>
-            </Link>
+              Adjust filters
+            </button>
           </div>
         </div>
+      ) : (
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/40 p-10 text-center">
+          <Sparkles className="mx-auto h-8 w-8 text-[var(--accent)] opacity-70" />
+          <h3 className="mt-3 text-base font-semibold text-[var(--ink)]">
+            Your first creation goes here
+          </h3>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[var(--ink-soft)]">
+            The Posts feed gathers every render you save locally. Open the canvas,
+            write a prompt, and your output lands here with its full metadata.
+          </p>
+          <Link
+            href="/generate"
+            className="workspace-action-primary mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            <span>Open the canvas</span>
+          </Link>
+        </div>
       )}
+
+      <PostFilterPanel
+        isOpen={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        filters={filters}
+        onFiltersChange={handleFiltersChange}
+        facetCounts={facetCounts}
+        totalMatching={filteredAssets.length}
+        totalAssets={assets.length}
+        searchDraft={searchDraft}
+        onSearchDraftChange={setSearchDraft}
+        onReset={resetFilters}
+      />
     </section>
   );
 }
