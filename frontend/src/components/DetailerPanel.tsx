@@ -282,10 +282,11 @@ interface Props {
   config: DetailerConfig;
   onChange: (cfg: DetailerConfig) => void;
   selectedModel?: InstalledGalleryModel | null;
+  defaultExpanded?: boolean;
 }
 
-export default function DetailerPanel({ config, onChange, selectedModel }: Props) {
-  const [expanded, setExpanded] = useState(true);
+export default function DetailerPanel({ config, onChange, selectedModel, defaultExpanded = false }: Props) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [activeTab, setActiveTab] = useState<DetailerType>("face");
 
   const setConfig = (patch: Partial<DetailerConfig>) =>
@@ -327,8 +328,17 @@ export default function DetailerPanel({ config, onChange, selectedModel }: Props
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none bg-[var(--surface)] hover:bg-[var(--surface-raised)] transition-colors"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none bg-[var(--surface)] hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
       >
         <div className="flex items-center gap-2">
           <ScanFace

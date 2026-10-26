@@ -57,10 +57,11 @@ interface Props {
   onChange: (cfg: UpscaleConfig) => void;
   outputWidth: number;
   outputHeight: number;
+  defaultExpanded?: boolean;
 }
 
-export default function UpscalePanel({ config, onChange, outputWidth, outputHeight }: Props) {
-  const [expanded, setExpanded] = useState(true);
+export default function UpscalePanel({ config, onChange, outputWidth, outputHeight, defaultExpanded = false }: Props) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const effectiveScale = config.scale === 0 ? (config.customScale ?? 2) : config.scale;
@@ -73,8 +74,17 @@ export default function UpscalePanel({ config, onChange, outputWidth, outputHeig
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none bg-[var(--surface)] hover:bg-[var(--surface-raised)] transition-colors"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none bg-[var(--surface)] hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
       >
         <div className="flex items-center gap-2">
           <Zap

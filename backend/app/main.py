@@ -1179,6 +1179,12 @@ async def generate(
             detail=f"Unsupported generation mode: {req.mode}",
         )
 
+    if req.mode == "image-to-image" and not req.reference_images:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="image-to-image mode requires at least one reference image",
+        )
+
     # Deduction for authenticated creators (TensorArt quota model)
     credit_service = get_credit_service()
     cost = settings.DEFAULT_GENERATION_COST

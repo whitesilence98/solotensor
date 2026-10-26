@@ -53,6 +53,8 @@ import AspectRatioSelector from "@/components/AspectRatioSelector";
 import UpscalePanel, { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
 import DetailerPanel, { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
 import PromptComposer from "@/components/PromptComposer";
+import AdvancedSamplingPanel from "@/components/AdvancedSamplingPanel";
+import LoraStackPanel from "@/components/LoraStackPanel";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -979,60 +981,115 @@ export default function ControlPanel(props: Props) {
         )}
        </div>
 
-       {/* 2. Denoising Strength Slider & Chips */}
-       <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3">
-        <div className="flex items-center justify-between">
-         <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-          DENOISING STRENGTH
-         </span>
-         <span className="font-mono text-xs font-bold text-[var(--accent)]">
-          {Number(denoise).toFixed(2)}
-         </span>
-        </div>
+       {/* 2. Denoising Strength Slider (Recommended Range 0.65 - 0.76 with Boundary Lines & Soft Gradient) */}
+       {(() => {
+        const parsedDenoise = typeof denoise === "number" ? denoise : parseFloat(String(denoise));
+        const numDenoise = Math.max(0, Math.min(1, isNaN(parsedDenoise) ? 0.7 : parsedDenoise));
+        const p = Math.round(numDenoise * 100);
+        const isRecommended = numDenoise >= 0.65 && numDenoise <= 0.76;
 
-        <input
-         type="range"
-         min="0.05"
-         max="1.0"
-         step="0.05"
-         value={denoise}
-         onChange={(e) => onDenoiseChange(e.target.value)}
-         className="w-full accent-[var(--accent)] cursor-pointer"
-        />
+        return (
+         <div className="space-y-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 select-none">
+          {/* Header Row: Label, Recommended Badge & Numeric Readout (Locked height prevents layout shift) */}
+          <div className="flex h-5 items-center justify-between">
+           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--ink-faint)] leading-none">
+            DENOISING STRENGTH
+           </span>
+           <div className="flex h-5 items-center gap-2">
+            {isRecommended && (
+             <span className="inline-flex h-4 items-center text-[9px] font-mono px-1.5 rounded bg-gradient-to-r from-sky-500/15 to-purple-500/15 border border-sky-500/30 text-sky-300 font-semibold leading-none">
+              Recommended
+             </span>
+            )}
+            <span className="font-mono text-xs font-bold text-[var(--accent)] leading-none">
+             {numDenoise.toFixed(2)}
+            </span>
+           </div>
+          </div>
 
-        <div className="grid grid-cols-4 gap-1">
-         {[
-          { val: "0.35", label: "0.35 Subtle" },
-          { val: "0.60", label: "0.60 Balanced" },
-          { val: "0.80", label: "0.80 Creative" },
-          { val: "0.95", label: "0.95 Re-imagine" },
-         ].map((chip) => {
-          const isActive = Math.abs(Number(denoise) - Number(chip.val)) < 0.04;
-          return (
-           <button
-            key={chip.val}
-            type="button"
-            onClick={() => onDenoiseChange(chip.val)}
-            className={`py-1 px-1 rounded-md text-[10px] font-mono transition text-center ${
-             isActive
-              ? "bg-[var(--accent)] text-black font-bold"
-              : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-white/20"
-            }`}
-           >
-            {chip.label}
-           </button>
-          );
-         })}
-        </div>
+          {/* Interactive Range Slider (Track with 2 boundary lines & clean gradient) */}
+          <div className="relative py-1 flex items-center">
+           {/* Visual Track Container */}
+           <div className="relative w-full h-2 rounded-full bg-[var(--surface-sunken)] border border-[var(--line)] overflow-hidden pointer-events-none">
+            {/* Recommended Range Base Marker (0.65 to 0.76 soft gradient preview) */}
+            <div
+             className="absolute top-0 bottom-0 pointer-events-none opacity-40"
+             style={{
+              left: "65%",
+              width: "11%",
+              background: "linear-gradient(to right, #38bdf8, #a855f7)",
+             }}
+            />
 
-        <p className="text-[10px] text-[var(--ink-faint)] leading-normal">
-         {Number(denoise) < 0.45
-          ? "Subtle variation · Preserves original shapes, colors, and key details."
-          : Number(denoise) <= 0.75
-          ? "Balanced stylization · Follows prompt guidance while preserving composition."
-          : "Creative freedom · High variance, dramatically reimagines scene from prompt."}
-        </p>
-       </div>
+            {/* Active Fill from 0 to 65% (Standard old accent color) */}
+            {p > 0 && (
+             <div
+              className="absolute top-0 bottom-0 left-0 bg-[var(--accent)]"
+              style={{ width: `${Math.min(p, 65)}%` }}
+             />
+            )}
+
+            {/* Active Fill inside Recommended Range (Clean Sky-to-Purple gradient) */}
+            {p > 65 && (
+             <div
+              className="absolute top-0 bottom-0 pointer-events-none"
+              style={{
+               left: "65%",
+               width: `${Math.min(p - 65, 11)}%`,
+               background: "linear-gradient(to right, #38bdf8, #a855f7)",
+              }}
+             />
+            )}
+
+            {/* Active Fill above 76% (Returns to standard old accent color) */}
+            {p > 76 && (
+             <div
+              className="absolute top-0 bottom-0 bg-[var(--accent)]"
+              style={{ left: "76%", width: `${p - 76}%` }}
+             />
+            )}
+           </div>
+
+           {/* 2 Boundary Tick Lines framing the Recommended Range (0.65 & 0.76) */}
+           <div
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-sky-300 shadow-[0_0_4px_rgba(56,189,248,0.7)] pointer-events-none z-20"
+            style={{ left: "65%" }}
+            title="Recommended range start (0.65)"
+           />
+           <div
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-purple-300 shadow-[0_0_4px_rgba(168,85,247,0.7)] pointer-events-none z-20"
+            style={{ left: "76%" }}
+            title="Recommended range end (0.76)"
+           />
+
+           {/* Native Range Input (Transparent Overlay with Crisp Thumb) */}
+           <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={numDenoise}
+            onChange={(e) => onDenoiseChange(e.target.value)}
+            disabled={busy}
+            className="workspace-range-clean"
+            aria-label="Denoising strength slider"
+           />
+          </div>
+
+          {/* Bottom Ruler & Recommended Legend */}
+          <div className="flex items-center justify-between font-mono text-[10px] text-[var(--ink-faint)] select-none pt-0.5">
+           <span>0.0</span>
+           <span className="flex items-center gap-1.5 font-medium">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-gradient-to-r from-sky-400 to-purple-400" />
+            <span className="text-sky-300">
+             0.65 – 0.76 (Recommended)
+            </span>
+           </span>
+           <span>1.0</span>
+          </div>
+         </div>
+        );
+       })()}
 
        {/* 3. Active Generation Model Card */}
        <div className="space-y-1.5">
@@ -1089,7 +1146,20 @@ export default function ControlPanel(props: Props) {
         </button>
        </div>
 
-       {/* 4. Prompt Composer (Reused Component) */}
+       {/* 4. LoRA Adapters Stack (Under Model, matching Text2Img layout) */}
+       <LoraStackPanel
+        loras={loras}
+        onLorasChange={onLorasChange}
+        onOpenPicker={() => setLoraPickerOpen(true)}
+        modelOptions={modelOptions}
+        publicModels={publicModels}
+        publicModelMap={publicModelMap}
+        prompt={prompt}
+        onPromptChange={onPromptChange}
+        disabled={busy}
+       />
+
+       {/* 5. Prompt Composer (Reused Component) */}
        <PromptComposer
         idPrefix="img2img"
         prompt={prompt}
@@ -1108,7 +1178,7 @@ export default function ControlPanel(props: Props) {
         negativeRows={2}
        />
 
-       {/* 5. Format & Dimensions */}
+       {/* 6. Format & Dimensions */}
        <div className="space-y-2 border-t border-[var(--line)] pt-3">
         <AspectRatioSelector
          value={format}
@@ -1152,136 +1222,20 @@ export default function ControlPanel(props: Props) {
         )}
        </div>
 
-       {/* 6. Active LoRAs Accordion / Stack */}
-       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
-        <div className="flex items-center justify-between p-3 border-b border-[var(--line)]">
-         <div className="flex items-center gap-1.5">
-          <Layers className="h-3.5 w-3.5 text-[var(--accent)]" />
-          <span className="text-xs font-semibold text-[var(--ink)]">LoRA Adapters</span>
-          {loras.length > 0 && (
-           <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[var(--accent)]/15 text-[var(--accent)]">
-            {loras.length}
-           </span>
-          )}
-         </div>
-         <button
-          type="button"
-          onClick={() => setLoraPickerOpen(true)}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
-         >
-          <Plus className="h-3 w-3" />
-          <span>Add LoRA</span>
-         </button>
-        </div>
-
-        {loras.length > 0 && (
-         <div className="p-2 space-y-2">
-          {loras.map((lora) => (
-           <div key={lora.id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 space-y-1.5">
-            <div className="flex items-center justify-between">
-             <span className="text-[11px] font-bold text-[var(--ink)] truncate max-w-[180px]">
-              {lora.title}
-             </span>
-             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[10px] text-[var(--accent)]">
-               {lora.weight.toFixed(2)}
-              </span>
-              <button
-               type="button"
-               onClick={() => onLorasChange(loras.filter((l) => l.id !== lora.id))}
-               className="text-[var(--ink-faint)] hover:text-[var(--danger)]"
-              >
-               <X className="h-3 w-3" />
-              </button>
-             </div>
-            </div>
-            <input
-             type="range"
-             min="-2"
-             max="2"
-             step="0.05"
-             value={lora.weight}
-             onChange={(e) => {
-              const w = Number(e.target.value);
-              onLorasChange(loras.map((l) => (l.id === lora.id ? { ...l, weight: w } : l)));
-             }}
-             className="w-full accent-[var(--accent)]"
-            />
-           </div>
-          ))}
-         </div>
-        )}
-       </div>
-
        {/* 7. Advanced Sampling Parameters (Seed, Steps, CFG) */}
-       <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
-        <button
-         type="button"
-         onClick={() => setAdvancedOpen((v) => !v)}
-         aria-expanded={advancedOpen}
-         className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-semibold select-none hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
-        >
-         <div className="flex items-center gap-2">
-          <SlidersHorizontal className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.5} />
-          <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">Sampling & Generation Parameters</span>
-          <span className="text-[10px] font-mono text-[var(--ink-faint)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-sunken)]">
-           Denoise & Seed
-          </span>
-         </div>
-         <ChevronDown className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${advancedOpen ? "rotate-180" : ""}`} />
-        </button>
-
-        {advancedOpen && (
-         <div className="border-t border-[var(--line)] px-3.5 pb-3.5 pt-2.5 space-y-3.5">
-          <div>
-           <SeedInput
-            id="img2img-param-seed"
-            label="Seed"
-            value={seed}
-            onChange={(val) => onSeedChange(String(val))}
-            disabled={busy}
-           />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-           <div>
-            <div className="flex items-center justify-between mb-1">
-             <label className="text-[10px] font-mono text-[var(--ink-faint)] uppercase tracking-wider">
-              STEPS
-             </label>
-             <span className="font-mono text-[10px] text-[var(--accent)]">{steps}</span>
-            </div>
-            <input
-             type="range"
-             min="5"
-             max="50"
-             value={steps}
-             onChange={(e) => onStepsChange(e.target.value)}
-             className="w-full accent-[var(--accent)]"
-            />
-           </div>
-
-           <div>
-            <div className="flex items-center justify-between mb-1">
-             <label className="text-[10px] font-mono text-[var(--ink-faint)] uppercase tracking-wider">
-              CFG SCALE
-             </label>
-             <span className="font-mono text-[10px] text-[var(--accent)]">{cfg}</span>
-            </div>
-            <input
-             type="range"
-             min="1"
-             max="15"
-             step="0.5"
-             value={cfg}
-             onChange={(e) => onCfgChange(e.target.value)}
-             className="w-full accent-[var(--accent)]"
-            />
-           </div>
-          </div>
-         </div>
-        )}
-       </div>
+       <AdvancedSamplingPanel
+        idPrefix="img2img"
+        seed={seed}
+        onSeedChange={onSeedChange}
+        steps={steps}
+        onStepsChange={onStepsChange}
+        cfg={cfg}
+        onCfgChange={onCfgChange}
+        busy={busy}
+        isOpen={advancedOpen}
+        onToggleOpen={() => setAdvancedOpen((v) => !v)}
+        showDenoise={false}
+       />
       </div>
      )}
     </div>
@@ -2372,264 +2326,17 @@ export default function ControlPanel(props: Props) {
     )}
 
     {/* 2. LoRA Cards Section (Tensor.art layout & controls) */}
-    <div className="space-y-2">
-     {/* Section Header with count and clear action */}
-     <div className="flex items-center justify-between">
-      <div className="flex items-center gap-1.5">
-       <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-        LoRA
-       </span>
-       <span className="rounded-xl bg-[var(--surface-soft)] px-2 py-0.5 text-[9px] font-bold text-[var(--ink-faint)]">
-        {loras.length}/5
-       </span>
-      </div>
-      {loras.length > 0 && (
-       <button
-        type="button"
-        onClick={() => onLorasChange([])}
-        className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
-       >
-        Clear all
-       </button>
-      )}
-     </div>
-
-     {/* Stacked Active LoRA Cards */}
-     {loras.length > 0 && (
-      <div className="space-y-2.5">
-       {loras.map((lora) => {
-        const isMuted = lora.enabled === false;
-
-        return (
-         <div
-          key={lora.id}
-          className={`relative rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 transition hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] ${
-           isMuted ? "opacity-60 bg-[var(--surface-raised)]" : ""
-          }`}
-         >
-          {/* Top Row: Badge, Title & Power/Delete Actions */}
-          <div className="flex items-start gap-3">
-           {/* Thumbnail */}
-           {(() => {
-            const loraCover = resolveMediaUrl(
-             lora.thumbnailUrl ||
-              modelOptions.find(
-               (m) =>
-                (lora.modelId && m.model_id === lora.modelId) ||
-                (lora.fileId && m.file_id === lora.fileId) ||
-                m.title === lora.title
-              )?.cover_url ||
-              (lora.modelId ? publicModelMap.get(lora.modelId)?.cover_url : null) ||
-              publicModels.find(
-               (p) =>
-                (lora.modelId && p.model_id === lora.modelId) ||
-                p.title.toLowerCase() === lora.title.toLowerCase()
-              )?.cover_url ||
-              null
-            );
-
-            return (
-             <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] grid place-items-center">
-              {loraCover ? (
-               <>
-                <img
-                 src={loraCover}
-                 alt={lora.title}
-                 className="asset-zoom-media relative z-10 h-full w-full object-cover"
-                 onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = "none";
-                 }}
-                />
-                <div className="absolute inset-0 grid place-items-center text-[var(--accent)] opacity-60">
-                 <Layers className="h-5 w-5" />
-                </div>
-               </>
-              ) : (
-               <Layers className="h-5 w-5 text-[var(--accent)] opacity-80" />
-              )}
-             </div>
-            );
-           })()}
-
-           <div className="min-w-0 flex-1">
-            {/* Title Row */}
-            <div className="flex items-center justify-between gap-1 min-w-0">
-             <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-1">
-              <span
-               className="truncate min-w-0 block text-xs font-bold text-[var(--ink)]"
-               title={lora.title}
-              >
-               {lora.title}
-              </span>
-              {lora.baseModel && (
-               <span
-                className="shrink-0 max-w-[100px] truncate rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--ink-faint)]"
-                title={lora.baseModel}
-               >
-                {lora.baseModel}
-               </span>
-              )}
-             </div>
-
-             {/* Quick Action Icons: Gallery Link, Mute/Power & Remove */}
-             <div className="flex items-center gap-1 shrink-0">
-              {(() => {
-               const loraUrl = resolveModelGalleryUrl(
-                {
-                 modelId: lora.modelId,
-                 fileId: lora.fileId,
-                 title: lora.title,
-                },
-                modelOptions,
-                publicModels
-               );
-
-               if (!loraUrl) return null;
-
-               return (
-                <a
-                 href={loraUrl}
-                 target="_blank"
-                 rel="noopener noreferrer"
-                 title="View in Model Gallery"
-                 aria-label={`View ${lora.title} in gallery`}
-                 className="p-1 rounded-xl text-[var(--ink-faint)] hover:text-[var(--accent)] focus-visible:text-[var(--accent)] transition"
-                >
-                 <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-               );
-              })()}
-              <button
-               type="button"
-               onClick={() => toggleLora(lora.id)}
-               title={isMuted ? "Enable LoRA" : "Mute LoRA"}
-               className={`p-1 rounded-xl transition ${
-                isMuted
-                 ? "text-[var(--ink-faint)] hover:text-[var(--accent)] focus-visible:text-[var(--accent)]"
-                 : "text-[var(--accent)] hover:text-[var(--ink-faint)] focus-visible:text-[var(--ink-faint)]"
-               }`}
-              >
-               {isMuted ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
-              <button
-               type="button"
-               onClick={() => removeLora(lora.id)}
-               title="Remove LoRA"
-               className="p-1 rounded-xl text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition"
-              >
-               <Trash2 className="h-3.5 w-3.5" />
-              </button>
-             </div>
-            </div>
-
-            {/* Slider Row with fine steppers */}
-            <div className="mt-2.5 flex items-center gap-2">
-             <div className="relative flex-1 flex items-center">
-              {(() => {
-               const clampedWeight = Math.max(0, Math.min(1, typeof lora.weight === "number" ? lora.weight : 0.8));
-               const percent = Math.round(clampedWeight * 100);
-               return (
-                <input
-                 type="range"
-                 min="0"
-                 max="1"
-                 step="0.05"
-                 value={clampedWeight}
-                 disabled={isMuted}
-                 onChange={(e) => updateLoraWeight(lora.id, parseFloat(e.target.value))}
-                 style={{
-                  background: isMuted
-                   ? `linear-gradient(to right, var(--ink-faint) 0%, var(--ink-faint) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`
-                   : `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`,
-                 }}
-                 className="workspace-range w-full"
-                />
-               );
-              })()}
-             </div>
-
-             {/* Numeric Weight Badge */}
-             <div className="flex h-6 min-w-[2.6rem] items-center justify-center rounded-xl bg-[var(--surface-soft)] px-1.5 font-mono text-[11px] font-bold text-[var(--ink)]">
-              {(typeof lora.weight === "number" ? Math.max(0, Math.min(1, lora.weight)) : 0.8).toFixed(2)}
-             </div>
-
-             {/* Decrement Stepper */}
-             <button
-              type="button"
-              disabled={isMuted || lora.weight <= 0}
-              onClick={() => updateLoraWeight(lora.id, lora.weight - 0.05)}
-              className="flex h-6 w-6 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] active:scale-95 disabled:opacity-40 transition"
-              title="Decrease (-0.05)"
-             >
-              <Minus className="h-3 w-3" />
-             </button>
-
-             {/* Increment Stepper */}
-             <button
-              type="button"
-              disabled={isMuted || lora.weight >= 1}
-              onClick={() => updateLoraWeight(lora.id, lora.weight + 0.05)}
-              className="flex h-6 w-6 items-center justify-center rounded-xl bg-[var(--surface-soft)] text-[var(--ink-faint)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] active:scale-95 disabled:opacity-40 transition"
-              title="Increase (+0.05)"
-             >
-              <Plus className="h-3 w-3" />
-             </button>
-            </div>
-
-            {/* Trigger Words Section (Tensor.art hallmark feature) */}
-            {lora.triggerWords && lora.triggerWords.length > 0 && (
-             <div className="mt-2 border-t border-[var(--line)] pt-1.5">
-              <div className="flex items-center justify-between mb-1">
-               <span className="text-[9px] font-semibold text-[var(--ink-faint)] uppercase tracking-wider">
-                Trigger Words
-               </span>
-               <button
-                type="button"
-                onClick={() => insertAllTriggerWords(lora.triggerWords!)}
-                className="text-[9px] font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
-               >
-                + Add all
-               </button>
-              </div>
-              <div className="flex flex-wrap gap-1">
-               {lora.triggerWords.map((tw) => (
-                <button
-                 key={tw}
-                 type="button"
-                 onClick={() => insertTriggerWord(tw)}
-                 title={`Click to append "${tw}" to prompt`}
-                 className="inline-flex items-center gap-1 rounded-xl bg-[var(--surface-soft)] hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] focus-visible:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] hover:text-[var(--accent)] focus-visible:text-[var(--accent)] border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--ink-soft)] transition"
-                >
-                 <span>{tw}</span>
-                 <Plus className="h-2.5 w-2.5 opacity-60" />
-                </button>
-               ))}
-              </div>
-             </div>
-            )}
-           </div>
-          </div>
-         </div>
-        );
-       })}
-      </div>
-     )}
-
-     {/* Add LoRA Adapter Button */}
-     <button
-      type="button"
-      onClick={() => setLoraPickerOpen(true)}
-      disabled={loras.length >= 5}
-      className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--line-strong)] bg-[var(--surface)] py-2.5 text-xs font-semibold text-[var(--ink)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] focus-visible:bg-[color-mix(in_srgb,var(--accent)_5%,var(--surface))] disabled:opacity-50 transition active:scale-[0.99]"
-     >
-      <Plus className="h-4 w-4 text-[var(--accent)]" />
-      <span>
-       {loras.length >= 5
-        ? "LoRA Limit Reached (5/5)"
-        : `Add LoRA Adapter (${loras.length}/5)`}
-      </span>
-     </button>
-    </div>
+    <LoraStackPanel
+     loras={loras}
+     onLorasChange={onLorasChange}
+     onOpenPicker={() => setLoraPickerOpen(true)}
+     modelOptions={modelOptions}
+     publicModels={publicModels}
+     publicModelMap={publicModelMap}
+     prompt={prompt}
+     onPromptChange={onPromptChange}
+     disabled={busy}
+    />
 
     {/* 3. Embedding Cards Section */}
     {embeddings.length > 0 && (
@@ -2822,100 +2529,21 @@ export default function ControlPanel(props: Props) {
      />
 
      {/* Advanced Settings Accordion */}
-     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
-      <button
-       type="button"
-       onClick={() => setAdvancedOpen((v) => !v)}
-       aria-expanded={advancedOpen}
-       aria-controls="advanced-settings-panel"
-       className="flex w-full items-center justify-between px-3.5 py-2.5 text-xs font-semibold select-none hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
-      >
-       <div className="flex items-center gap-2">
-        <SlidersHorizontal className="w-4 h-4 text-[var(--accent)]" strokeWidth={1.5} />
-        <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">Advanced Settings</span>
-        <span className="text-[10px] font-mono text-[var(--ink-faint)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-sunken)]">
-         Seed & Sampler
-        </span>
-       </div>
-       <ChevronDown
-        className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
-         advancedOpen ? "rotate-180" : ""
-        }`}
-       />
-      </button>
-
-      {advancedOpen && (
-       <div className="space-y-3.5 border-t border-[var(--line)] px-3.5 pb-3.5 pt-2.5">
-        {/* Unified Seed Control */}
-        <SeedInput
-         id="param-seed"
-         label="Seed"
-         value={seed}
-         onChange={(val) => onSeedChange(String(val))}
-         disabled={busy}
-         size="sm"
-        />
-
-        {/* Steps & CFG */}
-        <div className="grid grid-cols-2 gap-2">
-         <div>
-          <label htmlFor="param-steps" className="block text-[10px] font-semibold uppercase text-[var(--ink-faint)]">Steps</label>
-          <input
-           id="param-steps"
-           type="number"
-           min="1"
-           max="100"
-           value={steps}
-           onChange={(e) => onStepsChange(e.target.value)}
-           disabled={busy}
-           className="mt-1 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-          />
-         </div>
-         <div>
-          <label htmlFor="param-cfg" className="block text-[10px] font-semibold uppercase text-[var(--ink-faint)]">CFG</label>
-          <input
-           id="param-cfg"
-           type="number"
-           min="0"
-           max="30"
-           step="0.1"
-           value={cfg}
-           onChange={(e) => onCfgChange(e.target.value)}
-           disabled={busy}
-           className="mt-1 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-          />
-         </div>
-        </div>
-
-        {/* Denoise Slider */}
-        <div>
-         <div className="flex items-center justify-between text-[10px] text-[var(--ink-faint)] uppercase font-semibold">
-          <span>Denoise</span>
-          <span className="font-mono text-[var(--ink)]">{denoise}</span>
-         </div>
-         {(() => {
-          const num = typeof denoise === "number" ? denoise : parseFloat(String(denoise)) || 0;
-          const percent = Math.round(Math.max(0, Math.min(1, num)) * 100);
-          return (
-           <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={denoise}
-            onChange={(e) => onDenoiseChange(e.target.value)}
-            disabled={busy}
-            style={{
-             background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percent}%, var(--surface-soft) ${percent}%, var(--surface-soft) 100%)`,
-            }}
-            className="workspace-range mt-2 w-full"
-           />
-          );
-         })()}
-        </div>
-       </div>
-      )}
-     </div>
+     <AdvancedSamplingPanel
+      idPrefix="text2img"
+      seed={seed}
+      onSeedChange={onSeedChange}
+      steps={steps}
+      onStepsChange={onStepsChange}
+      cfg={cfg}
+      onCfgChange={onCfgChange}
+      denoise={denoise}
+      onDenoiseChange={onDenoiseChange}
+      busy={busy}
+      isOpen={advancedOpen}
+      onToggleOpen={() => setAdvancedOpen((v) => !v)}
+      showDenoise={true}
+     />
     </div>
    </div>
    )}
