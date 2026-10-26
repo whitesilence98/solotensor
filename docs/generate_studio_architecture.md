@@ -152,15 +152,27 @@ When the user clicks a tab button in `ControlPanel.tsx`:
     - `Latent Zero`: Fills with neutral tone for clean removal / erasing.
   - Dedicated Inpainting Prompt (e.g. *"gold watch on wrist, hyperdetailed"*).
 
-### 4.4 Tab 4: Video (Image-to-Video & SVD Diffusion)
-- **Primary Generator**: Stable Video Diffusion (`SVD_img2vid_Conditioning`) + `VideoLinearCFGGuidance`.
-- **CFG Scale**: Auto-tuned to `2.5` (range `1.0 – 5.0`).
-- **Controls**:
-  - Source Image Input (for Image-to-Video) or Text Prompt (for Text-to-Video).
-  - **Motion Bucket ID**: Slider (`1` to `255`, default `127`) controlling motion magnitude and camera velocity.
-  - **Frame Count**: Segmented selector (`14 frames`, `25 frames`, `49 frames`).
-  - **Frame Rate**: Segmented selector (`6 fps`, `12 fps`, `16 fps`, `24 fps`).
-  - Checkpoint Selector (filters to video-capable weights: SVD, Wan2.1, CogVideoX).
+### 4.4 Tab 4: Video (LTX-Video 2.3 Image-to-Video & Text-to-Video Studio)
+- **Primary Generator**: Native ComfyUI `workflow_generate_it2v.json` powered by Lightricks LTX-Video 2.3 (22B Distilled Transformer).
+- **Execution Profiles**:
+  - **⚡ Fast Mode (`stage2_upscale: false`)**: Executes the core 8-step distilled latent flow and decodes via Node `172` (`VHS_VideoCombine`), producing a crisp, fast video (`~15s`). All stage 2 nodes (2x upscale & RIFE) are cleanly pruned from the graph.
+  - **✨ Pro Mode (`stage2_upscale: true`)**: Chains the full 2x Latent Upscale pass with RIFE frame interpolation, outputting the highest-fidelity video via Node `678` (`VHS_VideoCombine`) (`~45s`).
+- **Dynamic Mode Resolution**:
+  - **T2V (Text-to-Video)**: When no initial frame is uploaded, motion and scenes are synthesized purely from the prompt.
+  - **I2V (Image-to-Video)**: When an initial frame is dropped, the backend injects a `LoadImage` node wired to `389:1929:1905:any_01`, conditioning the video generation on the starting visual frame.
+- **Parametric Controls**:
+  - **Prompt Composer**: Scene motion, camera trajectory, actions, and negative prompt styling.
+  - **Initial Frame Dropzone**: Optional starter frame preview with instant "Remove (Switch to T2V)" toggle.
+  - **Video Duration**: Configurable duration buttons (`2s`, `3s`, `5s`, `10s`). Dynamically computes `video_frames = (duration * fps) + 1` into node `389:387`.
+  - **Frame Rate (FPS)**: Selectable frame rates (`24 FPS`, `25 FPS`, `30 FPS`). Patches node `389:825` and `389:384`.
+  - **Aspect & Resolution**: Presets snapped to multiples of 32 required by LTX-Video:
+    - `16:9 Landscape` (1024×576)
+    - `3:2 Standard` (768×512)
+    - `1:1 Square` (704×704)
+    - `9:16 Portrait` (576×1024)
+  - **Distilled Sampling Steps & Seed**: Fine-grained steps control (4–15 distilled steps, default 8) and seed randomization.
+- **Asset Storage & Harvest**:
+  - Videos are automatically harvested from ComfyUI output directory (`comfy.list_output_files(prompt_id, "video")`), stored under user asset storage (`video/mp4`), and returned as `GeneratedAsset(kind="video")`.
 
 ### 4.5 Tab 5: Prime (Autonomous Multi-Stage Pro Pipeline)
 - **Primary Generator**: Multi-stage chained execution:

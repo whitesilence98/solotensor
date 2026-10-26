@@ -93,6 +93,8 @@ interface TabState {
   motionBucketId: number;
   videoFrames: number;
   videoFps: number;
+  videoDurationSeconds?: number;
+  stage2Upscale?: boolean;
   // Prime mode
   primePreset: string;
   // Img2Img sub-tab
@@ -148,8 +150,10 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 25,
-        videoFps: 16,
+        videoFrames: 76,
+        videoFps: 25,
+        videoDurationSeconds: 3,
+        stage2Upscale: false,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -709,6 +713,8 @@ export default function StudioPage() {
       }
     } else if (activeTensorMode === "Edit") {
       effectiveMode = "image-to-image";
+    } else if (activeTensorMode === "Video") {
+      effectiveMode = "video";
     }
 
     try {
@@ -726,9 +732,18 @@ export default function StudioPage() {
         mode: effectiveMode,
         ...((effectiveMode === "image-to-image" ||
           effectiveMode === "detailer" ||
-          effectiveMode === "upscale") &&
+          effectiveMode === "upscale" ||
+          effectiveMode === "video") &&
         activeTab.referenceImage
           ? { reference_images: [activeTab.referenceImage] }
+          : {}),
+        ...(effectiveMode === "video"
+          ? {
+              video_frames: activeTab.videoFrames,
+              video_fps: activeTab.videoFps,
+              video_duration_seconds: activeTab.videoDurationSeconds ?? 3,
+              stage2_upscale: activeTab.stage2Upscale ?? false,
+            }
           : {}),
         prompt: activeTab.prompt,
         negative_prompt: activeTab.negativePrompt,
@@ -1039,6 +1054,13 @@ export default function StudioPage() {
             onVideoFramesChange={(videoFrames) => updateActiveTab({ videoFrames })}
             videoFps={activeTab.videoFps}
             onVideoFpsChange={(videoFps) => updateActiveTab({ videoFps })}
+            videoDurationSeconds={activeTab.videoDurationSeconds ?? 3}
+            onVideoDurationSecondsChange={(videoDurationSeconds) => {
+              const videoFrames = videoDurationSeconds * (activeTab.videoFps || 25) + 1;
+              updateActiveTab({ videoDurationSeconds, videoFrames });
+            }}
+            stage2Upscale={activeTab.stage2Upscale ?? false}
+            onStage2UpscaleChange={(stage2Upscale) => updateActiveTab({ stage2Upscale })}
             primePreset={activeTab.primePreset}
             onPrimePresetChange={(primePreset) => updateActiveTab({ primePreset })}
             busy={busy}

@@ -48,6 +48,7 @@ import { isArchitectureCompatible } from "@/lib/baseModelArchitectures";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
+import PromptComposer from "@/components/PromptComposer";
 import SeedInput from "@/components/SeedInput";
 import AspectRatioSelector from "@/components/AspectRatioSelector";
 import UpscalePanel, {
@@ -214,6 +215,10 @@ interface Props {
   onVideoFramesChange?: (frames: number) => void;
   videoFps?: number;
   onVideoFpsChange?: (fps: number) => void;
+  videoDurationSeconds?: number;
+  onVideoDurationSecondsChange?: (sec: number) => void;
+  stage2Upscale?: boolean;
+  onStage2UpscaleChange?: (enabled: boolean) => void;
   primePreset?: string;
   onPrimePresetChange?: (preset: string) => void;
   img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
@@ -279,8 +284,12 @@ export default function ControlPanel(props: Props) {
     onMotionBucketIdChange = props.onMotionBucketIdChange,
     videoFrames = props.videoFrames ?? 25,
     onVideoFramesChange = props.onVideoFramesChange,
-    videoFps = props.videoFps ?? 16,
+    videoFps = props.videoFps ?? 25,
     onVideoFpsChange = props.onVideoFpsChange,
+    videoDurationSeconds = props.videoDurationSeconds ?? 3,
+    onVideoDurationSecondsChange = props.onVideoDurationSecondsChange,
+    stage2Upscale = props.stage2Upscale ?? false,
+    onStage2UpscaleChange = props.onStage2UpscaleChange,
     primePreset = props.primePreset ?? "portrait_pro",
     onPrimePresetChange = props.onPrimePresetChange,
     samplerName = props.samplerName ?? "euler",
@@ -1808,26 +1817,56 @@ export default function ControlPanel(props: Props) {
         </div>
       ) : activeMode === "Video" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Video Studio Header */}
+          {/* LTX-Video 2.3 Studio Header */}
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]">
                 <Film className="h-3 w-3" />
               </span>
               <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[var(--ink)]">
-                SVD Latent Motion Studio
+                LTX-Video 2.3 Studio
               </span>
             </div>
             <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)]">
-              VIDEO DIFFUSION
+              {props.referenceImage ? "I2V GUIDED" : "T2V TEXT-DRIVEN"}
             </span>
           </div>
 
-          {/* 1. Initial Source Frame Uploader */}
+          {/* Mode Pill Notice */}
+          <div className={`flex items-center gap-2 rounded-xl p-2.5 border text-xs font-mono transition ${
+            props.referenceImage
+              ? "bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--ink)]"
+              : "bg-[var(--surface-sunken)] border-[var(--line)] text-[var(--ink-faint)]"
+          }`}>
+            <Sparkles className="h-4 w-4 text-[var(--accent)] shrink-0" />
+            <span>
+              {props.referenceImage
+                ? "Image-to-Video: Motion seeded by Initial Frame"
+                : "Text-to-Video: Generating motion purely from prompt"}
+            </span>
+          </div>
+
+          {/* 1. Prompt Composer */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+              VIDEO PROMPT & MOTION DESCRIPTION
+            </span>
+            <PromptComposer
+              idPrefix="video-prompt"
+              prompt={prompt}
+              onPromptChange={onPromptChange}
+              negativePrompt={props.negativePrompt}
+              onNegativePromptChange={props.onNegativePromptChange}
+              positivePlaceholder="Describe scene motion, camera movement, actions, and lighting… (e.g. A slow continuous tracking shot through a market, 35mm film)"
+              negativePlaceholder="worst quality, low quality, jerky camera, jittery frames, blurred subjects…"
+            />
+          </div>
+
+          {/* 2. Initial Source Frame Uploader (Optional for T2V, required for I2V) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                INITIAL SOURCE FRAME
+                INITIAL FRAME (OPTIONAL FOR I2V)
               </span>
               {props.referenceImage && (
                 <button
@@ -1839,7 +1878,7 @@ export default function ControlPanel(props: Props) {
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
                 >
                   <Trash2 className="h-3 w-3" />
-                  <span>Clear</span>
+                  <span>Remove (Switch to T2V)</span>
                 </button>
               )}
             </div>
@@ -1853,104 +1892,107 @@ export default function ControlPanel(props: Props) {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleImg2ImgDrop}
                 onClick={() => img2imgFileInputRef.current?.click()}
-                className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition cursor-pointer ${
+                className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition cursor-pointer ${
                   isDragOver
                     ? "border-[var(--accent)] bg-[var(--accent)]/5"
                     : "border-[var(--line-strong)] bg-[#0c0d0c] hover:border-[var(--ink-faint)]"
                 }`}
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
-                  <UploadCloud className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
+                  <UploadCloud className="h-4 w-4" />
                 </div>
-                <p className="mt-2 text-xs font-semibold text-[var(--ink)]">
-                  Drop initial frame or{" "}
-                  <span className="text-[var(--accent)]">browse</span>
+                <p className="mt-1.5 text-xs font-semibold text-[var(--ink)]">
+                  Drop starter frame or <span className="text-[var(--accent)]">browse</span>
                 </p>
-                <p className="mt-1 text-[10px] text-[var(--ink-faint)]">
-                  Standard SVD: 1024x576 (16:9)
+                <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
+                  Leave empty to generate directly from text (T2V)
                 </p>
               </div>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2.5 space-y-2.5">
-                <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-48 group">
+              <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2 space-y-2">
+                <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-40 group">
                   <img
                     src={props.referenceImage}
                     alt="Video Frame Source"
-                    className="max-h-48 w-auto object-contain rounded-md"
+                    className="max-h-40 w-auto object-contain rounded-md"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* 2. Motion & Dynamic Settings */}
-          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
-            {/* Motion Bucket ID */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                  Motion Magnitude
-                </span>
-                <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
-                  {motionBucketId}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={1}
-                max={255}
-                step={1}
-                value={motionBucketId}
-                onChange={(e) =>
-                  onMotionBucketIdChange?.(Number(e.target.value))
-                }
-                className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
-              />
-              <div className="flex items-center justify-between gap-1 pt-1">
-                {[
-                  { label: "Subtle (64)", val: 64 },
-                  { label: "Cinematic (127)", val: 127 },
-                  { label: "Dynamic (200)", val: 200 },
-                ].map((chip) => (
-                  <button
-                    key={chip.val}
-                    type="button"
-                    onClick={() => onMotionBucketIdChange?.(chip.val)}
-                    className={`flex-1 py-0.5 rounded text-[9px] font-mono border transition ${
-                      motionBucketId === chip.val
-                        ? "bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)] font-bold"
-                        : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
+          {/* 3. Performance Profile Toggle (Fast vs Pro) */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+              PIPELINE EXECUTION PROFILE
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onStage2UpscaleChange?.(false)}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  !stage2Upscale
+                    ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--ink)]"
+                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)]"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--accent)]">
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>⚡ Fast Mode</span>
+                </div>
+                <p className="mt-1 text-[10px] text-[var(--ink-faint)] leading-tight">
+                  Stage 1 Base (~15s)
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => onStage2UpscaleChange?.(true)}
+                className={`p-2.5 rounded-xl border text-left transition ${
+                  stage2Upscale
+                    ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--ink)]"
+                    : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)]"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-amber-300">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>✨ Pro Mode</span>
+                </div>
+                <p className="mt-1 text-[10px] text-[var(--ink-faint)] leading-tight">
+                  2x Upscale + RIFE (~45s)
+                </p>
+              </button>
             </div>
+          </div>
 
-            {/* Frame Count */}
+          {/* 4. Video Duration & Length */}
+          <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                  Video Length
+                  Video Duration
                 </span>
                 <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
-                  {videoFrames} frames
+                  {videoDurationSeconds}s ({videoDurationSeconds * videoFps + 1} frames)
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-1">
-                {[14, 25, 49].map((frames) => (
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { sec: 2, label: "2s" },
+                  { sec: 3, label: "3s" },
+                  { sec: 5, label: "5s" },
+                  { sec: 10, label: "10s" },
+                ].map((item) => (
                   <button
-                    key={frames}
+                    key={item.sec}
                     type="button"
-                    onClick={() => onVideoFramesChange?.(frames)}
+                    onClick={() => onVideoDurationSecondsChange?.(item.sec)}
                     className={`py-1.5 px-2 rounded-md text-[10px] font-bold transition text-center ${
-                      videoFrames === frames
+                      videoDurationSeconds === item.sec
                         ? "bg-[var(--accent)] text-[var(--accent-ink)]"
                         : "bg-[var(--surface)] border border-white/5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
                     }`}
                   >
-                    {frames} frames
+                    {item.label}
                   </button>
                 ))}
               </div>
@@ -1960,14 +2002,14 @@ export default function ControlPanel(props: Props) {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                  Frame Rate
+                  Frame Rate (FPS)
                 </span>
                 <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
                   {videoFps} FPS
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-1">
-                {[6, 12, 16, 24].map((fps) => (
+              <div className="grid grid-cols-3 gap-1">
+                {[24, 25, 30].map((fps) => (
                   <button
                     key={fps}
                     type="button"
@@ -1984,102 +2026,59 @@ export default function ControlPanel(props: Props) {
               </div>
             </div>
 
-            {/* Video CFG Scale (Tuned 1.0 - 5.0) */}
+            {/* Resolution Selector (Multiples of 32 for LTX-Video) */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                  Video CFG (Guidance)
-                </span>
-                <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
-                  {cfg}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={1.0}
-                max={5.0}
-                step={0.1}
-                value={Number(cfg) || 2.5}
-                onChange={(e) => onCfgChange(e.target.value)}
-                className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
-              />
-              <p className="text-[9px] text-[var(--ink-faint)]">
-                Video diffusion requires low CFG (2.0 – 3.0) to prevent temporal
-                artifacting.
-              </p>
-            </div>
-          </div>
-
-          {/* 3. Generation Model Card */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                GENERATION MODEL
+              <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
+                Video Aspect & Resolution
               </span>
-              <button
-                type="button"
-                onClick={() => setModelPickerOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Change</span>
-              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { label: "16:9 Landscape", w: 1024, h: 576 },
+                  { label: "3:2 Standard", w: 768, h: 512 },
+                  { label: "1:1 Square", w: 704, h: 704 },
+                  { label: "9:16 Portrait", w: 576, h: 1024 },
+                ].map((res) => {
+                  const isMatch = Number(props.customWidth) === res.w && Number(props.customHeight) === res.h;
+                  return (
+                    <button
+                      key={res.label}
+                      type="button"
+                      onClick={() => {
+                        props.onCustomWidthChange?.(String(res.w));
+                        props.onCustomHeightChange?.(String(res.h));
+                      }}
+                      className={`p-1.5 rounded-lg border text-left font-mono text-[10px] transition ${
+                        isMatch
+                          ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-bold"
+                          : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      <div className="font-bold">{res.label}</div>
+                      <div className="text-[9px] opacity-75">{res.w}×{res.h}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setModelPickerOpen(true)}
-              className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
-            >
-              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
-                {currentModelCover ? (
-                  <img
-                    src={currentModelCover}
-                    alt={selectedModel?.title ?? "Model preview"}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-[var(--accent)]">
-                    <Box className="h-5 w-5 opacity-75" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-xs font-bold text-[var(--ink)]">
-                    {selectedModel?.title || "SVD-XT Video Model"}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
-                    SVD / WAN
-                  </span>
-                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
-                    {selectedModel?.model_type || "Video Model"}
-                  </span>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
-            </button>
           </div>
 
           {/* 5. Sampling Parameters */}
           <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                DIFFUSION SAMPLING
+                DIFFUSION PARAMETERS
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">
-                  STEPS
+                  STEPS (DISTILLED 4-15)
                 </label>
                 <input
                   type="number"
                   value={steps}
                   min={1}
-                  max={100}
+                  max={50}
                   onChange={(e) => onStepsChange(e.target.value)}
                   className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
                 />

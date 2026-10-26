@@ -47,6 +47,12 @@ def select_workflow(req: "GenerateRequest") -> dict[str, Any]:
                 return load_workflow(candidate)
             except (FileNotFoundError, RuntimeError):
                 continue
+    elif req.mode == "video":
+        for candidate in ["workflow_generate_it2v.json"]:
+            try:
+                return load_workflow(candidate)
+            except (FileNotFoundError, RuntimeError):
+                continue
     else:
         for candidate in ["workflow_generate_t2i.json", "workflow_api.json"]:
             try:
@@ -445,5 +451,121 @@ def patch_full_t2i_workflow(
         base_image_node="1064",
         post_process_node="1080:661",
     )
+
+    return graph
+
+
+def patch_video_it2v_workflow(
+    workflow: dict[str, Any],
+    *,
+    prompt: str = "",
+    seed: int = 1,
+    duration_seconds: int = 3,
+    video_fps: int = 25,
+    width: int = 1024,
+    height: int = 576,
+    steps: int = 8,
+    source_image_filename: str | None = None,
+    last_frame_filename: str | None = None,
+    stage2_upscale: bool = False,
+) -> dict[str, Any]:
+    """Patch the 320-node LTX-Video 2.3 workflow (workflow_generate_it2v.json).
+
+    Supports both Text-to-Video and Image-to-Video (First Frame conditioning),
+    and prunes Stage 2 nodes when stage2_upscale=False for fast generation.
+    """
+    graph = json.loads(json.dumps(workflow))
+
+    # 1. Positive Prompt: Node 1879 CLIPTextEncode
+    if "1879" in graph and "inputs" in graph["1879"]:
+        graph["1879"]["inputs"]["text"] = prompt
+
+    # 2. Seed: Node 2019 SeedNode & Node 389:363
+    if "2019" in graph and "inputs" in graph["2019"]:
+        graph["2019"]["inputs"]["seed"] = int(seed)
+    if "389:363" in graph and "inputs" in graph["389:363"]:
+        graph["389:363"]["inputs"]["noise_seed"] = ["2019", 0]
+
+    # 3. Length & Duration: Node 389:387 easy int Length in Seconds
+    duration = max(1, min(30, int(duration_seconds)))
+    if "389:387" in graph and "inputs" in graph["389:387"]:
+        graph["389:387"]["inputs"]["value"] = duration
+
+    # 4. Frame rate: Node 389:825 & 389:384
+    fps = max(8, min(60, int(video_fps)))
+    if "389:825" in graph and "inputs" in graph["389:825"]:
+        graph["389:825"]["inputs"]["value"] = fps
+    if "389:384" in graph and "inputs" in graph["389:384"]:
+        graph["389:384"]["inputs"]["value"] = fps
+
+    # 5. Dimensions (Snapped to multiples of 32 for LTX-Video)
+    snapped_w = max(64, (width // 32) * 32)
+    snapped_h = max(64, (height // 32) * 32)
+    if "389:828" in graph and "inputs" in graph["389:828"]:
+        graph["389:828"]["inputs"]["value"] = snapped_w
+    if "389:830" in graph and "inputs" in graph["389:830"]:
+        graph["389:830"]["inputs"]["value"] = snapped_h
+
+    # 6. Steps: T2V (8) / I2V (4)
+    step_val = max(1, min(50, int(steps)))
+    if "389:1986" in graph and "inputs" in graph["389:1986"]:
+        graph["389:1986"]["inputs"]["value"] = step_val
+    if "389:973" in graph and "inputs" in graph["389:973"]:
+        graph["389:973"]["inputs"]["value"] = step_val
+    if "1194:1191" in graph and "inputs" in graph["1194:1191"]:
+        graph["1194:1191"]["inputs"]["value"] = step_val
+    if "1194:1988" in graph and "inputs" in graph["1194:1988"]:
+        graph["1194:1988"]["inputs"]["value"] = step_val
+
+    # 7. First Frame Image Conditioning (Image-to-Video vs Text-to-Video)
+    if source_image_filename:
+        graph["1875_load_first"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": source_image_filename},
+            "_meta": {"title": "Load First Frame Image"}
+        }
+        if "389:1929:1905" in graph and "inputs" in graph["389:1929:1905"]:
+            graph["389:1929:1905"]["inputs"]["any_01"] = ["1875_load_first", 0]
+        if "1875" in graph and "inputs" in graph["1875"]:
+            graph["1875"]["inputs"]["value"] = True
+    else:
+        if "1875" in graph and "inputs" in graph["1875"]:
+            graph["1875"]["inputs"]["value"] = False
+        if "389:1929:1905" in graph and "inputs" in graph["389:1929:1905"]:
+            graph["389:1929:1905"]["inputs"].pop("any_01", None)
+
+    # 8. Last Frame Image Conditioning (Interpolation)
+    if last_frame_filename:
+        graph["1875_load_last"] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": last_frame_filename},
+            "_meta": {"title": "Load Last Frame Image"}
+        }
+        if "389:1929:1901" in graph and "inputs" in graph["389:1929:1901"]:
+            graph["389:1929:1901"]["inputs"]["any_01"] = ["1875_load_last", 0]
+        if "1883" in graph and "inputs" in graph["1883"]:
+            graph["1883"]["inputs"]["value"] = True
+    else:
+        if "1883" in graph and "inputs" in graph["1883"]:
+            graph["1883"]["inputs"]["value"] = False
+        if "389:1929:1901" in graph and "inputs" in graph["389:1929:1901"]:
+            graph["389:1929:1901"]["inputs"].pop("any_01", None)
+
+    # 9. Fast Mode vs Pro Mode (Stage 1 only vs Stage 1 + Stage 2 Upscale)
+    if not stage2_upscale:
+        visited = set()
+        def collect_deps(nid: str):
+            if nid in visited:
+                return
+            visited.add(nid)
+            node_def = graph.get(nid)
+            if not node_def or not isinstance(node_def, dict):
+                return
+            for v in node_def.get("inputs", {}).values():
+                if isinstance(v, list) and len(v) == 2 and isinstance(v[0], str):
+                    collect_deps(v[0])
+
+        collect_deps("172")
+        graph = {k: v for k, v in graph.items() if k in visited}
 
     return graph

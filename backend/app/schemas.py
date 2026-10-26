@@ -432,7 +432,7 @@ class GenerateRequest(BaseModel):
     base_model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
-    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale"] = "text-to-image"
+    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale", "video"] = "text-to-image"
     prompt: str = Field("", max_length=50_000)
     negative_prompt: str = ""
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
@@ -454,6 +454,11 @@ class GenerateRequest(BaseModel):
     enable_detailer: bool = Field(False, description="Enable secondary face & image detailer pass")
     upscale: UpscaleConfig = Field(default_factory=UpscaleConfig)
     detailer: DetailerConfig = Field(default_factory=DetailerConfig)
+    video_frames: int = Field(25, ge=9, le=301, description="Number of video frames to generate")
+    video_fps: int = Field(25, ge=8, le=60, description="Video frame rate")
+    video_duration_seconds: int = Field(3, ge=1, le=30, description="Video duration in seconds")
+    stage2_upscale: bool = Field(False, description="Enable 2x spatial upscale and RIFE frame smoothing")
+    last_frame_image: Optional[str] = Field(None, description="Optional last frame image for video interpolation")
 
     @field_validator("prompt")
     @classmethod

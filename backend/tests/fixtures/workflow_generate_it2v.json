@@ -1,0 +1,4978 @@
+{
+  "172": {
+    "inputs": {
+      "frame_rate": [
+        "389:375",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "video/VideoFlow-LTX23-small",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "1693:1691",
+        0
+      ],
+      "audio": [
+        "1693:1690",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Stage 1 Video"
+    }
+  },
+  "175": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "172",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss",
+    "_meta": {
+      "title": "PlaySound 🐍"
+    }
+  },
+  "678": {
+    "inputs": {
+      "frame_rate": [
+        "668:1043",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "video/VideoFlow-LTX23",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "668:1196",
+        0
+      ],
+      "audio": [
+        "668:656",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Stage 2 Video"
+    }
+  },
+  "679": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "678",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss",
+    "_meta": {
+      "title": "PlaySound 🐍"
+    }
+  },
+  "681": {
+    "inputs": {
+      "signal": [
+        "172",
+        0
+      ],
+      "value": [
+        "1884:1699",
+        0
+      ]
+    },
+    "class_type": "ImpactExecutionOrderController",
+    "_meta": {
+      "title": "wait for stage 1"
+    }
+  },
+  "1874": {
+    "inputs": {
+      "any_03": [
+        "1875",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Is I2V?"
+    }
+  },
+  "1875": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "no I2V"
+    }
+  },
+  "1876": {
+    "inputs": {
+      "any_02": [
+        "1875",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Use First Frame?"
+    }
+  },
+  "1877": {
+    "inputs": {
+      "any_02": [
+        "1875",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Use Last Frame?"
+    }
+  },
+  "1878": {
+    "inputs": {
+      "switch": [
+        "1874",
+        0
+      ],
+      "on_false": [
+        "2023",
+        1
+      ],
+      "on_true": [
+        "2022",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch CLIP"
+    }
+  },
+  "1879": {
+    "inputs": {
+      "text": "A handheld, continuous eye-level tracking shot following a young woman (early 20s, messy dark shoulder-length hair, wearing a dark green utility jacket and a crossbody bag) as she walks natural and leisurely through a bustling, sun-drenched outdoor street market in the late afternoon. She is looking around at the stalls, holding a small paper bag of food, and casually glances to the side and slightly back with a natural, unposed smile as she walks. The camera stays steadily with her, moving backward to capture her continuous forward motion through the crowd. In the background, busy pedestrians walk by, steam rises steadily from food stalls, and natural lens flare catching the camera as sunlight filters through rustic storefronts. Soft, handheld camera movement, cinematic natural lighting, 35mm film grain, 10-second continuous natural candid walk.",
+      "clip": [
+        "1878",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "1880": {
+    "inputs": {
+      "switch": [
+        "1874",
+        0
+      ],
+      "on_false": [
+        "2023",
+        0
+      ],
+      "on_true": [
+        "2022",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Model"
+    }
+  },
+  "1883": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "false = Clone Voice, true = Audio to Video"
+    }
+  },
+  "1888": {
+    "inputs": {
+      "audio": "file_example_MP3_5MG.mp3",
+      "audioUI": "/api/view?filename=file_example_MP3_5MG.mp3&type=input&subfolder=&rand=0.3361761823015226"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "📂Load Audio"
+    }
+  },
+  "2011": {
+    "inputs": {
+      "any_03": [
+        "2016",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Model Switch"
+    }
+  },
+  "2012": {
+    "inputs": {
+      "any_02": [
+        "2017",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Video VAE Switch"
+    }
+  },
+  "2016": {
+    "inputs": {
+      "unet_name": "ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2017": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "Video VAE"
+    }
+  },
+  "2019": {
+    "inputs": {
+      "seed": 1
+    },
+    "class_type": "SeedNode",
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "2022": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "2011",
+        0
+      ],
+      "clip": [
+        "1893:1824",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "🖼️Image-to-Video Lora Loader"
+    }
+  },
+  "2023": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "2011",
+        0
+      ],
+      "clip": [
+        "1893:1824",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "📝Text-to-Video Lora Loader"
+    }
+  },
+  "1893:1823": {
+    "inputs": {
+      "vae_name": "taeltx2_3.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Live Preview VAE"
+    }
+  },
+  "1893:1825": {
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "Load Latent Upscale Model"
+    }
+  },
+  "1893:1826": {
+    "inputs": {
+      "vae_name": "LTX23_audio_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "Audio VAE"
+    }
+  },
+  "1893:1824": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_e4m3fn.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "1889:1705": {
+    "inputs": {
+      "model": [
+        "1889:1707",
+        0
+      ],
+      "audio": [
+        "1889:1709",
+        0
+      ]
+    },
+    "class_type": "MelBandRoFormerSampler",
+    "_meta": {
+      "title": "Mel-Band RoFormer Sampler"
+    }
+  },
+  "1889:1706": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Extract Voice?"
+    }
+  },
+  "1889:1707": {
+    "inputs": {
+      "model_name": "MelBandRoformer_fp16.safetensors"
+    },
+    "class_type": "MelBandRoFormerModelLoader",
+    "_meta": {
+      "title": "Mel-Band RoFormer Model Loader"
+    }
+  },
+  "1889:1708": {
+    "inputs": {
+      "switch": [
+        "1889:1706",
+        0
+      ],
+      "on_false": [
+        "1889:1709",
+        0
+      ],
+      "on_true": [
+        "1889:1705",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "on/off"
+    }
+  },
+  "1889:1709": {
+    "inputs": {
+      "any_01": [
+        "1888",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Audio Source"
+    }
+  },
+  "1887:1700": {
+    "inputs": {
+      "start_index": 0,
+      "duration": [
+        "1887:1702",
+        0
+      ],
+      "audio": [
+        "1889:1708",
+        0
+      ]
+    },
+    "class_type": "TrimAudioDuration",
+    "_meta": {
+      "title": "Trim Audio Duration"
+    }
+  },
+  "1887:1701": {
+    "inputs": {
+      "audioUI": "",
+      "audio": [
+        "1887:1700",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "1887:1702": {
+    "inputs": {
+      "switch": [
+        "1883",
+        0
+      ],
+      "on_false": [
+        "1887:1703",
+        0
+      ],
+      "on_true": [
+        "1887:1704",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final Duration"
+    }
+  },
+  "1887:1703": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "5 sec for clone"
+    }
+  },
+  "1887:1704": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Duration"
+    }
+  },
+  "1884:1695": {
+    "inputs": {
+      "conditioning": [
+        "1879",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "no negative"
+    }
+  },
+  "1884:1696": {
+    "inputs": {
+      "lora_name": "ltx-2.3-id-lora-talkvid-3k.safetensors",
+      "strength_model": 1,
+      "model": [
+        "1880",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load ID-LoRA TalkVid"
+    }
+  },
+  "1884:1697": {
+    "inputs": {
+      "identity_guidance_scale": 3,
+      "start_percent": 0,
+      "end_percent": 1,
+      "model": [
+        "1884:1696",
+        0
+      ],
+      "positive": [
+        "1879",
+        0
+      ],
+      "negative": [
+        "1884:1695",
+        0
+      ],
+      "reference_audio": [
+        "1887:1700",
+        0
+      ],
+      "audio_vae": [
+        "1893:1826",
+        0
+      ]
+    },
+    "class_type": "LTXVReferenceAudio",
+    "_meta": {
+      "title": "LTXV Reference Audio (ID-LoRA)"
+    }
+  },
+  "1884:1698": {
+    "inputs": {
+      "switch": [
+        "1883",
+        0
+      ],
+      "on_false": [
+        "1884:1697",
+        1
+      ],
+      "on_true": [
+        "1879",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Positive Switch"
+    }
+  },
+  "1884:1699": {
+    "inputs": {
+      "switch": [
+        "1883",
+        0
+      ],
+      "on_false": [
+        "1884:1697",
+        0
+      ],
+      "on_true": [
+        "1880",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Model Switch"
+    }
+  },
+  "389:1077": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "389:376",
+        1
+      ],
+      "on_true": [
+        "389:1044",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch negative first_frame"
+    }
+  },
+  "389:1650": {
+    "inputs": {
+      "value": 0.15
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Terminal Value"
+    }
+  },
+  "389:1471": {
+    "inputs": {
+      "value": 0.25
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Terminal Value"
+    }
+  },
+  "389:1470": {
+    "inputs": {
+      "value": 0.54
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Midpoint"
+    }
+  },
+  "389:1651": {
+    "inputs": {
+      "value": 0.54
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Midpoint"
+    }
+  },
+  "389:1654": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1650",
+        0
+      ],
+      "on_true": [
+        "389:1471",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Terminal"
+    }
+  },
+  "389:1653": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1470",
+        0
+      ],
+      "on_true": [
+        "389:1651",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Midpoint"
+    }
+  },
+  "389:754": {
+    "inputs": {
+      "scheduler": "linear_quadratic",
+      "steps": [
+        "389:1986",
+        0
+      ],
+      "denoise": 1,
+      "model": [
+        "389:747",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "T2V BasicScheduler"
+    }
+  },
+  "389:1656": {
+    "inputs": {
+      "sigmas": ""
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "T2V ManualSigmas"
+    }
+  },
+  "389:1659": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "389:1440",
+        0
+      ],
+      "on_true": [
+        "389:1656",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch T2V Manual Sigmas"
+    }
+  },
+  "389:1657": {
+    "inputs": {
+      "sigmas": ""
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "I2V ManualSigmas"
+    }
+  },
+  "389:1440": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "389:754",
+        0
+      ],
+      "on_true": [
+        "389:1437:1539",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Activate T2V VideoFlow Scheduler?"
+    }
+  },
+  "389:975": {
+    "inputs": {
+      "scheduler": "linear_quadratic",
+      "steps": [
+        "389:973",
+        0
+      ],
+      "denoise": 1,
+      "model": [
+        "389:747",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "I2V BasicScheduler"
+    }
+  },
+  "389:1649": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "389:975",
+        0
+      ],
+      "on_true": [
+        "389:1437:1539",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Activate I2V VideoFlow Scheduler?"
+    }
+  },
+  "389:1658": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "389:1649",
+        0
+      ],
+      "on_true": [
+        "389:1657",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch I2V Manual Sigmas"
+    }
+  },
+  "389:976": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1659",
+        0
+      ],
+      "on_true": [
+        "389:1658",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final Scheduler Sigmas"
+    }
+  },
+  "389:377": {
+    "inputs": {
+      "frames_number": [
+        "389:383",
+        1
+      ],
+      "frame_rate": [
+        "389:384",
+        0
+      ],
+      "batch_size": 1,
+      "audio_vae": [
+        "1893:1826",
+        0
+      ]
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "_meta": {
+      "title": "LTXV Empty Latent Audio"
+    }
+  },
+  "389:1105": {
+    "inputs": {
+      "any_01": [
+        "1883",
+        0
+      ],
+      "any_02": [
+        "389:1104",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Is A2V?"
+    }
+  },
+  "389:1103": {
+    "inputs": {
+      "switch": [
+        "389:1105",
+        0
+      ],
+      "on_false": [
+        "389:377",
+        0
+      ],
+      "on_true": [
+        "389:1079",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Audio to Video?"
+    }
+  },
+  "389:1079": {
+    "inputs": {
+      "samples": [
+        "389:1081",
+        0
+      ],
+      "mask": [
+        "389:1080",
+        0
+      ]
+    },
+    "class_type": "SetLatentNoiseMask",
+    "_meta": {
+      "title": "Set Latent Noise Mask"
+    }
+  },
+  "389:1081": {
+    "inputs": {
+      "audio": [
+        "389:1107",
+        0
+      ],
+      "audio_vae": [
+        "1893:1826",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEEncode",
+    "_meta": {
+      "title": "LTXV Audio VAE Encode"
+    }
+  },
+  "389:383": {
+    "inputs": {
+      "expression": "a*b+1",
+      "values.a": [
+        "389:387",
+        0
+      ],
+      "values.b": [
+        "389:384",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Audio Total Frames"
+    }
+  },
+  "389:384": {
+    "inputs": {
+      "value": 24
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Audio Frame Rate"
+    }
+  },
+  "389:877": {
+    "inputs": {
+      "text1": "As of April 2026, it's unclear whether this is intentional or a bug, but ComfyUI currently requires audio to use a 24 fps frame rate and video to use 25 fps to keep them in sync."
+    },
+    "class_type": "TextBox1",
+    "_meta": {
+      "title": "💡Frame Rate Info"
+    }
+  },
+  "389:1104": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "default false"
+    }
+  },
+  "389:1080": {
+    "inputs": {
+      "value": 0,
+      "width": [
+        "389:1928:968",
+        0
+      ],
+      "height": [
+        "389:1928:970",
+        0
+      ]
+    },
+    "class_type": "SolidMask",
+    "_meta": {
+      "title": "Create Solid Mask"
+    }
+  },
+  "389:1107": {
+    "inputs": {
+      "any_01": [
+        "1887:1700",
+        0
+      ],
+      "any_02": [
+        "389:1106",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Audio Input"
+    }
+  },
+  "389:1106": {
+    "inputs": {
+      "duration": 0,
+      "sample_rate": 44100,
+      "channels": 2
+    },
+    "class_type": "EmptyAudio",
+    "_meta": {
+      "title": "Empty Audio"
+    }
+  },
+  "389:1076": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "389:376",
+        0
+      ],
+      "on_true": [
+        "389:1044",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch positive first_frame"
+    }
+  },
+  "389:387": {
+    "inputs": {
+      "value": 10
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Length in Seconds"
+    }
+  },
+  "389:363": {
+    "inputs": {
+      "noise_seed": [
+        "2019",
+        0
+      ]
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "Stage 1 Seed"
+    }
+  },
+  "389:367": {
+    "inputs": {
+      "video_latent": [
+        "389:1059",
+        0
+      ],
+      "audio_latent": [
+        "389:1103",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "389:1044": {
+    "inputs": {
+      "frame_idx": 0,
+      "strength": [
+        "389:1917:991",
+        0
+      ],
+      "positive": [
+        "389:376",
+        0
+      ],
+      "negative": [
+        "389:376",
+        1
+      ],
+      "vae": [
+        "2012",
+        0
+      ],
+      "latent": [
+        "389:829",
+        0
+      ],
+      "image": [
+        "389:1928:1921",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuide",
+    "_meta": {
+      "title": "First Frame LTXVAddGuide"
+    }
+  },
+  "389:829": {
+    "inputs": {
+      "width": [
+        "389:1928:968",
+        0
+      ],
+      "height": [
+        "389:1928:970",
+        0
+      ],
+      "length": [
+        "389:824",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "EmptyLTXVLatentVideo"
+    }
+  },
+  "389:824": {
+    "inputs": {
+      "expression": "a*b+1",
+      "values.a": [
+        "389:387",
+        0
+      ],
+      "values.b": [
+        "389:825",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Video Total Frames"
+    }
+  },
+  "389:375": {
+    "inputs": {
+      "expression": "a",
+      "values.a": [
+        "389:825",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Video Frame Rate"
+    }
+  },
+  "389:825": {
+    "inputs": {
+      "value": 25
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Video Frame Rate"
+    }
+  },
+  "389:362": {
+    "inputs": {
+      "conditioning": [
+        "1884:1698",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "No Negative"
+    }
+  },
+  "389:1058": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "389:1077",
+        0
+      ],
+      "on_true": [
+        "389:1045",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final negative"
+    }
+  },
+  "389:1057": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "389:1076",
+        0
+      ],
+      "on_true": [
+        "389:1045",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final postive"
+    }
+  },
+  "389:376": {
+    "inputs": {
+      "frame_rate": [
+        "389:375",
+        0
+      ],
+      "positive": [
+        "1884:1698",
+        0
+      ],
+      "negative": [
+        "389:362",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXVConditioning"
+    }
+  },
+  "389:1917:988": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Min Strength"
+    }
+  },
+  "389:1917:987": {
+    "inputs": {
+      "comparison": "a < b",
+      "a": [
+        "389:984",
+        0
+      ],
+      "b": [
+        "389:1917:988",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is strength too low?"
+    }
+  },
+  "389:1917:989": {
+    "inputs": {
+      "switch": [
+        "389:1917:987",
+        0
+      ],
+      "on_false": [
+        "389:984",
+        0
+      ],
+      "on_true": [
+        "389:1917:988",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:1917:992": {
+    "inputs": {
+      "comparison": "a > b",
+      "a": [
+        "389:1917:989",
+        0
+      ],
+      "b": [
+        "389:1917:990",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is strength too high?"
+    }
+  },
+  "389:1917:990": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Max Strength"
+    }
+  },
+  "389:1917:991": {
+    "inputs": {
+      "switch": [
+        "389:1917:992",
+        0
+      ],
+      "on_false": [
+        "389:1917:989",
+        0
+      ],
+      "on_true": [
+        "389:1917:990",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final Strength"
+    }
+  },
+  "389:984": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "First Frame Strength"
+    }
+  },
+  "389:1066": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Last Frame Strength"
+    }
+  },
+  "389:1916:1060": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Min Strength"
+    }
+  },
+  "389:1916:1062": {
+    "inputs": {
+      "switch": [
+        "389:1916:1061",
+        0
+      ],
+      "on_false": [
+        "389:1066",
+        0
+      ],
+      "on_true": [
+        "389:1916:1060",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:1916:1063": {
+    "inputs": {
+      "comparison": "a > b",
+      "a": [
+        "389:1916:1062",
+        0
+      ],
+      "b": [
+        "389:1916:1065",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is strength too high?"
+    }
+  },
+  "389:1916:1064": {
+    "inputs": {
+      "switch": [
+        "389:1916:1063",
+        0
+      ],
+      "on_false": [
+        "389:1916:1062",
+        0
+      ],
+      "on_true": [
+        "389:1916:1065",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final Strength"
+    }
+  },
+  "389:1916:1065": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Max Strength"
+    }
+  },
+  "389:1916:1061": {
+    "inputs": {
+      "comparison": "a < b",
+      "a": [
+        "389:1066",
+        0
+      ],
+      "b": [
+        "389:1916:1060",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is strength too low?"
+    }
+  },
+  "389:1059": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "389:1078",
+        0
+      ],
+      "on_true": [
+        "389:1045",
+        2
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Final video_latent"
+    }
+  },
+  "389:1078": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "389:829",
+        0
+      ],
+      "on_true": [
+        "389:1044",
+        2
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch latent first_frame"
+    }
+  },
+  "389:1045": {
+    "inputs": {
+      "frame_idx": -1,
+      "strength": [
+        "389:1916:1064",
+        0
+      ],
+      "positive": [
+        "389:1076",
+        0
+      ],
+      "negative": [
+        "389:1077",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ],
+      "latent": [
+        "389:1078",
+        0
+      ],
+      "image": [
+        "389:1928:1056",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuide",
+    "_meta": {
+      "title": "Last Frame LTXVAddGuide"
+    }
+  },
+  "389:956": {
+    "inputs": {
+      "value": 2.1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Final Video Megapixels"
+    }
+  },
+  "389:828": {
+    "inputs": {
+      "value": 1728
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Width"
+    }
+  },
+  "389:830": {
+    "inputs": {
+      "value": 1152
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Height"
+    }
+  },
+  "389:958": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Resolution (shorter side)"
+    }
+  },
+  "389:1924": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "First Frame Compression"
+    }
+  },
+  "389:1925": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Last Frame Compression"
+    }
+  },
+  "389:1929:1906": {
+    "inputs": {
+      "image": [
+        "389:1929:1905",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "389:1929:1902": {
+    "inputs": {
+      "image": [
+        "389:1929:1901",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "389:1929:1900": {
+    "inputs": {
+      "width": 1,
+      "height": 1,
+      "batch_size": 1,
+      "color": 0
+    },
+    "class_type": "EmptyImage",
+    "_meta": {
+      "title": "Empty Image"
+    }
+  },
+  "389:1929:1914": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "1"
+    }
+  },
+  "389:1929:1903": {
+    "inputs": {
+      "comparison": "a > b",
+      "a": [
+        "389:1929:1902",
+        0
+      ],
+      "b": [
+        "389:1929:1914",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Use Last Frame?"
+    }
+  },
+  "389:1929:1111": {
+    "inputs": {
+      "boolean_a": [
+        "389:1929:1907",
+        0
+      ],
+      "boolean_b": [
+        "389:1929:1903",
+        0
+      ]
+    },
+    "class_type": "Logic Comparison OR",
+    "_meta": {
+      "title": "Is I2V?"
+    }
+  },
+  "389:1929:1907": {
+    "inputs": {
+      "comparison": "a > b",
+      "a": [
+        "389:1929:1906",
+        0
+      ],
+      "b": [
+        "389:1929:1914",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Use First Frame?"
+    }
+  },
+  "389:1929:1905": {
+    "inputs": {
+      "any_02": [
+        "389:1929:1900",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "First Frame"
+    }
+  },
+  "389:1929:1901": {
+    "inputs": {
+      "any_02": [
+        "389:1929:1900",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "Last Frame"
+    }
+  },
+  "389:977": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:372",
+        0
+      ],
+      "on_true": [
+        "389:974",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:974": {
+    "inputs": {
+      "sampler_name": "dpm_2_ancestral"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "I2V Sampler"
+    }
+  },
+  "389:747": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "1884:1699",
+        0
+      ],
+      "on_true": [
+        "389:371",
+        0
+      ]
+    },
+    "class_type": "LazySwitchKJ",
+    "_meta": {
+      "title": "Live Preview"
+    }
+  },
+  "389:372": {
+    "inputs": {
+      "sampler_name": "dpm_2_ancestral"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "T2V Sampler"
+    }
+  },
+  "389:371": {
+    "inputs": {
+      "preview_rate": 8,
+      "model": [
+        "1884:1699",
+        0
+      ],
+      "latent_upscale_model": [
+        "1893:1825",
+        0
+      ],
+      "vae": [
+        "1893:1823",
+        0
+      ]
+    },
+    "class_type": "LTX2SamplingPreviewOverride",
+    "_meta": {
+      "title": "Preview"
+    }
+  },
+  "389:1928:1113": {
+    "inputs": {
+      "comparison": "a > 0",
+      "a": [
+        "389:956",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Use Megapixels?"
+    }
+  },
+  "389:1928:1115": {
+    "inputs": {
+      "resize_type": "scale dimensions",
+      "resize_type.width": [
+        "389:1928:832",
+        1
+      ],
+      "resize_type.height": [
+        "389:1928:834",
+        1
+      ],
+      "resize_type.crop": "center",
+      "scale_method": "lanczos",
+      "input": [
+        "389:1928:1112",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize to Width / Height"
+    }
+  },
+  "389:1928:1114": {
+    "inputs": {
+      "switch": [
+        "389:1928:1113",
+        0
+      ],
+      "on_false": [
+        "389:1928:1115",
+        0
+      ],
+      "on_true": [
+        "389:1928:957",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:1928:959": {
+    "inputs": {
+      "resize_type": "scale shorter dimension",
+      "resize_type.shorter_size": [
+        "389:958",
+        0
+      ],
+      "scale_method": "lanczos",
+      "input": [
+        "389:1928:1112",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize to Resolution"
+    }
+  },
+  "389:1928:955": {
+    "inputs": {
+      "output_type": "boolean",
+      "*": [
+        "389:958",
+        0
+      ]
+    },
+    "class_type": "easy convertAnything",
+    "_meta": {
+      "title": "Use Resolution?"
+    }
+  },
+  "389:1928:832": {
+    "inputs": {
+      "expression": "a*b/c",
+      "values.a": [
+        "389:1928:831",
+        1
+      ],
+      "values.b": [
+        "389:1928:856:784",
+        0
+      ],
+      "values.c": [
+        "389:1928:856:425",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Final Width"
+    }
+  },
+  "389:1928:949": {
+    "inputs": {
+      "image": [
+        "389:1928:948",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Dimensions"
+    }
+  },
+  "389:1928:834": {
+    "inputs": {
+      "expression": "a*b/c",
+      "values.a": [
+        "389:1928:833",
+        1
+      ],
+      "values.b": [
+        "389:1928:856:784",
+        0
+      ],
+      "values.c": [
+        "389:1928:856:425",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Final Height"
+    }
+  },
+  "389:1928:970": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1928:834",
+        1
+      ],
+      "on_true": [
+        "389:1928:949",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Stage 1 Video Height"
+    }
+  },
+  "389:1928:1112": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "389:1929:1901",
+        0
+      ],
+      "on_true": [
+        "389:1929:1905",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Image Switch"
+    }
+  },
+  "389:1928:965": {
+    "inputs": {
+      "switch": [
+        "389:1928:955",
+        0
+      ],
+      "on_false": [
+        "389:1928:1114",
+        0
+      ],
+      "on_true": [
+        "389:1928:959",
+        0
+      ]
+    },
+    "class_type": "LazySwitchKJ",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:1928:953": {
+    "inputs": {
+      "width": 0,
+      "height": 0,
+      "upscale_method": "lanczos",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": [
+        "389:1928:856:784",
+        0
+      ],
+      "device": "cpu",
+      "image": [
+        "389:1928:965",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resized Image"
+    }
+  },
+  "389:1928:1919": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "389:1925",
+        0
+      ],
+      "on_true": [
+        "389:1924",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "389:1928:1921": {
+    "inputs": {
+      "img_compression": [
+        "389:1928:1919",
+        0
+      ],
+      "image": [
+        "389:1928:953",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV Preprocess"
+    }
+  },
+  "389:1928:1048": {
+    "inputs": {
+      "image": [
+        "389:1928:1921",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "389:1928:1918": {
+    "inputs": {
+      "boolean_a": [
+        "389:1929:1907",
+        0
+      ],
+      "boolean_b": [
+        "389:1929:1903",
+        0
+      ]
+    },
+    "class_type": "Logic Comparison AND",
+    "_meta": {
+      "title": "First AND Last"
+    }
+  },
+  "389:1928:948": {
+    "inputs": {
+      "resize_type": "scale width",
+      "resize_type.width": [
+        "389:1928:947",
+        0
+      ],
+      "scale_method": "lanczos",
+      "input": [
+        "389:1928:1921",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Stage 1 Start Frame"
+    }
+  },
+  "389:1928:947": {
+    "inputs": {
+      "expression": "a/b",
+      "a": [
+        "389:1928:953",
+        1
+      ],
+      "b": [
+        "389:1928:856:425",
+        0
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "Stage 1 Video Width"
+    }
+  },
+  "389:1928:968": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1928:832",
+        1
+      ],
+      "on_true": [
+        "389:1928:949",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Stage 1 Video Width"
+    }
+  },
+  "389:1928:856:784": {
+    "inputs": {
+      "switch": [
+        "389:1928:856:778",
+        0
+      ],
+      "on_false": [
+        "389:1928:856:781",
+        0
+      ],
+      "on_true": [
+        "389:1928:856:780",
+        0
+      ]
+    },
+    "class_type": "LazySwitchKJ",
+    "_meta": {
+      "title": "Switch divisible_by"
+    }
+  },
+  "389:1928:856:778": {
+    "inputs": {
+      "comparison": "a == b",
+      "a": [
+        "389:1928:856:425",
+        1
+      ],
+      "b": [
+        "389:1928:856:779",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is 2x Upscale?"
+    }
+  },
+  "389:1928:856:780": {
+    "inputs": {
+      "value": 64
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Divisible by 64"
+    }
+  },
+  "389:1928:856:781": {
+    "inputs": {
+      "value": 96
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Divisible by 96"
+    }
+  },
+  "389:1928:856:779": {
+    "inputs": {
+      "value": 2
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Upscale Factor 2"
+    }
+  },
+  "389:1928:856:421": {
+    "inputs": {
+      "width": 64,
+      "height": 64,
+      "length": 9,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "EmptyLTXVLatentVideo"
+    }
+  },
+  "389:1928:856:420": {
+    "inputs": {
+      "samples": [
+        "389:1928:856:421",
+        0
+      ],
+      "upscale_model": [
+        "1893:1825",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "LTXVLatentUpsampler",
+    "_meta": {
+      "title": "spatial"
+    }
+  },
+  "389:1928:856:425": {
+    "inputs": {
+      "expression": "a/2",
+      "values.a": [
+        "389:1928:856:422",
+        4
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Upscale Factor"
+    }
+  },
+  "389:1928:856:422": {
+    "inputs": {
+      "samples": [
+        "389:1928:856:420",
+        0
+      ]
+    },
+    "class_type": "Latent Size to Number",
+    "_meta": {
+      "title": "Latent Size to Number"
+    }
+  },
+  "389:1928:957": {
+    "inputs": {
+      "resize_type": "scale total pixels",
+      "resize_type.megapixels": [
+        "389:956",
+        0
+      ],
+      "scale_method": "lanczos",
+      "input": [
+        "389:1928:1112",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize to Megapixels"
+    }
+  },
+  "389:1928:831": {
+    "inputs": {
+      "expression": "a/b",
+      "values.a": [
+        "389:828",
+        0
+      ],
+      "values.b": [
+        "389:1928:856:784",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "🧮"
+    }
+  },
+  "389:1928:833": {
+    "inputs": {
+      "expression": "a/b",
+      "values.a": [
+        "389:830",
+        0
+      ],
+      "values.b": [
+        "389:1928:856:784",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "🧮"
+    }
+  },
+  "389:1928:1923": {
+    "inputs": {
+      "img_compression": [
+        "389:1925",
+        0
+      ],
+      "image": [
+        "389:1929:1901",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV Preprocess"
+    }
+  },
+  "389:1928:1054": {
+    "inputs": {
+      "width": [
+        "389:1928:1048",
+        0
+      ],
+      "height": [
+        "389:1928:1048",
+        1
+      ],
+      "interpolation": "lanczos",
+      "method": "fill / crop",
+      "condition": "always",
+      "multiple_of": 0,
+      "image": [
+        "389:1928:1923",
+        0
+      ]
+    },
+    "class_type": "ImageResize+",
+    "_meta": {
+      "title": "Resize Last Frame"
+    }
+  },
+  "389:1928:1056": {
+    "inputs": {
+      "switch": [
+        "389:1928:1918",
+        0
+      ],
+      "on_false": [
+        "389:1929:1901",
+        0
+      ],
+      "on_true": [
+        "389:1928:1054",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Last Frame"
+    }
+  },
+  "389:366": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "389:747",
+        0
+      ],
+      "positive": [
+        "389:1057",
+        0
+      ],
+      "negative": [
+        "389:1058",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG Guider"
+    }
+  },
+  "389:373": {
+    "inputs": {
+      "noise": [
+        "389:363",
+        0
+      ],
+      "guider": [
+        "389:366",
+        0
+      ],
+      "sampler": [
+        "389:977",
+        0
+      ],
+      "sigmas": [
+        "389:976",
+        0
+      ],
+      "latent_image": [
+        "389:367",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "389:369": {
+    "inputs": {
+      "av_latent": [
+        "389:373",
+        1
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "389:1050": {
+    "inputs": {
+      "positive": [
+        "389:1057",
+        0
+      ],
+      "negative": [
+        "389:1058",
+        0
+      ],
+      "latent": [
+        "389:369",
+        0
+      ]
+    },
+    "class_type": "LTXVCropGuides",
+    "_meta": {
+      "title": "LTXVCropGuides"
+    }
+  },
+  "389:1652": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1469",
+        0
+      ],
+      "on_true": [
+        "389:1647",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Flatness"
+    }
+  },
+  "389:1469": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Shift Around Midpoint"
+    }
+  },
+  "389:1647": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Shift Around Midpoint"
+    }
+  },
+  "389:1437:1422": {
+    "inputs": {
+      "any": [
+        "389:1437:1435",
+        0
+      ]
+    },
+    "class_type": "easy lengthAnything",
+    "_meta": {
+      "title": "Length Any"
+    }
+  },
+  "389:1437:1423": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Empty Sigma String"
+    }
+  },
+  "389:1437:1435": {
+    "inputs": {
+      "sigmas": [
+        "389:1437:1527",
+        0
+      ]
+    },
+    "class_type": "SigmasToFloat",
+    "_meta": {
+      "title": "Sigmas To Float"
+    }
+  },
+  "389:1437:1393": {
+    "inputs": {
+      "scheduler": "bong_tangent",
+      "steps": 100,
+      "denoise": 1,
+      "model": [
+        "389:747",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "bong_tangent Sigmas"
+    }
+  },
+  "389:1437:1392": {
+    "inputs": {
+      "multiplier": 2,
+      "sigmas": [
+        "389:1437:1389",
+        0
+      ]
+    },
+    "class_type": "Sigmas Mult",
+    "_meta": {
+      "title": "Sigmas Mult"
+    }
+  },
+  "389:1437:1402": {
+    "inputs": {
+      "sigmas": [
+        "389:1437:1430",
+        0
+      ]
+    },
+    "class_type": "Sigmas Unpad",
+    "_meta": {
+      "title": "Remove last 0.0"
+    }
+  },
+  "389:1437:1427": {
+    "inputs": {
+      "any": [
+        "389:1437:1426",
+        1
+      ]
+    },
+    "class_type": "easy lengthAnything",
+    "_meta": {
+      "title": "Length Any"
+    }
+  },
+  "389:1437:1429": {
+    "inputs": {
+      "string": [
+        "389:1437:1431",
+        0
+      ]
+    },
+    "class_type": "StringToFloatList",
+    "_meta": {
+      "title": "String to Float List"
+    }
+  },
+  "389:1437:1430": {
+    "inputs": {
+      "float_list": [
+        "389:1437:1429",
+        0
+      ]
+    },
+    "class_type": "FloatToSigmas",
+    "_meta": {
+      "title": "Float To Sigmas"
+    }
+  },
+  "389:1437:1431": {
+    "inputs": {
+      "string": [
+        "389:1437:1426",
+        1
+      ],
+      "start": 0,
+      "end": [
+        "389:1437:1428",
+        1
+      ]
+    },
+    "class_type": "StringSubstring",
+    "_meta": {
+      "title": "Substring"
+    }
+  },
+  "389:1437:1421": {
+    "inputs": {
+      "total": [
+        "389:1437:1422",
+        0
+      ],
+      "initial_value1": [
+        "389:1437:1435",
+        0
+      ],
+      "initial_value2": [
+        "389:1437:1423",
+        0
+      ]
+    },
+    "class_type": "easy forLoopStart",
+    "_meta": {
+      "title": "For Loop Start"
+    }
+  },
+  "389:1437:1426": {
+    "inputs": {
+      "flow": [
+        "389:1437:1421",
+        0
+      ],
+      "initial_value1": [
+        "389:1437:1421",
+        2
+      ],
+      "initial_value2": [
+        "389:1437:1425",
+        0
+      ]
+    },
+    "class_type": "easy forLoopEnd",
+    "_meta": {
+      "title": "For Loop End"
+    }
+  },
+  "389:1437:1428": {
+    "inputs": {
+      "expression": "a - 1",
+      "values.a": [
+        "389:1437:1427",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "389:1437:1403": {
+    "inputs": {
+      "value": 0,
+      "sigmas": [
+        "389:1437:1404",
+        0
+      ]
+    },
+    "class_type": "Sigmas Pad",
+    "_meta": {
+      "title": "Add last 0.0"
+    }
+  },
+  "389:1437:1404": {
+    "inputs": {
+      "start": 1,
+      "end": [
+        "389:1654",
+        0
+      ],
+      "sigmas": [
+        "389:1437:1402",
+        0
+      ]
+    },
+    "class_type": "Sigmas Rescale",
+    "_meta": {
+      "title": "Sigmas Rescale"
+    }
+  },
+  "389:1437:1434": {
+    "inputs": {
+      "expression": "c + ((b>c)-(b<c)) * pow(abs(b-c), a) * (((b>c)*(1-c) + (b<c)*c) ** (1-a))",
+      "variables.a": [
+        "389:1652",
+        0
+      ],
+      "variables.b": [
+        "389:1437:1424",
+        0
+      ],
+      "variables.c": [
+        "389:1653",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "389:1437:1424": {
+    "inputs": {
+      "index": [
+        "389:1437:1421",
+        1
+      ],
+      "any": [
+        "389:1437:1421",
+        2
+      ]
+    },
+    "class_type": "easy indexAnything",
+    "_meta": {
+      "title": "Index Any"
+    }
+  },
+  "389:1437:1425": {
+    "inputs": {
+      "prefix": [
+        "389:1437:1421",
+        3
+      ],
+      "suffix": ",",
+      "input": [
+        "389:1437:1434",
+        0
+      ]
+    },
+    "class_type": "SomethingToString",
+    "_meta": {
+      "title": "Something To String"
+    }
+  },
+  "389:1437:1364": {
+    "inputs": {
+      "expression": "a + 1",
+      "values.a": [
+        "389:1987",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Step +1"
+    }
+  },
+  "389:1437:1389": {
+    "inputs": {
+      "tension": 0.5,
+      "points": [
+        "389:1437:1364",
+        1
+      ],
+      "boundary_condition": "repeat",
+      "sigmas": [
+        "389:1437:1393",
+        0
+      ]
+    },
+    "class_type": "Sigmas CatmullRom",
+    "_meta": {
+      "title": "Sigmas CatmullRom"
+    }
+  },
+  "389:1437:1246": {
+    "inputs": {
+      "value": 0,
+      "sigmas": [
+        "389:1437:1232",
+        0
+      ]
+    },
+    "class_type": "Sigmas Pad",
+    "_meta": {
+      "title": "Add last 0.0"
+    }
+  },
+  "389:1437:1232": {
+    "inputs": {
+      "start": 1,
+      "end": [
+        "389:1654",
+        0
+      ],
+      "sigmas": [
+        "389:1437:1245",
+        0
+      ]
+    },
+    "class_type": "Sigmas Rescale",
+    "_meta": {
+      "title": "Sigmas Rescale"
+    }
+  },
+  "389:1437:1245": {
+    "inputs": {
+      "sigmas": [
+        "389:1437:1392",
+        0
+      ]
+    },
+    "class_type": "Sigmas Unpad",
+    "_meta": {
+      "title": "Remove last 0.0"
+    }
+  },
+  "389:1437:1528": {
+    "inputs": {
+      "comparison": "a > 0",
+      "a": [
+        "389:1654",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is terminal greater zero?"
+    }
+  },
+  "389:1437:1527": {
+    "inputs": {
+      "switch": [
+        "389:1437:1528",
+        0
+      ],
+      "on_false": [
+        "389:1437:1392",
+        0
+      ],
+      "on_true": [
+        "389:1437:1246",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Rescale?"
+    }
+  },
+  "389:1437:1541": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Skip at 1.00"
+    }
+  },
+  "389:1437:1534": {
+    "inputs": {
+      "switch": [
+        "389:1437:1528",
+        0
+      ],
+      "on_false": [
+        "389:1437:1430",
+        0
+      ],
+      "on_true": [
+        "389:1437:1403",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Rescale?"
+    }
+  },
+  "389:1437:1540": {
+    "inputs": {
+      "comparison": "a != b",
+      "a": [
+        "389:1652",
+        0
+      ],
+      "b": [
+        "389:1437:1541",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Compare"
+    }
+  },
+  "389:1437:1539": {
+    "inputs": {
+      "switch": [
+        "389:1437:1540",
+        0
+      ],
+      "on_false": [
+        "389:1437:1527",
+        0
+      ],
+      "on_true": [
+        "389:1437:1534",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Sigma adjustments needed?"
+    }
+  },
+  "389:1987": {
+    "inputs": {
+      "switch": [
+        "389:1929:1111",
+        0
+      ],
+      "on_false": [
+        "389:1986",
+        0
+      ],
+      "on_true": [
+        "389:973",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Steps"
+    }
+  },
+  "389:973": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "I2V Steps"
+    }
+  },
+  "389:1986": {
+    "inputs": {
+      "value": 8
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "T2V Steps"
+    }
+  },
+  "1693:1683": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8,
+      "samples": [
+        "1693:1687",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (Tiled)"
+    }
+  },
+  "1693:1684": {
+    "inputs": {
+      "value": [
+        "389:1050",
+        2
+      ],
+      "model": [
+        "1884:1699",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Video Model"
+    }
+  },
+  "1693:1685": {
+    "inputs": {
+      "value": [
+        "1693:1684",
+        0
+      ],
+      "model": [
+        "1893:1825",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Latent Upscale Model"
+    }
+  },
+  "1693:1686": {
+    "inputs": {
+      "value": [
+        "1693:1685",
+        0
+      ],
+      "model": [
+        "1893:1823",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Preview VAE"
+    }
+  },
+  "1693:1687": {
+    "inputs": {
+      "boolean": false,
+      "on_true": [
+        "1693:1686",
+        0
+      ],
+      "on_false": [
+        "389:1050",
+        2
+      ]
+    },
+    "class_type": "easy ifElse",
+    "_meta": {
+      "title": "Unload Modules?"
+    }
+  },
+  "1693:1688": {
+    "inputs": {
+      "samples": [
+        "1693:1687",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode Stage 1"
+    }
+  },
+  "1693:1689": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "1693:1688",
+        0
+      ],
+      "on_true": [
+        "1693:1683",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "VAE Decode Tiled? (low VRAM)"
+    }
+  },
+  "1693:1690": {
+    "inputs": {
+      "samples": [
+        "389:369",
+        1
+      ],
+      "audio_vae": [
+        "1893:1826",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV Audio VAE Decode"
+    }
+  },
+  "1693:1691": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "1693:1689",
+        0
+      ],
+      "on_true": [
+        "1693:1692",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Apply Image Filter?"
+    }
+  },
+  "1693:1692": {
+    "inputs": {
+      "brightness": 0,
+      "contrast": 1,
+      "saturation": 1,
+      "sharpness": 1,
+      "blur": 0,
+      "gaussian_blur": 0,
+      "edge_enhance": 0,
+      "detail_enhance": "false",
+      "image": [
+        "1693:1689",
+        0
+      ]
+    },
+    "class_type": "Image Filter Adjustments",
+    "_meta": {
+      "title": "Image Filter Adjustments"
+    }
+  },
+  "1194:1167": {
+    "inputs": {
+      "preview_rate": 6,
+      "model": [
+        "681",
+        1
+      ],
+      "latent_upscale_model": [
+        "1893:1825",
+        0
+      ],
+      "vae": [
+        "1893:1823",
+        0
+      ]
+    },
+    "class_type": "LTX2SamplingPreviewOverride",
+    "_meta": {
+      "title": "Preview (slows down generation)"
+    }
+  },
+  "1194:1168": {
+    "inputs": {
+      "sampler_name": "dpm_2"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "T2V KSamplerSelect"
+    }
+  },
+  "1194:1170": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "1194:1193",
+        0
+      ],
+      "positive": [
+        "1194:1188",
+        0
+      ],
+      "negative": [
+        "1194:1189",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG Guider"
+    }
+  },
+  "1194:1171": {
+    "inputs": {
+      "video_latent": [
+        "1194:1190",
+        0
+      ],
+      "audio_latent": [
+        "389:369",
+        1
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "1194:1172": {
+    "inputs": {
+      "scheduler": "linear_quadratic",
+      "steps": [
+        "1194:1191",
+        0
+      ],
+      "denoise": 0.15,
+      "model": [
+        "1194:1193",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "T2V BasicScheduler"
+    }
+  },
+  "1194:1173": {
+    "inputs": {
+      "sampler_name": "dpm_2"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "I2V KSamplerSelect"
+    }
+  },
+  "1194:1187": {
+    "inputs": {
+      "frame_idx": -1,
+      "strength": [
+        "389:1916:1064",
+        0
+      ],
+      "positive": [
+        "1194:1184",
+        0
+      ],
+      "negative": [
+        "1194:1185",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ],
+      "latent": [
+        "1194:1186",
+        0
+      ],
+      "image": [
+        "389:1928:1056",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuide",
+    "_meta": {
+      "title": "Last Frame LTXVAddGuide"
+    }
+  },
+  "1194:1193": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "681",
+        1
+      ],
+      "on_true": [
+        "1194:1167",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Live Preview"
+    }
+  },
+  "1194:1181": {
+    "inputs": {
+      "conditioning": [
+        "389:1050",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "no negative"
+    }
+  },
+  "1194:1182": {
+    "inputs": {
+      "samples": [
+        "389:1050",
+        2
+      ],
+      "upscale_model": [
+        "1893:1825",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "LTXVLatentUpsampler",
+    "_meta": {
+      "title": "LTXVLatentUpsampler"
+    }
+  },
+  "1194:1189": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "1194:1185",
+        0
+      ],
+      "on_true": [
+        "1194:1187",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch last_frame negative"
+    }
+  },
+  "1194:1190": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "1194:1186",
+        0
+      ],
+      "on_true": [
+        "1194:1187",
+        2
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch last_frame latent"
+    }
+  },
+  "1194:1174": {
+    "inputs": {
+      "scheduler": "linear_quadratic",
+      "steps": [
+        "1194:1988",
+        0
+      ],
+      "denoise": 0.29,
+      "model": [
+        "1194:1193",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "I2V BasicScheduler"
+    }
+  },
+  "1194:1671": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1495",
+        0
+      ],
+      "on_true": [
+        "1194:1672",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Flattness"
+    }
+  },
+  "1194:1675": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1496",
+        0
+      ],
+      "on_true": [
+        "1194:1673",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Midpoint"
+    }
+  },
+  "1194:1676": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1497",
+        0
+      ],
+      "on_true": [
+        "1194:1674",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Terminal"
+    }
+  },
+  "1194:1670": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1499",
+        0
+      ],
+      "on_true": [
+        "1194:1668",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Start"
+    }
+  },
+  "1194:1669": {
+    "inputs": {
+      "boolean_a": [
+        "389:1929:1907",
+        0
+      ],
+      "boolean_b": [
+        "389:1929:1903",
+        0
+      ]
+    },
+    "class_type": "Logic Comparison OR",
+    "_meta": {
+      "title": "Is I2V?"
+    }
+  },
+  "1194:1677": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "1194:1174",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1543",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Activate I2V VideoFlow Scheduler"
+    }
+  },
+  "1194:1468": {
+    "inputs": {
+      "switch": true,
+      "on_false": [
+        "1194:1172",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1543",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Activate T2V VideoFlow Scheduler"
+    }
+  },
+  "1194:1177": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1168",
+        0
+      ],
+      "on_true": [
+        "1194:1173",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Sampler"
+    }
+  },
+  "1194:1678": {
+    "inputs": {
+      "sigmas": ""
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "T2V ManualSigmas"
+    }
+  },
+  "1194:1679": {
+    "inputs": {
+      "sigmas": ""
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "I2V ManualSigmas"
+    }
+  },
+  "1194:1680": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "1194:1468",
+        0
+      ],
+      "on_true": [
+        "1194:1678",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "TV2 Use Manual Sigmas?"
+    }
+  },
+  "1194:1681": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "1194:1677",
+        0
+      ],
+      "on_true": [
+        "1194:1679",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "IV2 Use Manual Sigmas?"
+    }
+  },
+  "1194:1176": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1680",
+        0
+      ],
+      "on_true": [
+        "1194:1681",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Scheduler"
+    }
+  },
+  "1194:1495": {
+    "inputs": {
+      "value": 0.5
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Shift Around Midpoint"
+    }
+  },
+  "1194:1496": {
+    "inputs": {
+      "value": 0.54
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Sigmas Midpoint"
+    }
+  },
+  "1194:1497": {
+    "inputs": {
+      "value": 0
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Sigmas Terminal Value"
+    }
+  },
+  "1194:1499": {
+    "inputs": {
+      "value": 0.8
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "T2V Sigmas Start"
+    }
+  },
+  "1194:1672": {
+    "inputs": {
+      "value": 0.5
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Shift Around Midpoint"
+    }
+  },
+  "1194:1673": {
+    "inputs": {
+      "value": 0.54
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Sigmas Midpoint"
+    }
+  },
+  "1194:1674": {
+    "inputs": {
+      "value": 0.1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Sigmas Terminal Value"
+    }
+  },
+  "1194:1668": {
+    "inputs": {
+      "value": 0.68
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "I2V Sigmas Start"
+    }
+  },
+  "1194:1498:1472": {
+    "inputs": {
+      "any": [
+        "1194:1498:1474",
+        0
+      ]
+    },
+    "class_type": "easy lengthAnything",
+    "_meta": {
+      "title": "Length Any"
+    }
+  },
+  "1194:1498:1473": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Empty Sigma String"
+    }
+  },
+  "1194:1498:1474": {
+    "inputs": {
+      "sigmas": [
+        "1194:1498:1536",
+        0
+      ]
+    },
+    "class_type": "SigmasToFloat",
+    "_meta": {
+      "title": "Sigmas To Float"
+    }
+  },
+  "1194:1498:1480": {
+    "inputs": {
+      "value": 0,
+      "sigmas": [
+        "1194:1498:1490",
+        0
+      ]
+    },
+    "class_type": "Sigmas Pad",
+    "_meta": {
+      "title": "Add last 0.0"
+    }
+  },
+  "1194:1498:1482": {
+    "inputs": {
+      "any": [
+        "1194:1498:1487",
+        1
+      ]
+    },
+    "class_type": "easy lengthAnything",
+    "_meta": {
+      "title": "Length Any"
+    }
+  },
+  "1194:1498:1483": {
+    "inputs": {
+      "string": [
+        "1194:1498:1485",
+        0
+      ]
+    },
+    "class_type": "StringToFloatList",
+    "_meta": {
+      "title": "String to Float List"
+    }
+  },
+  "1194:1498:1484": {
+    "inputs": {
+      "float_list": [
+        "1194:1498:1483",
+        0
+      ]
+    },
+    "class_type": "FloatToSigmas",
+    "_meta": {
+      "title": "Float To Sigmas"
+    }
+  },
+  "1194:1498:1485": {
+    "inputs": {
+      "string": [
+        "1194:1498:1487",
+        1
+      ],
+      "start": 0,
+      "end": [
+        "1194:1498:1488",
+        1
+      ]
+    },
+    "class_type": "StringSubstring",
+    "_meta": {
+      "title": "Substring"
+    }
+  },
+  "1194:1498:1486": {
+    "inputs": {
+      "total": [
+        "1194:1498:1472",
+        0
+      ],
+      "initial_value1": [
+        "1194:1498:1474",
+        0
+      ],
+      "initial_value2": [
+        "1194:1498:1473",
+        0
+      ]
+    },
+    "class_type": "easy forLoopStart",
+    "_meta": {
+      "title": "For Loop Start"
+    }
+  },
+  "1194:1498:1487": {
+    "inputs": {
+      "flow": [
+        "1194:1498:1486",
+        0
+      ],
+      "initial_value1": [
+        "1194:1498:1486",
+        2
+      ],
+      "initial_value2": [
+        "1194:1498:1493",
+        0
+      ]
+    },
+    "class_type": "easy forLoopEnd",
+    "_meta": {
+      "title": "For Loop End"
+    }
+  },
+  "1194:1498:1488": {
+    "inputs": {
+      "expression": "a - 1",
+      "values.a": [
+        "1194:1498:1482",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "1194:1498:1494": {
+    "inputs": {
+      "index": [
+        "1194:1498:1486",
+        1
+      ],
+      "any": [
+        "1194:1498:1486",
+        2
+      ]
+    },
+    "class_type": "easy indexAnything",
+    "_meta": {
+      "title": "Index Any"
+    }
+  },
+  "1194:1498:1478": {
+    "inputs": {
+      "multiplier": 2,
+      "sigmas": [
+        "1194:1498:1477",
+        0
+      ]
+    },
+    "class_type": "Sigmas Mult",
+    "_meta": {
+      "title": "Sigmas Mult"
+    }
+  },
+  "1194:1498:1493": {
+    "inputs": {
+      "prefix": [
+        "1194:1498:1486",
+        3
+      ],
+      "suffix": ",",
+      "input": [
+        "1194:1498:1492",
+        0
+      ]
+    },
+    "class_type": "SomethingToString",
+    "_meta": {
+      "title": "Something To String"
+    }
+  },
+  "1194:1498:1476": {
+    "inputs": {
+      "scheduler": "bong_tangent",
+      "steps": 100,
+      "denoise": 1,
+      "model": [
+        "1194:1193",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "bong_tangent Sigmas"
+    }
+  },
+  "1194:1498:1479": {
+    "inputs": {
+      "sigmas": [
+        "1194:1498:1478",
+        0
+      ]
+    },
+    "class_type": "Sigmas Unpad",
+    "_meta": {
+      "title": "Remove last 0.0"
+    }
+  },
+  "1194:1498:1475": {
+    "inputs": {
+      "expression": "a + 1",
+      "values.a": [
+        "1194:1989",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Step +1"
+    }
+  },
+  "1194:1498:1536": {
+    "inputs": {
+      "switch": [
+        "1194:1498:1535",
+        0
+      ],
+      "on_false": [
+        "1194:1498:1478",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1480",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Rescale?"
+    }
+  },
+  "1194:1498:1535": {
+    "inputs": {
+      "comparison": "a > 0",
+      "a": [
+        "1194:1676",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Is terminal greater zero?"
+    }
+  },
+  "1194:1498:1545": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy float",
+    "_meta": {
+      "title": "Skip at 1.00"
+    }
+  },
+  "1194:1498:1492": {
+    "inputs": {
+      "expression": "c + ((b>c)-(b<c)) * pow(abs(b-c), a) * (((b>c)*(1-c) + (b<c)*c) ** (1-a))",
+      "variables.a": [
+        "1194:1671",
+        0
+      ],
+      "variables.b": [
+        "1194:1498:1494",
+        0
+      ],
+      "variables.c": [
+        "1194:1498:1957",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "1194:1498:1525": {
+    "inputs": {
+      "split_value": [
+        "1194:1670",
+        0
+      ],
+      "bias_split_up": false,
+      "sigmas": [
+        "1194:1498:1476",
+        0
+      ]
+    },
+    "class_type": "Sigmas Split Value",
+    "_meta": {
+      "title": "Sigmas Split Value"
+    }
+  },
+  "1194:1498:1933": {
+    "inputs": {
+      "tension": 0.5,
+      "points": 1000,
+      "boundary_condition": "repeat",
+      "sigmas": [
+        "1194:1498:1484",
+        0
+      ]
+    },
+    "class_type": "Sigmas CatmullRom",
+    "_meta": {
+      "title": "Sigmas CatmullRom"
+    }
+  },
+  "1194:1498:1935": {
+    "inputs": {
+      "multiplier": 2,
+      "sigmas": [
+        "1194:1498:1933",
+        0
+      ]
+    },
+    "class_type": "Sigmas Mult",
+    "_meta": {
+      "title": "Sigmas Mult"
+    }
+  },
+  "1194:1498:1936": {
+    "inputs": {
+      "split_value": [
+        "1194:1670",
+        0
+      ],
+      "bias_split_up": true,
+      "sigmas": [
+        "1194:1498:1935",
+        0
+      ]
+    },
+    "class_type": "Sigmas Split Value",
+    "_meta": {
+      "title": "Sigmas Split Value"
+    }
+  },
+  "1194:1498:1939": {
+    "inputs": {
+      "tension": 0.5,
+      "points": [
+        "1194:1498:1475",
+        1
+      ],
+      "boundary_condition": "repeat",
+      "sigmas": [
+        "1194:1498:1936",
+        1
+      ]
+    },
+    "class_type": "Sigmas CatmullRom",
+    "_meta": {
+      "title": "Sigmas CatmullRom"
+    }
+  },
+  "1194:1498:1938": {
+    "inputs": {
+      "multiplier": 2,
+      "sigmas": [
+        "1194:1498:1939",
+        0
+      ]
+    },
+    "class_type": "Sigmas Mult",
+    "_meta": {
+      "title": "Sigmas Mult"
+    }
+  },
+  "1194:1498:1477": {
+    "inputs": {
+      "tension": 0.5,
+      "points": [
+        "1194:1498:1475",
+        1
+      ],
+      "boundary_condition": "repeat",
+      "sigmas": [
+        "1194:1498:1525",
+        1
+      ]
+    },
+    "class_type": "Sigmas CatmullRom",
+    "_meta": {
+      "title": "Sigmas CatmullRom"
+    }
+  },
+  "1194:1498:1943": {
+    "inputs": {
+      "value": 0,
+      "sigmas": [
+        "1194:1498:1946",
+        0
+      ]
+    },
+    "class_type": "Sigmas Pad",
+    "_meta": {
+      "title": "Add last 0.0"
+    }
+  },
+  "1194:1498:1543": {
+    "inputs": {
+      "switch": [
+        "1194:1498:1544",
+        0
+      ],
+      "on_false": [
+        "1194:1498:1536",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1943",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Sigma adjustments needed?"
+    }
+  },
+  "1194:1498:1544": {
+    "inputs": {
+      "comparison": "a != b",
+      "a": [
+        "1194:1671",
+        0
+      ],
+      "b": [
+        "1194:1498:1545",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Compare"
+    }
+  },
+  "1194:1498:1490": {
+    "inputs": {
+      "start": [
+        "1194:1670",
+        0
+      ],
+      "end": [
+        "1194:1676",
+        0
+      ],
+      "sigmas": [
+        "1194:1498:1479",
+        0
+      ]
+    },
+    "class_type": "Sigmas Rescale",
+    "_meta": {
+      "title": "Sigmas Rescale"
+    }
+  },
+  "1194:1498:1953": {
+    "inputs": {
+      "comparison": "a <= 0",
+      "a": [
+        "1194:1675",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Compare"
+    }
+  },
+  "1194:1498:1956": {
+    "inputs": {
+      "switch": [
+        "1194:1498:1953",
+        0
+      ],
+      "on_false": [
+        "1194:1675",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1955",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "1194:1498:1955": {
+    "inputs": {
+      "expression": "0.0001",
+      "values.a": [
+        "1194:1675",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Lowest Midpoint Value"
+    }
+  },
+  "1194:1498:1957": {
+    "inputs": {
+      "switch": [
+        "1194:1498:1952",
+        0
+      ],
+      "on_false": [
+        "1194:1498:1956",
+        0
+      ],
+      "on_true": [
+        "1194:1498:1958",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Midpoint Value"
+    }
+  },
+  "1194:1498:1958": {
+    "inputs": {
+      "expression": "a - 0.0001",
+      "values.a": [
+        "1194:1670",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Highest Midpoint Value"
+    }
+  },
+  "1194:1498:1952": {
+    "inputs": {
+      "comparison": "a <= b",
+      "a": [
+        "1194:1670",
+        0
+      ],
+      "b": [
+        "1194:1675",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Compare"
+    }
+  },
+  "1194:1498:1965": {
+    "inputs": {
+      "index": -2,
+      "any": [
+        "1194:1498:1483",
+        0
+      ]
+    },
+    "class_type": "easy indexAnything",
+    "_meta": {
+      "title": "Shifted Terminal"
+    }
+  },
+  "1194:1498:1967": {
+    "inputs": {
+      "switch": [
+        "1194:1498:1535",
+        0
+      ],
+      "on_false": [
+        "1194:1498:1965",
+        0
+      ],
+      "on_true": [
+        "1194:1676",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Terminal"
+    }
+  },
+  "1194:1498:1946": {
+    "inputs": {
+      "start": [
+        "1194:1670",
+        0
+      ],
+      "end": [
+        "1194:1498:1967",
+        0
+      ],
+      "sigmas": [
+        "1194:1498:1944",
+        0
+      ]
+    },
+    "class_type": "Sigmas Rescale",
+    "_meta": {
+      "title": "Sigmas Rescale"
+    }
+  },
+  "1194:1498:1944": {
+    "inputs": {
+      "sigmas": [
+        "1194:1498:1938",
+        0
+      ]
+    },
+    "class_type": "Sigmas Unpad",
+    "_meta": {
+      "title": "Remove last 0.0"
+    }
+  },
+  "1194:1192": {
+    "inputs": {
+      "noise_seed": 100000
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "1194:1180": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "1194:1192",
+        0
+      ],
+      "on_true": [
+        "389:363",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Seed Switch"
+    }
+  },
+  "1194:1175": {
+    "inputs": {
+      "noise": [
+        "1194:1180",
+        0
+      ],
+      "guider": [
+        "1194:1170",
+        0
+      ],
+      "sampler": [
+        "1194:1177",
+        0
+      ],
+      "sigmas": [
+        "1194:1176",
+        0
+      ],
+      "latent_image": [
+        "1194:1171",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "1194:1169": {
+    "inputs": {
+      "av_latent": [
+        "1194:1175",
+        1
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "1194:1179": {
+    "inputs": {
+      "positive": [
+        "1194:1188",
+        0
+      ],
+      "negative": [
+        "1194:1189",
+        0
+      ],
+      "latent": [
+        "1194:1169",
+        0
+      ]
+    },
+    "class_type": "LTXVCropGuides",
+    "_meta": {
+      "title": "LTXVCropGuides"
+    }
+  },
+  "1194:1188": {
+    "inputs": {
+      "switch": [
+        "389:1929:1903",
+        0
+      ],
+      "on_false": [
+        "1194:1184",
+        0
+      ],
+      "on_true": [
+        "1194:1187",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch last_frame positive"
+    }
+  },
+  "1194:1183": {
+    "inputs": {
+      "frame_idx": 0,
+      "strength": [
+        "389:1917:991",
+        0
+      ],
+      "positive": [
+        "389:1050",
+        0
+      ],
+      "negative": [
+        "1194:1181",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ],
+      "latent": [
+        "1194:1182",
+        0
+      ],
+      "image": [
+        "389:1928:1921",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuide",
+    "_meta": {
+      "title": "First Frame LTXVAddGuide"
+    }
+  },
+  "1194:1184": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "389:1050",
+        0
+      ],
+      "on_true": [
+        "1194:1183",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch first_frame positive"
+    }
+  },
+  "1194:1185": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "1194:1181",
+        0
+      ],
+      "on_true": [
+        "1194:1183",
+        1
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch first_frame negative"
+    }
+  },
+  "1194:1186": {
+    "inputs": {
+      "switch": [
+        "389:1929:1907",
+        0
+      ],
+      "on_false": [
+        "1194:1182",
+        0
+      ],
+      "on_true": [
+        "1194:1183",
+        2
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch first_frame latent"
+    }
+  },
+  "1194:1989": {
+    "inputs": {
+      "switch": [
+        "1194:1669",
+        0
+      ],
+      "on_false": [
+        "1194:1191",
+        0
+      ],
+      "on_true": [
+        "1194:1988",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Steps"
+    }
+  },
+  "1194:1191": {
+    "inputs": {
+      "value": 8
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "T2V Steps"
+    }
+  },
+  "1194:1988": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "I2V Steps"
+    }
+  },
+  "668:707": {
+    "inputs": {
+      "value": [
+        "668:706",
+        0
+      ],
+      "model": [
+        "1893:1825",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Latent Upscale Model"
+    }
+  },
+  "668:654": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8,
+      "samples": [
+        "668:704",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (Tiled)"
+    }
+  },
+  "668:704": {
+    "inputs": {
+      "switch": [
+        "668:1197",
+        0
+      ],
+      "on_false": [
+        "1194:1179",
+        2
+      ],
+      "on_true": [
+        "668:707",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Unload Modules?"
+    }
+  },
+  "668:802": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Single Frame"
+    }
+  },
+  "668:656": {
+    "inputs": {
+      "samples": [
+        "1194:1169",
+        1
+      ],
+      "audio_vae": [
+        "1893:1826",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV Audio VAE Decode"
+    }
+  },
+  "668:653": {
+    "inputs": {
+      "samples": [
+        "668:704",
+        0
+      ],
+      "vae": [
+        "2012",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode Stage 2"
+    }
+  },
+  "668:705": {
+    "inputs": {
+      "value": [
+        "1194:1179",
+        2
+      ],
+      "model": [
+        "1893:1823",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Preview VAE"
+    }
+  },
+  "668:706": {
+    "inputs": {
+      "value": [
+        "668:705",
+        0
+      ],
+      "model": [
+        "1884:1699",
+        0
+      ]
+    },
+    "class_type": "UnloadModel",
+    "_meta": {
+      "title": "Unload Video Model"
+    }
+  },
+  "668:838": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "easy boolean",
+    "_meta": {
+      "title": "Match Color/Light of Stage 1 Video?"
+    }
+  },
+  "668:846": {
+    "inputs": {
+      "switch": [
+        "668:803",
+        0
+      ],
+      "on_false": [
+        "668:845",
+        0
+      ],
+      "on_true": [
+        "1693:1691",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "668:845": {
+    "inputs": {
+      "width": 1,
+      "height": 1,
+      "batch_size": 1,
+      "color": 0
+    },
+    "class_type": "EmptyImage",
+    "_meta": {
+      "title": "Empty Image"
+    }
+  },
+  "668:803": {
+    "inputs": {
+      "comparison": "a > b",
+      "a": [
+        "668:800",
+        0
+      ],
+      "b": [
+        "668:802",
+        0
+      ]
+    },
+    "class_type": "easy compare",
+    "_meta": {
+      "title": "Stage 1 video exists?"
+    }
+  },
+  "668:655": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "668:653",
+        0
+      ],
+      "on_true": [
+        "668:654",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Tiled VAE Decode? (low VRAM)"
+    }
+  },
+  "668:850": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "668:667",
+        0
+      ],
+      "on_true": [
+        "668:849",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Apply Filter?"
+    }
+  },
+  "668:800": {
+    "inputs": {
+      "batch": [
+        "1693:1691",
+        0
+      ]
+    },
+    "class_type": "BatchCount+",
+    "_meta": {
+      "title": "🔧 Batch Count"
+    }
+  },
+  "668:883": {
+    "inputs": {
+      "method": "reinhard_lab",
+      "source_stats": "per_frame",
+      "strength": 1,
+      "image_target": [
+        "668:655",
+        0
+      ],
+      "image_ref": [
+        "668:846",
+        0
+      ]
+    },
+    "class_type": "ColorTransfer",
+    "_meta": {
+      "title": "Transfer Color"
+    }
+  },
+  "668:841": {
+    "inputs": {
+      "switch": [
+        "668:803",
+        0
+      ],
+      "on_false": [
+        "668:803",
+        0
+      ],
+      "on_true": [
+        "668:838",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch"
+    }
+  },
+  "668:667": {
+    "inputs": {
+      "switch": [
+        "668:841",
+        0
+      ],
+      "on_false": [
+        "668:655",
+        0
+      ],
+      "on_true": [
+        "668:883",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Match Color/Light of Stage 1 Video?"
+    }
+  },
+  "668:849": {
+    "inputs": {
+      "brightness": 0,
+      "contrast": 1,
+      "saturation": 1,
+      "sharpness": 1,
+      "blur": 0,
+      "gaussian_blur": 0,
+      "edge_enhance": 0,
+      "detail_enhance": "false",
+      "image": [
+        "668:667",
+        0
+      ]
+    },
+    "class_type": "Image Filter Adjustments",
+    "_meta": {
+      "title": "Image Filter Adjustments"
+    }
+  },
+  "668:875": {
+    "inputs": {
+      "grain_intensity": 0.006,
+      "saturation_mix": 0.5000000000000001,
+      "batch_size": 20,
+      "images": [
+        "668:1038",
+        0
+      ]
+    },
+    "class_type": "FastFilmGrain",
+    "_meta": {
+      "title": "🎞️ Fast Film Grain"
+    }
+  },
+  "668:876": {
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "668:1038",
+        0
+      ],
+      "on_true": [
+        "668:875",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Add Film Grain?"
+    }
+  },
+  "668:1037": {
+    "inputs": {
+      "ckpt_name": "rife49.pth",
+      "clear_cache_after_n_frames": 50,
+      "multiplier": [
+        "668:1041",
+        0
+      ],
+      "fast_mode": false,
+      "ensemble": true,
+      "scale_factor": 1,
+      "dtype": "float32",
+      "torch_compile": false,
+      "batch_size": 1,
+      "frames": [
+        "668:850",
+        0
+      ]
+    },
+    "class_type": "RIFE VFI",
+    "_meta": {
+      "title": "RIFE VFI (recommend rife4.25+)"
+    }
+  },
+  "668:1041": {
+    "inputs": {
+      "value": 2
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "Frame Multiplier"
+    }
+  },
+  "668:1040": {
+    "inputs": {
+      "expression": "a * b",
+      "values.a": [
+        "389:375",
+        0
+      ],
+      "values.b": [
+        "668:1041",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Final Frame Rate"
+    }
+  },
+  "668:1043": {
+    "inputs": {
+      "switch": [
+        "668:1042",
+        0
+      ],
+      "on_false": [
+        "389:375",
+        0
+      ],
+      "on_true": [
+        "668:1040",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch Frame Rate"
+    }
+  },
+  "668:1038": {
+    "inputs": {
+      "switch": [
+        "668:1042",
+        0
+      ],
+      "on_false": [
+        "668:850",
+        0
+      ],
+      "on_true": [
+        "668:1037",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Double Frame Rate?"
+    }
+  },
+  "668:1042": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "50 fps?"
+    }
+  },
+  "668:1196": {
+    "inputs": {
+      "switch": [
+        "668:1197",
+        0
+      ],
+      "on_false": [
+        "668:876",
+        0
+      ],
+      "on_true": [
+        "668:1195",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Unload Modules?"
+    }
+  },
+  "668:1195": {
+    "inputs": {
+      "value": [
+        "668:876",
+        0
+      ]
+    },
+    "class_type": "UnloadAllModels",
+    "_meta": {
+      "title": "UnloadAllModels"
+    }
+  },
+  "668:1197": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Unload Models"
+    }
+  }
+}

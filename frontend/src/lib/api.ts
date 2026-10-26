@@ -64,7 +64,8 @@ export type GenerationMode =
   | "text-to-image"
   | "image-to-image"
   | "detailer"
-  | "upscale";
+  | "upscale"
+  | "video";
 
 export type ModelCategory =
   | "diffusion_models"
@@ -151,6 +152,11 @@ export interface GeneratePayload {
   enable_detailer?: boolean;
   upscale?: UpscaleConfigPayload;
   detailer?: DetailerConfigPayload;
+  video_frames?: number;
+  video_fps?: number;
+  video_duration_seconds?: number;
+  stage2_upscale?: boolean;
+  last_frame_image?: string | null;
 }
 
 export interface ClipOptions {

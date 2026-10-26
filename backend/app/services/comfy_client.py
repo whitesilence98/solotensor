@@ -204,6 +204,18 @@ class ComfyClient:
                 continue
         return None
 
+    def load_video_it2v_template(self) -> Optional[dict[str, Any]]:
+        """Load workflow_generate_it2v.json template from workflows or test fixtures."""
+        for base in [Path(__file__).resolve().parents[2] / "workflows", Path(__file__).resolve().parents[2] / "tests" / "fixtures"]:
+            path = base / "workflow_generate_it2v.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data:
+                    return data
+            except (OSError, json.JSONDecodeError):
+                continue
+        return None
+
     def attach_detailer_nodes(
         self,
         graph: dict[str, Any],

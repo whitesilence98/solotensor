@@ -47,6 +47,7 @@ from .schemas import (
     GalleryItem,
     GalleryResponse,
     GenerateRequest,
+    GeneratedAsset,
     GenerationRecordResponse,
     GenerationResult,
     HealthResponse,
@@ -109,6 +110,7 @@ from .services.tagger import TaggerError, get_tagger_service
 from .services.workflow_router import (
     patch_seedvr_upscaler_workflow,
     patch_detailer_workflow,
+    patch_video_it2v_workflow,
 )
 
 logging.basicConfig(
@@ -1177,7 +1179,7 @@ async def generate(
     user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
-    if req.mode not in ("text-to-image", "image-to-image", "detailer", "upscale"):
+    if req.mode not in ("text-to-image", "image-to-image", "detailer", "upscale", "video"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported generation mode: {req.mode}",
@@ -1380,8 +1382,8 @@ async def generate(
             )
 
         source_image_filename = None
-        if req.mode in ("image-to-image", "detailer", "upscale"):
-            if not req.reference_images:
+        if req.mode in ("image-to-image", "detailer", "upscale") or (req.mode == "video" and req.reference_images):
+            if req.mode in ("image-to-image", "detailer", "upscale") and not req.reference_images:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     detail=f"{req.mode} mode requires at least one reference image",
@@ -1450,6 +1452,25 @@ async def generate(
                 upscale_cfg=req.upscale,
                 base_width=req.width,
                 base_height=req.height,
+            )
+        elif req.mode == "video":
+            video_template = comfy.load_video_it2v_template()
+            if not video_template:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Video IT2V workflow template not found",
+                )
+            graph = patch_video_it2v_workflow(
+                video_template,
+                prompt=req.prompt,
+                seed=resolved_seed,
+                duration_seconds=req.video_duration_seconds or 3,
+                video_fps=req.video_fps or 25,
+                width=req.width,
+                height=req.height,
+                steps=req.steps,
+                source_image_filename=source_image_filename,
+                stage2_upscale=req.stage2_upscale,
             )
         elif is_lora:
             graph = comfy.build_lora_workflow(
@@ -1589,6 +1610,50 @@ async def generate(
         "user_id": user_id,
     }
     try:
+        if req.mode == "video":
+            raw_videos = await comfy.list_output_files(prompt_id, expected_kind="video")
+            if not raw_videos:
+                raw_videos = await comfy.list_images(prompt_id)
+            if not raw_videos:
+                return GenerationResult(
+                    prompt_id=prompt_id,
+                    status="completed",
+                    images=[],
+                    elapsed_ms=elapsed_ms,
+                )
+            video_item = raw_videos[-1]
+            video_blob = await comfy.fetch_image_bytes(video_item)
+            content_type = "video/mp4" if video_item["filename"].lower().endswith(".mp4") else "video/webm"
+            video_url = await storage.upload_asset(
+                video_blob,
+                prompt_id,
+                video_item["filename"],
+                content_type=content_type,
+                metadata={
+                    **metadata,
+                    "source_filename": video_item["filename"],
+                    "user_id": user_id,
+                    "gallery_saved": is_public,
+                    "is_private": req.is_private,
+                    "mode": req.mode,
+                    "stage2_upscale": req.stage2_upscale,
+                    "source_image_filename": source_image_filename or "",
+                },
+                namespace=user_id,
+            )
+            video_asset = GeneratedAsset(
+                filename=video_item["filename"],
+                url=video_url,
+                kind="video",
+                saved=True,
+            )
+            return GenerationResult(
+                prompt_id=prompt_id,
+                status="completed",
+                images=[video_asset],
+                elapsed_ms=elapsed_ms,
+            )
+
         raw_images = await comfy.list_images(prompt_id)
         if not raw_images:
             return GenerationResult(
