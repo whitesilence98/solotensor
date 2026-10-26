@@ -870,6 +870,19 @@ export default function ControlPanel(props: Props) {
         </div>
       </div>
 
+      {/* Shared source-image file input: used by the Img2Img, Edit and Video dropzones below */}
+      <input
+        ref={img2imgFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleImg2ImgFileUpload(file);
+          e.target.value = "";
+        }}
+      />
+
       {activeMode === "Img2Img" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           {/* 1. Source Image Input & Preview Card (Pinned on Top across all sub-tabs) */}
@@ -904,18 +917,6 @@ export default function ControlPanel(props: Props) {
                 </button>
               )}
             </div>
-
-            {/* Hidden file input */}
-            <input
-              ref={img2imgFileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleImg2ImgFileUpload(file);
-              }}
-            />
 
             {!props.referenceImage ? (
               <div
@@ -1456,21 +1457,23 @@ export default function ControlPanel(props: Props) {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleImg2ImgDrop}
                 onClick={() => img2imgFileInputRef.current?.click()}
-                className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition cursor-pointer ${
+                className={`group relative flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
                   isDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent)]/5"
-                    : "border-[var(--line-strong)] bg-[#0c0d0c] hover:border-[var(--ink-faint)]"
+                    ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
+                    : "border-white/15 hover:border-[var(--accent)]/50 bg-[#121412]/60 hover:bg-[#121412]"
                 }`}
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2.5 transition-transform duration-200 group-hover:scale-110">
                   <UploadCloud className="h-5 w-5" />
                 </div>
-                <p className="mt-2 text-xs font-semibold text-[var(--ink)]">
+                <p className="text-xs font-semibold text-[var(--ink)]">
                   Drop image to inpaint or{" "}
-                  <span className="text-[var(--accent)]">browse</span>
+                  <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
+                    browse
+                  </span>
                 </p>
-                <p className="mt-1 text-[10px] text-[var(--ink-faint)]">
-                  PNG, JPEG, WEBP · Snap to multiples of 8
+                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
+                  PNG, JPG, WEBP · UP TO 25MB
                 </p>
               </div>
             ) : (
@@ -1479,15 +1482,37 @@ export default function ControlPanel(props: Props) {
                   <img
                     src={props.referenceImage}
                     alt="Inpaint Source"
-                    className="max-h-48 w-auto object-contain rounded-md"
+                    className="max-h-48 w-auto object-contain rounded-lg"
                   />
+                  {naturalDimensions && (
+                    <span className="absolute bottom-2 left-2 rounded-md bg-black/80 backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-white/90 border border-white/10">
+                      {naturalDimensions.width} × {naturalDimensions.height} PX
+                    </span>
+                  )}
+                  {naturalDimensions &&
+                    Number(customWidth) ===
+                      Math.max(
+                        64,
+                        Math.min(2048, Math.round(naturalDimensions.width / 8) * 8),
+                      ) &&
+                    Number(customHeight) ===
+                      Math.max(
+                        64,
+                        Math.min(2048, Math.round(naturalDimensions.height / 8) * 8),
+                      ) && (
+                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-black uppercase">
+                        CANVAS MATCHED
+                      </span>
+                    )}
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleAutoPromptFromReference}
-                    disabled={interrogating}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface)] hover:border-[var(--accent)] text-[10px] font-mono font-medium text-[var(--ink)] transition disabled:opacity-50"
+                    disabled={interrogating || busy}
+                    title="Extract generation prompt, seed, cfg, steps & size from reference image metadata, or auto-tag with WD14"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--accent)]/30 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-[var(--accent)]/60 text-[11px] font-bold text-[var(--accent)] transition disabled:opacity-50"
                   >
                     {interrogating ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -1500,10 +1525,20 @@ export default function ControlPanel(props: Props) {
                     type="button"
                     onClick={handleMatchDimensions}
                     disabled={!naturalDimensions}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface)] hover:border-[var(--accent)] text-[10px] font-mono font-medium text-[var(--ink)] transition disabled:opacity-50"
+                    title="Adjust canvas width & height to match this image natural aspect ratio"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition disabled:opacity-50"
                   >
-                    <SlidersHorizontal className="h-3 w-3" />
-                    <span>Match Ratio</span>
+                    <Sparkles className="h-3 w-3 text-[var(--accent)]" />
+                    <span>Match Size</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => img2imgFileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
+                    title="Replace image"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Replace</span>
                   </button>
                 </div>
               </div>
@@ -1679,97 +1714,97 @@ export default function ControlPanel(props: Props) {
             columns={3}
           />
 
-          {/* 6. LoRA Adapters */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                ACTIVE LORAS ({loras.length}/5)
-              </span>
-              <button
-                type="button"
-                disabled={loras.length >= 5}
-                onClick={() => setLoraPickerOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition disabled:opacity-40"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Add LoRA</span>
-              </button>
+          {format === "custom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label
+                  htmlFor="edit-custom-width"
+                  className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                >
+                  Width
+                </label>
+                <input
+                  id="edit-custom-width"
+                  type="number"
+                  min="64"
+                  max="4096"
+                  step="8"
+                  value={customWidth}
+                  onChange={(e) => onCustomWidthChange(e.target.value)}
+                  disabled={busy}
+                  aria-invalid={customWidthInvalid}
+                  className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="edit-custom-height"
+                  className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                >
+                  Height
+                </label>
+                <input
+                  id="edit-custom-height"
+                  type="number"
+                  min="64"
+                  max="4096"
+                  step="8"
+                  value={customHeight}
+                  onChange={(e) => onCustomHeightChange(e.target.value)}
+                  disabled={busy}
+                  aria-invalid={customHeightInvalid}
+                  className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                />
+              </div>
             </div>
-            {loras.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center">
-                <p className="text-[11px] text-[var(--ink-faint)]">
-                  No active LoRA modifiers attached
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {loras.map((l) => (
-                  <div
-                    key={l.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-semibold text-[var(--ink)]">
-                        {l.title}
-                      </p>
-                      <span className="text-[10px] font-mono text-[var(--accent)]">
-                        {l.weight.toFixed(2)}x
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeLora(l.id)}
-                      className="text-[var(--danger)] hover:opacity-80 p-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
 
-          {/* 7. Sampling Parameters */}
-          <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                SAMPLING PARAMETERS
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">
-                  STEPS
-                </label>
-                <input
-                  type="number"
-                  value={steps}
-                  min={1}
-                  max={100}
-                  onChange={(e) => onStepsChange(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">
-                  CFG SCALE
-                </label>
-                <input
-                  type="number"
-                  value={cfg}
-                  step={0.5}
-                  min={1}
-                  max={30}
-                  onChange={(e) => onCfgChange(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
-                />
-              </div>
-            </div>
-            <SeedInput
-              value={seed}
-              onChange={(val) => onSeedChange(String(val))}
-            />
-          </div>
+          {/* 6. LoRA Adapters (shared stack with thumbnails, mute & trigger words) */}
+          <LoraStackPanel
+            loras={loras}
+            onLorasChange={onLorasChange}
+            onOpenPicker={() => setLoraPickerOpen(true)}
+            modelOptions={modelOptions}
+            publicModels={publicModels}
+            publicModelMap={publicModelMap}
+            prompt={prompt}
+            onPromptChange={onPromptChange}
+            disabled={busy}
+          />
+
+          {/* 7. Sampling Parameters (Seed, Steps, CFG, Sampler, Scheduler) */}
+          <AdvancedSamplingPanel
+            idPrefix="edit"
+            seed={seed}
+            onSeedChange={onSeedChange}
+            steps={steps}
+            onStepsChange={onStepsChange}
+            cfg={cfg}
+            onCfgChange={onCfgChange}
+            sampler={samplerName}
+            onSamplerChange={onSamplerNameChange}
+            scheduler={scheduler}
+            onSchedulerChange={onSchedulerChange}
+            busy={busy}
+            isOpen={advancedOpen}
+            onToggleOpen={() => setAdvancedOpen((v) => !v)}
+            showDenoise={false}
+          />
+
+          {/* 8. Upscale Engine Panel */}
+          <UpscalePanel
+            config={activeUpscale}
+            onChange={handleUpscaleChange}
+            outputWidth={widthNum}
+            outputHeight={heightNum}
+          />
+
+          {/* 9. ADetailer Cascading Passes */}
+          <DetailerPanel
+            config={activeDetailerCfg}
+            onChange={handleDetailerCfgChange}
+            selectedModel={selectedModel}
+          />
         </div>
       ) : activeMode === "Video" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
