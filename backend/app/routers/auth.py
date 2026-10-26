@@ -2,9 +2,10 @@
 
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..db import Database, get_db
@@ -12,11 +13,14 @@ from ..schemas import (
     ApiKeyCreateRequest,
     ApiKeyListItem,
     ApiKeyResponse,
+    AvatarUploadResponse,
+    ChangePasswordRequest,
     EmailActionResponse,
     ForgotPasswordRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserCreditsResponse,
     UserLoginRequest,
     UserMeResponse,
@@ -29,9 +33,11 @@ from ..services.auth_service import (
     UserAlreadyExistsError,
     get_auth_provider,
     hash_password,
+    verify_password,
 )
 from ..services.credit_service import CreditService, get_credit_service
 from ..services.mailer_service import MailerService, get_mailer_service
+from ..services.storage import StorageService, get_storage
 
 logger = logging.getLogger("solotensor.router.auth")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -167,6 +173,9 @@ async def get_me(
         email=user.email,
         username=user.username,
         display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        bio=user.bio,
+        social_links=user.social_links or {},
         role=user.role,
         is_verified=user.is_verified,
         created_at=user.created_at,
@@ -175,6 +184,89 @@ async def get_me(
         roles=user.roles,
         primary_role=user.primary_role,
         permissions=user.permissions,
+    )
+
+
+@router.patch("/profile", response_model=UserResponse)
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    req: UpdateProfileRequest,
+    user: UserResponse = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> UserResponse:
+    """Update profile details (display_name, avatar_url, bio, social_links)."""
+    db.update_user_profile(
+        user.id,
+        display_name=req.display_name,
+        avatar_url=req.avatar_url,
+        bio=req.bio,
+        social_links=req.social_links,
+    )
+    updated = db.get_user_by_id(user.id)
+    if not updated:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="User not found")
+    roles = db.get_user_roles(user.id)
+    perms = db.get_user_permissions(user.id)
+    return UserResponse(
+        id=updated["id"],
+        email=updated["email"],
+        username=updated["username"],
+        display_name=updated.get("display_name"),
+        avatar_url=updated.get("avatar_url"),
+        bio=updated.get("bio"),
+        social_links=updated.get("social_links") or {},
+        role=updated.get("role") or "creator",
+        is_verified=bool(updated.get("is_verified", False)),
+        created_at=str(updated.get("created_at")),
+        roles=roles,
+        primary_role=roles[0] if roles else (updated.get("role") or "creator"),
+        permissions=list(perms),
+    )
+
+
+@router.post("/avatar", response_model=AvatarUploadResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: UserResponse = Depends(get_current_user),
+    storage: StorageService = Depends(get_storage),
+    db: Database = Depends(get_db),
+) -> AvatarUploadResponse:
+    """Upload user avatar image and update profile avatar_url."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File must be an image (PNG, JPEG, WebP)")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Avatar image exceeds 5MB limit")
+    ext = Path(file.filename or "avatar.png").suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        ext = ".png"
+    url = await storage.upload_asset(
+        data=data,
+        prompt_id="avatars",
+        filename=f"avatar{ext}",
+        content_type=file.content_type,
+        namespace=user.id,
+    )
+    db.update_user_profile(user.id, avatar_url=url)
+    return AvatarUploadResponse(avatar_url=url)
+
+
+@router.post("/change-password", response_model=EmailActionResponse)
+async def change_password(
+    req: ChangePasswordRequest,
+    user: UserResponse = Depends(get_current_user),
+    db: Database = Depends(get_db),
+) -> EmailActionResponse:
+    """Change user password after validating current password."""
+    user_row = db.get_user_by_id(user.id)
+    if not user_row or not verify_password(req.current_password, user_row["hashed_password"]):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    new_hashed = hash_password(req.new_password)
+    db.update_user_password(user.id, new_hashed)
+    return EmailActionResponse(
+        success=True,
+        message="Password updated successfully.",
+        email=user.email,
     )
 
 

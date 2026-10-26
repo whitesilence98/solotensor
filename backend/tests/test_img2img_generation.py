@@ -91,6 +91,163 @@ class TestImg2ImgGeneration(unittest.TestCase):
             self.assertEqual(resp.status_code, 400)
             self.assertIn("image-to-image mode requires at least one reference image", resp.json()["detail"])
 
+    def test_detailer_missing_reference_image_fails(self):
+        """Detailer mode without reference image must return 400."""
+        payload = {
+            "model_id": "a" * 32,
+            "version_id": "b" * 32,
+            "file_id": "c" * 32,
+            "mode": "detailer",
+            "prompt": "",
+            "reference_images": [],
+        }
+        with patch("app.main.model_storage", self.mock_model_storage):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("detailer mode requires at least one reference image", resp.json()["detail"])
+
+    def test_upscale_missing_reference_image_fails(self):
+        """Upscale mode without reference image must return 400."""
+        payload = {
+            "model_id": "a" * 32,
+            "version_id": "b" * 32,
+            "file_id": "c" * 32,
+            "mode": "upscale",
+            "prompt": "",
+            "reference_images": [],
+        }
+        with patch("app.main.model_storage", self.mock_model_storage):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+            self.assertEqual(resp.status_code, 400)
+            self.assertIn("upscale mode requires at least one reference image", resp.json()["detail"])
+
+    def test_standalone_detailer_execution(self):
+        """Standalone Detailer mode patches workflow_detailer.json directly on the reference image and costs 1 credit."""
+        sample_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        queued_graphs = []
+
+        mock_comfy = AsyncMock()
+        mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
+        mock_comfy.resolve_clip_type = AsyncMock(side_effect=lambda t: t)
+        mock_comfy.upload_image = AsyncMock(return_value="uploaded_detailer_ref.png")
+
+        real_comfy = ComfyClient()
+        mock_comfy.load_modular_detailer_template = MagicMock(side_effect=real_comfy.load_modular_detailer_template)
+        mock_comfy.load_detailer_template = MagicMock(side_effect=real_comfy.load_detailer_template)
+
+        async def fake_queue_prompt(graph, client_id=None):
+            queued_graphs.append(graph)
+            return "prompt-detailer-uuid"
+
+        mock_comfy.queue_prompt = AsyncMock(side_effect=fake_queue_prompt)
+        mock_comfy.wait_until_done = AsyncMock(return_value="completed")
+        mock_comfy.list_images = AsyncMock(return_value=[{"filename": "out_detailer.png", "subfolder": "", "type": "output"}])
+        mock_comfy.fetch_image_bytes = AsyncMock(return_value=b"\x89PNG\r\n\x1a\ndetailerbytes")
+
+        initial_credits = self.credits.get_user_credits(self.user.id).balance
+
+        payload = {
+            "model_id": "a" * 32,
+            "version_id": "b" * 32,
+            "file_id": "c" * 32,
+            "mode": "detailer",
+            "prompt": "high detail portrait face",
+            "reference_images": [sample_b64],
+            "detailer": {
+                "enabled": True,
+                "items": [
+                    {
+                        "type": "face",
+                        "enabled": True,
+                        "steps": 25,
+                        "denoising_strength": 0.35,
+                        "prompt": "perfect face, 8k",
+                        "negative_prompt": "blurry",
+                        "cfg_scale": 7.0,
+                        "inpaint_mask_blur": 4,
+                        "inpaint_only_masked": True,
+                        "bbox_threshold": 0.5,
+                        "bbox_dilation": 10,
+                    }
+                ],
+            },
+        }
+
+        with patch("app.main.model_storage", self.mock_model_storage), \
+             patch("app.main.get_comfy_client", return_value=mock_comfy), \
+             patch("app.main.storage", self.storage):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "completed")
+
+            # Check reduced cost of 1 credit for standalone feature
+            new_credits = self.credits.get_user_credits(self.user.id).balance
+            self.assertEqual(new_credits, initial_credits - 1)
+
+            # Verify image was injected into Node 1112 of workflow_detailer.json
+            self.assertEqual(len(queued_graphs), 1)
+            graph = queued_graphs[0]
+            self.assertIn("1112", graph)
+            self.assertEqual(graph["1112"]["inputs"]["image"], "uploaded_detailer_ref.png")
+
+    def test_standalone_upscale_execution(self):
+        """Standalone Upscale mode patches workflow_seedvr_upscaler.json directly on the reference image and costs 1 credit."""
+        sample_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        queued_graphs = []
+
+        mock_comfy = AsyncMock()
+        mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
+        mock_comfy.resolve_clip_type = AsyncMock(side_effect=lambda t: t)
+        mock_comfy.upload_image = AsyncMock(return_value="uploaded_upscale_ref.png")
+
+        real_comfy = ComfyClient()
+        mock_comfy.load_seedvr_upscaler_template = MagicMock(side_effect=real_comfy.load_seedvr_upscaler_template)
+
+        async def fake_queue_prompt(graph, client_id=None):
+            queued_graphs.append(graph)
+            return "prompt-upscale-uuid"
+
+        mock_comfy.queue_prompt = AsyncMock(side_effect=fake_queue_prompt)
+        mock_comfy.wait_until_done = AsyncMock(return_value="completed")
+        mock_comfy.list_images = AsyncMock(return_value=[{"filename": "out_upscale.png", "subfolder": "", "type": "output"}])
+        mock_comfy.fetch_image_bytes = AsyncMock(return_value=b"\x89PNG\r\n\x1a\nupscalebytes")
+
+        initial_credits = self.credits.get_user_credits(self.user.id).balance
+
+        payload = {
+            "model_id": "a" * 32,
+            "version_id": "b" * 32,
+            "file_id": "c" * 32,
+            "mode": "upscale",
+            "prompt": "",
+            "reference_images": [sample_b64],
+            "upscale": {
+                "enabled": True,
+                "scale": 2,
+                "dit_model": "seedvr2_dit_fast.safetensors",
+                "color_correction": "lab",
+            },
+        }
+
+        with patch("app.main.model_storage", self.mock_model_storage), \
+             patch("app.main.get_comfy_client", return_value=mock_comfy), \
+             patch("app.main.storage", self.storage):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "completed")
+
+            # Check reduced cost of 1 credit for standalone feature
+            new_credits = self.credits.get_user_credits(self.user.id).balance
+            self.assertEqual(new_credits, initial_credits - 1)
+
+            # Verify image was injected into Node 1093 of workflow_seedvr_upscaler.json
+            self.assertEqual(len(queued_graphs), 1)
+            graph = queued_graphs[0]
+            self.assertIn("1093", graph)
+            self.assertEqual(graph["1093"]["inputs"]["image"], "uploaded_upscale_ref.png")
+
     def test_img2img_successful_execution(self):
         """Img2Img mode replaces EmptyLatentImage with LoadImage and VAEEncode, applying denoise."""
         sample_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="

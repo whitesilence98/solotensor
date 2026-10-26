@@ -668,6 +668,99 @@ class AuthEndpointsAPITests(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             supabase_provider.create_user("test@cloud.com", "clouduser", "pw")
 
+    def test_update_user_profile(self) -> None:
+        reg = self.client.post(
+            "/api/auth/register",
+            json={"email": "profile@test.com", "username": "profile_user", "password": "password123"},
+        )
+        token = reg.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Update display_name, bio, social_links
+        patch_res = self.client.patch(
+            "/api/auth/profile",
+            json={
+                "display_name": "Elena AI",
+                "bio": "SoloTensor power creator",
+                "social_links": {"civitai": "https://civitai.com/user/elena", "x": "https://x.com/elena"},
+            },
+            headers=headers,
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        data = patch_res.json()
+        self.assertEqual(data["display_name"], "Elena AI")
+        self.assertEqual(data["bio"], "SoloTensor power creator")
+        self.assertEqual(data["social_links"]["civitai"], "https://civitai.com/user/elena")
+
+        # Verify /api/auth/me reflects the changes
+        me_res = self.client.get("/api/auth/me", headers=headers)
+        self.assertEqual(me_res.status_code, 200)
+        self.assertEqual(me_res.json()["display_name"], "Elena AI")
+
+    def test_change_password_flow(self) -> None:
+        reg = self.client.post(
+            "/api/auth/register",
+            json={"email": "changepw@test.com", "username": "changepw_user", "password": "oldPassword123"},
+        )
+        token = reg.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Wrong current password fails
+        bad_res = self.client.post(
+            "/api/auth/change-password",
+            json={"current_password": "wrongPassword", "new_password": "newSecurePassword456"},
+            headers=headers,
+        )
+        self.assertEqual(bad_res.status_code, 400)
+
+        # Correct current password succeeds
+        good_res = self.client.post(
+            "/api/auth/change-password",
+            json={"current_password": "oldPassword123", "new_password": "newSecurePassword456"},
+            headers=headers,
+        )
+        self.assertEqual(good_res.status_code, 200)
+        self.assertTrue(good_res.json()["success"])
+
+        # Login with old password fails
+        fail_login = self.client.post(
+            "/api/auth/login",
+            json={"email": "changepw@test.com", "password": "oldPassword123"},
+        )
+        self.assertEqual(fail_login.status_code, 401)
+
+        # Login with new password succeeds
+        ok_login = self.client.post(
+            "/api/auth/login",
+            json={"email": "changepw@test.com", "password": "newSecurePassword456"},
+        )
+        self.assertEqual(ok_login.status_code, 200)
+
+    def test_upload_avatar(self) -> None:
+        reg = self.client.post(
+            "/api/auth/register",
+            json={"email": "avatar@test.com", "username": "avatar_user", "password": "password123"},
+        )
+        token = reg.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Upload valid png avatar
+        avatar_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        res = self.client.post(
+            "/api/auth/avatar",
+            files={"file": ("avatar.png", avatar_bytes, "image/png")},
+            headers=headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("avatar_url", res.json())
+        avatar_url = res.json()["avatar_url"]
+        self.assertIn("/files/", avatar_url)
+
+        # Verify /api/auth/me reflects updated avatar_url
+        me_res = self.client.get("/api/auth/me", headers=headers)
+        self.assertEqual(me_res.status_code, 200)
+        self.assertEqual(me_res.json()["avatar_url"], avatar_url)
+
 
 if __name__ == "__main__":
     unittest.main()

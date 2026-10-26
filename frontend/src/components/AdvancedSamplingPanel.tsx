@@ -4,6 +4,29 @@ import React, { useState } from "react";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
 import SeedInput from "@/components/SeedInput";
 
+export const SAMPLER_OPTIONS = [
+  { value: "euler", label: "Euler" },
+  { value: "euler_ancestral", label: "Euler A (Ancestral)" },
+  { value: "dpmpp_2m", label: "DPM++ 2M" },
+  { value: "dpmpp_sde", label: "DPM++ SDE" },
+  { value: "dpmpp_2m_sde", label: "DPM++ 2M SDE" },
+  { value: "dpmpp_3m_sde", label: "DPM++ 3M SDE" },
+  { value: "heun", label: "Heun" },
+  { value: "ddim", label: "DDIM" },
+  { value: "uni_pc", label: "UniPC" },
+  { value: "lcm", label: "LCM" },
+];
+
+export const SCHEDULER_OPTIONS = [
+  { value: "normal", label: "Normal" },
+  { value: "karras", label: "Karras" },
+  { value: "exponential", label: "Exponential" },
+  { value: "sgm_uniform", label: "SGM Uniform" },
+  { value: "simple", label: "Simple" },
+  { value: "ddim_uniform", label: "DDIM Uniform" },
+  { value: "beta", label: "Beta" },
+];
+
 export interface AdvancedSamplingPanelProps {
   idPrefix?: string;
   seed: string;
@@ -12,6 +35,10 @@ export interface AdvancedSamplingPanelProps {
   onStepsChange: (steps: string) => void;
   cfg: string | number;
   onCfgChange: (cfg: string) => void;
+  sampler?: string;
+  onSamplerChange?: (sampler: string) => void;
+  scheduler?: string;
+  onSchedulerChange?: (scheduler: string) => void;
   denoise?: string | number;
   onDenoiseChange?: (denoise: string) => void;
   showDenoise?: boolean;
@@ -35,6 +62,10 @@ export default function AdvancedSamplingPanel({
   onStepsChange,
   cfg,
   onCfgChange,
+  sampler = "euler",
+  onSamplerChange,
+  scheduler = "normal",
+  onSchedulerChange,
   denoise,
   onDenoiseChange,
   showDenoise = false,
@@ -197,6 +228,57 @@ export default function AdvancedSamplingPanel({
               />
             </div>
           </div>
+
+          {/* Sampler & Scheduler Selectors */}
+          {(onSamplerChange || onSchedulerChange) && (
+            <div className="grid grid-cols-2 gap-3 pt-0.5">
+              {/* Sampler Selector */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor={`${idPrefix}-sampler`}
+                  className="text-[10px] font-mono text-[var(--ink-faint)] uppercase tracking-wider font-semibold block"
+                >
+                  Sampler
+                </label>
+                <select
+                  id={`${idPrefix}-sampler`}
+                  value={sampler}
+                  onChange={(e) => onSamplerChange?.(e.target.value)}
+                  disabled={busy}
+                  className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] cursor-pointer"
+                >
+                  {SAMPLER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-[var(--surface)] text-[var(--ink)]">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Scheduler Selector */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor={`${idPrefix}-scheduler`}
+                  className="text-[10px] font-mono text-[var(--ink-faint)] uppercase tracking-wider font-semibold block"
+                >
+                  Scheduler
+                </label>
+                <select
+                  id={`${idPrefix}-scheduler`}
+                  value={scheduler}
+                  onChange={(e) => onSchedulerChange?.(e.target.value)}
+                  disabled={busy}
+                  className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] cursor-pointer"
+                >
+                  {SCHEDULER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-[var(--surface)] text-[var(--ink)]">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Denoise Slider (Optional / for Text2Img) */}
           {showDenoise && onDenoiseChange && (

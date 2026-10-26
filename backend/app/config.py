@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     JWT_EXPIRE_DAYS: int = 7
     DEFAULT_DAILY_CREDITS: int = 100
     DEFAULT_GENERATION_COST: int = 2
+    DEFAULT_STANDALONE_FEATURE_COST: int = 1
 
     # --- Redis & Task Queue (Phase 2) -----------------------------------
     REDIS_URL: str | None = None          # e.g. rediss://default:...@...upstash.io:6379

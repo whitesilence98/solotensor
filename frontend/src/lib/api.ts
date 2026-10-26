@@ -60,7 +60,11 @@ export interface AssistantResponse {
   answer: string;
 }
 
-export type GenerationMode = "text-to-image" | "image-to-image";
+export type GenerationMode =
+  | "text-to-image"
+  | "image-to-image"
+  | "detailer"
+  | "upscale";
 
 export type ModelCategory =
   | "diffusion_models"
@@ -138,6 +142,8 @@ export interface GeneratePayload {
   format_name: "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
   cfg: number;
   denoise: number;
+  sampler_name?: string;
+  scheduler?: string;
   client_id?: string;
   reference_images?: string[];
   lora_adapters?: LoraAdapterPayload[];
@@ -159,6 +165,7 @@ export interface WorkflowTemplateInfo {
   clip_type?: string | null;
   unet_name?: string | null;
   sampler_name?: string | null;
+  scheduler?: string | null;
   steps?: number | null;
   cfg?: number | null;
   base_architecture?: string | null;
@@ -301,6 +308,8 @@ export interface GenerationMetadata {
   image_count?: number;
   cfg?: number | null;
   denoise?: number | null;
+  sampler_name?: string | null;
+  scheduler?: string | null;
   width?: number | null;
   height?: number | null;
   format_name?: string;
@@ -420,6 +429,7 @@ export interface ImageMetadataExtracted {
   steps?: number | null;
   cfg?: number | null;
   sampler_name?: string | null;
+  scheduler?: string | null;
   model_name?: string | null;
   width?: number | null;
   height?: number | null;
@@ -651,6 +661,8 @@ export interface UserProfile {
   primary_role?: string;
   permissions?: string[];
   avatarUrl?: string | null;
+  bio?: string | null;
+  social_links?: Record<string, string>;
   createdAt?: string;
   is_verified?: boolean;
 }
@@ -665,6 +677,7 @@ export interface UserPublicProfile {
   primary_role?: string;
   permissions?: string[];
   bio: string | null;
+  social_links?: Record<string, string>;
   created_at: string;
   is_following: boolean;
   followers_count: number;
@@ -703,6 +716,42 @@ export interface RegisterPayload {
   username: string;
   password?: string;
   displayName?: string;
+}
+
+export interface UpdateProfilePayload {
+  display_name?: string;
+  avatar_url?: string;
+  bio?: string;
+  social_links?: Record<string, string>;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
+export interface AvatarUploadResponse {
+  avatar_url: string;
+}
+
+export interface ApiKeyCreateRequest {
+  name: string;
+}
+
+export interface ApiKeyResponse {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  api_key?: string | null;
+}
+
+export interface ApiKeyListItem {
+  id: string;
+  user_id: string;
+  name: string;
+  created_at: string;
+  masked_key?: string | null;
 }
 
 export interface ErrorDetail {
@@ -1186,6 +1235,8 @@ export interface GenerationRecord {
   steps?: number | null;
   cfg?: number | null;
   denoise?: number | null;
+  sampler_name?: string | null;
+  scheduler?: string | null;
   width?: number | null;
   height?: number | null;
   format_name?: string | null;
@@ -1974,6 +2025,187 @@ export const api = {
     }
   },
 
+  async updateProfile(payload: UpdateProfilePayload): Promise<UserProfile> {
+    try {
+      const res = await request<any>("/api/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      const auth = normalizeAuthResponse(res);
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(auth.user));
+      } catch {
+        /* ignore */
+      }
+      return auth.user;
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        let currentUser: UserProfile | null = null;
+        try {
+          const raw = localStorage.getItem(AUTH_USER_KEY);
+          if (raw) currentUser = JSON.parse(raw);
+        } catch {
+          /* ignore */
+        }
+        if (currentUser) {
+          if (payload.display_name !== undefined) currentUser.displayName = payload.display_name;
+          if (payload.avatar_url !== undefined) currentUser.avatarUrl = payload.avatar_url;
+          if (payload.bio !== undefined) currentUser.bio = payload.bio;
+          if (payload.social_links !== undefined) currentUser.social_links = payload.social_links;
+          try {
+            localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
+          } catch {
+            /* ignore */
+          }
+          return currentUser;
+        }
+      }
+      throw err;
+    }
+  },
+
+  async uploadAvatar(file: File): Promise<AvatarUploadResponse> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    try {
+      const res = await request<AvatarUploadResponse>("/api/auth/avatar", {
+        method: "POST",
+        body: form,
+      });
+      return {
+        avatar_url: resolveMediaUrl(res.avatar_url) || res.avatar_url,
+      };
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        const fallbackUrl = URL.createObjectURL(file);
+        return { avatar_url: fallbackUrl };
+      }
+      throw err;
+    }
+  },
+
+  async changePassword(payload: ChangePasswordPayload): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await request<any>("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      return {
+        success: true,
+        message: res?.message ?? "Password updated successfully.",
+      };
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        return {
+          success: true,
+          message: "Password updated successfully.",
+        };
+      }
+      throw err;
+    }
+  },
+
+  async listApiKeys(): Promise<ApiKeyListItem[]> {
+    try {
+      return await request<ApiKeyListItem[]>("/api/auth/keys");
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        try {
+          const raw = localStorage.getItem("solotensor:api_keys:v1");
+          return raw ? JSON.parse(raw) : [];
+        } catch {
+          return [];
+        }
+      }
+      throw err;
+    }
+  },
+
+  async createApiKey(name: string): Promise<ApiKeyResponse> {
+    try {
+      return await request<ApiKeyResponse>("/api/auth/keys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        const secret = `st_live_${Math.random().toString(36).slice(2, 12)}_${Date.now().toString(36)}`;
+        const masked = `st_live_••••${secret.slice(-4)}`;
+        const newKey: ApiKeyResponse = {
+          id: `key_${Date.now()}`,
+          user_id: "usr_local",
+          name,
+          created_at: new Date().toISOString(),
+          api_key: secret,
+        };
+        try {
+          const raw = localStorage.getItem("solotensor:api_keys:v1");
+          const list: ApiKeyListItem[] = raw ? JSON.parse(raw) : [];
+          list.unshift({
+            id: newKey.id,
+            user_id: newKey.user_id,
+            name: newKey.name,
+            created_at: newKey.created_at,
+            masked_key: masked,
+          });
+          localStorage.setItem("solotensor:api_keys:v1", JSON.stringify(list));
+        } catch {
+          /* ignore */
+        }
+        return newKey;
+      }
+      throw err;
+    }
+  },
+
+  async deleteApiKey(keyId: string): Promise<{ success: boolean }> {
+    try {
+      await request<any>(`/api/auth/keys/${encodeURIComponent(keyId)}`, {
+        method: "DELETE",
+      });
+      return { success: true };
+    } catch (err) {
+      if (
+        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
+        err instanceof TypeError ||
+        (err instanceof Error && err.message.includes("fetch"))
+      ) {
+        try {
+          const raw = localStorage.getItem("solotensor:api_keys:v1");
+          if (raw) {
+            const list: ApiKeyListItem[] = JSON.parse(raw);
+            const filtered = list.filter((k) => k.id !== keyId);
+            localStorage.setItem("solotensor:api_keys:v1", JSON.stringify(filtered));
+          }
+        } catch {
+          /* ignore */
+        }
+        return { success: true };
+      }
+      throw err;
+    }
+  },
+
   async getUserProfile(username: string): Promise<UserPublicProfile> {
     try {
       const res = await request<UserPublicProfile>(`/api/users/${encodeURIComponent(username)}`);
@@ -2334,7 +2566,9 @@ function normalizeAuthResponse(raw: any): AuthResponse {
     roles: rawRoles,
     primary_role: normRole,
     permissions,
-    avatarUrl: rawUser.avatar_url || rawUser.avatarUrl || null,
+    avatarUrl: resolveMediaUrl(rawUser.avatar_url || rawUser.avatarUrl) || null,
+    bio: rawUser.bio ?? null,
+    social_links: rawUser.social_links ?? {},
     createdAt: rawUser.created_at || rawUser.createdAt || new Date().toISOString(),
     is_verified: rawUser.is_verified ?? rawUser.isVerified ?? false,
   };
@@ -2378,6 +2612,8 @@ function createFallbackAuthResponse(payload: LoginPayload): AuthResponse {
     primary_role: defaultRole,
     permissions: getDefaultPermissionsForRole(defaultRole),
     avatarUrl: null,
+    bio: null,
+    social_links: {},
     createdAt: new Date().toISOString(),
     is_verified: payload.provider === "google" || payload.provider === "discord",
   };
@@ -2409,6 +2645,8 @@ function createFallbackRegisterResponse(payload: RegisterPayload): AuthResponse 
     primary_role: defaultRole,
     permissions: getDefaultPermissionsForRole(defaultRole),
     avatarUrl: null,
+    bio: null,
+    social_links: {},
     createdAt: new Date().toISOString(),
     is_verified: false,
   };

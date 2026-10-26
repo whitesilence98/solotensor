@@ -14,7 +14,7 @@ This document outlines the architecture, design system, and coding standards for
 ---
 
 ## 2. Design System: Obsidian & Acid Lime Brutalist Studio
-- **Design Spec**: Refer to [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/DESIGN.md).
+- **Design Spec**: Refer to [`DESIGN.md`](DESIGN.md).
 - **Core Tokens**:
   - `--ground`: `#0a0b0a` (Deep obsidian backdrop)
   - `--surface`: `#121412` (Panel and inspector surface)
@@ -38,7 +38,7 @@ This document outlines the architecture, design system, and coding standards for
 ---
 
 ## 4. Model Taxonomy & Compatibility Stack
-- **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/docs/ARCHITECTURE.md) and [`DESIGN.md`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/DESIGN.md#L82).
+- **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`DESIGN.md`](DESIGN.md#L82).
 - **16 Standardized Types**: Strictly use the `CreatorModelType` union defined in `src/lib/api.ts` (e.g. `Checkpoint`, `LoRA`, `VAE`, `ControlNet`, etc.).
 - **Dual SafeTensors Extensions**: Always accept both `.safetensors` and `.sft` across all file inputs, drag-and-drop dropzones, and ComfyUI enclave model scanners.
 - **Persistent Compatibility Container**: In `CreateModelDrawer.tsx`, keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:

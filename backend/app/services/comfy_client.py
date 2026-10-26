@@ -735,6 +735,8 @@ class ComfyClient:
         upscale: Optional[Any] = None,
         detailer: Optional[Any] = None,
         source_image_filename: Optional[str] = None,
+        sampler_name: Optional[str] = None,
+        scheduler: Optional[str] = None,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or model_type == "Diffusion Model")
@@ -760,6 +762,8 @@ class ComfyClient:
                             vae_name=vae_name or "wan_2.1_vae.safetensors",
                             source_image_filename=source_image_filename,
                             loras=loras or [],
+                            sampler_name=sampler_name,
+                            scheduler=scheduler,
                         )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
@@ -781,6 +785,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler,
                     )
             template = self.load_workflow_template()
             if template is None:
@@ -804,6 +810,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler,
                     )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -848,6 +856,8 @@ class ComfyClient:
                     vae_name=vae_name,
                     clip_name=clip_name,
                     clip_type=clip_type,
+                    sampler_name=sampler_name,
+                    scheduler=scheduler,
                 )
                 if enable_detailer:
                     graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -867,6 +877,8 @@ class ComfyClient:
             clip_name=clip_name,
             clip_type=clip_type,
             vae_name=vae_name,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
         )
         if enable_detailer:
             graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -897,6 +909,8 @@ class ComfyClient:
         upscale: Optional[Any] = None,
         detailer: Optional[Any] = None,
         source_image_filename: Optional[str] = None,
+        sampler_name: Optional[str] = None,
+        scheduler: Optional[str] = None,
     ) -> dict[str, Any]:
         if is_modular is None:
             is_modular = (category == "diffusion_models" or base_model_type == "Diffusion Model")
@@ -923,6 +937,8 @@ class ComfyClient:
                             vae_name=vae_name or "wan_2.1_vae.safetensors",
                             source_image_filename=source_image_filename,
                             loras=active_loras,
+                            sampler_name=sampler_name,
+                            scheduler=scheduler,
                         )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
@@ -944,6 +960,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler,
                     )
             template = self.load_workflow_template()
             if template is None:
@@ -967,6 +985,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler,
                     )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -1006,6 +1026,8 @@ class ComfyClient:
             vae_name=vae_name,
             clip_name=clip_name,
             clip_type=clip_type,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
         )
         if enable_detailer:
             graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -1029,6 +1051,8 @@ class ComfyClient:
         vae_name: str = "",
         clip_name: str = "",
         clip_type: str = "",
+        sampler_name: Optional[str] = None,
+        scheduler: Optional[str] = None,
     ) -> dict[str, Any]:
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
         active_loras = [item for item in (loras or []) if item.get("on", True)]
@@ -1099,8 +1123,8 @@ class ComfyClient:
                     "seed": final_seed,
                     "steps": steps,
                     "cfg": cfg,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
+                    "sampler_name": sampler_name or "euler",
+                    "scheduler": scheduler or "normal",
                     "denoise": denoise,
                     "model": last_model_ref,
                     "positive": ["3", 0],
@@ -1132,6 +1156,8 @@ class ComfyClient:
         clip_name: str = "",
         clip_type: str = "",
         vae_name: str = "",
+        sampler_name: Optional[str] = None,
+        scheduler: Optional[str] = None,
     ) -> dict[str, Any]:
         preset = MODEL_PRESETS.get(model, MODEL_PRESETS["sdxl"])
         checkpoint = checkpoint_name or preset["checkpoint"]
@@ -1171,8 +1197,8 @@ class ComfyClient:
                     "seed": final_seed,
                     "steps": steps or preset["steps"],
                     "cfg": cfg if cfg is not None else preset["cfg"],
-                    "sampler_name": preset["sampler"],
-                    "scheduler": preset["scheduler"],
+                    "sampler_name": sampler_name or preset["sampler"],
+                    "scheduler": scheduler or preset["scheduler"],
                     "denoise": denoise,
                     "model": ["1", 0],
                     "positive": ["2", 0],

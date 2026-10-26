@@ -25,6 +25,7 @@ export interface StudioPromptBarProps {
   onImageCountChange?: (count: string) => void;
   activeMode?: string;
   referenceImage?: string | null;
+  img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
 }
 
 export default function StudioPromptBar({
@@ -48,6 +49,7 @@ export default function StudioPromptBar({
   onImageCountChange,
   activeMode = "Text2Img",
   referenceImage = null,
+  img2imgSubTab = "image_to_image",
 }: StudioPromptBarProps) {
   const { isPro, isAdmin, isAuthenticated, openAuthModal } = useAuth();
   const isProUser = isPro || isAdmin;
@@ -310,7 +312,11 @@ export default function StudioPromptBar({
                     <Zap className="h-3.5 w-3.5 fill-current" />
                     <span className="font-bold">
                       {activeMode === "Img2Img"
-                        ? "Generate Img2Img"
+                        ? img2imgSubTab === "detailer"
+                          ? "Run Detailer Pass"
+                          : img2imgSubTab === "upscaler"
+                          ? "Run SeedVR2 Upscaler"
+                          : "Generate Img2Img"
                         : activeMode === "Edit"
                         ? "Generate Inpaint"
                         : activeMode === "Video"

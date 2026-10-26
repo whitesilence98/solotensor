@@ -15,12 +15,13 @@ Before modifying backend or frontend code, inspect and follow these ground-truth
 - **Product Scope & Limits**: [`PRODUCT.md`](PRODUCT.md)
 - **Backend Agents & Personas**: [`backend/AGENTS.md`](backend/AGENTS.md)
 - **Frontend Guidelines**: [`frontend/FRONTEND.md`](frontend/FRONTEND.md)
+- **Dual-Agent Coordination**: [`AGENTS.md`](AGENTS.md)
 
 ---
 
 ## 2. Specialized Subagent Roster
 
-Claude Code subagent specifications are located in `.claude/agents/`:
+Claude Code subagents are located in `.claude/agents/` and can be invoked with `@<agent-name>` or `/agent <agent-name>`:
 - `@comfy-pipeline` ([`.claude/agents/comfy-pipeline.md`](.claude/agents/comfy-pipeline.md)): ComfyUI graph generation, WebSocket streaming, latent dimensions.
 - `@api-contracts` ([`.claude/agents/api-contracts.md`](.claude/agents/api-contracts.md)): `backend/app/schemas.py`, FastAPI route status codes, TypeScript parity in `frontend/src/lib/api.ts`.
 - `@model-manager` ([`.claude/agents/model-manager.md`](.claude/agents/model-manager.md)): Local model scanner, Civitai metadata, triggers, and compatibility tagging.
@@ -35,14 +36,22 @@ Claude Code subagent specifications are located in `.claude/agents/`:
 
 All agents must run and pass relevant verification before finishing a task:
 
-### Backend Verification (from `backend/`)
+### Backend Verification (from project root)
+Always run tests using the project virtualenv (`backend/.venv`) with `PYTHONPATH=backend`:
 ```powershell
-python -m unittest discover -s tests
+$env:PYTHONPATH='backend'; .\backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests
+```
+*(Or if current working directory is `backend`: `.\.venv\Scripts\python.exe -m unittest discover -s tests`)*
+
+To run a single test module:
+```powershell
+$env:PYTHONPATH='backend'; .\backend\.venv\Scripts\python.exe -m unittest backend/tests/test_workflow_patch.py
 ```
 *Requirement:* Must return `OK` (0 failures, 0 errors). Tests mock external boundaries; never require live ComfyUI or network.
 
 ### Frontend Verification (from `frontend/`)
 ```powershell
+cd frontend
 npx tsc --noEmit
 npm run build
 ```
@@ -52,8 +61,9 @@ npm run build
 
 ## 4. Engineering & Safety Invariants
 
-- **API Contracts:** `backend/app/schemas.py` is the contract authority. Never introduce breaking schema changes without updating `frontend/src/lib/api.ts` and `tests/`.
+- **API Contracts:** `backend/app/schemas.py` is the contract authority. Never introduce breaking schema changes without updating `frontend/src/lib/api.ts` and `backend/tests/`.
+- **Zero External API Leaks in Browser:** Never call Anthropic, ComfyUI, or third-party AI endpoints directly from client-side Next.js code. All requests must route through FastAPI (`:8000`).
 - **Filesystem Boundaries:** All local disk storage uses `STORAGE_DIR` and `/files`. Enforce path traversal containment (`..` rejection).
-- **Service Separation:** Routes in `main.py` remain thin; place logic in `services/`.
+- **Service Separation:** Routes in `main.py` remain thin; place domain logic in `backend/app/services/`.
 - **ComfyUI Integration:** Do not modify exported node IDs or graph expectations without updating unit tests.
-- **Antigravity Co-Pilot Etiquette:** Keep `main` in a releasable state. Avoid dirty unstaged collisions across sessions.
+- **Antigravity / Claude Co-Pilot Etiquette:** Keep `main` in a releasable state. Never overwrite unstaged work from the other agent without confirming. Avoid dirty unstaged collisions across sessions.

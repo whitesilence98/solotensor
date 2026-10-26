@@ -36,8 +36,12 @@ def load_workflow(name: str) -> dict[str, Any]:
 
 
 def select_workflow(req: "GenerateRequest") -> dict[str, Any]:
-    """Return the loaded base T2I or I2I workflow graph dict for the given request config."""
-    if req.mode == "image-to-image":
+    """Return the loaded base T2I, I2I, Detailer, or Upscaler workflow graph dict for the given request config."""
+    if req.mode == "detailer":
+        return load_workflow("workflow_detailer.json")
+    elif req.mode == "upscale":
+        return load_workflow("workflow_seedvr_upscaler.json")
+    elif req.mode == "image-to-image":
         for candidate in ["workflow_generate_i2i.json", "workflow_generate_t2i.json", "workflow_api.json"]:
             try:
                 return load_workflow(candidate)
@@ -95,6 +99,8 @@ def patch_base_t2i_workflow(
     loras: Optional[list[dict[str, Any]]] = None,
     source_image_filename: Optional[str] = None,
     denoise: float = 1.0,
+    sampler_name: Optional[str] = None,
+    scheduler: Optional[str] = None,
 ) -> dict[str, Any]:
     """Patch standard generator nodes in workflow_generate_t2i.json (supporting both T2I and Img2Img)."""
     graph = json.loads(json.dumps(template))
@@ -115,6 +121,18 @@ def patch_base_t2i_workflow(
     # 3. Steps
     if "1055" in graph:
         graph["1055"].setdefault("inputs", {})["value"] = int(steps)
+
+    # 3b. Sampler & Scheduler
+    if sampler_name:
+        if "1056" in graph:
+            graph["1056"].setdefault("inputs", {})["sampler_name"] = str(sampler_name)
+        if "1059" in graph:
+            graph["1059"].setdefault("inputs", {})["sampler_name"] = str(sampler_name)
+    if scheduler:
+        if "1056" in graph:
+            graph["1056"].setdefault("inputs", {})["scheduler"] = str(scheduler)
+        if "1059" in graph:
+            graph["1059"].setdefault("inputs", {})["scheduler"] = str(scheduler)
 
     # 4. Latent Image / Img2Img Source
     if source_image_filename:
@@ -186,6 +204,8 @@ def patch_base_i2i_workflow(
     vae_name: str = "wan_2.1_vae.safetensors",
     source_image_filename: str,
     loras: Optional[list[dict[str, Any]]] = None,
+    sampler_name: Optional[str] = None,
+    scheduler: Optional[str] = None,
 ) -> dict[str, Any]:
     """Patch standard generator nodes in native workflow_generate_i2i.json."""
     graph = json.loads(json.dumps(template))
@@ -208,6 +228,10 @@ def patch_base_i2i_workflow(
         inputs["steps"] = int(steps)
         inputs["cfg"] = float(cfg)
         inputs["denoise"] = float(denoise)
+        if sampler_name:
+            inputs["sampler_name"] = str(sampler_name)
+        if scheduler:
+            inputs["scheduler"] = str(scheduler)
 
     # 4. Model Loaders (nodes 593:590, 593:589, 593:588)
     if "593:590" in graph and unet_name:
@@ -369,6 +393,8 @@ def patch_full_t2i_workflow(
     source_image_filename: Optional[str] = None,
     denoise: float = 1.0,
     cfg: float = 1.0,
+    sampler_name: Optional[str] = None,
+    scheduler: Optional[str] = None,
 ) -> dict[str, Any]:
     """Patch generator nodes and apply cascade bypass (supporting both modular and legacy graphs)."""
     if "30" in template and "32" in template and "3" in template and source_image_filename:
@@ -386,6 +412,8 @@ def patch_full_t2i_workflow(
             vae_name=vae_name,
             source_image_filename=source_image_filename,
             loras=loras,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
         )
 
     # Base T2I node patching
@@ -405,6 +433,8 @@ def patch_full_t2i_workflow(
         loras=loras,
         source_image_filename=source_image_filename,
         denoise=denoise,
+        sampler_name=sampler_name,
+        scheduler=scheduler,
     )
 
     # Apply pipeline bypass if graph contains multi-stage nodes

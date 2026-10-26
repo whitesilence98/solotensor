@@ -188,10 +188,10 @@ classDiagram
 
 | Module | Location | Core Responsibilities |
 | :--- | :--- | :--- |
-| **Schemas** | [`backend/app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/schemas.py) | `CreatorModelType` enum, `ModelCompatibility` Pydantic model with validation, generation parameters. |
-| **Model Storage** | [`backend/app/services/models.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/services/models.py) | `LOCAL_MODEL_CATEGORIES`, `MODEL_EXTENSIONS`, disk scanning (`local_models()`), import, installation, and database synchronization. |
-| **Comfy Client** | [`backend/app/services/comfy_client.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/services/comfy_client.py) | Dynamic ComfyUI prompt graph building (`build_gallery_workflow()`, `build_lora_workflow()`), model name resolution, fallback `extra_pnginfo` injection. |
-| **API Controller** | [`backend/app/main.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/main.py) | FastAPI endpoints for `/api/v1/models/local`, `/api/v1/models/{category}`, `/api/v1/clip-options`, `/api/v1/workflow/template-info`. |
+| **Schemas** | [`backend/app/schemas.py`](backend/app/schemas.py) | `CreatorModelType` enum, `ModelCompatibility` Pydantic model with validation, generation parameters. |
+| **Model Storage** | [`backend/app/services/models.py`](backend/app/services/models.py) | `LOCAL_MODEL_CATEGORIES`, `MODEL_EXTENSIONS`, disk scanning (`local_models()`), import, installation, and database synchronization. |
+| **Comfy Client** | [`backend/app/services/comfy_client.py`](backend/app/services/comfy_client.py) | Dynamic ComfyUI prompt graph building (`build_gallery_workflow()`, `build_lora_workflow()`), model name resolution, fallback `extra_pnginfo` injection. |
+| **API Controller** | [`backend/app/main.py`](backend/app/main.py) | FastAPI endpoints for `/api/v1/models/local`, `/api/v1/models/{category}`, `/api/v1/clip-options`, `/api/v1/workflow/template-info`. |
 
 ### Dual-Source Enclave Scanning Pattern
 When enumerating available VAEs or text encoders, the backend supports both filesystem-based inspection (via `COMFY_MODEL_ROOT`) and HTTP-based inspection (via live ComfyUI `/models/{category}`):
@@ -210,7 +210,7 @@ async def models(category: str) -> list[str]:
 ```
 
 ### Model Compatibility Validation Rule
-In `ModelCompatibility` ([`app/schemas.py`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/backend/app/schemas.py#L428)):
+In `ModelCompatibility` ([`app/schemas.py`](backend/app/schemas.py#L428)):
 - `vae` is optional (`str | None`).
 - `text_encoder` and `clip_type` are co-dependent: either both are provided, or both are `None`.
 - `base_model_id`, `base_version_id`, and `base_file_id` must be set together when linking to an installed base model.
@@ -223,12 +223,12 @@ In `ModelCompatibility` ([`app/schemas.py`](file:///c:/Users/kenko/Desktop/prije
 
 | Component | Location | Role |
 | :--- | :--- | :--- |
-| **API Client** | [`frontend/src/lib/api.ts`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
-| **Model Creation Drawer** | [`frontend/src/components/CreateModelDrawer.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
-| **Generation Studio** | [`frontend/src/components/ControlPanel.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
-| **Prompt Composer** | [`frontend/src/components/PromptComposer.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/PromptComposer.tsx) | Reusable tag autocomplete, style pills, and prompt composition component shared across T2I and I2I. |
-| **Model Card & Badges** | [`frontend/src/components/TensorModelCard.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/components/TensorModelCard.tsx) | Visual card with tailored color badge tokens across all 16 types. |
-| **Model Explorer** | [`frontend/src/app/models/page.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/frontend/src/app/models/page.tsx) | Multi-category filter bar supporting all 16 model types. |
+| **API Client** | [`frontend/src/lib/api.ts`](frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
+| **Model Creation Drawer** | [`frontend/src/components/CreateModelDrawer.tsx`](frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
+| **Generation Studio** | [`frontend/src/components/ControlPanel.tsx`](frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
+| **Prompt Composer** | [`frontend/src/components/PromptComposer.tsx`](frontend/src/components/PromptComposer.tsx) | Reusable tag autocomplete, style pills, and prompt composition component shared across T2I and I2I. |
+| **Model Card & Badges** | [`frontend/src/components/TensorModelCard.tsx`](frontend/src/components/TensorModelCard.tsx) | Visual card with tailored color badge tokens across all 16 types. |
+| **Model Explorer** | [`frontend/src/app/models/page.tsx`](frontend/src/app/models/page.tsx) | Multi-category filter bar supporting all 16 model types. |
 
 ### Enclave Refresh & Parallel Discovery
 The frontend calls both local disk scanner and live ComfyUI endpoints via `Promise.allSettled`, guaranteeing that files like `ae.sft` are instantly available regardless of deployment configuration:
@@ -332,7 +332,7 @@ flowchart LR
 ## 8. Multi-Tab Studio Architecture & State Isolation
 
 For complete technical specifications on the `/generate` Studio page multi-tab system (`Text2Img`, `Img2Img`, `Edit`, `Video`, `Prime`), refer to the dedicated specification:
-👉 [Generate Studio Multi-Tab Architecture](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/docs/generate_studio_architecture.md)
+👉 [Generate Studio Multi-Tab Architecture](docs/generate_studio_architecture.md)
 
 ### Key Principles
 1. **Isolated Tab State**: Each mode retains its own prompt, negative prompt, model selection, LoRAs, steps, CFG, denoise, and mode-specific parameters.

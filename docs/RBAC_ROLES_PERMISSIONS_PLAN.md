@@ -310,6 +310,6 @@ flowchart TD
 - Add queue priority weighting in generation dispatcher (Pro tasks prioritized in ComfyUI prompt queue).
 
 ### Phase 4: Frontend UI Gating & Moderator Dashboard (Frontend)
-- Update [`UserNavProfile.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/components/UserNavProfile.tsx) and [`page.tsx`](file:///c:/Users/kenko/Desktop/priject/my-ai-generate/solotensor/frontend/src/app/user/[username]/page.tsx) with dynamic role badges.
+- Update [`UserNavProfile.tsx`](frontend/src/components/UserNavProfile.tsx) and [`page.tsx`](frontend/src/app/user/[username]/page.tsx) with dynamic role badges.
 - Create `/admin/moderation` dashboard route for moderators and admins.
 - Add Pro upsell affordances for high-res generation parameters.

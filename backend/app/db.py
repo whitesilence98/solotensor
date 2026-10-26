@@ -160,6 +160,7 @@ class Database:
                     is_verified INTEGER DEFAULT 0,
                     avatar_url TEXT,
                     bio TEXT,
+                    social_links TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
@@ -169,6 +170,7 @@ class Database:
                 conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified INTEGER DEFAULT 0;")
                 conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;")
                 conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS social_links TEXT;")
             else:
                 cursor = conn.execute("PRAGMA table_info(users);")
                 cols = [r["name"] for r in cursor.fetchall()]
@@ -178,6 +180,8 @@ class Database:
                     conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT;")
                 if "bio" not in cols:
                     conn.execute("ALTER TABLE users ADD COLUMN bio TEXT;")
+                if "social_links" not in cols:
+                    conn.execute("ALTER TABLE users ADD COLUMN social_links TEXT;")
 
             conn.execute(
                 """
@@ -834,6 +838,13 @@ class Database:
         data["is_verified"] = bool(data.get("is_verified", 0))
         if isinstance(data.get("created_at"), datetime):
             data["created_at"] = data["created_at"].isoformat()
+        if "social_links" in data and isinstance(data["social_links"], str):
+            try:
+                data["social_links"] = json.loads(data["social_links"])
+            except Exception:
+                data["social_links"] = {}
+        elif "social_links" not in data or data["social_links"] is None:
+            data["social_links"] = {}
         return data
 
     def invalidate_user_cache(self, user_id: str) -> None:
@@ -852,7 +863,7 @@ class Database:
 
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE id = ?",
+                "SELECT * FROM users WHERE id = ?",
                 (user_id,),
             )
             res = self._clean_user_row(cursor.fetchone())
@@ -862,7 +873,7 @@ class Database:
     def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(email) = lower(?)",
+                "SELECT * FROM users WHERE lower(email) = lower(?)",
                 (email,),
             )
             return self._clean_user_row(cursor.fetchone())
@@ -870,7 +881,7 @@ class Database:
     def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.execute(
-                "SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at FROM users WHERE lower(username) = lower(?)",
+                "SELECT * FROM users WHERE lower(username) = lower(?)",
                 (username,),
             )
             return self._clean_user_row(cursor.fetchone())
@@ -879,7 +890,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, email, username, display_name, hashed_password, role, is_verified, avatar_url, bio, created_at
+                SELECT *
                 FROM users
                 WHERE lower(email) = lower(?) OR lower(username) = lower(?)
                 """,
@@ -907,8 +918,9 @@ class Database:
         display_name: Optional[str] = None,
         avatar_url: Optional[str] = None,
         bio: Optional[str] = None,
+        social_links: Optional[dict[str, str] | str] = None,
     ) -> bool:
-        """Update display_name, avatar_url, or bio for a user."""
+        """Update display_name, avatar_url, bio, or social_links for a user."""
         self.invalidate_user_cache(user_id)
         updates: list[str] = []
         params: list[Any] = []
@@ -921,6 +933,10 @@ class Database:
         if bio is not None:
             updates.append("bio = ?")
             params.append(bio)
+        if social_links is not None:
+            val = json.dumps(social_links) if isinstance(social_links, dict) else str(social_links)
+            updates.append("social_links = ?")
+            params.append(val)
         if not updates:
             return False
         params.append(user_id)
@@ -993,7 +1009,7 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, email, username, display_name, role, is_verified, avatar_url, bio, created_at
+                SELECT *
                 FROM users
                 WHERE lower(username) = lower(?) OR id = ?
                 """,
@@ -1002,7 +1018,7 @@ class Database:
             row = cursor.fetchone()
             if not row:
                 return None
-            user_data = dict(row)
+            user_data = self._clean_user_row(row)
             user_id = user_data["id"]
             username = user_data["username"]
 
@@ -1068,6 +1084,7 @@ class Database:
             "avatar_url": user_data.get("avatar_url"),
             "role": user_data.get("role") or "creator",
             "bio": user_data.get("bio"),
+            "social_links": user_data.get("social_links") or {},
             "created_at": str(user_data["created_at"]),
             "is_following": is_following_val,
             "followers_count": followers_count,

@@ -1032,6 +1032,7 @@ async def workflow_template_info() -> dict[str, Any]:
         clip_type = None
         unet_name = None
         sampler_name = None
+        scheduler = None
         steps = None
         cfg = None
         base_architecture = None
@@ -1080,6 +1081,8 @@ async def workflow_template_info() -> dict[str, Any]:
             ):
                 if "sampler_name" in inputs and not sampler_name:
                     sampler_name = inputs.get("sampler_name")
+                if "scheduler" in inputs and not scheduler:
+                    scheduler = inputs.get("scheduler")
                 if (
                     "steps" in inputs
                     and steps is None
@@ -1140,6 +1143,7 @@ async def workflow_template_info() -> dict[str, Any]:
             "clip_type": clip_type,
             "unet_name": unet_name,
             "sampler_name": sampler_name,
+            "scheduler": scheduler,
             "steps": steps,
             "cfg": cfg,
             "base_architecture": base_architecture,
@@ -1173,21 +1177,25 @@ async def generate(
     user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
-    if req.mode not in ("text-to-image", "image-to-image"):
+    if req.mode not in ("text-to-image", "image-to-image", "detailer", "upscale"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported generation mode: {req.mode}",
         )
 
-    if req.mode == "image-to-image" and not req.reference_images:
+    if req.mode in ("image-to-image", "detailer", "upscale") and not req.reference_images:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail="image-to-image mode requires at least one reference image",
+            detail=f"{req.mode} mode requires at least one reference image",
         )
 
     # Deduction for authenticated creators (TensorArt quota model)
     credit_service = get_credit_service()
-    cost = settings.DEFAULT_GENERATION_COST
+    cost = (
+        settings.DEFAULT_STANDALONE_FEATURE_COST
+        if req.mode in ("detailer", "upscale")
+        else settings.DEFAULT_GENERATION_COST
+    )
     credits_deducted = False
     if not credit_service.deduct_credits(user.id, amount=cost):
         raise HTTPException(
@@ -1372,11 +1380,11 @@ async def generate(
             )
 
         source_image_filename = None
-        if req.mode == "image-to-image":
+        if req.mode in ("image-to-image", "detailer", "upscale"):
             if not req.reference_images:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    detail="image-to-image mode requires at least one reference image",
+                    detail=f"{req.mode} mode requires at least one reference image",
                 )
             raw_ref = req.reference_images[0]
             try:
@@ -1396,18 +1404,54 @@ async def generate(
                         source_bytes = await storage.get_image_bytes(raw_ref)
 
                 source_image_filename = await comfy.upload_image(
-                    source_bytes, f"input_img2img_{client_id or uuid.uuid4().hex[:8]}.png"
+                    source_bytes, f"input_{req.mode}_{client_id or uuid.uuid4().hex[:8]}.png"
                 )
             except HTTPException:
                 raise
             except Exception as exc:
-                logger.error("Failed to process reference image for img2img: %s", exc)
+                logger.error("Failed to process reference image for %s: %s", req.mode, exc)
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     detail=f"Failed to process reference image: {exc}",
                 ) from exc
 
-        if is_lora:
+        if req.mode == "detailer":
+            detailer_template = (
+                comfy.load_modular_detailer_template()
+                or comfy.load_detailer_template()
+            )
+            if not detailer_template:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Detailer workflow template not found",
+                )
+            graph = patch_detailer_workflow(
+                detailer_template,
+                image_filename=source_image_filename,
+                detailer_cfg=req.detailer,
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                unet_name=resolved_base,
+                clip_name=resolved_clip,
+                clip_type=resolved_clip_type,
+                vae_name=resolved_vae,
+                loras=active_loras,
+            )
+        elif req.mode == "upscale":
+            upscale_template = comfy.load_seedvr_upscaler_template()
+            if not upscale_template:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="SeedVR2 upscaler workflow template not found",
+                )
+            graph = patch_seedvr_upscaler_workflow(
+                upscale_template,
+                image_filename=source_image_filename,
+                upscale_cfg=req.upscale,
+                base_width=req.width,
+                base_height=req.height,
+            )
+        elif is_lora:
             graph = comfy.build_lora_workflow(
                 base_model_type=base_model["model_type"],
                 base_filename=resolved_base,
@@ -1422,6 +1466,8 @@ async def generate(
                 image_count=req.image_count,
                 cfg=req.cfg,
                 denoise=req.denoise,
+                sampler_name=req.sampler_name,
+                scheduler=req.scheduler,
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
@@ -1447,6 +1493,8 @@ async def generate(
                 image_count=req.image_count,
                 cfg=req.cfg,
                 denoise=req.denoise,
+                sampler_name=req.sampler_name,
+                scheduler=req.scheduler,
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
@@ -1512,6 +1560,8 @@ async def generate(
         "image_count": req.image_count,
         "cfg": req.cfg,
         "denoise": req.denoise,
+        "sampler_name": req.sampler_name or "euler",
+        "scheduler": req.scheduler or "normal",
         "width": req.width,
         "height": req.height,
         "format_name": req.format_name,
@@ -1551,8 +1601,15 @@ async def generate(
         # 1. Base Image: upload and preserve in local storage
         base_img = raw_images[0]
         base_blob = await comfy.fetch_image_bytes(base_img)
-        has_upscale = bool(req.upscale and req.upscale.enabled)
-        has_detailer = bool((req.detailer and req.detailer.enabled) or req.enable_detailer)
+        has_upscale = bool(
+            req.upscale
+            and req.upscale.enabled
+            and req.mode not in ("detailer", "upscale")
+        )
+        has_detailer = bool(
+            ((req.detailer and req.detailer.enabled) or req.enable_detailer)
+            and req.mode not in ("detailer", "upscale")
+        )
 
         # Hide base image from public gallery if downstream stages (upscale/detailer) are active
         base_url = await storage.upload_image(

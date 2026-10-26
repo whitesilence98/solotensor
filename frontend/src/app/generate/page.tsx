@@ -95,6 +95,11 @@ interface TabState {
   videoFps: number;
   // Prime mode
   primePreset: string;
+  // Img2Img sub-tab
+  img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
+  // Sampler & Scheduler
+  samplerName: string;
+  scheduler: string;
 }
 
 function getTabStorageKey(tensorMode: TensorMode): string {
@@ -146,6 +151,9 @@ function createDefaultTabState(
         videoFrames: 25,
         videoFps: 16,
         primePreset: "portrait_pro",
+        img2imgSubTab: "image_to_image",
+        samplerName: "euler",
+        scheduler: "normal",
       };
 
     case "Img2Img":
@@ -176,6 +184,9 @@ function createDefaultTabState(
         videoFrames: 25,
         videoFps: 16,
         primePreset: "portrait_pro",
+        img2imgSubTab: "image_to_image",
+        samplerName: "euler",
+        scheduler: "normal",
       };
 
     case "Edit":
@@ -206,6 +217,9 @@ function createDefaultTabState(
         videoFrames: 25,
         videoFps: 16,
         primePreset: "portrait_pro",
+        img2imgSubTab: "image_to_image",
+        samplerName: "euler",
+        scheduler: "normal",
       };
 
     case "Video":
@@ -236,6 +250,9 @@ function createDefaultTabState(
         videoFrames: 25,
         videoFps: 16,
         primePreset: "portrait_pro",
+        img2imgSubTab: "image_to_image",
+        samplerName: "euler",
+        scheduler: "normal",
       };
 
     case "Prime":
@@ -266,6 +283,9 @@ function createDefaultTabState(
         videoFrames: 25,
         videoFps: 16,
         primePreset: "portrait_pro",
+        img2imgSubTab: "image_to_image",
+        samplerName: "euler",
+        scheduler: "normal",
       };
   }
 }
@@ -310,6 +330,11 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
       videoFrames: typeof saved.videoFrames === "number" ? saved.videoFrames : defaults.videoFrames,
       videoFps: typeof saved.videoFps === "number" ? saved.videoFps : defaults.videoFps,
       primePreset: typeof saved.primePreset === "string" ? saved.primePreset : defaults.primePreset,
+      img2imgSubTab: ["image_to_image", "detailer", "upscaler"].includes(saved.img2imgSubTab)
+        ? saved.img2imgSubTab
+        : defaults.img2imgSubTab,
+      samplerName: typeof saved.samplerName === "string" ? saved.samplerName : defaults.samplerName,
+      scheduler: typeof saved.scheduler === "string" ? saved.scheduler : defaults.scheduler,
     };
   } catch {
     return defaults;
@@ -379,6 +404,8 @@ export default function StudioPage() {
             if (typeof m.negative_prompt === "string") next.negativePrompt = m.negative_prompt;
             if (m.steps) next.steps = String(m.steps);
             if (m.cfg) next.cfg = String(m.cfg);
+            if (m.sampler_name) next.samplerName = m.sampler_name;
+            if (m.scheduler) next.scheduler = m.scheduler;
             if (m.seed !== undefined && m.seed !== null) next.seed = String(m.seed);
             return next;
           });
@@ -566,12 +593,17 @@ export default function StudioPage() {
   }, [activeTab.format, activeTab.customWidth, activeTab.customHeight]);
 
   const canGenerate = useMemo(() => {
-    if (!activeTab.prompt.trim() || busy) return false;
+    if (busy) return false;
+    const isStandaloneFeature =
+      activeTensorMode === "Img2Img" &&
+      (activeTab.img2imgSubTab === "detailer" || activeTab.img2imgSubTab === "upscaler");
+
+    if (!isStandaloneFeature && !activeTab.prompt.trim()) return false;
     if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
       return false;
     }
     return true;
-  }, [activeTab.prompt, busy, activeTensorMode, activeTab.referenceImage]);
+  }, [activeTab.prompt, busy, activeTensorMode, activeTab.referenceImage, activeTab.img2imgSubTab]);
 
   const handleGenerate = useCallback(async () => {
     if (!activeTab.prompt.trim() || busy) return;
@@ -666,10 +698,18 @@ export default function StudioPage() {
         ? parsedDenoise
         : 1.0;
 
-    const effectiveMode: GenerationMode =
-      activeTensorMode === "Img2Img" || activeTensorMode === "Edit"
-        ? "image-to-image"
-        : "text-to-image";
+    let effectiveMode: GenerationMode = "text-to-image";
+    if (activeTensorMode === "Img2Img") {
+      if (activeTab.img2imgSubTab === "detailer") {
+        effectiveMode = "detailer";
+      } else if (activeTab.img2imgSubTab === "upscaler") {
+        effectiveMode = "upscale";
+      } else {
+        effectiveMode = "image-to-image";
+      }
+    } else if (activeTensorMode === "Edit") {
+      effectiveMode = "image-to-image";
+    }
 
     try {
       const payload: GeneratePayload = {
@@ -684,7 +724,10 @@ export default function StudioPage() {
             }
           : {}),
         mode: effectiveMode,
-        ...(effectiveMode === "image-to-image" && activeTab.referenceImage
+        ...((effectiveMode === "image-to-image" ||
+          effectiveMode === "detailer" ||
+          effectiveMode === "upscale") &&
+        activeTab.referenceImage
           ? { reference_images: [activeTab.referenceImage] }
           : {}),
         prompt: activeTab.prompt,
@@ -694,6 +737,8 @@ export default function StudioPage() {
         image_count: parsedImageCount,
         cfg: parsedCfg,
         denoise: effectiveDenoise,
+        sampler_name: activeTab.samplerName || "euler",
+        scheduler: activeTab.scheduler || "normal",
         width: parsedWidth,
         height: parsedHeight,
         format_name: activeTab.format,
@@ -960,6 +1005,10 @@ export default function StudioPage() {
             onStepsChange={(steps) => updateActiveTab({ steps })}
             cfg={activeTab.cfg}
             onCfgChange={(cfg) => updateActiveTab({ cfg })}
+            samplerName={activeTab.samplerName}
+            onSamplerNameChange={(samplerName) => updateActiveTab({ samplerName })}
+            scheduler={activeTab.scheduler}
+            onSchedulerChange={(scheduler) => updateActiveTab({ scheduler })}
             denoise={activeTab.denoise}
             onDenoiseChange={(denoise) => updateActiveTab({ denoise })}
             negativePrompt={activeTab.negativePrompt}
@@ -1002,6 +1051,8 @@ export default function StudioPage() {
             modelsLoading={modelsLoading}
             modelsError={modelsError}
             onResetDefaults={resetStudioDefaults}
+            img2imgSubTab={activeTab.img2imgSubTab}
+            onImg2imgSubTabChange={(img2imgSubTab) => updateActiveTab({ img2imgSubTab })}
           />
         </div>
 
@@ -1024,6 +1075,7 @@ export default function StudioPage() {
             onImageCountChange={(imageCount) => updateActiveTab({ imageCount })}
             activeMode={activeTensorMode}
             referenceImage={activeTab.referenceImage}
+            img2imgSubTab={activeTab.img2imgSubTab}
           />
           <CanvasPreview
           prompt={activeTab.prompt}

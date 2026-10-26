@@ -432,8 +432,8 @@ class GenerateRequest(BaseModel):
     base_model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
-    mode: Literal["text-to-image", "image-to-image"] = "text-to-image"
-    prompt: str = Field(..., min_length=1, max_length=50_000)
+    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale"] = "text-to-image"
+    prompt: str = Field("", max_length=50_000)
     negative_prompt: str = ""
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
     steps: int = Field(10, ge=1, le=100)
@@ -443,6 +443,8 @@ class GenerateRequest(BaseModel):
     format_name: Literal["1:1", "16:9", "9:16", "4:3", "3:2", "custom"] = "9:16"
     cfg: float = Field(1.0, ge=0.0, le=30.0)
     denoise: float = Field(1.0, ge=0.0, le=1.0)
+    sampler_name: Optional[str] = Field("euler", max_length=64)
+    scheduler: Optional[str] = Field("normal", max_length=64)
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
     client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
@@ -541,6 +543,8 @@ class GenerationMetadata(BaseModel):
     image_count: int = 1
     cfg: float | None = None
     denoise: float | None = None
+    sampler_name: Optional[str] = None
+    scheduler: Optional[str] = None
     loras: list[LoraSelection] = Field(default_factory=list)
     width: int | None = None
     height: int | None = None
@@ -1305,6 +1309,7 @@ class ImageMetadataExtracted(BaseModel):
     steps: Optional[int] = None
     cfg: Optional[float] = None
     sampler_name: Optional[str] = None
+    scheduler: Optional[str] = None
     model_name: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -1502,6 +1507,7 @@ class UserResponse(BaseModel):
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
+    social_links: Optional[dict[str, str]] = Field(default_factory=dict)
     role: str = "creator"
     is_verified: bool = False
     created_at: str
@@ -1566,6 +1572,7 @@ class UserMeResponse(BaseModel):
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     bio: Optional[str] = None
+    social_links: Optional[dict[str, str]] = Field(default_factory=dict)
     role: str = "creator"
     is_verified: bool = False
     created_at: str
@@ -1600,6 +1607,7 @@ class UserPublicProfileResponse(BaseModel):
     avatar_url: Optional[str] = None
     role: str = "creator"
     bio: Optional[str] = None
+    social_links: Optional[dict[str, str]] = Field(default_factory=dict)
     created_at: str
     is_following: bool = False
     followers_count: int = 0
@@ -1632,6 +1640,22 @@ class UserPublicProfileResponse(BaseModel):
         elif not self.primary_role:
             self.primary_role = self.role or "creator"
         return self
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: Optional[str] = Field(None, max_length=100)
+    avatar_url: Optional[str] = Field(None, max_length=1000)
+    bio: Optional[str] = Field(None, max_length=1000)
+    social_links: Optional[dict[str, str]] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+class AvatarUploadResponse(BaseModel):
+    avatar_url: str
 
 
 class UserFollowResponse(BaseModel):
@@ -2061,6 +2085,5 @@ class NotificationReadResponse(BaseModel):
     success: bool
     id: Optional[str] = None
     updated_count: Optional[int] = None
-
 
 

@@ -21,6 +21,8 @@ import {
   type RegisterPayload,
   type UserProfile,
   type UserRole,
+  type UpdateProfilePayload,
+  type ChangePasswordPayload,
   normalizeRoleName,
   getDefaultPermissionsForRole,
   setLocalUserRole,
@@ -66,6 +68,12 @@ export interface AuthContextType {
   resendVerification: (
     email?: string
   ) => Promise<{ success: boolean; message: string }>;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<UserProfile>;
+  uploadAvatar: (file: File) => Promise<string>;
+  changePassword: (
+    payload: ChangePasswordPayload
+  ) => Promise<{ success: boolean; message: string }>;
+  refreshUser: () => Promise<void>;
   openAuthModal: (reason?: string | unknown) => void;
   closeAuthModal: () => void;
   pendingReviewCount: number;
@@ -378,6 +386,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user?.email]
   );
 
+  const updateProfile = useCallback(
+    async (payload: UpdateProfilePayload): Promise<UserProfile> => {
+      const updated = await api.updateProfile(payload);
+      setUser(updated);
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updated));
+      } catch {
+        /* ignore */
+      }
+      return updated;
+    },
+    []
+  );
+
+  const uploadAvatar = useCallback(
+    async (file: File): Promise<string> => {
+      const res = await api.uploadAvatar(file);
+      const updated = await api.updateProfile({ avatar_url: res.avatar_url });
+      setUser(updated);
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updated));
+      } catch {
+        /* ignore */
+      }
+      return res.avatar_url;
+    },
+    []
+  );
+
+  const changePassword = useCallback(
+    async (payload: ChangePasswordPayload): Promise<{ success: boolean; message: string }> => {
+      return api.changePassword(payload);
+    },
+    []
+  );
+
+  const refreshUser = useCallback(async (): Promise<void> => {
+    try {
+      const remote = await api.getMe();
+      if (remote?.user) {
+        setUser(remote.user);
+        try {
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(remote.user));
+        } catch {
+          /* ignore */
+        }
+      }
+      if (remote?.credits) {
+        setCredits(remote.credits);
+        try {
+          localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(remote.credits));
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const primaryRole = useMemo(() => {
     if (!token || !user) return "guest";
     return normalizeRoleName(user?.primary_role || user?.role || "creator");
@@ -580,6 +648,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resetPassword,
       verifyEmail,
       resendVerification,
+      updateProfile,
+      uploadAvatar,
+      changePassword,
+      refreshUser,
       openAuthModal,
       closeAuthModal,
       pendingReviewCount,
@@ -613,6 +685,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resetPassword,
       verifyEmail,
       resendVerification,
+      updateProfile,
+      uploadAvatar,
+      changePassword,
+      refreshUser,
       openAuthModal,
       closeAuthModal,
       pendingReviewCount,

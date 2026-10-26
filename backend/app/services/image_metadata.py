@@ -29,6 +29,7 @@ class ExtractedMetadata:
     steps: Optional[int] = None
     cfg: Optional[float] = None
     sampler_name: Optional[str] = None
+    scheduler: Optional[str] = None
     model_name: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -45,6 +46,7 @@ class ExtractedMetadata:
             "steps": self.steps,
             "cfg": self.cfg,
             "sampler_name": self.sampler_name,
+            "scheduler": self.scheduler,
             "model_name": self.model_name,
             "width": self.width,
             "height": self.height,
@@ -104,6 +106,7 @@ def _parse_a1111_parameters(text: str) -> ExtractedMetadata:
     cfg = float(params["CFG scale"]) if "CFG scale" in params and re.match(r"^[\d\.]+$", params["CFG scale"]) else None
     seed = int(params["Seed"]) if "Seed" in params and params["Seed"].isdigit() else None
     sampler = params.get("Sampler") or None
+    scheduler = params.get("Schedule type") or params.get("Scheduler") or None
     model = params.get("Model") or None
 
     width, height = None, None
@@ -121,6 +124,7 @@ def _parse_a1111_parameters(text: str) -> ExtractedMetadata:
         steps=steps,
         cfg=cfg,
         sampler_name=sampler,
+        scheduler=scheduler,
         model_name=model,
         width=width,
         height=height,
@@ -144,6 +148,7 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
     steps: Optional[int] = None
     cfg: Optional[float] = None
     sampler: Optional[str] = None
+    scheduler: Optional[str] = None
     model_name: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -179,6 +184,8 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
                 cfg = float(inputs["cfg"])
             if "sampler_name" in inputs and isinstance(inputs["sampler_name"], str):
                 sampler = inputs["sampler_name"]
+            if "scheduler" in inputs and isinstance(inputs["scheduler"], str):
+                scheduler = inputs["scheduler"]
 
         # Empty Latent Image
         if ctype == "EmptyLatentImage":
@@ -209,6 +216,7 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
         steps=steps,
         cfg=cfg,
         sampler_name=sampler,
+        scheduler=scheduler,
         model_name=model_name,
         width=width,
         height=height,

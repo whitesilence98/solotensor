@@ -31,7 +31,7 @@ class TestImageMetadata(unittest.TestCase):
         raw_text = (
             "a cinematic cyberpunk female warrior, neon atmosphere\n"
             "Negative prompt: low quality, blurry, extra fingers\n"
-            "Steps: 25, Sampler: Euler a, CFG scale: 7.5, Seed: 987654321, Size: 768x1344, Model: test_checkpoint"
+            "Steps: 25, Sampler: Euler a, Schedule type: Karras, CFG scale: 7.5, Seed: 987654321, Size: 768x1344, Model: test_checkpoint"
         )
         pnginfo.add_text("parameters", raw_text)
         buf = io.BytesIO()
@@ -48,6 +48,7 @@ class TestImageMetadata(unittest.TestCase):
         self.assertEqual(res.width, 768)
         self.assertEqual(res.height, 1344)
         self.assertEqual(res.sampler_name, "Euler a")
+        self.assertEqual(res.scheduler, "Karras")
         self.assertEqual(res.model_name, "test_checkpoint")
         self.assertIn("a cinematic cyberpunk female warrior", res.tags)
         self.assertIn("neon atmosphere", res.tags)
@@ -68,7 +69,7 @@ class TestImageMetadata(unittest.TestCase):
             },
             "20": {
                 "class_type": "KSampler",
-                "inputs": {"seed": 123456, "steps": 20, "cfg": 8.0, "sampler_name": "dpmpp_2m"},
+                "inputs": {"seed": 123456, "steps": 20, "cfg": 8.0, "sampler_name": "dpmpp_2m", "scheduler": "karras"},
             },
             "30": {
                 "class_type": "EmptyLatentImage",
@@ -88,6 +89,8 @@ class TestImageMetadata(unittest.TestCase):
         self.assertEqual(res.seed, 123456)
         self.assertEqual(res.steps, 20)
         self.assertEqual(res.cfg, 8.0)
+        self.assertEqual(res.sampler_name, "dpmpp_2m")
+        self.assertEqual(res.scheduler, "karras")
         self.assertEqual(res.width, 1024)
         self.assertEqual(res.height, 1024)
 

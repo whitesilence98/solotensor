@@ -119,6 +119,8 @@ export function saveRemixToStorage(meta: GalleryMetadata, modelOptions?: Install
       seed: meta.seed !== undefined && meta.seed !== null ? String(meta.seed) : "",
       steps: meta.steps !== undefined && meta.steps !== null ? String(meta.steps) : "25",
       cfg: meta.cfg !== undefined && meta.cfg !== null ? String(meta.cfg) : "7.0",
+      samplerName: meta.sampler_name || "euler",
+      scheduler: meta.scheduler || "normal",
       denoise: meta.denoise !== undefined && meta.denoise !== null ? String(meta.denoise) : "1",
       format: meta.format_name || "1:1",
       modelId: meta.model_id || matchedModel?.model_id || "",
@@ -1226,6 +1228,24 @@ export default function AssetInspectionStage({
                 </span>
                 <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
                   {meta?.cfg !== undefined && meta.cfg !== null ? meta.cfg : "7.0"}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  SAMPLER
+                </span>
+                <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
+                  {meta?.sampler_name ?? "euler"}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
+                  SCHEDULER
+                </span>
+                <span className="mt-0.5 font-mono text-xs font-semibold text-[var(--ink)] block truncate">
+                  {meta?.scheduler ?? "normal"}
                 </span>
               </div>
             </div>
