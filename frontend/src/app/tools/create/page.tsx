@@ -44,7 +44,9 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
-import AspectRatioSelector from "@/components/AspectRatioSelector";
+import AspectRatioSelector, {
+  DEFAULT_TOOL_RATIOS,
+} from "@/components/AspectRatioSelector";
 import {
   STARTER_TEMPLATES,
   detectComfyUIFormat,
@@ -81,7 +83,7 @@ const MODES: {
   },
 ];
 
-const RATIOS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
+const RATIOS: ToolAspectRatio[] = DEFAULT_TOOL_RATIOS;
 
 /**
  * Dual-Mode Live Preview Inspector Panel (from CreateToolDrawer).
@@ -958,7 +960,7 @@ export default function CreateToolStudioPage() {
                   if (dropped) void processJsonFile(dropped);
                 }}
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-[8px] border border-dashed p-6 text-center transition ${
+                className={`flex h-[160px] cursor-pointer flex-col items-center justify-center rounded-[8px] border border-dashed p-6 text-center transition ${
                   isDraggingWorkflow
                     ? "border-[var(--accent)] bg-[var(--accent)]/10"
                     : file
@@ -1405,7 +1407,7 @@ export default function CreateToolStudioPage() {
                     </label>
                     <div
                       onClick={() => starterImageInputRef.current?.click()}
-                      className="cursor-pointer flex min-h-[90px] flex-col items-center justify-center rounded border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center hover:border-[var(--accent)] transition"
+                      className="cursor-pointer flex h-[90px] flex-col items-center justify-center rounded border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center hover:border-[var(--accent)] transition"
                     >
                       <input
                         ref={starterImageInputRef}
@@ -1648,7 +1650,7 @@ export default function CreateToolStudioPage() {
                     if (f) setThumbnail(f);
                   }}
                   onClick={() => thumbInputRef.current?.click()}
-                  className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-[8px] border border-dashed p-4 text-center transition ${
+                  className={`flex h-[140px] cursor-pointer flex-col items-center justify-center rounded-[8px] border border-dashed p-4 text-center transition ${
                     isDraggingThumb
                       ? "border-[var(--accent)] bg-[var(--accent)]/10"
                       : thumbnail

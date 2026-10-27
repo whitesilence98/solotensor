@@ -31,7 +31,7 @@ This document outlines the architecture, design system, and coding standards for
 ## 3. Engineering Conventions
 - **Client Components**: Only use `'use client'` where state, effects, or browser APIs are required.
 - **API Requests**: Route all calls through `src/lib/api.ts`.
-- **Prompt Composer**: Shared `PromptComposer.tsx` component used across both `Text2Img` and `Img2Img` generation tabs for consistent tag autocompletion and prompt crafting.
+- **Prompt Bar**: `StudioPromptBar.tsx` is the single prompt surface for every `/generate` mode (positive prompt, optional one-line negative prompt, batch count, primary Generate action). `PromptComposer.tsx` is retained only for the tool runner (`src/app/tools/[tool_id]/page.tsx`) and is no longer mounted in `/generate`.
 - **WebSockets**: Maintain clean event registration and unmount cleanup in `useEffect`.
 - **State Resilience**: Provide clear states for idle, generating, empty, and error scenarios.
 

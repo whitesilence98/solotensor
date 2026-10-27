@@ -67,6 +67,15 @@ export type GenerationMode =
   | "upscale"
   | "video";
 
+/** Video audio track: `silent` and native audio share a graph state; `voice_clone` needs `reference_audio`. */
+export type VideoAudioMode = "silent" | "voice_clone";
+
+/** Video sizing: `preset` forces width/height; `source` follows the uploaded image within `video_megapixels`. */
+export type VideoResizeMode = "preset" | "source";
+
+/** Explicit video sub-mode. Omitted on the wire = legacy inference from image presence. */
+export type VideoSubMode = "text-to-video" | "image-to-video";
+
 export type ModelCategory =
   | "diffusion_models"
   | "text_encoders"
@@ -133,6 +142,7 @@ export interface GeneratePayload {
   base_version_id?: string;
   base_file_id?: string;
   mode: GenerationMode;
+  video_mode?: VideoSubMode;
   prompt: string;
   negative_prompt?: string;
   seed?: number;
@@ -152,11 +162,22 @@ export interface GeneratePayload {
   enable_detailer?: boolean;
   upscale?: UpscaleConfigPayload;
   detailer?: DetailerConfigPayload;
-  video_frames?: number;
   video_fps?: number;
   video_duration_seconds?: number;
   stage2_upscale?: boolean;
   last_frame_image?: string | null;
+  audio_mode?: VideoAudioMode;
+  reference_audio?: string | null;
+  extract_voice?: boolean;
+  resize_mode?: VideoResizeMode;
+  video_megapixels?: number;
+  first_frame_strength?: number;
+  last_frame_strength?: number;
+  rife_multiplier?: number;
+  high_fps?: boolean;
+  film_grain?: boolean;
+  match_color?: boolean;
+  tiled_vae_decode?: boolean;
 }
 
 export interface ClipOptions {
@@ -285,6 +306,10 @@ export interface ToolDetail extends ToolSummary {
   output_kind: "image" | "video";
   controls: ToolControl[];
   essential_summary?: EssentialControlSummary | null;
+  /** Server-resolved pixel size per aspect preset. Never hardcode this client-side. */
+  aspect_dimensions?: Record<string, number[]>;
+  /** Latent grid the width/height must land on (32 for LTX, otherwise 8). */
+  dimension_multiple?: number;
 }
 
 export interface ToolRunResult extends ToolExecutionResult {
@@ -343,6 +368,8 @@ export interface GenerationMetadata {
 export interface GalleryMetadata extends GenerationMetadata {
   source?: "workspace" | "tool";
   origin?: string;
+  /** Media kind recorded in the sidecar metadata (AssetRecord.type derives from the file extension). */
+  kind?: "image" | "video";
   tool_id?: string;
   tool_name?: string;
   tool_mode?: ToolMode;

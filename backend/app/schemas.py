@@ -433,8 +433,15 @@ class GenerateRequest(BaseModel):
     base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     mode: Literal["text-to-image", "image-to-image", "detailer", "upscale", "video"] = "text-to-image"
+    video_mode: Literal["text-to-video", "image-to-video"] | None = Field(
+        None,
+        description=(
+            "Explicit video sub-mode. Omit for legacy inference: a reference image "
+            "selects image-to-video, otherwise text-to-video."
+        ),
+    )
     prompt: str = Field("", max_length=50_000)
-    negative_prompt: str = ""
+    negative_prompt: str = Field("", max_length=50_000)
     seed: Optional[int] = Field(None, ge=0, le=2**32 - 1)
     steps: int = Field(10, ge=1, le=100)
     image_count: int = Field(1, ge=1, le=4)
@@ -454,11 +461,45 @@ class GenerateRequest(BaseModel):
     enable_detailer: bool = Field(False, description="Enable secondary face & image detailer pass")
     upscale: UpscaleConfig = Field(default_factory=UpscaleConfig)
     detailer: DetailerConfig = Field(default_factory=DetailerConfig)
-    video_frames: int = Field(25, ge=9, le=301, description="Number of video frames to generate")
     video_fps: int = Field(25, ge=8, le=60, description="Video frame rate")
     video_duration_seconds: int = Field(3, ge=1, le=30, description="Video duration in seconds")
     stage2_upscale: bool = Field(False, description="Enable 2x spatial upscale and RIFE frame smoothing")
-    last_frame_image: Optional[str] = Field(None, description="Optional last frame image for video interpolation")
+    last_frame_image: Optional[str] = Field(
+        None,
+        description="Last-frame conditioning image (data-URI, /files/ URL, or bare base64) for first/last-frame interpolation",
+    )
+    audio_mode: Literal["silent", "voice_clone"] = Field(
+        "silent",
+        description="Video audio track. 'voice_clone' synthesizes an ID-LoRA voice-cloned track and requires reference_audio",
+    )
+    reference_audio: Optional[str] = Field(
+        None,
+        description="Reference audio for voice_clone mode (data-URI, /files/ URL, or bare base64)",
+    )
+    extract_voice: bool = Field(
+        True,
+        description="Run Mel-Band RoFormer voice extraction on the reference audio; only meaningful with voice_clone",
+    )
+    resize_mode: Literal["preset", "source"] = Field(
+        "source",
+        description=(
+            "Video sizing. 'preset' forces the requested width/height; "
+            "'source' follows the uploaded image scaled to the video_megapixels budget"
+        ),
+    )
+    video_megapixels: float = Field(
+        2.1,
+        gt=0,
+        le=8,
+        description="Megapixel budget for the source image when resize_mode='source'",
+    )
+    first_frame_strength: float = Field(1.0, ge=0.0, le=1.0, description="Conditioning strength of the first frame")
+    last_frame_strength: float = Field(1.0, ge=0.0, le=1.0, description="Conditioning strength of the last frame")
+    rife_multiplier: int = Field(2, ge=1, le=4, description="RIFE frame interpolation multiplier (stage 2 only)")
+    high_fps: bool = Field(False, description="Enable high-FPS output in stage 2")
+    film_grain: bool = Field(False, description="Apply film grain in stage 2")
+    match_color: bool = Field(True, description="Match color between stage 1 and upscaled stage 2 output")
+    tiled_vae_decode: bool = Field(False, description="Decode stage 2 latents with tiled VAE to reduce VRAM")
 
     @field_validator("prompt")
     @classmethod
@@ -467,11 +508,68 @@ class GenerateRequest(BaseModel):
             raise ValueError("Prompt must contain at most 1000 words")
         return value
 
+    @field_validator("negative_prompt")
+    @classmethod
+    def negative_prompt_at_most_one_thousand_words(cls, value: str) -> str:
+        if len(value.split()) > 1_000:
+            raise ValueError("Negative prompt must contain at most 1000 words")
+        return value
+
     @model_validator(mode="after")
     def validate_base_identity(self) -> "GenerateRequest":
         base_ids = (self.base_model_id, self.base_version_id, self.base_file_id)
         if any(value is not None for value in base_ids) and not all(value is not None for value in base_ids):
             raise ValueError("base_model_id, base_version_id, and base_file_id must be set together")
+        return self
+
+    @model_validator(mode="after")
+    def validate_video_parameters(self) -> "GenerateRequest":
+        if self.mode == "video":
+            if self.video_mode == "image-to-video":
+                if not self.reference_images and not self.last_frame_image:
+                    raise ValueError(
+                        "video_mode='image-to-video' requires a first or last frame "
+                        "(reference_images or last_frame_image)"
+                    )
+            elif self.video_mode == "text-to-video":
+                if self.reference_images:
+                    raise ValueError(
+                        "video_mode='text-to-video' does not accept reference_images; "
+                        "use video_mode='image-to-video' to condition on a frame"
+                    )
+                if self.last_frame_image is not None:
+                    raise ValueError(
+                        "video_mode='text-to-video' does not accept last_frame_image; "
+                        "use video_mode='image-to-video' to condition on a frame"
+                    )
+        else:
+            video_only_fields = [
+                name
+                for name, enabled in (
+                    ("video_mode", self.video_mode is not None),
+                    ("audio_mode", self.audio_mode != "silent"),
+                    ("reference_audio", self.reference_audio is not None),
+                    ("resize_mode", self.resize_mode != "source"),
+                    ("video_megapixels", self.video_megapixels != 2.1),
+                    ("first_frame_strength", self.first_frame_strength != 1.0),
+                    ("last_frame_strength", self.last_frame_strength != 1.0),
+                    ("last_frame_image", self.last_frame_image is not None),
+                    ("stage2_upscale", self.stage2_upscale),
+                    ("rife_multiplier", self.rife_multiplier != 2),
+                    ("high_fps", self.high_fps),
+                    ("film_grain", self.film_grain),
+                    ("match_color", self.match_color is not True),
+                    ("tiled_vae_decode", self.tiled_vae_decode),
+                )
+                if enabled
+            ]
+            if video_only_fields:
+                raise ValueError(
+                    "Video-only field(s) cannot be used unless mode='video': "
+                    + ", ".join(video_only_fields)
+                )
+        if self.audio_mode == "voice_clone" and not self.reference_audio:
+            raise ValueError("audio_mode='voice_clone' requires reference_audio to be set")
         return self
 
     @field_validator("width", "height")
@@ -718,6 +816,13 @@ class ToolDetail(ToolSummary):
     output_kind: Literal["image", "video"]
     controls: list[ToolControl] = Field(default_factory=list)
     essential_summary: dict[str, Any] | None = None
+    # Resolved pixel size for each aspect preset, straight from
+    # ai_tools.ASPECT_DIMENSIONS. The client must not hardcode its own table:
+    # a divergent copy silently sends sizes the server never intended.
+    aspect_dimensions: dict[str, list[int]] = Field(default_factory=dict)
+    # Grid the latent width/height must land on (32 for LTX, else 8), so the
+    # custom-size inputs and the Match Size button snap to what will run.
+    dimension_multiple: int = 8
 
 
 class ToolCatalogResponse(BaseModel):

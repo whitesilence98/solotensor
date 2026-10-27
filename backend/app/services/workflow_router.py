@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional, Set, TYPE_CHECKING
+from typing import Any, Literal, Optional, Set, TYPE_CHECKING
 
 from .workflow_bypass import apply_t2i_pipeline, apply_detailer_pipeline
 
@@ -459,113 +459,356 @@ def patch_video_it2v_workflow(
     workflow: dict[str, Any],
     *,
     prompt: str = "",
+    negative_prompt: str = "",
     seed: int = 1,
     duration_seconds: int = 3,
     video_fps: int = 25,
     width: int = 1024,
     height: int = 576,
     steps: int = 8,
-    source_image_filename: str | None = None,
-    last_frame_filename: str | None = None,
+    cfg: float = 1.0,
+    sampler_name: Optional[str] = None,
+    scheduler: Optional[str] = None,
+    loras: Optional[list[dict[str, Any]]] = None,
+    source_image_filename: Optional[str] = None,
+    last_frame_filename: Optional[str] = None,
+    video_mode: Optional[Literal["text-to-video", "image-to-video"]] = None,
     stage2_upscale: bool = False,
+    audio_mode: Literal["silent", "voice_clone"] = "silent",
+    reference_audio_filename: Optional[str] = None,
+    extract_voice: bool = True,
+    resize_mode: Literal["preset", "source"] = "source",
+    video_megapixels: float = 2.1,
+    first_frame_strength: float = 1.0,
+    last_frame_strength: float = 1.0,
+    rife_multiplier: int = 2,
+    high_fps: bool = False,
+    film_grain: bool = False,
+    match_color: bool = True,
+    tiled_vae_decode: bool = False,
 ) -> dict[str, Any]:
     """Patch the 320-node LTX-Video 2.3 workflow (workflow_generate_it2v.json).
 
-    Supports both Text-to-Video and Image-to-Video (First Frame conditioning),
-    and prunes Stage 2 nodes when stage2_upscale=False for fast generation.
+    Node ``1883`` ("false = Clone Voice, true = Audio to Video") is the AUDIO
+    switch, NOT the last-frame switch. It drives ``1884:1698`` (positive),
+    ``1884:1699`` (model) and ``1887:1702`` (audio trim duration).
+
+    Audio modes. LTX-2.3 always produces an audio track, so neither mode is
+    digitally silent; both keep the model-generated ``LTXVEmptyLatentAudio``
+    latent (``389:377``) selected on ``389:1103``.
+
+    * ``audio_mode="silent"`` (native audio) — ``1883=True`` routes the Positive
+      and Model switches to the plain prompt ``1879`` and the clean model
+      ``1880``, i.e. no ID-LoRA identity lock. ``389:1103`` is pinned to its
+      ``on_false`` branch so the model generates its own audio instead of
+      encoding the bundled reference MP3 on ``1888``.
+    * ``audio_mode="voice_clone"`` — ``1883=False`` routes those switches to
+      ``1884:1697`` ``LTXVReferenceAudio`` (ID-LoRA
+      ``ltx-2.3-id-lora-talkvid-3k``), which attaches the speaker identity from
+      the reference audio. ``1888`` receives ``reference_audio_filename`` and
+      ``1889:1706`` honours ``extract_voice`` (Mel-Band RoFormer vocal
+      separation applied to that reference). The audio latent is still the
+      model-generated one, so the model speaks in the cloned voice.
+
+    Note: ``389:1104`` is inert. rgthree "Any Switch" (``389:1105``) returns its
+    first non-empty input, and ``1883`` is always a boolean, so ``any_01`` always
+    wins over ``389:1104``; the real selector is ``389:1103``, which is patched
+    directly.
+
+    Sizing: ``resize_mode="source"`` writes ``389:956`` (megapixels) so the source
+    image is scaled to ``video_megapixels``; ``"preset"`` writes ``0`` so the
+    ``389:828``/``389:830`` width/height pair wins instead.
+
+    Stage-2 levers (RIFE multiplier, high FPS, film grain, colour match, Stage-2
+    tiled VAE) only exist when ``stage2_upscale=True``; in fast mode those nodes
+    are pruned from the graph and the levers are therefore no-ops. The Stage-1
+    tiled VAE switch (``1693:1689``) survives pruning and is always honoured.
+
+    The Stage-2 seed stays at the template value; only the Stage-1 seed is patched.
+
+    Branch selection (``video_mode``). An explicit ``video_mode="text-to-video"``
+    or ``"image-to-video"`` makes the T2V/I2V choice deterministic: the first and
+    last frame inputs are derived once from ``source_image_filename`` /
+    ``last_frame_filename`` (T2V drops both defensively; I2V raises when neither
+    is supplied), the ``1875`` LoRA/CLIP flag is set from the mode itself, and
+    the two "Use First/Last Frame?" compares are re-pointed at small force
+    primitives so each frame axis is decided by the presence of that specific
+    image rather than by the size heuristic. T2V also pins ``389:956`` to ``0``
+    because there is no source image to scale (``389:1928:1113`` tests
+    ``megapixels > 0``). Omitting ``video_mode`` keeps the legacy inference,
+    byte-for-byte: the OR gate and the ``1875`` flag are derived from whichever
+    frames were supplied.
+
+    The OR gates ``389:1929:1111`` (Stage 1) and its clone ``1194:1669``
+    (Stage 2) are DERIVED nodes: they combine the two per-frame compares and fan
+    out to the sampler, sigmas, step counts, Stage-1 dimensions and the whole
+    Stage-2 mirror. Never write them directly; change the compares that feed
+    them so both stages stay consistent. Forcing is per-frame, not per-mode: a
+    last-frame-only I2V request keeps ``1875_force_first = 0`` and
+    ``1875_force_last = 2``, which is the path the ``389:1928:1112`` Image
+    Switch depends on.
+
+    ``1875`` is a SEPARATE axis (I2V vs T2V LoRA and CLIP via ``1874`` ->
+    ``1878``/``1880``). It must agree with the conditioning branch; an explicit
+    ``video_mode`` sets it directly, while legacy calls OR the supplied frames.
     """
     graph = json.loads(json.dumps(workflow))
 
-    # 1. Positive Prompt: Node 1879 CLIPTextEncode
-    if "1879" in graph and "inputs" in graph["1879"]:
-        graph["1879"]["inputs"]["text"] = prompt
+    def inputs_of(node_id: str) -> Optional[dict[str, Any]]:
+        """Return the node's mutable inputs dict, or None when the node is absent."""
+        node = graph.get(node_id)
+        if not isinstance(node, dict):
+            return None
+        return node.setdefault("inputs", {})
 
-    # 2. Seed: Node 2019 SeedNode & Node 389:363
-    if "2019" in graph and "inputs" in graph["2019"]:
-        graph["2019"]["inputs"]["seed"] = int(seed)
-    if "389:363" in graph and "inputs" in graph["389:363"]:
-        graph["389:363"]["inputs"]["noise_seed"] = ["2019", 0]
+    # 1. Positive Prompt: Node 1879 CLIPTextEncode (feeds 1884:1698 via the switches)
+    if (inputs := inputs_of("1879")) is not None:
+        inputs["text"] = prompt
 
-    # 3. Length & Duration: Node 389:387 easy int Length in Seconds
+    # 2. Seed: Node 2019 SeedNode -> Node 389:363 RandomNoise (uint32 bounds)
+    final_seed = max(0, min(0xFFFFFFFF, int(seed)))
+    if (inputs := inputs_of("2019")) is not None:
+        inputs["seed"] = final_seed
+    if (inputs := inputs_of("389:363")) is not None:
+        inputs["noise_seed"] = ["2019", 0]
+
+    # 3. Length & Duration: 389:387 (Stage 1 frames) and 1887:1704 (A2V audio trim)
     duration = max(1, min(30, int(duration_seconds)))
-    if "389:387" in graph and "inputs" in graph["389:387"]:
-        graph["389:387"]["inputs"]["value"] = duration
+    if (inputs := inputs_of("389:387")) is not None:
+        inputs["value"] = duration
+    if (inputs := inputs_of("1887:1704")) is not None:
+        inputs["value"] = float(duration)
 
-    # 4. Frame rate: Node 389:825 & 389:384
+    # 4. Frame rate: video follows the request, audio is pinned to 24 fps.
+    #    Node 389:877 documents that ComfyUI needs audio at 24 fps and video at
+    #    25 fps to keep them in sync, so 389:384 must not follow video_fps.
     fps = max(8, min(60, int(video_fps)))
-    if "389:825" in graph and "inputs" in graph["389:825"]:
-        graph["389:825"]["inputs"]["value"] = fps
-    if "389:384" in graph and "inputs" in graph["389:384"]:
-        graph["389:384"]["inputs"]["value"] = fps
+    if (inputs := inputs_of("389:825")) is not None:
+        inputs["value"] = fps
+    if (inputs := inputs_of("389:384")) is not None:
+        inputs["value"] = 24
 
     # 5. Dimensions (Snapped to multiples of 32 for LTX-Video)
-    snapped_w = max(64, (width // 32) * 32)
-    snapped_h = max(64, (height // 32) * 32)
-    if "389:828" in graph and "inputs" in graph["389:828"]:
-        graph["389:828"]["inputs"]["value"] = snapped_w
-    if "389:830" in graph and "inputs" in graph["389:830"]:
-        graph["389:830"]["inputs"]["value"] = snapped_h
+    snapped_w = max(64, (int(width) // 32) * 32)
+    snapped_h = max(64, (int(height) // 32) * 32)
+    if (inputs := inputs_of("389:828")) is not None:
+        inputs["value"] = snapped_w
+    if (inputs := inputs_of("389:830")) is not None:
+        inputs["value"] = snapped_h
 
-    # 6. Steps: T2V (8) / I2V (4)
-    step_val = max(1, min(50, int(steps)))
-    if "389:1986" in graph and "inputs" in graph["389:1986"]:
-        graph["389:1986"]["inputs"]["value"] = step_val
-    if "389:973" in graph and "inputs" in graph["389:973"]:
-        graph["389:973"]["inputs"]["value"] = step_val
-    if "1194:1191" in graph and "inputs" in graph["1194:1191"]:
-        graph["1194:1191"]["inputs"]["value"] = step_val
-    if "1194:1988" in graph and "inputs" in graph["1194:1988"]:
-        graph["1194:1988"]["inputs"]["value"] = step_val
+    # 6. Steps: Stage 1 (389:1986/389:973) and Stage 2 (1194:1191/1194:1988)
+    step_val = max(1, min(100, int(steps)))
+    for node_id in ("389:1986", "389:973", "1194:1191", "1194:1988"):
+        if (inputs := inputs_of(node_id)) is not None:
+            inputs["value"] = step_val
 
-    # 7. First Frame Image Conditioning (Image-to-Video vs Text-to-Video)
-    if source_image_filename:
+    # 7. CFG: Stage 1 (389:366) and Stage 2 (1194:1170) CFGGuider
+    cfg_val = max(0.0, min(30.0, float(cfg)))
+    for node_id in ("389:366", "1194:1170"):
+        if (inputs := inputs_of(node_id)) is not None:
+            inputs["cfg"] = cfg_val
+
+    # 8. Sampler: Stage 1 (389:372 T2V, 389:974 I2V), Stage 2 (1194:1168/1194:1173)
+    if sampler_name:
+        for node_id in ("389:372", "389:974", "1194:1168", "1194:1173"):
+            if (inputs := inputs_of(node_id)) is not None:
+                inputs["sampler_name"] = str(sampler_name)
+
+    # 9. Scheduler: Stage 1 (389:754/389:975), Stage 2 (1194:1172/1194:1174).
+    #    NOTE: 389:1440/389:1649 and 1194:1468/1194:1677 default to their "on"
+    #    branch, so the tuned VideoFlow sigma chain shadows these BasicSchedulers
+    #    unless the caller disables it in the UI.
+    if scheduler:
+        for node_id in ("389:754", "389:975", "1194:1172", "1194:1174"):
+            if (inputs := inputs_of(node_id)) is not None:
+                inputs["scheduler"] = str(scheduler)
+
+    # 10. LoRAs: nodes 2022 (I2V) and 2023 (T2V) are rgthree Power Lora Loaders.
+    #     Same contract as 1061 in workflow_generate_t2i.json: drop lora_* keys,
+    #     then write lora_{i} = {"on", "lora", "strength"}.
+    for node_id in ("2022", "2023"):
+        if (inputs := inputs_of(node_id)) is None:
+            continue
+        for key in list(inputs):
+            if key.lower().startswith("lora_"):
+                del inputs[key]
+        for index, selection in enumerate(loras or [], start=1):
+            inputs[f"lora_{index}"] = {
+                "on": bool(selection.get("on", True)),
+                "lora": str(selection["lora"]),
+                "strength": float(selection.get("strength", 1.0)),
+            }
+
+    # 11. Negative Prompt: replace 389:362 ConditioningZeroOut in place with a real
+    #     CLIPTextEncode only when a negative prompt is supplied AND CFG > 1. The
+    #     node id and output slot stay identical (389:376 consumes ["389:362", 0]).
+    #     At CFG 1 a negative prompt has no effect, so the zero-out is preserved.
+    if negative_prompt and cfg_val > 1.0 and "389:362" in graph:
+        graph["389:362"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": negative_prompt, "clip": ["1878", 0]},
+            "_meta": {"title": "Negative Prompt"},
+        }
+
+    # 12. First Frame Image Conditioning (Image-to-Video vs Text-to-Video).
+    #     Effective frames are resolved once from video_mode: T2V drops any leaked
+    #     image inputs, I2V requires at least one frame, legacy (None) is raw.
+    effective_source = source_image_filename
+    effective_last = last_frame_filename
+    if video_mode == "text-to-video":
+        effective_source = None
+        effective_last = None          # defensive; the schema rejects these upstream
+    elif video_mode == "image-to-video" and not (effective_source or effective_last):
+        raise ValueError(
+            "video_mode='image-to-video' requires a first or last frame"
+        )
+
+    if effective_source:
         graph["1875_load_first"] = {
             "class_type": "LoadImage",
-            "inputs": {"image": source_image_filename},
-            "_meta": {"title": "Load First Frame Image"}
+            "inputs": {"image": str(source_image_filename)},
+            "_meta": {"title": "Load First Frame Image"},
         }
-        if "389:1929:1905" in graph and "inputs" in graph["389:1929:1905"]:
-            graph["389:1929:1905"]["inputs"]["any_01"] = ["1875_load_first", 0]
-        if "1875" in graph and "inputs" in graph["1875"]:
-            graph["1875"]["inputs"]["value"] = True
+        if (inputs := inputs_of("389:1929:1905")) is not None:
+            inputs["any_01"] = ["1875_load_first", 0]
     else:
-        if "1875" in graph and "inputs" in graph["1875"]:
-            graph["1875"]["inputs"]["value"] = False
-        if "389:1929:1905" in graph and "inputs" in graph["389:1929:1905"]:
-            graph["389:1929:1905"]["inputs"].pop("any_01", None)
+        graph.pop("1875_load_first", None)
+        if (inputs := inputs_of("389:1929:1905")) is not None:
+            inputs.pop("any_01", None)
 
-    # 8. Last Frame Image Conditioning (Interpolation)
-    if last_frame_filename:
+    # 13. Last Frame Image Conditioning (interpolation). 389:1929:1903 derives
+    #     "Use Last Frame?" from the image size, so linking a real image is enough;
+    #     node 1883 must NOT be touched here (it is the audio switch).
+    if effective_last:
         graph["1875_load_last"] = {
             "class_type": "LoadImage",
-            "inputs": {"image": last_frame_filename},
-            "_meta": {"title": "Load Last Frame Image"}
+            "inputs": {"image": str(last_frame_filename)},
+            "_meta": {"title": "Load Last Frame Image"},
         }
-        if "389:1929:1901" in graph and "inputs" in graph["389:1929:1901"]:
-            graph["389:1929:1901"]["inputs"]["any_01"] = ["1875_load_last", 0]
-        if "1883" in graph and "inputs" in graph["1883"]:
-            graph["1883"]["inputs"]["value"] = True
+        if (inputs := inputs_of("389:1929:1901")) is not None:
+            inputs["any_01"] = ["1875_load_last", 0]
     else:
-        if "1883" in graph and "inputs" in graph["1883"]:
-            graph["1883"]["inputs"]["value"] = False
-        if "389:1929:1901" in graph and "inputs" in graph["389:1929:1901"]:
-            graph["389:1929:1901"]["inputs"].pop("any_01", None)
+        graph.pop("1875_load_last", None)
+        if (inputs := inputs_of("389:1929:1901")) is not None:
+            inputs.pop("any_01", None)
 
-    # 9. Fast Mode vs Pro Mode (Stage 1 only vs Stage 1 + Stage 2 Upscale)
+    # 14. I2V flag: 1874 reads only 1875, and it drives the I2V/T2V LoRA + CLIP
+    #     switches (1878/1880), so OR both conditioning images. An explicit mode
+    #     wins over the derived OR so the separate LoRA/CLIP axis always agrees
+    #     with the conditioning branch.
+    i2v_flag = (
+        bool(effective_source or effective_last)
+        if video_mode is None
+        else video_mode == "image-to-video"
+    )
+    if (inputs := inputs_of("1875")) is not None:
+        inputs["value"] = i2v_flag
+
+    # 14b. Deterministic branch forcing (only when the caller passes a mode).
+    #      The OR gates 389:1929:1111 / 1194:1669 are derived and fan out to
+    #      Stage 1 and Stage 2, so never write them. Instead re-point the two
+    #      per-frame compares at force primitives keyed on the presence of THAT
+    #      frame, which keeps last-frame-only I2V (389:1928:1112) intact.
+    if video_mode is not None:
+        graph["1875_force_first"] = {
+            "class_type": "PrimitiveInt",
+            "inputs": {"value": 2 if effective_source else 0},
+            "_meta": {"title": "Force First Frame Branch"},
+        }
+        graph["1875_force_last"] = {
+            "class_type": "PrimitiveInt",
+            "inputs": {"value": 2 if effective_last else 0},
+            "_meta": {"title": "Force Last Frame Branch"},
+        }
+        forced = [
+            ("389:1929:1907", "1875_force_first"),
+            ("389:1929:1903", "1875_force_last"),
+        ]
+        for compare_id, force_id in forced:
+            if (inputs := inputs_of(compare_id)) is not None:
+                inputs["a"] = [force_id, 0]
+        if (inputs := inputs_of("389:1929:1914")) is not None:
+            inputs["value"] = 1
+
+    # 15. Source sizing: 389:1928:1113 tests "megapixels > 0". A positive value
+    #     selects 389:1928:957 (scale to megapixels); 0 falls through to
+    #     389:1928:1115, which reads the 389:828/389:830 width/height pair.
+    megapixels = max(0.0, min(8.0, float(video_megapixels)))
+    if (inputs := inputs_of("389:956")) is not None:
+        inputs["value"] = megapixels if resize_mode == "source" else 0
+
+    # 15b. T2V has no source image, so the megapixel scaling path must not be
+    #      selectable: 389:1928:1113 compares "a > 0" and would otherwise scale
+    #      a latent that has no source dimensions.
+    if video_mode == "text-to-video":
+        if (inputs := inputs_of("389:956")) is not None:
+            inputs["value"] = 0
+
+    # 16. Guide strengths: 389:984 (first frame) and 389:1066 (last frame)
+    if (inputs := inputs_of("389:984")) is not None:
+        inputs["value"] = max(0.0, min(1.0, float(first_frame_strength)))
+    if (inputs := inputs_of("389:1066")) is not None:
+        inputs["value"] = max(0.0, min(1.0, float(last_frame_strength)))
+
+    # 17. Audio mode. Node 1883 is "false = Clone Voice, true = Audio to Video".
+    #     rgthree "Any Switch" 389:1105 returns its FIRST non-empty input, so
+    #     389:1104 is inert while 1883 is linked; 389:1103 is the node that really
+    #     selects the audio latent (on_false = 389:377 empty latent,
+    #     on_true = 389:1079 encoded reference audio).
+    if audio_mode == "voice_clone":
+        if not reference_audio_filename:
+            raise ValueError("audio_mode='voice_clone' requires reference_audio_filename")
+        if (inputs := inputs_of("1883")) is not None:
+            inputs["value"] = False
+        if (inputs := inputs_of("1888")) is not None:
+            inputs["audio"] = str(reference_audio_filename)
+            inputs.pop("audioUI", None)
+        if (inputs := inputs_of("1889:1706")) is not None:
+            inputs["value"] = bool(extract_voice)
+        if (inputs := inputs_of("389:1103")) is not None:
+            inputs["switch"] = ["389:1105", 0]
+    else:
+        if (inputs := inputs_of("1883")) is not None:
+            inputs["value"] = True
+        # Pin the empty-latent audio branch so the bundled reference MP3 on 1888
+        # is neither encoded nor played; the model generates its own track.
+        if (inputs := inputs_of("389:1103")) is not None:
+            inputs["switch"] = False
+
+    # 18. Stage-2 quality levers. All of these nodes live on the Stage-2 branch, so
+    #     they are no-ops once fast mode prunes them. The Stage-1 tiled VAE switch
+    #     (1693:1689) DOES survive pruning and is therefore always honoured.
+    if (inputs := inputs_of("1693:1689")) is not None:  # Stage 1 Tiled VAE Decode
+        inputs["switch"] = bool(tiled_vae_decode)
+    if stage2_upscale:
+        if (inputs := inputs_of("668:1041")) is not None:  # RIFE Frame Multiplier
+            inputs["value"] = max(1, min(4, int(rife_multiplier)))
+        if (inputs := inputs_of("668:1042")) is not None:  # "50 fps?"
+            inputs["value"] = bool(high_fps)
+        if (inputs := inputs_of("668:876")) is not None:  # "Add Film Grain?"
+            inputs["switch"] = bool(film_grain)
+        if (inputs := inputs_of("668:838")) is not None:  # Match Color/Light
+            inputs["value"] = bool(match_color)
+        if (inputs := inputs_of("668:655")) is not None:  # Stage 2 Tiled VAE Decode
+            inputs["switch"] = bool(tiled_vae_decode)
+
+    # 19. Fast Mode vs Pro Mode (Stage 1 only vs Stage 1 + Stage 2 Upscale).
+    #     Recursive dependency prune from the Stage-1 VHS_VideoCombine node 172.
     if not stage2_upscale:
-        visited = set()
-        def collect_deps(nid: str):
-            if nid in visited:
+        visited: set[str] = set()
+
+        def collect_deps(node_id: str) -> None:
+            if node_id in visited:
                 return
-            visited.add(nid)
-            node_def = graph.get(nid)
-            if not node_def or not isinstance(node_def, dict):
+            visited.add(node_id)
+            node_def = graph.get(node_id)
+            if not isinstance(node_def, dict):
                 return
-            for v in node_def.get("inputs", {}).values():
-                if isinstance(v, list) and len(v) == 2 and isinstance(v[0], str):
-                    collect_deps(v[0])
+            for value in node_def.get("inputs", {}).values():
+                if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                    collect_deps(value[0])
 
         collect_deps("172")
-        graph = {k: v for k, v in graph.items() if k in visited}
+        graph = {key: value for key, value in graph.items() if key in visited}
 
     return graph

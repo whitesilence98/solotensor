@@ -82,6 +82,7 @@ export interface TabState {
   maskBlur?: number;
   inpaintFill?: "original" | "latent_noise" | "latent_zero";
   // Video Tab Specifics
+  videoSubMode?: "text-to-video" | "image-to-video";
   motionBucketId?: number;
   videoFrames?: number;
   videoFps?: number;
@@ -101,7 +102,7 @@ Each generation mode persists to a dedicated `localStorage` key namespace:
 | **`Text2Img`** | `solotensor:studio:draft:text2img` | `1.0` (Fixed) | `7.0` | `25` | `format: "9:16"` |
 | **`Img2Img`** | `solotensor:studio:draft:img2img` | `0.65` | `7.0` | `25` | `referenceImage: null` |
 | **`Edit`** | `solotensor:studio:draft:edit` | `0.75` | `7.0` | `30` | `maskBlur: 8`, `inpaintFill: "original"` |
-| **`Video`** | `solotensor:studio:draft:video` | `1.0` | `2.5` | `25` | `motionBucketId: 127`, `frames: 25`, `fps: 16` |
+| **`Video`** | `solotensor:studio:draft:video` | `1.0` | `1.0` | `25` | `videoSubMode: "text-to-video"`, `videoFps: 24`, `videoDurationSeconds: 5`, `resizeMode: "source"` |
 | **`Prime`** | `solotensor:studio:draft:prime` | `1.0` | `7.0` | `30` | `enableDetailer: true`, `upscale.enabled: true` |
 
 ### Tab Switching Transition Protocol
@@ -123,7 +124,7 @@ When the user clicks a tab button in `ControlPanel.tsx`:
 - **Controls**:
   - Checkpoint Model Picker & LoRA Stacker.
   - Aspect Ratio Selector (`9:16`, `1:1`, `16:9`, `4:3`, `3:2`, `custom`).
-  - Prompt Composer with Auto-Complete & Negative Prompt.
+  - Prompt and optional negative prompt via the shared `StudioPromptBar` above the canvas (includes Auto-Prompt tag interrogation).
   - Sampling Parameters (Steps: 1–100, CFG: 1.0–30.0, Seed: -1/Random).
   - Optional Secondary Passes (Super-Resolution Upscale, Cascading Detailer).
 
@@ -135,7 +136,7 @@ When the user clicks a tab button in `ControlPanel.tsx`:
   - High values (`0.75 – 0.95`): Radical re-imagining guided by input geometry.
 - **Controls**:
   - Drag & Drop Source Image Uploader with instant thumbnail preview and clear action.
-  - Reusable Prompt Composer component with tag autocomplete, style pills, and negative prompt management (shared with Text2Img).
+  - Prompt editing and Auto-Prompt interrogation are provided by the shared `StudioPromptBar` above the canvas; the sidebar holds only structural controls.
   - "Auto-Prompt" Tag Interrogator (deep-extracts prompts and settings from PNG metadata).
   - "Match Source Dimensions" button (reads natural image resolution and sets custom width/height snapped to multiples of 8).
   - Full access to Model picker, LoRAs, and Sampling parameters.
@@ -150,19 +151,23 @@ When the user clicks a tab button in `ControlPanel.tsx`:
     - `Original`: Retains source colors under the mask for targeted refinement.
     - `Latent Noise`: Replaces masked region with pure noise for complete object replacement.
     - `Latent Zero`: Fills with neutral tone for clean removal / erasing.
-  - Dedicated Inpainting Prompt (e.g. *"gold watch on wrist, hyperdetailed"*).
+  - Prompt editing via the shared `StudioPromptBar` above the canvas.
 
 ### 4.4 Tab 4: Video (LTX-Video 2.3 Image-to-Video & Text-to-Video Studio)
 - **Primary Generator**: Native ComfyUI `workflow_generate_it2v.json` powered by Lightricks LTX-Video 2.3 (22B Distilled Transformer).
 - **Execution Profiles**:
   - **⚡ Fast Mode (`stage2_upscale: false`)**: Executes the core 8-step distilled latent flow and decodes via Node `172` (`VHS_VideoCombine`), producing a crisp, fast video (`~15s`). All stage 2 nodes (2x upscale & RIFE) are cleanly pruned from the graph.
   - **✨ Pro Mode (`stage2_upscale: true`)**: Chains the full 2x Latent Upscale pass with RIFE frame interpolation, outputting the highest-fidelity video via Node `678` (`VHS_VideoCombine`) (`~45s`).
-- **Dynamic Mode Resolution**:
-  - **T2V (Text-to-Video)**: When no initial frame is uploaded, motion and scenes are synthesized purely from the prompt.
-  - **I2V (Image-to-Video)**: When an initial frame is dropped, the backend injects a `LoadImage` node wired to `389:1929:1905:any_01`, conditioning the video generation on the starting visual frame.
+- **Explicit Sub-Mode Selection**:
+  - A Text-to-Video / Image-to-Video pill lives inside the Video tab and sets `videoSubMode` in tab state.
+  - The selected sub-mode is sent as `video_mode` on `POST /api/v1/generate`.
+  - **I2V (Image-to-Video)** requires a first frame (`reference_images`) or a closing frame (`last_frame_image`); the backend injects `LoadImage` nodes wired to `389:1929:1905:any_01` / `389:1929:1901:any_01` and pins the per-frame compares so last-frame-only requests stay valid.
+  - **T2V (Text-to-Video)** rejects both `reference_images` and `last_frame_image`; motion and scenes are synthesized purely from the prompt.
+  - Omitting `video_mode` preserves legacy inference: a supplied frame selects I2V, otherwise T2V.
 - **Parametric Controls**:
-  - **Prompt Composer**: Scene motion, camera trajectory, actions, and negative prompt styling.
-  - **Initial Frame Dropzone**: Optional starter frame preview with instant "Remove (Switch to T2V)" toggle.
+  - **Model Card**: The same `GENERATION MODEL` card the other tabs use, showing the selected checkpoint with its architecture chip. It is labelling, not control: the graph keeps its bundled LTX-2.3 transformer, VAEs and text encoders, and `_ensure_video_capable` rejects a non-LTX selection with `409` before the template loads.
+  - **Prompt & Negative Prompt**: Provided by the shared `StudioPromptBar` above the canvas. In Video the negative field auto-expands and the placeholders use motion/camera copy. The backend swaps node `389:362` (`ConditioningZeroOut`) for a real `CLIPTextEncode` when a negative prompt is set and `cfg > 1`; at the default CFG 1 it has no effect.
+  - **Initial Frame Dropzone**: Optional starter frame preview with instant "Remove (Switch to T2V)" toggle. Frames, conditioning strengths, and source sizing are I2V-only; these controls are hidden in T2V.
   - **Video Duration**: Configurable duration buttons (`2s`, `3s`, `5s`, `10s`). Dynamically computes `video_frames = (duration * fps) + 1` into node `389:387`.
   - **Frame Rate (FPS)**: Selectable frame rates (`24 FPS`, `25 FPS`, `30 FPS`). Patches node `389:825` and `389:384`.
   - **Aspect & Resolution**: Presets snapped to multiples of 32 required by LTX-Video:

@@ -41,7 +41,9 @@ import WorkspaceModal from "@/components/WorkspaceModal";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import CustomSelect from "@/components/CustomSelect";
 import SeedInput from "@/components/SeedInput";
-import AspectRatioSelector, { AspectRatioIcon } from "@/components/AspectRatioSelector";
+import AspectRatioSelector, {
+  DEFAULT_TOOL_RATIOS,
+} from "@/components/AspectRatioSelector";
 import PromptComposer from "@/components/PromptComposer";
 import UserAvatar from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth-context";
@@ -62,7 +64,19 @@ import {
   removeStorageItem,
 } from "@/lib/storage";
 
-const RATIOS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
+const RATIOS: ToolAspectRatio[] = DEFAULT_TOOL_RATIOS;
+/** ToolAspectRatio plus the client-only "custom" mode, which is not sent to the API. */
+type ToolRatio = ToolAspectRatio | "custom";
+/**
+ * The size mode a run last used. `values` already persists the width/height
+ * numbers, but not which pill produced them — so without this a custom run
+ * reloads showing "1:1" while still sending its custom pixels.
+ */
+interface ToolSizeDraft {
+  ratio: ToolRatio;
+  width: string;
+  height: string;
+}
 const MODE_LABELS: Record<string, string> = {
   "text-to-image": "Text → Image",
   "image-to-image": "Image → Image",
@@ -364,7 +378,10 @@ export default function ToolDetailPage() {
   const [tool, setTool] = useState<ToolDetail | null>(null);
   const [values, setValues] = useState<Record<string, Scalar>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
-  const [ratio, setRatio] = useState<ToolAspectRatio>("1:1");
+  const [ratio, setRatio] = useState<ToolRatio>("1:1");
+  /** Custom width/height as strings so the inputs can hold transient/empty values. */
+  const [customWidth, setCustomWidth] = useState("");
+  const [customHeight, setCustomHeight] = useState("");
   const [result, setResult] = useState<ToolRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -439,6 +456,34 @@ export default function ToolDetailPage() {
           null,
         );
         setValues(savedVals ? { ...defaultVals, ...savedVals } : defaultVals);
+        // Restore the size mode too. `values` alone cannot express it: a custom
+        // 1280×704 run restores its numbers, and without this the pill would
+        // read "1:1" while the graph still received 1280×704.
+        const savedSize = getStorageItem<ToolSizeDraft | null>(
+          STORAGE_KEYS.TOOL_DIMENSIONS(params.tool_id),
+          null,
+        );
+        const ratios: string[] = nextTool.supported_aspect_ratios ?? [];
+        // "custom" is only offered when the graph can actually be sized, and a
+        // tool can be replaced by one whose graph has no size node at all.
+        const canRestoreCustom =
+          ratios.length > 0 &&
+          nextTool.controls.some(
+            (c) => c.role === "width" || c.input_name === "width",
+          ) &&
+          nextTool.controls.some(
+            (c) => c.role === "height" || c.input_name === "height",
+          );
+        if (
+          savedSize &&
+          (savedSize.ratio === "custom"
+            ? canRestoreCustom
+            : ratios.includes(savedSize.ratio))
+        ) {
+          setRatio(savedSize.ratio);
+          setCustomWidth(savedSize.width);
+          setCustomHeight(savedSize.height);
+        }
         setFiles({});
         setResult(null);
       })
@@ -468,6 +513,7 @@ export default function ToolDetailPage() {
   const handleResetInputs = useCallback(() => {
     if (!tool) return;
     removeStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id));
+    removeStorageItem(STORAGE_KEYS.TOOL_DIMENSIONS(params.tool_id));
     setValues(
       Object.fromEntries(
         tool.controls
@@ -480,39 +526,185 @@ export default function ToolDetailPage() {
     setStandaloneNegativePrompt("");
     setNaturalDimensions(null);
     setRatio(tool.default_aspect_ratio);
+    // Re-seed the custom inputs from the restored defaults, so a later switch
+    // to Custom cannot resurrect the reset width/height.
+    const widthCtrl = tool.controls.find(
+      (c) => c.role === "width" || c.input_name === "width",
+    );
+    const heightCtrl = tool.controls.find(
+      (c) => c.role === "height" || c.input_name === "height",
+    );
+    setCustomWidth(widthCtrl ? String(widthCtrl.value ?? "") : "");
+    setCustomHeight(heightCtrl ? String(heightCtrl.value ?? "") : "");
   }, [tool, params.tool_id]);
 
   const handleRatioChange = useCallback(
-    (newRatio: ToolAspectRatio) => {
-      setRatio(newRatio);
-      if (tool) {
-        const widthCtrl = tool.controls.find(
-          (c) => c.role === "width" || c.input_name === "width",
-        );
-        const heightCtrl = tool.controls.find(
-          (c) => c.role === "height" || c.input_name === "height",
-        );
-        const aspectMap: Record<ToolAspectRatio, [number, number]> = {
-          "1:1": [1024, 1024],
-          "16:9": [1280, 720],
-          "9:16": [720, 1280],
-          "4:3": [1152, 864],
-          "21:9": [1536, 656],
-        };
-        const dims = aspectMap[newRatio];
-        if (dims && (widthCtrl || heightCtrl)) {
-          setValues((current) => {
-            const next = { ...current };
-            if (widthCtrl) next[widthCtrl.id] = dims[0];
-            if (heightCtrl) next[heightCtrl.id] = dims[1];
-            setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
-            return next;
-          });
-        }
+    (newRatio: string) => {
+      setRatio(newRatio as ToolRatio);
+      if (!tool) return;
+      // "custom" carries no preset of its own: it keeps whatever the current
+      // width/height already are, so the seed effect is what fills the inputs.
+      if (newRatio === "custom") return;
+      const widthCtrl = tool.controls.find(
+        (c) => c.role === "width" || c.input_name === "width",
+      );
+      const heightCtrl = tool.controls.find(
+        (c) => c.role === "height" || c.input_name === "height",
+      );
+      // Presets come from the server (ASPECT_DIMENSIONS) rather than a client
+      // copy, so the size shown is exactly the size the graph receives.
+      const dims = tool.aspect_dimensions?.[newRatio];
+      if (!dims || dims.length !== 2) return;
+      if (widthCtrl || heightCtrl) {
+        setValues((current) => {
+          const next = { ...current };
+          if (widthCtrl) next[widthCtrl.id] = dims[0];
+          if (heightCtrl) next[heightCtrl.id] = dims[1];
+          setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
+          return next;
+        });
       }
     },
     [tool, params.tool_id],
   );
+
+  // The latent width/height controls are the single source of truth for size.
+  // Seeding the custom inputs from them keeps every code path — preset pill,
+  // custom input, Match Size, and a restored draft — showing the same numbers.
+  const widthControl = useMemo(
+    () =>
+      tool?.controls.find(
+        (c) => c.role === "width" || c.input_name === "width",
+      ) ?? null,
+    [tool],
+  );
+  const heightControl = useMemo(
+    () =>
+      tool?.controls.find(
+        (c) => c.role === "height" || c.input_name === "height",
+      ) ?? null,
+    [tool],
+  );
+  const hasSizeControls = Boolean(widthControl && heightControl);
+  const dimensionMultiple = tool?.dimension_multiple ?? 8;
+  /** Smallest size the server accepts; see the minimum on the width control. */
+  const dimensionFloor = Math.max(64, dimensionMultiple);
+
+  useEffect(() => {
+    if (ratio !== "custom") return;
+    if (widthControl) setCustomWidth(String(values[widthControl.id] ?? ""));
+    if (heightControl) setCustomHeight(String(values[heightControl.id] ?? ""));
+    // Seeding only; user edits to the inputs must not be overwritten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratio, widthControl?.id, heightControl?.id]);
+
+  // Persist the size mode next to the numbers. `values` already survives a
+  // reload, so without this the restored run would show "1:1" while still
+  // submitting custom pixels. Skipped until the tool loads, and skipped for a
+  // "custom" mode the graph cannot honour.
+  useEffect(() => {
+    if (!tool) return;
+    if (ratio === "custom" && !hasSizeControls) return;
+    setStorageItem<ToolSizeDraft>(STORAGE_KEYS.TOOL_DIMENSIONS(params.tool_id), {
+      ratio,
+      width: customWidth,
+      height: customHeight,
+    });
+  }, [tool, ratio, customWidth, customHeight, hasSizeControls, params.tool_id]);
+
+  const isValidDimension = useCallback(
+    (value: string) => {
+      const dimension = Number(value);
+      return (
+        Number.isInteger(dimension) &&
+        dimension >= dimensionFloor &&
+        dimension <= 4096 &&
+        dimension % dimensionMultiple === 0
+      );
+    },
+    [dimensionMultiple, dimensionFloor],
+  );
+  const customWidthInvalid = customWidth !== "" && !isValidDimension(customWidth);
+  const customHeightInvalid =
+    customHeight !== "" && !isValidDimension(customHeight);
+  /**
+   * CSS aspect ratio for preview panes. "custom" is not a valid CSS value, and
+   * feeding it to BeforeAfterSlider collapses the comparison to zero height, so
+   * custom mode reports its actual pixel ratio instead.
+   */
+  const cssAspectRatio =
+    ratio === "custom"
+      ? `${Number(customWidth) || 1}/${Number(customHeight) || 1}`
+      : ratio.replace(":", "/");
+  /** Human label for "custom": the pill name alone says nothing about the size. */
+  const ratioLabel =
+    ratio === "custom"
+      ? `${customWidth || "?"} × ${customHeight || "?"}`
+      : ratio;
+
+  const handleCustomDimensionChange = useCallback(
+    (axis: "width" | "height", raw: string) => {
+      if (axis === "width") setCustomWidth(raw);
+      else setCustomHeight(raw);
+      const control = axis === "width" ? widthControl : heightControl;
+      if (!control) return;
+      const parsed = Number(raw);
+      if (raw === "" || !Number.isFinite(parsed)) return;
+      // Only persist a value the graph can actually run; the backend floors
+      // off-grid sizes, which would make the input disagree with the result.
+      if (!isValidDimension(raw)) return;
+      setValues((current) => {
+        const next = { ...current, [control.id]: parsed };
+        setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
+        return next;
+      });
+    },
+    [widthControl, heightControl, isValidDimension, params.tool_id],
+  );
+
+  /** Snap a natural pixel size onto the tool's latent grid, preserving aspect. */
+  const handleMatchDimensions = useCallback(() => {
+    if (!naturalDimensions || !hasSizeControls) return;
+    const aspect = naturalDimensions.width / naturalDimensions.height;
+    const maxDim = 1344;
+    const minDim = 512;
+    let targetW: number;
+    let targetH: number;
+    if (aspect >= 1) {
+      targetW = Math.min(maxDim, Math.max(minDim, naturalDimensions.width));
+      targetH = Math.round(targetW / aspect);
+    } else {
+      targetH = Math.min(maxDim, Math.max(minDim, naturalDimensions.height));
+      targetW = Math.round(targetH * aspect);
+    }
+    // The server rejects anything under 64, so an extreme aspect (a very tall
+    // panorama, say) must clamp to the floor rather than produce e.g. 24 px and
+    // fail at submit time with a server-shaped error.
+    const snap = (value: number) =>
+      Math.max(
+        dimensionFloor,
+        Math.min(4096, Math.round(value / dimensionMultiple) * dimensionMultiple),
+      );
+    const nextW = snap(targetW);
+    const nextH = snap(targetH);
+    setRatio("custom");
+    setCustomWidth(String(nextW));
+    setCustomHeight(String(nextH));
+    setValues((current) => {
+      const next = { ...current };
+      if (widthControl) next[widthControl.id] = nextW;
+      if (heightControl) next[heightControl.id] = nextH;
+      setStorageItem(STORAGE_KEYS.TOOL_VALUES(params.tool_id), next);
+      return next;
+    });
+  }, [
+    naturalDimensions,
+    hasSizeControls,
+    dimensionMultiple,
+    widthControl,
+    heightControl,
+    params.tool_id,
+  ]);
 
   // Group controls into categories
   const promptControls = useMemo(
@@ -798,12 +990,31 @@ export default function ToolDetailPage() {
     );
     socket.current = nextSocket;
     try {
+      // In custom mode the two inputs are the authority: they may be ahead of
+      // `values` while a value is mid-edit, so submit them explicitly. The API
+      // enum has no "custom" member, so a preset is sent as-is and custom mode
+      // reuses the tool's default preset purely as a carrier — the explicit
+      // width/height in `values` are what the graph receives.
+      const submittedRatio: ToolAspectRatio =
+        ratio === "custom" ? tool.default_aspect_ratio : ratio;
+      const submittedValues: Record<string, Scalar> = { ...values };
+      if (ratio === "custom" && hasSizeControls) {
+        const w = Number(customWidth);
+        const h = Number(customHeight);
+        if (!isValidDimension(customWidth) || !isValidDimension(customHeight)) {
+          throw new Error(
+            `Width and height must be whole pixels, 64–4096, in multiples of ${dimensionMultiple}.`,
+          );
+        }
+        if (widthControl) submittedValues[widthControl.id] = w;
+        if (heightControl) submittedValues[heightControl.id] = h;
+      }
       const runResult = await api.runTool(
         tool.tool_id,
         currentPositivePrompt,
-        ratio,
+        submittedRatio,
         undefined,
-        values,
+        submittedValues,
         files,
         { clientId, saveToGallery },
       );
@@ -819,7 +1030,22 @@ export default function ToolDetailPage() {
       socket.current = null;
       setBusy(false);
     }
-  }, [tool, canRun, currentPositivePrompt, ratio, values, files, saveToGallery]);
+  }, [
+    tool,
+    canRun,
+    currentPositivePrompt,
+    ratio,
+    values,
+    files,
+    saveToGallery,
+    hasSizeControls,
+    customWidth,
+    customHeight,
+    isValidDimension,
+    dimensionMultiple,
+    widthControl,
+    heightControl,
+  ]);
 
   // Keyboard shortcut: Cmd/Ctrl + Enter to run
   useEffect(() => {
@@ -1203,7 +1429,7 @@ export default function ToolDetailPage() {
                         <span>COMFYUI LOCAL</span>
                       </div>
                       <div className="text-right">
-                        <span>ASPECT: {ratio}</span>
+                        <span>ASPECT: {ratioLabel}</span>
                       </div>
                     </div>
                   </div>
@@ -1216,7 +1442,7 @@ export default function ToolDetailPage() {
                         afterUrl={result.images[0].url}
                         beforeLabel="Original Input"
                         afterLabel="Generated Output"
-                        aspectRatio={ratio.replace(":", "/")}
+                        aspectRatio={cssAspectRatio}
                       />
                     ) : (
                       <div className="relative aspect-video max-h-[520px] w-full overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] flex items-center justify-center p-2 group">
@@ -1235,7 +1461,7 @@ export default function ToolDetailPage() {
                           {result.images[0].filename || "output.png"}
                         </span>
                         <span className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] text-[var(--accent)] font-semibold">
-                          {ratio} · PNG
+                          {ratioLabel} · PNG
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1335,7 +1561,7 @@ export default function ToolDetailPage() {
                         🖼️ {MODE_LABELS[tool!.mode] ?? tool!.mode}
                       </span>
                       <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
-                        📐 Aspect: {ratio}
+                        📐 Aspect: {ratioLabel}
                       </span>
                     </div>
                   </div>
@@ -1627,7 +1853,7 @@ export default function ToolDetailPage() {
                         if (droppedFile) handleFileUpload(droppedFile);
                       }}
                       onClick={() => fileInputRef.current?.click()}
-                      className={`group relative flex flex-col items-center justify-center rounded-xl border border-dashed p-5 text-center transition-all cursor-pointer ${
+                      className={`group relative flex h-40 flex-col items-center justify-center rounded-xl border border-dashed p-5 text-center transition-all cursor-pointer ${
                         isDragOver
                           ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
                           : "border-[var(--line-strong)] bg-[#0d0e0d] hover:border-[var(--accent)]/50"
@@ -1645,12 +1871,12 @@ export default function ToolDetailPage() {
                     </div>
                   ) : (
                     <div className="rounded-xl border border-[var(--line)] bg-[#0d0e0d] p-2 space-y-2">
-                      <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-40 group">
+                      <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex h-40 w-full items-center justify-center group">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={inputImageUrl || ""}
                           alt="Reference Frame"
-                          className="max-h-40 w-auto object-contain rounded-md"
+                          className="h-full w-full object-contain rounded-md"
                         />
                         {naturalDimensions && (
                           <span className="absolute bottom-1.5 left-1.5 rounded bg-black/80 backdrop-blur-md px-1.5 py-0.5 font-mono text-[9px] text-white/90 border border-white/10">
@@ -1696,10 +1922,109 @@ export default function ToolDetailPage() {
                 <AspectRatioSelector
                   value={ratio}
                   onChange={handleRatioChange}
-                  options={tool!.supported_aspect_ratios.filter((item) => RATIOS.includes(item))}
+                  options={
+                    hasSizeControls
+                      ? [
+                          ...tool!.supported_aspect_ratios
+                            .filter((item) => RATIOS.includes(item))
+                            .map((item) => ({ value: item, label: item })),
+                          { value: "custom", label: "Custom" },
+                        ]
+                      : tool!.supported_aspect_ratios
+                          .filter((item) => RATIOS.includes(item))
+                          .map((item) => ({ value: item, label: item }))
+                  }
                   disabled={busy}
                   label="Aspect Ratio Format"
                 />
+
+                {hasSizeControls && ratio === "custom" && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label
+                          htmlFor="tool-custom-width"
+                          className="text-[10px] uppercase font-semibold text-[var(--ink-faint)]"
+                        >
+                          Width
+                        </label>
+                        <input
+                          id="tool-custom-width"
+                          type="number"
+                          min={64}
+                          max={4096}
+                          step={dimensionMultiple}
+                          value={customWidth}
+                          onChange={(e) =>
+                            handleCustomDimensionChange("width", e.target.value)
+                          }
+                          disabled={busy}
+                          aria-invalid={customWidthInvalid}
+                          aria-describedby={
+                            customWidthInvalid || customHeightInvalid
+                              ? "tool-custom-dimension-validation"
+                              : undefined
+                          }
+                          className={`${FIELD} mt-1 w-full rounded-xl px-2.5 py-1.5`}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="tool-custom-height"
+                          className="text-[10px] uppercase font-semibold text-[var(--ink-faint)]"
+                        >
+                          Height
+                        </label>
+                        <input
+                          id="tool-custom-height"
+                          type="number"
+                          min={64}
+                          max={4096}
+                          step={dimensionMultiple}
+                          value={customHeight}
+                          onChange={(e) =>
+                            handleCustomDimensionChange("height", e.target.value)
+                          }
+                          disabled={busy}
+                          aria-invalid={customHeightInvalid}
+                          aria-describedby={
+                            customWidthInvalid || customHeightInvalid
+                              ? "tool-custom-dimension-validation"
+                              : undefined
+                          }
+                          className={`${FIELD} mt-1 w-full rounded-xl px-2.5 py-1.5`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {naturalDimensions && (
+                        <button
+                          type="button"
+                          onClick={handleMatchDimensions}
+                          disabled={busy}
+                          title="Set width and height to this image's dimensions"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1.5 text-[11px] font-medium text-[var(--ink)] transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--surface-soft)] disabled:opacity-50 motion-reduce:transition-none"
+                        >
+                          <Maximize2 className="h-3 w-3 text-[var(--accent)]" />
+                          <span>Match Size</span>
+                        </button>
+                      )}
+                      <span
+                        className={`shrink-0 font-mono text-[9px] uppercase tracking-wider ${
+                          customWidthInvalid || customHeightInvalid
+                            ? "text-[var(--danger)]"
+                            : "text-[var(--ink-faint)]"
+                        }`}
+                        id="tool-custom-dimension-validation"
+                      >
+                        {customWidthInvalid || customHeightInvalid
+                          ? `64–4096, ×${dimensionMultiple}`
+                          : `${customWidth || "?"} × ${customHeight || "?"}`}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Seed Control (Reused SeedInput Component) */}
@@ -1895,7 +2220,7 @@ export default function ToolDetailPage() {
           open={lightboxOpen}
           onClose={() => setLightboxOpen(false)}
           title={tool!.name}
-          description={`Generated at ${ratio} · ${result.images[0].filename || "output.png"}`}
+          description={`Generated at ${ratioLabel} · ${result.images[0].filename || "output.png"}`}
           size="media"
         >
           <div className="flex flex-col items-center justify-center p-2">

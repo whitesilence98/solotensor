@@ -27,7 +27,12 @@ export interface AspectRatioSelectorProps<T extends string = string> {
   id?: string;
 }
 
-const DEFAULT_TOOL_RATIOS: ToolAspectRatio[] = [
+/**
+ * Canonical aspect ratio set for AI-tool surfaces. Exported so the tool pages
+ * render exactly the set the server's `ASPECT_DIMENSIONS` covers, instead of
+ * each keeping its own copy that can silently drift out of sync.
+ */
+export const DEFAULT_TOOL_RATIOS: ToolAspectRatio[] = [
   "1:1",
   "16:9",
   "9:16",

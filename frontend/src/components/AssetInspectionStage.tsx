@@ -14,6 +14,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Film,
   Layers,
   Loader2,
   Plus,
@@ -30,6 +31,7 @@ import {
 import { formatBytes } from "@/components/AssetCard";
 import UserAvatar from "@/components/UserAvatar";
 import ComparisonSlider from "@/components/ComparisonSlider";
+import { VideoResultPreview } from "@/components/VideoResultPreview";
 import {
   api,
   assetTypeOf,
@@ -37,6 +39,7 @@ import {
   type GalleryItem,
   type GalleryMetadata,
   type InstalledGalleryModel,
+  type ToolAspectRatio,
 } from "@/lib/api";
 import {
   findMatchingModel,
@@ -398,6 +401,45 @@ export default function AssetInspectionStage({
     asset.url.endsWith(".webm") ||
     asset.url.endsWith(".mov");
 
+  // Video pipeline facts. The sidecar may carry these; older assets may not, so
+  // every read is defensive and the summary only renders when values exist.
+  const videoMeta = rawMeta as Record<string, unknown>;
+  const videoStage2Active = videoMeta.stage2_upscale === true;
+  const videoFpsValue =
+    typeof videoMeta.video_fps === "number" ? videoMeta.video_fps : null;
+  const videoDurationValue =
+    typeof videoMeta.video_duration_seconds === "number"
+      ? videoMeta.video_duration_seconds
+      : null;
+  const videoSpecSummary = isVideo
+    ? [
+        videoFpsValue !== null ? `${videoFpsValue} fps` : null,
+        videoDurationValue !== null ? `${videoDurationValue}s` : null,
+        videoFpsValue !== null && videoDurationValue !== null
+          ? `${videoDurationValue * videoFpsValue + 1} frames`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
+  const videoRatio: ToolAspectRatio = (() => {
+    const width = typeof videoMeta.width === "number" ? videoMeta.width : null;
+    const height = typeof videoMeta.height === "number" ? videoMeta.height : null;
+    if (!width || !height) return "16:9";
+    const target = width / height;
+    const candidates: Array<[ToolAspectRatio, number]> = [
+      ["1:1", 1],
+      ["16:9", 16 / 9],
+      ["9:16", 9 / 16],
+      ["4:3", 4 / 3],
+      ["21:9", 21 / 9],
+    ];
+    return candidates.reduce((best, current) =>
+      Math.abs(current[1] - target) < Math.abs(best[1] - target) ? current : best
+    )[0];
+  })();
+
   const copyText = useCallback((text: string, key: string) => {
     if (!text) return;
     void navigator.clipboard.writeText(text);
@@ -523,7 +565,7 @@ export default function AssetInspectionStage({
             setConfirmDelete(false);
             onClose();
           }}
-          className="absolute top-3.5 right-3.5 z-30 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-black/60 text-white/80 backdrop-blur-md transition hover:border-white/30 hover:bg-black/90 hover:text-white active:scale-95 shadow-md lg:hidden"
+          className="absolute top-3.5 right-3.5 z-30 flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] backdrop-blur-md transition hover:border-[var(--line-strong)] hover:text-[var(--ink)] motion-reduce:transition-none active:scale-95 shadow-md lg:hidden"
           aria-label="Close dialog"
           title="Close (Esc)"
         >
@@ -548,7 +590,7 @@ export default function AssetInspectionStage({
 
         {/* Detailer Badge on Stage */}
         {isDetailer && (
-          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 rounded-md bg-black/75 backdrop-blur-md border border-[var(--accent)]/40 px-2.5 py-1 font-mono text-[10px] font-semibold text-[var(--accent)] shadow-md pointer-events-none">
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 rounded-md bg-[var(--overlay)] backdrop-blur-md border border-[var(--accent)]/40 px-2.5 py-1 font-mono text-[10px] font-semibold text-[var(--accent)] shadow-md pointer-events-none">
             <Sparkles className="h-3 w-3 fill-current" />
             <span>2-Pass Face Detailer</span>
           </div>
@@ -563,7 +605,7 @@ export default function AssetInspectionStage({
                 e.stopPropagation();
                 handlePrev();
               }}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white/80 backdrop-blur-md hover:border-white/30 hover:bg-black/90 hover:text-white transition active:scale-95 shadow-2xl"
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] backdrop-blur-md hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition motion-reduce:transition-none active:scale-95 shadow-2xl"
               title="Previous output (← Arrow Left)"
               aria-label="Previous output"
             >
@@ -575,7 +617,7 @@ export default function AssetInspectionStage({
                 e.stopPropagation();
                 handleNext();
               }}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white/80 backdrop-blur-md hover:border-white/30 hover:bg-black/90 hover:text-white transition active:scale-95 shadow-2xl"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] backdrop-blur-md hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition motion-reduce:transition-none active:scale-95 shadow-2xl"
               title="Next output (→ Arrow Right)"
               aria-label="Next output"
             >
@@ -600,14 +642,14 @@ export default function AssetInspectionStage({
               className="w-full max-h-[78vh]"
             />
           ) : isVideo ? (
-            <video
-              src={mediaUrl}
-              controls
-              autoPlay
-              loop
-              playsInline
-              className="max-h-[78vh] max-w-full rounded-xl object-contain drop-shadow-2xl"
-            />
+            <div className="flex h-full max-h-[78vh] w-full flex-col">
+              <VideoResultPreview
+                url={mediaUrl}
+                filename={asset.key.split("/").pop() || "video.mp4"}
+                ratio={videoRatio}
+                bounded
+              />
+            </div>
           ) : (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
@@ -632,7 +674,7 @@ export default function AssetInspectionStage({
               className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold backdrop-blur-md transition shadow-md ${
                 showComparison
                   ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
-                  : "border-white/10 bg-black/60 text-white/90 hover:border-white/30 hover:bg-black/80 hover:text-white"
+                  : "border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
               }`}
               title="Toggle Before/After Face Detailer comparison slider"
             >
@@ -648,7 +690,7 @@ export default function AssetInspectionStage({
                 onSetReferenceImage(mediaUrl);
                 onClose?.();
               }}
-              className="p-1.5 rounded text-white/40 hover:text-white transition-all active:scale-95"
+              className="p-1.5 rounded text-[var(--ink-faint)] hover:text-[var(--ink)] transition-colors motion-reduce:transition-none active:scale-95"
               title="Use as reference"
               aria-label="Use as reference"
             >
@@ -663,7 +705,7 @@ export default function AssetInspectionStage({
             download={meta?.source_filename || asset.key.split("/").pop() || "output.png"}
             target="_blank"
             rel="noreferrer"
-            className="p-1.5 rounded text-white/40 hover:text-white transition-all active:scale-95"
+            className="p-1.5 rounded text-[var(--ink-faint)] hover:text-[var(--ink)] transition-colors motion-reduce:transition-none active:scale-95"
             title="Download asset"
             aria-label="Download asset"
           >
@@ -683,9 +725,9 @@ export default function AssetInspectionStage({
                   setTimeout(() => setConfirmDelete(false), 3500);
                 }
               }}
-              className={`p-1.5 rounded transition-all active:scale-95 flex items-center ${confirmDelete
-                  ? "gap-1 px-2 text-red-400 bg-red-500/20 hover:bg-red-500/30 font-mono text-[11px] font-medium animate-pulse"
-                  : "text-white/40 hover:text-red-400"
+              className={`p-1.5 rounded transition-colors motion-reduce:transition-none active:scale-95 flex items-center ${confirmDelete
+                  ? "gap-1 px-2 text-[var(--danger)] bg-[var(--danger-surface)] hover:bg-[var(--danger-line)] font-mono text-[11px] font-medium animate-pulse"
+                  : "text-[var(--ink-faint)] hover:text-[var(--danger)]"
                 }`}
               title={confirmDelete ? "Click again to permanently delete" : "Delete asset"}
               aria-label={confirmDelete ? "Confirm delete asset" : "Delete asset"}
@@ -751,10 +793,10 @@ export default function AssetInspectionStage({
                   </button>
 
                   {modMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-2 shadow-2xl">
                       <div className="px-2 py-1 pb-1.5 border-b border-[var(--line)]">
                         <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] block">
-                          🛡 Mod Controls
+                          Mod Controls
                         </span>
                         <span className="font-mono text-[10px] text-[var(--ink-faint)] truncate block">
                           {asset.key.split("/").pop()}
@@ -776,7 +818,7 @@ export default function AssetInspectionStage({
                           onClick={() => handleModAction("toggle_nsfw")}
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-left text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                         >
-                          <ShieldAlert className={`h-3.5 w-3.5 ${isNsfw ? "text-amber-400" : "text-[var(--ink-faint)]"}`} />
+                          <ShieldAlert className={`h-3.5 w-3.5 ${isNsfw ? "text-[var(--accent)]" : "text-[var(--ink-faint)]"}`} />
                           <span>{isNsfw ? "Remove NSFW Tag" : "Flag as NSFW / Mature"}</span>
                         </button>
 
@@ -823,8 +865,8 @@ export default function AssetInspectionStage({
           </div>
 
           {modToast && (
-            <div className="mt-2.5 rounded border border-[#0c4a6e]/50 bg-[#082f49]/50 px-2.5 py-1 text-[11px] font-mono text-[#38bdf8] flex items-center gap-1.5 animate-in fade-in duration-150">
-              <Shield className="h-3.5 w-3.5 shrink-0" />
+            <div className="mt-2.5 rounded border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 py-1 text-[11px] font-mono text-[var(--ink-soft)] flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
               <span>{modToast}</span>
             </div>
           )}
@@ -1149,9 +1191,18 @@ export default function AssetInspectionStage({
                 <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
                   PIPELINE
                 </span>
-                <div className="mt-0.5 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    {isDetailer ? (
+                <div className="mt-0.5 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    {isVideo ? (
+                      <>
+                        <Film className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+                        <span className="truncate font-mono text-xs font-semibold text-[var(--accent)]">
+                          {videoStage2Active
+                            ? "LTX-Video 2.3 · Stage 1 + Stage 2 (2x + RIFE)"
+                            : "LTX-Video 2.3 · Stage 1"}
+                        </span>
+                      </>
+                    ) : isDetailer ? (
                       <>
                         <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
                         <span className="font-mono text-xs font-semibold text-[var(--accent)]">
@@ -1164,6 +1215,11 @@ export default function AssetInspectionStage({
                       </span>
                     )}
                   </div>
+                  {isVideo && videoSpecSummary && (
+                    <span className="shrink-0 font-mono text-[10px] text-[var(--ink-faint)]">
+                      {videoSpecSummary}
+                    </span>
+                  )}
                   {isDetailer && detailerBeforeUrl && !isVideo && (
                     <button
                       type="button"

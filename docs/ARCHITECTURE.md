@@ -226,7 +226,9 @@ In `ModelCompatibility` ([`app/schemas.py`](backend/app/schemas.py#L428)):
 | **API Client** | [`frontend/src/lib/api.ts`](frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
 | **Model Creation Drawer** | [`frontend/src/components/CreateModelDrawer.tsx`](frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
 | **Generation Studio** | [`frontend/src/components/ControlPanel.tsx`](frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
-| **Prompt Composer** | [`frontend/src/components/PromptComposer.tsx`](frontend/src/components/PromptComposer.tsx) | Reusable tag autocomplete, style pills, and prompt composition component shared across T2I and I2I. |
+| **Prompt Bar** | [`frontend/src/components/StudioPromptBar.tsx`](frontend/src/components/StudioPromptBar.tsx) | The single prompt surface for every `/generate` mode: positive prompt, optional one-line negative prompt, batch count, and the primary Generate action. |
+| **Generation Model Card** | [`frontend/src/components/GenerationModelCard.tsx`](frontend/src/components/GenerationModelCard.tsx) | `GENERATION MODEL` card showing the selected checkpoint, its architecture chip, and the "Change" affordance that opens the model picker. |
+| **Prompt Composer** | [`frontend/src/components/PromptComposer.tsx`](frontend/src/components/PromptComposer.tsx) | Multi-row prompt editor retained for the tool runner (`app/tools/[tool_id]/page.tsx`); not mounted in `/generate`. |
 | **Model Card & Badges** | [`frontend/src/components/TensorModelCard.tsx`](frontend/src/components/TensorModelCard.tsx) | Visual card with tailored color badge tokens across all 16 types. |
 | **Model Explorer** | [`frontend/src/app/models/page.tsx`](frontend/src/app/models/page.tsx) | Multi-category filter bar supporting all 16 model types. |
 

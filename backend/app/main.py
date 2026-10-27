@@ -39,6 +39,7 @@ from .routers.moderation import router as moderation_router
 from .routers.notifications import router as notifications_router
 from .schemas import (
     is_architecture_compatible,
+    ARCHITECTURE_FAMILIES,
     AssistantRequest,
     AssistantResponse,
     CreateToolRequest,
@@ -343,6 +344,85 @@ def _model_http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ModelConflict):
         return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+_AUDIO_SUFFIXES = (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac")
+
+_VIDEO_CONTENT_TYPES = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+}
+
+
+def _video_content_type(filename: str) -> str:
+    """Correct MIME type for a generated video; ``.mov`` is QuickTime, not WebM."""
+    return _VIDEO_CONTENT_TYPES.get(
+        ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else "",
+        "video/mp4",
+    )
+
+
+
+def _audio_suffix(raw: str) -> str:
+    """Best-effort extension for an uploaded reference audio blob."""
+    if raw.startswith("data:"):
+        header = raw[5:].split(",", 1)[0]
+        if "ogg" in header:
+            return ".ogg"
+        if "wav" in header:
+            return ".wav"
+        if "mp4" in header or "m4a" in header:
+            return ".m4a"
+        if "flac" in header:
+            return ".flac"
+        return ".mp3"
+    lowered = raw.split("?", 1)[0].lower()
+    for suffix in _AUDIO_SUFFIXES:
+        if lowered.endswith(suffix):
+            return suffix
+    return ".mp3"
+
+
+async def _resolve_upload_bytes(storage_service: Any, raw: str, *, binary: bool = False) -> bytes:
+    """Decode a data-URI, a stored ``/files/`` key, or bare base64 into bytes."""
+    if raw.startswith("data:"):
+        _, _, payload = raw.partition(",")
+        try:
+            return base64.b64decode(payload)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Malformed data URI payload") from exc
+    if "/files/" in raw:
+        return await storage_service.get_image_bytes(raw.split("/files/")[-1].split("?")[0])
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return await storage_service.get_image_bytes(raw.split("/")[-1].split("?")[0])
+    try:
+        return base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        return await storage_service.get_image_bytes(raw)
+
+
+def _ensure_video_capable(selected_model: dict, base_model: dict, is_lora: bool) -> None:
+    """Reject video requests for models the bundled LTX-2.3 graph cannot honour.
+
+    The graph hardcodes the LTX-2.3 22B transformer plus its LTX-2.3 VAE and text
+    encoders, so the selected weights never reach the renderer. Requiring an LTX
+    architecture keeps the picker honest instead of silently ignoring it.
+    """
+    target = base_model if is_lora else selected_model
+    architecture = str(target.get("base_model") or "").strip().lower()
+    # An unrecorded architecture is treated as compatible, matching
+    # is_architecture_compatible; only a known non-LTX family is rejected.
+    if not architecture:
+        return
+    families = ARCHITECTURE_FAMILIES["ltx"]
+    if architecture in families or any(member in architecture for member in families):
+        return
+    raise ModelConflict(
+        "Video generation runs the bundled LTX-Video 2.3 pipeline; "
+        f"'{target.get('title') or 'the selected model'}' is not an LTX model. "
+        "Select an LTX-base model to generate video."
+    )
 
 
 @app.get("/api/v1/models/local", response_model=LocalModelListResponse)
@@ -1417,6 +1497,42 @@ async def generate(
                     detail=f"Failed to process reference image: {exc}",
                 ) from exc
 
+        # Video-only inputs: a closing frame and (optionally) a reference voice.
+        last_frame_filename = None
+        reference_audio_filename = None
+        if req.mode == "video":
+            if req.last_frame_image:
+                try:
+                    last_frame_filename = await comfy.upload_image(
+                        await _resolve_upload_bytes(storage, req.last_frame_image, binary=True),
+                        f"input_video_last_{client_id or uuid.uuid4().hex[:8]}.png",
+                    )
+                except HTTPException:
+                    raise
+                except Exception as exc:
+                    logger.error("Failed to process last frame: %s", exc)
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to process last frame image: {exc}",
+                    ) from exc
+            if req.audio_mode == "voice_clone" and req.reference_audio:
+                try:
+                    audio_bytes = await _resolve_upload_bytes(
+                        storage, req.reference_audio, binary=True
+                    )
+                    reference_audio_filename = await comfy.upload_audio(
+                        audio_bytes,
+                        f"input_video_voice_{client_id or uuid.uuid4().hex[:8]}{_audio_suffix(req.reference_audio)}",
+                    )
+                except HTTPException:
+                    raise
+                except Exception as exc:
+                    logger.error("Failed to process reference audio: %s", exc)
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to process reference audio: {exc}",
+                    ) from exc
+
         if req.mode == "detailer":
             detailer_template = (
                 comfy.load_modular_detailer_template()
@@ -1454,6 +1570,7 @@ async def generate(
                 base_height=req.height,
             )
         elif req.mode == "video":
+            _ensure_video_capable(selected_model, base_model, is_lora)
             video_template = comfy.load_video_it2v_template()
             if not video_template:
                 raise HTTPException(
@@ -1463,14 +1580,33 @@ async def generate(
             graph = patch_video_it2v_workflow(
                 video_template,
                 prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
                 seed=resolved_seed,
                 duration_seconds=req.video_duration_seconds or 3,
                 video_fps=req.video_fps or 25,
                 width=req.width,
                 height=req.height,
                 steps=req.steps,
+                cfg=req.cfg,
+                sampler_name=req.sampler_name,
+                scheduler=req.scheduler,
+                loras=active_loras,
                 source_image_filename=source_image_filename,
+                last_frame_filename=last_frame_filename,
+                video_mode=req.video_mode,
                 stage2_upscale=req.stage2_upscale,
+                audio_mode=req.audio_mode,
+                reference_audio_filename=reference_audio_filename,
+                extract_voice=req.extract_voice,
+                resize_mode=req.resize_mode,
+                video_megapixels=req.video_megapixels,
+                first_frame_strength=req.first_frame_strength,
+                last_frame_strength=req.last_frame_strength,
+                rife_multiplier=req.rife_multiplier,
+                high_fps=req.high_fps,
+                film_grain=req.film_grain,
+                match_color=req.match_color,
+                tiled_vae_decode=req.tiled_vae_decode,
             )
         elif is_lora:
             graph = comfy.build_lora_workflow(
@@ -1623,7 +1759,7 @@ async def generate(
                 )
             video_item = raw_videos[-1]
             video_blob = await comfy.fetch_image_bytes(video_item)
-            content_type = "video/mp4" if video_item["filename"].lower().endswith(".mp4") else "video/webm"
+            content_type = _video_content_type(video_item["filename"])
             video_url = await storage.upload_asset(
                 video_blob,
                 prompt_id,
@@ -1631,6 +1767,7 @@ async def generate(
                 content_type=content_type,
                 metadata={
                     **metadata,
+                    "kind": "video",
                     "source_filename": video_item["filename"],
                     "user_id": user_id,
                     "gallery_saved": is_public,
@@ -1638,6 +1775,24 @@ async def generate(
                     "mode": req.mode,
                     "stage2_upscale": req.stage2_upscale,
                     "source_image_filename": source_image_filename or "",
+                    "last_frame_filename": last_frame_filename or "",
+                    "video_mode": req.video_mode
+                    or ("image-to-video" if source_image_filename else "text-to-video"),
+                    "audio_mode": req.audio_mode,
+                    "resolved_reference_audio": reference_audio_filename or "",
+                    "extract_voice": req.extract_voice,
+                    "resize_mode": req.resize_mode,
+                    "video_megapixels": req.video_megapixels,
+                    "first_frame_strength": req.first_frame_strength,
+                    "last_frame_strength": req.last_frame_strength,
+                    "rife_multiplier": req.rife_multiplier,
+                    "high_fps": req.high_fps,
+                    "film_grain": req.film_grain,
+                    "match_color": req.match_color,
+                    "tiled_vae_decode": req.tiled_vae_decode,
+                    "video_fps": req.video_fps,
+                    "video_duration_seconds": req.video_duration_seconds,
+                    "video_frames": (req.video_duration_seconds or 3) * (req.video_fps or 25) + 1,
                 },
                 namespace=user_id,
             )
@@ -1647,6 +1802,64 @@ async def generate(
                 kind="video",
                 saved=True,
             )
+            # Record the video in the relational DB alongside images so gallery
+            # listings, credits history and remix see it.
+            try:
+                rel_key = (
+                    video_url.split("/files/")[-1]
+                    if "/files/" in video_url
+                    else video_item["filename"]
+                )
+                get_db().insert_generation(
+                    {
+                        "prompt_id": prompt_id,
+                        "user_id": user_id,
+                        "model_id": selected_model.get("model_id"),
+                        "version_id": selected_model.get("version_id"),
+                        "file_id": selected_model.get("file_id"),
+                        "filename": video_item["filename"],
+                        "url": video_url,
+                        "key": rel_key,
+                        "prompt": req.prompt,
+                        "negative_prompt": req.negative_prompt,
+                        "seed": resolved_seed,
+                        "steps": req.steps,
+                        "cfg": req.cfg,
+                        "denoise": req.denoise,
+                        "width": req.width,
+                        "height": req.height,
+                        "format_name": req.format_name,
+                        "status": "completed",
+                        "elapsed_ms": elapsed_ms,
+                        "origin": "generation",
+                        "gallery_saved": 1 if is_public else 0,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "metadata_json": json.dumps(
+                            {
+                                **metadata,
+                                "kind": "video",
+                                "source_filename": video_item["filename"],
+                                "user_id": user_id,
+                                "gallery_saved": is_public,
+                                "is_private": req.is_private,
+                                "mode": req.mode,
+                                "video_mode": req.video_mode
+                                or (
+                                    "image-to-video"
+                                    if source_image_filename
+                                    else "text-to-video"
+                                ),
+                                "stage2_upscale": req.stage2_upscale,
+                            }
+                        ),
+                    }
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to insert video generation record into DB: %s", exc
+                )
+            if is_public:
+                background_tasks.add_task(_bg_auto_tag_asset, rel_key)
             return GenerationResult(
                 prompt_id=prompt_id,
                 status="completed",

@@ -42,13 +42,15 @@ import {
   type InstalledGalleryModel,
   type PublicModelSummary,
   type TagInterrogateResult,
+  type VideoAudioMode,
+  type VideoResizeMode,
+  type VideoSubMode,
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import { isArchitectureCompatible } from "@/lib/baseModelArchitectures";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
-import PromptComposer from "@/components/PromptComposer";
 import SeedInput from "@/components/SeedInput";
 import AspectRatioSelector from "@/components/AspectRatioSelector";
 import UpscalePanel, {
@@ -61,9 +63,15 @@ import DetailerPanel, {
 } from "@/components/DetailerPanel";
 import AdvancedSamplingPanel from "@/components/AdvancedSamplingPanel";
 import LoraStackPanel from "@/components/LoraStackPanel";
+import GenerationModelCard from "@/components/GenerationModelCard";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
+
+/** Selectable video frame rates. Keep in sync with DEFAULT_VIDEO_FIELDS in /generate. */
+export const VIDEO_FPS_OPTIONS = [16, 24, 30, 49] as const;
+/** Selectable video durations, in seconds. */
+export const VIDEO_DURATION_OPTIONS = [3, 5, 10, 15] as const;
 
 export interface ActiveLora {
   id: string;
@@ -171,7 +179,6 @@ interface Props {
   onCfgChange: (v: string) => void;
   denoise: string;
   onDenoiseChange: (v: string) => void;
-  negativePrompt: string;
   onNegativePromptChange: (v: string) => void;
   customWidth: string;
   onCustomWidthChange: (v: string) => void;
@@ -211,18 +218,46 @@ interface Props {
   ) => void;
   motionBucketId?: number;
   onMotionBucketIdChange?: (id: number) => void;
-  videoFrames?: number;
-  onVideoFramesChange?: (frames: number) => void;
   videoFps?: number;
   onVideoFpsChange?: (fps: number) => void;
   videoDurationSeconds?: number;
   onVideoDurationSecondsChange?: (sec: number) => void;
   stage2Upscale?: boolean;
   onStage2UpscaleChange?: (enabled: boolean) => void;
+  audioMode?: VideoAudioMode;
+  onAudioModeChange?: (mode: VideoAudioMode) => void;
+  referenceAudio?: string | null;
+  onReferenceAudioChange?: (audio: string | null) => void;
+  extractVoice?: boolean;
+  onExtractVoiceChange?: (enabled: boolean) => void;
+  lastFrameImage?: string | null;
+  onLastFrameImageChange?: (image: string | null) => void;
+  resizeMode?: VideoResizeMode;
+  onResizeModeChange?: (mode: VideoResizeMode) => void;
+  videoMegapixels?: number;
+  onVideoMegapixelsChange?: (megapixels: number) => void;
+  firstFrameStrength?: number;
+  onFirstFrameStrengthChange?: (strength: number) => void;
+  lastFrameStrength?: number;
+  onLastFrameStrengthChange?: (strength: number) => void;
+  rifeMultiplier?: number;
+  onRifeMultiplierChange?: (multiplier: number) => void;
+  highFps?: boolean;
+  onHighFpsChange?: (enabled: boolean) => void;
+  filmGrain?: boolean;
+  onFilmGrainChange?: (enabled: boolean) => void;
+  matchColor?: boolean;
+  onMatchColorChange?: (enabled: boolean) => void;
+  tiledVaeDecode?: boolean;
+  onTiledVaeDecodeChange?: (enabled: boolean) => void;
+  /** False when the picked checkpoint is not LTX-family (video graph is hardwired to LTX-2.3). */
+  videoModelIsLtx?: boolean;
   primePreset?: string;
   onPrimePresetChange?: (preset: string) => void;
   img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
   onImg2imgSubTabChange?: (tab: "image_to_image" | "detailer" | "upscaler") => void;
+  videoSubMode?: VideoSubMode;
+  onVideoSubModeChange?: (mode: VideoSubMode) => void;
   samplerName?: string;
   onSamplerNameChange?: (v: string) => void;
   scheduler?: string;
@@ -248,7 +283,6 @@ export default function ControlPanel(props: Props) {
     onCfgChange,
     denoise,
     onDenoiseChange,
-    negativePrompt,
     onNegativePromptChange,
     customWidth,
     onCustomWidthChange,
@@ -282,14 +316,39 @@ export default function ControlPanel(props: Props) {
     onInpaintFillChange = props.onInpaintFillChange,
     motionBucketId = props.motionBucketId ?? 127,
     onMotionBucketIdChange = props.onMotionBucketIdChange,
-    videoFrames = props.videoFrames ?? 25,
-    onVideoFramesChange = props.onVideoFramesChange,
     videoFps = props.videoFps ?? 25,
     onVideoFpsChange = props.onVideoFpsChange,
-    videoDurationSeconds = props.videoDurationSeconds ?? 3,
+    videoDurationSeconds = props.videoDurationSeconds ?? 5,
     onVideoDurationSecondsChange = props.onVideoDurationSecondsChange,
     stage2Upscale = props.stage2Upscale ?? false,
     onStage2UpscaleChange = props.onStage2UpscaleChange,
+    audioMode = props.audioMode ?? "silent",
+    onAudioModeChange = props.onAudioModeChange,
+    referenceAudio = props.referenceAudio ?? null,
+    onReferenceAudioChange = props.onReferenceAudioChange,
+    extractVoice = props.extractVoice ?? true,
+    onExtractVoiceChange = props.onExtractVoiceChange,
+    lastFrameImage = props.lastFrameImage ?? null,
+    onLastFrameImageChange = props.onLastFrameImageChange,
+    resizeMode = props.resizeMode ?? "source",
+    onResizeModeChange = props.onResizeModeChange,
+    videoMegapixels = props.videoMegapixels ?? 2.1,
+    onVideoMegapixelsChange = props.onVideoMegapixelsChange,
+    firstFrameStrength = props.firstFrameStrength ?? 1,
+    onFirstFrameStrengthChange = props.onFirstFrameStrengthChange,
+    lastFrameStrength = props.lastFrameStrength ?? 1,
+    onLastFrameStrengthChange = props.onLastFrameStrengthChange,
+    rifeMultiplier = props.rifeMultiplier ?? 2,
+    onRifeMultiplierChange = props.onRifeMultiplierChange,
+    highFps = props.highFps ?? false,
+    onHighFpsChange = props.onHighFpsChange,
+    filmGrain = props.filmGrain ?? false,
+    onFilmGrainChange = props.onFilmGrainChange,
+    matchColor = props.matchColor ?? true,
+    onMatchColorChange = props.onMatchColorChange,
+    tiledVaeDecode = props.tiledVaeDecode ?? false,
+    onTiledVaeDecodeChange = props.onTiledVaeDecodeChange,
+    videoModelIsLtx = props.videoModelIsLtx ?? true,
     primePreset = props.primePreset ?? "portrait_pro",
     onPrimePresetChange = props.onPrimePresetChange,
     samplerName = props.samplerName ?? "euler",
@@ -380,6 +439,13 @@ export default function ControlPanel(props: Props) {
     setInternalImg2imgSubTab(tab);
     props.onImg2imgSubTabChange?.(tab);
   };
+  const [internalVideoSubMode, setInternalVideoSubMode] =
+    useState<VideoSubMode>("text-to-video");
+  const videoSubMode = props.videoSubMode ?? internalVideoSubMode;
+  const setVideoSubMode = (mode: VideoSubMode) => {
+    setInternalVideoSubMode(mode);
+    props.onVideoSubModeChange?.(mode);
+  };
   const [naturalDimensions, setNaturalDimensions] = useState<{
     width: number;
     height: number;
@@ -444,6 +510,37 @@ export default function ControlPanel(props: Props) {
       void handleImg2ImgFileUpload(files[0]);
     }
   };
+
+  // Video: reference-audio and last-frame dropzones
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const lastFrameFileInputRef = useRef<HTMLInputElement>(null);
+  const [isAudioDragOver, setIsAudioDragOver] = useState(false);
+  const [isLastFrameDragOver, setIsLastFrameDragOver] = useState(false);
+  const [stage2QualityOpen, setStage2QualityOpen] = useState(false);
+
+  const isAudioFile = (file: File) =>
+    file.type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|flac)$/i.test(file.name);
+
+  const handleAudioFileUpload = async (file: File) => {
+    if (!isAudioFile(file)) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      props.onReferenceAudioChange?.(dataUrl);
+    } catch (err) {
+      console.error("Failed to read audio file:", err);
+    }
+  };
+
+  const handleLastFrameFileUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      props.onLastFrameImageChange?.(dataUrl);
+    } catch (err) {
+      console.error("Failed to read last-frame image:", err);
+    }
+  };
+
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [loraPickerOpen, setLoraPickerOpen] = useState(false);
   const [embeddingPickerOpen, setEmbeddingPickerOpen] = useState(false);
@@ -844,7 +941,7 @@ export default function ControlPanel(props: Props) {
   };
 
   return (
-    <aside className="workspace-core relative flex flex-col h-full min-h-0 w-full shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[var(--surface)] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.16)] lg:h-full lg:w-[24.5rem]">
+    <aside className="workspace-core relative flex flex-col h-full min-h-0 w-full shrink-0 overflow-hidden rounded-[1.35rem] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.16)] lg:h-full lg:w-[24.5rem]">
       {/* Top Mode Tabs: Text2Img, Img2Img, Edit, Video, Prime */}
       <div className="flex items-center justify-between border-b border-[var(--line)] px-3 pt-2 shrink-0">
         <div className="flex flex-wrap items-center gap-1">
@@ -891,6 +988,29 @@ export default function ControlPanel(props: Props) {
           e.target.value = "";
         }}
       />
+      {/* Video-only inputs: reference audio for voice clone, optional last frame */}
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleAudioFileUpload(file);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={lastFrameFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleLastFrameFileUpload(file);
+          e.target.value = "";
+        }}
+      />
 
       {activeMode === "Img2Img" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
@@ -906,7 +1026,7 @@ export default function ControlPanel(props: Props) {
                     LOADED
                   </span>
                 ) : (
-                  <span className="rounded-xl bg-amber-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-amber-400 border border-amber-500/20">
+                  <span className="rounded-xl bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
                     REQUIRED
                   </span>
                 )}
@@ -936,10 +1056,10 @@ export default function ControlPanel(props: Props) {
                 }}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleImg2ImgDrop}
-                className={`group relative flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
+                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
                   isDragOver
                     ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
-                    : "border-white/15 hover:border-[var(--accent)]/50 bg-[#121412]/60 hover:bg-[#121412]"
+                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
                 }`}
               >
                 <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2.5 transition-transform duration-200 group-hover:scale-110">
@@ -956,15 +1076,15 @@ export default function ControlPanel(props: Props) {
                 </p>
               </div>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2.5 space-y-2.5">
-                <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-48 group">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5">
+                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-48 w-full items-center justify-center group">
                   <img
                     src={props.referenceImage}
                     alt="Img2Img Source"
-                    className="max-h-48 w-auto object-contain rounded-lg"
+                    className="h-full w-full object-contain rounded-lg"
                   />
                   {naturalDimensions && (
-                    <span className="absolute bottom-2 left-2 rounded-md bg-black/80 backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-white/90 border border-white/10">
+                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] border border-[var(--line)]">
                       {naturalDimensions.width} × {naturalDimensions.height}{" "}
                       PX
                     </span>
@@ -986,7 +1106,7 @@ export default function ControlPanel(props: Props) {
                           Math.round(naturalDimensions.height / 8) * 8,
                         ),
                       ) && (
-                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-black uppercase">
+                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] uppercase">
                         CANVAS MATCHED
                       </span>
                     )}
@@ -1040,7 +1160,7 @@ export default function ControlPanel(props: Props) {
               onClick={() => setImg2imgSubTab("image_to_image")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
                 img2imgSubTab === "image_to_image"
-                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-white/10"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
@@ -1052,7 +1172,7 @@ export default function ControlPanel(props: Props) {
               onClick={() => setImg2imgSubTab("detailer")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
                 img2imgSubTab === "detailer"
-                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-white/10"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
@@ -1070,7 +1190,7 @@ export default function ControlPanel(props: Props) {
               onClick={() => setImg2imgSubTab("upscaler")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
                 img2imgSubTab === "upscaler"
-                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-white/10"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
@@ -1153,7 +1273,7 @@ export default function ControlPanel(props: Props) {
                       </span>
                       <div className="flex h-5 items-center gap-2">
                         {isRecommended && (
-                          <span className="inline-flex h-4 items-center text-[9px] font-mono px-1.5 rounded bg-gradient-to-r from-sky-500/15 to-purple-500/15 border border-sky-500/30 text-sky-300 font-semibold leading-none">
+                          <span className="inline-flex h-4 items-center text-[9px] font-mono px-1.5 rounded bg-[var(--accent-ambient)] border border-[var(--accent)]/40 text-[var(--accent)] font-semibold leading-none">
                             Recommended
                           </span>
                         )}
@@ -1174,7 +1294,7 @@ export default function ControlPanel(props: Props) {
                             left: "65%",
                             width: "11%",
                             background:
-                              "linear-gradient(to right, #38bdf8, #a855f7)",
+                              "linear-gradient(to right, var(--accent), var(--accent-hover))",
                           }}
                         />
 
@@ -1194,7 +1314,7 @@ export default function ControlPanel(props: Props) {
                               left: "65%",
                               width: `${Math.min(p - 65, 11)}%`,
                               background:
-                                "linear-gradient(to right, #38bdf8, #a855f7)",
+                                "linear-gradient(to right, var(--accent), var(--accent-hover))",
                             }}
                           />
                         )}
@@ -1210,12 +1330,12 @@ export default function ControlPanel(props: Props) {
 
                       {/* 2 Boundary Tick Lines framing the Recommended Range (0.65 & 0.76) */}
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-sky-300 shadow-[0_0_4px_rgba(56,189,248,0.7)] pointer-events-none z-20"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-[var(--ink-soft)] pointer-events-none z-20"
                         style={{ left: "65%" }}
                         title="Recommended range start (0.65)"
                       />
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-purple-300 shadow-[0_0_4px_rgba(168,85,247,0.7)] pointer-events-none z-20"
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[1.5px] h-3.5 rounded-full bg-[var(--accent)] pointer-events-none z-20"
                         style={{ left: "76%" }}
                         title="Recommended range end (0.76)"
                       />
@@ -1238,8 +1358,8 @@ export default function ControlPanel(props: Props) {
                     <div className="flex items-center justify-between font-mono text-[10px] text-[var(--ink-faint)] select-none pt-0.5">
                       <span>0.0</span>
                       <span className="flex items-center gap-1.5 font-medium">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-gradient-to-r from-sky-400 to-purple-400" />
-                        <span className="text-sky-300">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                        <span className="text-[var(--ink-soft)]">
                           0.65 – 0.76 (Recommended)
                         </span>
                       </span>
@@ -1295,7 +1415,7 @@ export default function ControlPanel(props: Props) {
                           {baseModelTag}
                         </span>
                       )}
-                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+                      <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
                         {selectedModel?.model_type || "Diffusion Model"}
                       </span>
                     </div>
@@ -1436,7 +1556,7 @@ export default function ControlPanel(props: Props) {
                     LOADED
                   </span>
                 ) : (
-                  <span className="rounded-xl bg-amber-500/10 px-2 py-0.5 text-[9px] font-mono font-bold text-amber-400 border border-amber-500/20">
+                  <span className="rounded-xl bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
                     REQUIRED
                   </span>
                 )}
@@ -1466,10 +1586,10 @@ export default function ControlPanel(props: Props) {
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleImg2ImgDrop}
                 onClick={() => img2imgFileInputRef.current?.click()}
-                className={`group relative flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
+                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
                   isDragOver
                     ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
-                    : "border-white/15 hover:border-[var(--accent)]/50 bg-[#121412]/60 hover:bg-[#121412]"
+                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
                 }`}
               >
                 <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2.5 transition-transform duration-200 group-hover:scale-110">
@@ -1486,15 +1606,15 @@ export default function ControlPanel(props: Props) {
                 </p>
               </div>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2.5 space-y-2.5">
-                <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-48 group">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5">
+                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-48 w-full items-center justify-center group">
                   <img
                     src={props.referenceImage}
                     alt="Inpaint Source"
-                    className="max-h-48 w-auto object-contain rounded-lg"
+                    className="h-full w-full object-contain rounded-lg"
                   />
                   {naturalDimensions && (
-                    <span className="absolute bottom-2 left-2 rounded-md bg-black/80 backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-white/90 border border-white/10">
+                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] border border-[var(--line)]">
                       {naturalDimensions.width} × {naturalDimensions.height} PX
                     </span>
                   )}
@@ -1509,7 +1629,7 @@ export default function ControlPanel(props: Props) {
                         64,
                         Math.min(2048, Math.round(naturalDimensions.height / 8) * 8),
                       ) && (
-                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-black uppercase">
+                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] uppercase">
                         CANVAS MATCHED
                       </span>
                     )}
@@ -1561,7 +1681,7 @@ export default function ControlPanel(props: Props) {
                 Inpaint Fill Mode
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1 rounded-lg bg-[var(--surface)] p-1 border border-white/5">
+            <div className="grid grid-cols-3 gap-1 rounded-lg bg-[var(--surface)] p-1 border border-[var(--line)]">
               {[
                 {
                   id: "original",
@@ -1612,7 +1732,7 @@ export default function ControlPanel(props: Props) {
                 step={1}
                 value={maskBlur}
                 onChange={(e) => onMaskBlurChange?.(Number(e.target.value))}
-                className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--surface-sunken)] rounded-lg cursor-pointer"
               />
             </div>
 
@@ -1633,7 +1753,7 @@ export default function ControlPanel(props: Props) {
                 step={0.05}
                 value={Number(denoise) || 0.75}
                 onChange={(e) => onDenoiseChange(e.target.value)}
-                className="w-full accent-[var(--accent)] h-1.5 bg-black/40 rounded-lg cursor-pointer"
+                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--surface-sunken)] rounded-lg cursor-pointer"
               />
               <div className="flex items-center justify-between gap-1 pt-1">
                 {[
@@ -1704,7 +1824,7 @@ export default function ControlPanel(props: Props) {
                       {baseModelTag}
                     </span>
                   )}
-                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+                  <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
                     {selectedModel?.model_type || "Diffusion Model"}
                   </span>
                 </div>
@@ -1828,143 +1948,464 @@ export default function ControlPanel(props: Props) {
               </span>
             </div>
             <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)]">
-              {props.referenceImage ? "I2V GUIDED" : "T2V TEXT-DRIVEN"}
+              {videoSubMode === "image-to-video" ? "I2V GUIDED" : "T2V TEXT-DRIVEN"}
             </span>
           </div>
 
+          {/* Video Sub-mode Segmented Navigation */}
+          <div
+            role="group"
+            aria-label="Video mode"
+            className="flex items-center gap-1 p-1 rounded-xl bg-[var(--surface-sunken)] border border-[var(--line)]"
+          >
+            <button
+              type="button"
+              aria-pressed={videoSubMode === "text-to-video"}
+              onClick={() => setVideoSubMode("text-to-video")}
+              disabled={busy}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition motion-reduce:transition-none ${
+                videoSubMode === "text-to-video"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
+                  : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+              }`}
+            >
+              <Film className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span>Text to Video</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={videoSubMode === "image-to-video"}
+              onClick={() => setVideoSubMode("image-to-video")}
+              disabled={busy}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition motion-reduce:transition-none ${
+                videoSubMode === "image-to-video"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
+                  : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+              }`}
+            >
+              <ImageIcon className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <span>Image to Video</span>
+            </button>
+          </div>
+
+          {/* Model capability warning: the video graph does not consume the picker */}
+          {!videoModelIsLtx && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-2.5 text-[11px] leading-relaxed text-[var(--danger)]"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>
+                The video pipeline always runs the bundled LTX-Video 2.3 weights and
+                ignores the selected checkpoint. Pick an LTX-family model for the
+                gallery to reflect what actually renders.
+              </span>
+            </div>
+          )}
+
           {/* Mode Pill Notice */}
           <div className={`flex items-center gap-2 rounded-xl p-2.5 border text-xs font-mono transition ${
-            props.referenceImage
+            videoSubMode === "image-to-video"
               ? "bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--ink)]"
               : "bg-[var(--surface-sunken)] border-[var(--line)] text-[var(--ink-faint)]"
           }`}>
             <Sparkles className="h-4 w-4 text-[var(--accent)] shrink-0" />
             <span>
-              {props.referenceImage
+              {videoSubMode === "image-to-video"
                 ? "Image-to-Video: Motion seeded by Initial Frame"
                 : "Text-to-Video: Generating motion purely from prompt"}
             </span>
           </div>
 
-          {/* 1. Prompt Composer */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-              VIDEO PROMPT & MOTION DESCRIPTION
-            </span>
-            <PromptComposer
-              idPrefix="video-prompt"
-              prompt={prompt}
-              onPromptChange={onPromptChange}
-              negativePrompt={props.negativePrompt}
-              onNegativePromptChange={props.onNegativePromptChange}
-              positivePlaceholder="Describe scene motion, camera movement, actions, and lighting… (e.g. A slow continuous tracking shot through a market, 35mm film)"
-              negativePlaceholder="worst quality, low quality, jerky camera, jittery frames, blurred subjects…"
-            />
-          </div>
+          {/* 1. Generation Model Card (labelling only: the graph keeps its bundled LTX weights) */}
+          <GenerationModelCard
+            selectedModel={selectedModel}
+            coverUrl={currentModelCover}
+            baseModelTag={baseModelTag}
+            onOpenPicker={() => setModelPickerOpen(true)}
+            fallbackTitle="No model selected"
+          />
 
-          {/* 2. Initial Source Frame Uploader (Optional for T2V, required for I2V) */}
+          {/* 2. LoRA Stack */}
+          <LoraStackPanel
+            loras={loras}
+            onLorasChange={onLorasChange}
+            onOpenPicker={() => setLoraPickerOpen(true)}
+            modelOptions={modelOptions}
+            publicModels={publicModels}
+            publicModelMap={publicModelMap}
+            prompt={prompt}
+            onPromptChange={onPromptChange}
+            disabled={busy}
+          />
+
+          {/* 3. Frames: first frame (I2V seed) + optional last frame (interpolation) */}
+          {videoSubMode === "image-to-video" && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                INITIAL FRAME (OPTIONAL FOR I2V)
-              </span>
-              {props.referenceImage && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSourceImageFile(null);
-                    props.onReferenceImageChange?.(null);
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  <span>Remove (Switch to T2V)</span>
-                </button>
-              )}
+            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+              FRAMES & CONDITIONING
+            </span>
+
+            <div className="grid grid-cols-2 gap-2">
+              {/* First frame */}
+              <div className="space-y-1">
+                <div className="flex h-4 items-center justify-between">
+                  <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]">
+                    First frame
+                  </span>
+                  {props.referenceImage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSourceImageFile(null);
+                        props.onReferenceImageChange?.(null);
+                      }}
+                      aria-label="Remove first frame"
+                      title="Remove first frame (switch to T2V)"
+                      className="rounded p-0.5 text-[var(--ink-faint)] transition-colors hover:text-[var(--danger)] focus-visible:text-[var(--danger)] motion-reduce:transition-none"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {!props.referenceImage ? (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOver(true);
+                    }}
+                    onDragLeave={() => setIsDragOver(false)}
+                    onDrop={handleImg2ImgDrop}
+                    onClick={() => img2imgFileInputRef.current?.click()}
+                    className={`group flex h-[7.5rem] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition-colors motion-reduce:transition-none ${
+                      isDragOver
+                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                        : "border-[var(--line-strong)] bg-[var(--surface-sunken)] hover:border-[var(--ink-faint)]"
+                    }`}
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
+                      <UploadCloud className="h-4 w-4" />
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-semibold text-[var(--ink)]">
+                      Add starter frame
+                    </p>
+                    <p className="mt-0.5 text-[9px] leading-tight text-[var(--ink-faint)]">
+                      Empty = text-only T2V
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative flex h-[7.5rem] items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1.5">
+                    <img
+                      src={resolveMediaUrl(props.referenceImage) || props.referenceImage}
+                      alt="First frame preview"
+                      className="h-full w-full rounded-md object-contain"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Last frame */}
+              <div className="space-y-1">
+                <div className="flex h-4 items-center justify-between">
+                  <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]">
+                    Last frame
+                  </span>
+                  {lastFrameImage && (
+                    <button
+                      type="button"
+                      onClick={() => props.onLastFrameImageChange?.(null)}
+                      aria-label="Remove last frame"
+                      title="Remove last frame"
+                      className="rounded p-0.5 text-[var(--ink-faint)] transition-colors hover:text-[var(--danger)] focus-visible:text-[var(--danger)] motion-reduce:transition-none"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {!lastFrameImage ? (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsLastFrameDragOver(true);
+                    }}
+                    onDragLeave={() => setIsLastFrameDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsLastFrameDragOver(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) void handleLastFrameFileUpload(file);
+                    }}
+                    onClick={() => lastFrameFileInputRef.current?.click()}
+                    className={`group flex h-[7.5rem] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition-colors motion-reduce:transition-none ${
+                      isLastFrameDragOver
+                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                        : "border-[var(--line-strong)] bg-[var(--surface-sunken)] hover:border-[var(--ink-faint)]"
+                    }`}
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
+                      <UploadCloud className="h-4 w-4" />
+                    </div>
+                    <p className="mt-1.5 text-[11px] font-semibold text-[var(--ink)]">
+                      Optional end frame
+                    </p>
+                    <p className="mt-0.5 text-[9px] leading-tight text-[var(--ink-faint)]">
+                      Interpolates toward it
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative flex h-[7.5rem] items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1.5">
+                    <img
+                      src={resolveMediaUrl(lastFrameImage) || lastFrameImage}
+                      alt="Last frame preview"
+                      className="h-full w-full rounded-md object-contain"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
 
-            {!props.referenceImage ? (
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(true);
-                }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleImg2ImgDrop}
-                onClick={() => img2imgFileInputRef.current?.click()}
-                className={`group flex flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition cursor-pointer ${
-                  isDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent)]/5"
-                    : "border-[var(--line-strong)] bg-[#0c0d0c] hover:border-[var(--ink-faint)]"
+            {/* Frame conditioning strength */}
+            {(props.referenceImage || lastFrameImage) && (
+              <div className="space-y-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                {props.referenceImage && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label
+                        htmlFor="video-first-frame-strength"
+                        className="text-[10px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                      >
+                        First frame strength
+                      </label>
+                      <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
+                        {firstFrameStrength.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      id="video-first-frame-strength"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={firstFrameStrength}
+                      disabled={busy}
+                      onChange={(e) => props.onFirstFrameStrengthChange?.(Number(e.target.value))}
+                      aria-label="First frame conditioning strength"
+                      className="workspace-range w-full disabled:opacity-50"
+                    />
+                  </div>
+                )}
+                {lastFrameImage && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label
+                        htmlFor="video-last-frame-strength"
+                        className="text-[10px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                      >
+                        Last frame strength
+                      </label>
+                      <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
+                        {lastFrameStrength.toFixed(2)}
+                      </span>
+                    </div>
+                    <input
+                      id="video-last-frame-strength"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={lastFrameStrength}
+                      disabled={busy}
+                      onChange={(e) => props.onLastFrameStrengthChange?.(Number(e.target.value))}
+                      aria-label="Last frame conditioning strength"
+                      className="workspace-range w-full disabled:opacity-50"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          )}
+
+          {/* 4. Audio track */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+              AUDIO TRACK
+            </span>
+            <div
+              role="group"
+              aria-label="Video audio track"
+              className="grid grid-cols-2 gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5"
+            >
+              <button
+                type="button"
+                aria-pressed={audioMode === "silent"}
+                onClick={() => props.onAudioModeChange?.("silent")}
+                className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors motion-reduce:transition-none ${
+                  audioMode === "silent"
+                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                    : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
                 }`}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 border border-white/5 text-[var(--ink-faint)] group-hover:text-[var(--accent)] group-hover:scale-105 transition">
-                  <UploadCloud className="h-4 w-4" />
+                Model-generated audio
+              </button>
+              <button
+                type="button"
+                aria-pressed={audioMode === "voice_clone"}
+                onClick={() => props.onAudioModeChange?.("voice_clone")}
+                className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors motion-reduce:transition-none ${
+                  audioMode === "voice_clone"
+                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                    : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
+                }`}
+              >
+                Clone a reference voice
+              </button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-[var(--ink-faint)]">
+              {audioMode === "silent"
+                ? "The model scores its own audio for the clip. Switch to voice clone to copy a reference speaker instead."
+                : "Voice clone needs a reference audio file. Upload a clean speech clip (mp3, wav, ogg, m4a, or flac)."}
+            </p>
+
+            {audioMode === "voice_clone" && (
+              <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]">
+                    Reference audio
+                  </span>
+                  {referenceAudio && (
+                    <button
+                      type="button"
+                      onClick={() => props.onReferenceAudioChange?.(null)}
+                      aria-label="Remove reference audio"
+                      title="Remove reference audio"
+                      className="rounded p-0.5 text-[var(--ink-faint)] transition-colors hover:text-[var(--danger)] focus-visible:text-[var(--danger)] motion-reduce:transition-none"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
-                <p className="mt-1.5 text-xs font-semibold text-[var(--ink)]">
-                  Drop starter frame or <span className="text-[var(--accent)]">browse</span>
-                </p>
-                <p className="mt-0.5 text-[10px] text-[var(--ink-faint)]">
-                  Leave empty to generate directly from text (T2V)
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-white/10 bg-[#0d0e0d] p-2 space-y-2">
-                <div className="relative rounded-lg overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center max-h-40 group">
-                  <img
-                    src={props.referenceImage}
-                    alt="Video Frame Source"
-                    className="max-h-40 w-auto object-contain rounded-md"
-                  />
-                </div>
+                {!referenceAudio ? (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsAudioDragOver(true);
+                    }}
+                    onDragLeave={() => setIsAudioDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsAudioDragOver(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) void handleAudioFileUpload(file);
+                    }}
+                    onClick={() => audioFileInputRef.current?.click()}
+                    className={`group flex h-[3.25rem] cursor-pointer items-center gap-2.5 rounded-lg border border-dashed p-2.5 transition-colors motion-reduce:transition-none ${
+                      isAudioDragOver
+                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                        : "border-[var(--line-strong)] hover:border-[var(--ink-faint)]"
+                    }`}
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
+                      <UploadCloud className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 text-left">
+                      <span className="block text-[11px] font-semibold text-[var(--ink)]">
+                        Drop audio or <span className="text-[var(--accent)]">browse</span>
+                      </span>
+                      <span className="block text-[9px] text-[var(--ink-faint)]">
+                        mp3 · wav · ogg · m4a · flac
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex h-[3.25rem] items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5">
+                    <Check className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+                    <span className="truncate font-mono text-[10px] text-[var(--ink)]">
+                      Reference audio loaded
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  aria-pressed={extractVoice}
+                  onClick={() => props.onExtractVoiceChange?.(!extractVoice)}
+                  className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-2 text-left transition-colors hover:border-[var(--line-strong)] motion-reduce:transition-none"
+                >
+                  <span className="min-w-0 pr-2">
+                    <span className="block text-[11px] font-semibold text-[var(--ink)]">
+                      Extract voice
+                    </span>
+                    <span className="block text-[9px] leading-tight text-[var(--ink-faint)]">
+                      Isolate vocals from the reference clip before cloning
+                    </span>
+                  </span>
+                  <span
+                    className={`relative h-4 w-7 shrink-0 rounded-full transition-colors motion-reduce:transition-none ${
+                      extractVoice ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
+                    }`}
+                    aria-hidden="true"
+                  >
+                    <span
+                      className={`absolute top-0.5 h-3 w-3 rounded-full bg-[var(--accent-ink)] transition-transform motion-reduce:transition-none ${
+                        extractVoice ? "translate-x-3.5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
             )}
           </div>
 
-          {/* 3. Performance Profile Toggle (Fast vs Pro) */}
+          {/* 5. Performance Profile Toggle (Fast vs Pro) */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
               PIPELINE EXECUTION PROFILE
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Pipeline execution profile">
               <button
                 type="button"
+                aria-pressed={!stage2Upscale}
                 onClick={() => onStage2UpscaleChange?.(false)}
-                className={`p-2.5 rounded-xl border text-left transition ${
+                className={`rounded-xl border p-2.5 text-left transition-colors motion-reduce:transition-none ${
                   !stage2Upscale
                     ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--ink)]"
                     : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)]"
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--accent)]">
-                  <Zap className="h-3.5 w-3.5" />
-                  <span>⚡ Fast Mode</span>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--accent)]">
+                  <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Fast Mode</span>
                 </div>
-                <p className="mt-1 text-[10px] text-[var(--ink-faint)] leading-tight">
-                  Stage 1 Base (~15s)
+                <p className="mt-1 text-[10px] leading-tight text-[var(--ink-faint)]">
+                  Stage 1 base only (~15s)
                 </p>
               </button>
               <button
                 type="button"
+                aria-pressed={stage2Upscale}
                 onClick={() => onStage2UpscaleChange?.(true)}
-                className={`p-2.5 rounded-xl border text-left transition ${
+                className={`rounded-xl border p-2.5 text-left transition-colors motion-reduce:transition-none ${
                   stage2Upscale
                     ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--ink)]"
                     : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-[var(--line-strong)]"
                 }`}
               >
-                <div className="flex items-center gap-1.5 font-bold text-xs text-amber-300">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>✨ Pro Mode</span>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--accent)]">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Pro Mode</span>
                 </div>
-                <p className="mt-1 text-[10px] text-[var(--ink-faint)] leading-tight">
-                  2x Upscale + RIFE (~45s)
+                <p className="mt-1 text-[10px] leading-tight text-[var(--ink-faint)]">
+                  2x upscale + RIFE (~45s)
                 </p>
               </button>
             </div>
+            <p className="text-[10px] leading-relaxed text-[var(--ink-faint)]">
+              Fast mode prunes the Stage 2 subgraph, so film grain, RIFE interpolation,
+              color match, and tiled VAE are skipped.
+            </p>
           </div>
 
-          {/* 4. Video Duration & Length */}
+          {/* 6. Duration, frame rate, sizing */}
           <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
@@ -1975,24 +2416,20 @@ export default function ControlPanel(props: Props) {
                   {videoDurationSeconds}s ({videoDurationSeconds * videoFps + 1} frames)
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-1">
-                {[
-                  { sec: 2, label: "2s" },
-                  { sec: 3, label: "3s" },
-                  { sec: 5, label: "5s" },
-                  { sec: 10, label: "10s" },
-                ].map((item) => (
+              <div className="grid grid-cols-4 gap-1" role="group" aria-label="Video duration">
+                {VIDEO_DURATION_OPTIONS.map((sec) => (
                   <button
-                    key={item.sec}
+                    key={sec}
                     type="button"
-                    onClick={() => onVideoDurationSecondsChange?.(item.sec)}
-                    className={`py-1.5 px-2 rounded-md text-[10px] font-bold transition text-center ${
-                      videoDurationSeconds === item.sec
+                    aria-pressed={videoDurationSeconds === sec}
+                    onClick={() => onVideoDurationSecondsChange?.(sec)}
+                    className={`rounded-md px-2 py-1.5 text-center text-[10px] font-bold transition-colors motion-reduce:transition-none ${
+                      videoDurationSeconds === sec
                         ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                        : "bg-[var(--surface)] border border-white/5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        : "border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
                     }`}
                   >
-                    {item.label}
+                    {sec}s
                   </button>
                 ))}
               </div>
@@ -2008,16 +2445,17 @@ export default function ControlPanel(props: Props) {
                   {videoFps} FPS
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-1">
-                {[24, 25, 30].map((fps) => (
+              <div className="grid grid-cols-4 gap-1" role="group" aria-label="Video frame rate">
+                {VIDEO_FPS_OPTIONS.map((fps) => (
                   <button
                     key={fps}
                     type="button"
+                    aria-pressed={videoFps === fps}
                     onClick={() => onVideoFpsChange?.(fps)}
-                    className={`py-1.5 px-1 rounded-md text-[10px] font-bold transition text-center ${
+                    className={`rounded-md px-1 py-1.5 text-center text-[10px] font-bold transition-colors motion-reduce:transition-none ${
                       videoFps === fps
                         ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                        : "bg-[var(--surface)] border border-white/5 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        : "border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
                     }`}
                   >
                     {fps} FPS
@@ -2026,85 +2464,346 @@ export default function ControlPanel(props: Props) {
               </div>
             </div>
 
-            {/* Resolution Selector (Multiples of 32 for LTX-Video) */}
+            {/* Sizing mode: preset dimensions vs. follow the source image */}
+            {videoSubMode === "image-to-video" && (
+            <div className="space-y-1.5 border-t border-[var(--line)] pt-2.5">
+              <span className="text-[10px] font-mono uppercase text-[var(--ink-faint)]">
+                Video Sizing
+              </span>
+              <div
+                role="group"
+                aria-label="Video sizing mode"
+                className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-0.5"
+              >
+                <button
+                  type="button"
+                  aria-pressed={resizeMode === "preset"}
+                  onClick={() => onResizeModeChange?.("preset")}
+                  className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors motion-reduce:transition-none ${
+                    resizeMode === "preset"
+                      ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                      : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
+                  }`}
+                >
+                  Match preset
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={resizeMode === "source"}
+                  onClick={() => onResizeModeChange?.("source")}
+                  disabled={!props.referenceImage}
+                  className={`rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-40 ${
+                    resizeMode === "source"
+                      ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                      : "text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)]"
+                  }`}
+                >
+                  Match source image
+                </button>
+              </div>
+              {!props.referenceImage && (
+                <p className="text-[9px] leading-relaxed text-[var(--ink-faint)]">
+                  Source sizing needs a first frame. Without one, the preset dimensions
+                  below are sent.
+                </p>
+              )}
+              {resizeMode === "source" && props.referenceImage && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="video-megapixels"
+                      className="text-[10px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                    >
+                      Source megapixels
+                    </label>
+                    <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
+                      {videoMegapixels.toFixed(1)} MP
+                    </span>
+                  </div>
+                  <input
+                    id="video-megapixels"
+                    type="number"
+                    min={0.5}
+                    max={8}
+                    step={0.1}
+                    value={videoMegapixels}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      if (Number.isFinite(value)) {
+                        props.onVideoMegapixelsChange?.(
+                          Math.max(0.5, Math.min(8, value))
+                        );
+                      }
+                    }}
+                    className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
+                  />
+                  <p className="text-[9px] leading-relaxed text-[var(--ink-faint)]">
+                    The source image is scaled to this budget and snapped to multiples
+                    of 32.
+                  </p>
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Resolution presets (multiples of 32 for LTX-Video) */}
             <div className="space-y-1.5">
               <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                Video Aspect & Resolution
+                {resizeMode === "source" && videoSubMode === "image-to-video"
+                  ? "Preset Dimensions (unused)"
+                  : "Preset Resolution"}
               </span>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className={`grid grid-cols-2 gap-1.5 ${resizeMode === "source" && videoSubMode === "image-to-video" ? "opacity-50" : ""}`}>
                 {[
                   { label: "16:9 Landscape", w: 1024, h: 576 },
                   { label: "3:2 Standard", w: 768, h: 512 },
                   { label: "1:1 Square", w: 704, h: 704 },
                   { label: "9:16 Portrait", w: 576, h: 1024 },
                 ].map((res) => {
-                  const isMatch = Number(props.customWidth) === res.w && Number(props.customHeight) === res.h;
+                  const isMatch =
+                    format === "custom" &&
+                    Number(customWidth) === res.w &&
+                    Number(customHeight) === res.h;
                   return (
                     <button
                       key={res.label}
                       type="button"
+                      aria-pressed={isMatch}
+                      disabled={resizeMode === "source" && videoSubMode === "image-to-video"}
                       onClick={() => {
-                        props.onCustomWidthChange?.(String(res.w));
-                        props.onCustomHeightChange?.(String(res.h));
+                        onFormatChange("custom");
+                        onCustomWidthChange(String(res.w));
+                        onCustomHeightChange(String(res.h));
                       }}
-                      className={`p-1.5 rounded-lg border text-left font-mono text-[10px] transition ${
+                      className={`rounded-lg border p-1.5 text-left font-mono text-[10px] transition-colors motion-reduce:transition-none disabled:cursor-not-allowed ${
                         isMatch
-                          ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-bold"
-                          : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                          ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
+                          : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
                       }`}
                     >
                       <div className="font-bold">{res.label}</div>
-                      <div className="text-[9px] opacity-75">{res.w}×{res.h}</div>
+                      <div className="text-[9px] opacity-75">
+                        {res.w}×{res.h}
+                      </div>
                     </button>
                   );
                 })}
               </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <label
+                    htmlFor="video-custom-width"
+                    className="mb-1 block text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                  >
+                    Width
+                  </label>
+                  <input
+                    id="video-custom-width"
+                    type="number"
+                    min={64}
+                    max={4096}
+                    step={32}
+                    value={customWidth}
+                    disabled={busy}
+                    aria-invalid={customWidthInvalid}
+                    onChange={(e) => onCustomWidthChange(e.target.value)}
+                    className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
+                      customWidthInvalid ? "border-[var(--danger-line)]" : "border-[var(--line)]"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="video-custom-height"
+                    className="mb-1 block text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                  >
+                    Height
+                  </label>
+                  <input
+                    id="video-custom-height"
+                    type="number"
+                    min={64}
+                    max={4096}
+                    step={32}
+                    value={customHeight}
+                    disabled={busy}
+                    aria-invalid={customHeightInvalid}
+                    onChange={(e) => onCustomHeightChange(e.target.value)}
+                    className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
+                      customHeightInvalid ? "border-[var(--danger-line)]" : "border-[var(--line)]"
+                    }`}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* 5. Sampling Parameters */}
-          <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                DIFFUSION PARAMETERS
+          {/* 7. Stage 2 quality (Pro mode only) */}
+          <div className={`rounded-xl border bg-[var(--surface-sunken)] transition-colors motion-reduce:transition-none ${
+            stage2Upscale ? "border-[var(--line)]" : "border-[var(--line)] opacity-60"
+          }`}>
+            <button
+              type="button"
+              onClick={() => setStage2QualityOpen((v) => !v)}
+              aria-expanded={stage2QualityOpen}
+              aria-controls="video-stage2-quality"
+              className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--ink)]">
+                  Stage 2 Quality
+                </span>
+                {!stage2Upscale && (
+                  <span className="rounded border border-[var(--line)] bg-[var(--surface-raised)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-[var(--ink-faint)]">
+                    Pro only
+                  </span>
+                )}
               </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">
-                  STEPS (DISTILLED 4-15)
-                </label>
-                <input
-                  type="number"
-                  value={steps}
-                  min={1}
-                  max={50}
-                  onChange={(e) => onStepsChange(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] focus:border-[var(--accent)] outline-none"
-                />
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-[var(--ink-faint)] transition-transform motion-reduce:transition-none ${
+                  stage2QualityOpen ? "rotate-180" : ""
+                }`}
+                aria-hidden="true"
+              />
+            </button>
+            {stage2QualityOpen && (
+              <div id="video-stage2-quality" className="space-y-3 border-t border-[var(--line)] px-3 pb-3 pt-2.5">
+                <p className="text-[10px] leading-relaxed text-[var(--ink-faint)]">
+                  These only take effect in Pro mode. Fast mode prunes the Stage 2
+                  subgraph entirely.
+                </p>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="video-rife-multiplier"
+                      className="text-[10px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
+                    >
+                      RIFE multiplier
+                    </label>
+                    <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
+                      {rifeMultiplier}×
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1" role="group" aria-label="RIFE frame multiplier">
+                    {[1, 2, 3, 4].map((multiplier) => (
+                      <button
+                        key={multiplier}
+                        type="button"
+                        aria-pressed={rifeMultiplier === multiplier}
+                        disabled={!stage2Upscale || busy}
+                        onClick={() => props.onRifeMultiplierChange?.(multiplier)}
+                        className={`rounded-md px-1 py-1 text-[10px] font-bold transition-colors motion-reduce:transition-none disabled:cursor-not-allowed ${
+                          rifeMultiplier === multiplier
+                            ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                            : "border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        }`}
+                      >
+                        {multiplier}×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {[
+                  {
+                    label: "High FPS output",
+                    hint: "Interpolate to a smoother frame rate",
+                    active: highFps,
+                    onToggle: () => props.onHighFpsChange?.(!highFps),
+                  },
+                  {
+                    label: "Film grain",
+                    hint: "Add a fine analog grain pass",
+                    active: filmGrain,
+                    onToggle: () => props.onFilmGrainChange?.(!filmGrain),
+                  },
+                  {
+                    label: "Match colors",
+                    hint: "Match Stage 2 colors back to Stage 1",
+                    active: matchColor,
+                    onToggle: () => props.onMatchColorChange?.(!matchColor),
+                  },
+                  {
+                    label: "Tiled VAE decode",
+                    hint: "Lower VRAM at some speed cost",
+                    active: tiledVaeDecode,
+                    onToggle: () => props.onTiledVaeDecodeChange?.(!tiledVaeDecode),
+                  },
+                ].map((toggle) => (
+                  <button
+                    key={toggle.label}
+                    type="button"
+                    aria-pressed={toggle.active}
+                    disabled={!stage2Upscale || busy}
+                    onClick={toggle.onToggle}
+                    className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-1.5 text-left transition-colors hover:border-[var(--line-strong)] motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="min-w-0 pr-2">
+                      <span className="block text-[11px] font-semibold text-[var(--ink)]">
+                        {toggle.label}
+                      </span>
+                      <span className="block text-[9px] leading-tight text-[var(--ink-faint)]">
+                        {toggle.hint}
+                      </span>
+                    </span>
+                    <span
+                      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors motion-reduce:transition-none ${
+                        toggle.active ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      <span
+                        className={`absolute top-0.5 h-3 w-3 rounded-full bg-[var(--accent-ink)] transition-transform motion-reduce:transition-none ${
+                          toggle.active ? "translate-x-3.5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="text-[10px] font-mono text-[var(--ink-faint)] block mb-1">
-                  SEED
-                </label>
-                <SeedInput
-                  value={seed}
-                  onChange={(val) => onSeedChange(String(val))}
-                />
-              </div>
-            </div>
+            )}
           </div>
+
+          {/* 8. Sampling */}
+          <AdvancedSamplingPanel
+            idPrefix="video"
+            seed={seed}
+            onSeedChange={onSeedChange}
+            steps={steps}
+            onStepsChange={onStepsChange}
+            cfg={cfg}
+            onCfgChange={onCfgChange}
+            sampler={samplerName}
+            onSamplerChange={onSamplerNameChange}
+            scheduler={scheduler}
+            onSchedulerChange={onSchedulerChange}
+            minSteps={1}
+            maxSteps={50}
+            minCfg={1}
+            maxCfg={10}
+            busy={busy}
+            isOpen={advancedOpen}
+            onToggleOpen={() => setAdvancedOpen((v) => !v)}
+            showDenoise={false}
+            title="Diffusion Parameters"
+            badge="LTX distilled"
+          />
+          <p className="-mt-2 px-1 text-[10px] leading-relaxed text-[var(--ink-faint)]">
+            This distilled LTX graph runs at CFG 1. At that guidance scale the negative
+            prompt has no effect. Raise CFG only if you want classifier-free guidance.
+          </p>
         </div>
       ) : activeMode === "Prime" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           {/* Prime Luxury Header */}
-          <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-amber-500/10 via-[var(--accent)]/10 to-transparent p-3 border border-amber-500/20">
+          <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-[var(--accent)]/10 via-[var(--accent)]/5 to-transparent p-3 border border-[var(--accent)]/20">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)]/20 text-[var(--accent)]">
                 <Crown className="h-4 w-4" />
               </span>
               <div>
-                <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                <h3 className="text-xs font-bold text-[var(--accent)] uppercase tracking-wider">
                   SOLOTENSOR PRIME™
                 </h3>
                 <p className="text-[10px] text-[var(--ink-faint)]">
@@ -2112,7 +2811,7 @@ export default function ControlPanel(props: Props) {
                 </p>
               </div>
             </div>
-            <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+            <span className="rounded-md bg-[var(--accent)]/15 border border-[var(--accent)]/30 px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)]">
               PRO SUITE
             </span>
           </div>
@@ -2161,18 +2860,18 @@ export default function ControlPanel(props: Props) {
                       enabled: recipe.detailer,
                     });
                   }}
-                  className={`group flex flex-col p-2.5 rounded-xl border text-left transition ${
+                  className={`group flex flex-col p-2.5 rounded-xl border text-left transition-colors motion-reduce:transition-none ${
                     primePreset === recipe.id
-                      ? "border-amber-500/50 bg-amber-500/10 shadow-sm"
-                      : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-amber-500/30"
+                      ? "border-[var(--accent)]/50 bg-[var(--accent)]/10 shadow-sm"
+                      : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/30"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-[var(--ink)] group-hover:text-amber-300">
+                    <span className="text-xs font-bold text-[var(--ink)] group-hover:text-[var(--accent)]">
                       {recipe.title}
                     </span>
                     {primePreset === recipe.id && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-black">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--accent-ink)]">
                         <Check className="h-2.5 w-2.5" />
                       </span>
                     )}
@@ -2191,28 +2890,28 @@ export default function ControlPanel(props: Props) {
               ACTIVE PIPELINE STAGES
             </span>
             {/* Stage 1 */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-[var(--line)]">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="h-2 w-2 rounded-full bg-[var(--success)]" />
                 <span className="text-xs font-semibold text-[var(--ink)]">
                   Stage 1: Base Latent Synthesis
                 </span>
               </div>
-              <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase">
+              <span className="text-[9px] font-mono font-bold text-[var(--success)] uppercase">
                 ACTIVE
               </span>
             </div>
             {/* Stage 2 */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-[var(--line)]">
               <div className="flex items-center gap-2">
                 <span
-                  className={`h-2 w-2 rounded-full ${activeUpscale.enabled ? "bg-amber-400" : "bg-neutral-600"}`}
+                  className={`h-2 w-2 rounded-full ${activeUpscale.enabled ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"}`}
                 />
                 <div>
                   <span className="text-xs font-semibold text-[var(--ink)]">
                     Stage 2: DiT Super-Resolution
                   </span>
-                  <span className="ml-1.5 text-[9px] font-mono text-amber-300">
+                  <span className="ml-1.5 text-[9px] font-mono text-[var(--accent)]">
                     ({activeUpscale.scale}x)
                   </span>
                 </div>
@@ -2225,17 +2924,17 @@ export default function ControlPanel(props: Props) {
                     enabled: !activeUpscale.enabled,
                   })
                 }
-                className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border transition ${
+                className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border transition-colors motion-reduce:transition-none ${
                   activeUpscale.enabled
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                    ? "bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/40"
+                    : "bg-[var(--surface-soft)] text-[var(--ink-faint)] border-[var(--line)]"
                 }`}
               >
                 {activeUpscale.enabled ? "ON" : "OFF"}
               </button>
             </div>
             {/* Stage 3 */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-white/5">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface)] border border-[var(--line)]">
               <div className="flex items-center gap-2">
                 <span
                   className={`h-2 w-2 rounded-full ${activeDetailerCfg.enabled ? "bg-[var(--accent)]" : "bg-neutral-600"}`}
@@ -2309,7 +3008,7 @@ export default function ControlPanel(props: Props) {
                       {baseModelTag}
                     </span>
                   )}
-                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
+                  <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
                     {selectedModel?.model_type || "Diffusion Model"}
                   </span>
                 </div>
@@ -2461,13 +3160,13 @@ export default function ControlPanel(props: Props) {
                 <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
                   Basic Model
                 </span>
-                <div className="h-4 w-14 rounded-xl bg-white/10 shimmer" />
+                <div className="h-4 w-14 rounded-xl bg-[var(--surface-soft)] shimmer" />
               </div>
               <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 min-w-0">
-                <div className="h-12 w-12 shrink-0 rounded-xl bg-[var(--surface-soft)] shimmer border border-white/5" />
+                <div className="h-12 w-12 shrink-0 rounded-xl bg-[var(--surface-soft)] shimmer border border-[var(--line)]" />
                 <div className="min-w-0 flex-1 space-y-2">
-                  <div className="h-3.5 w-3/4 rounded bg-white/15 shimmer" />
-                  <div className="h-2.5 w-1/2 rounded bg-white/10 shimmer mt-1.5" />
+                  <div className="h-3.5 w-3/4 rounded bg-[var(--surface-soft)] shimmer" />
+                  <div className="h-2.5 w-1/2 rounded bg-[var(--surface-soft)] shimmer mt-1.5" />
                 </div>
               </div>
             </div>
@@ -2529,8 +3228,8 @@ export default function ControlPanel(props: Props) {
                         </div>
                       )}
                       {selectedModel && (
-                        <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/45 to-transparent pb-0.5 pt-2.5 px-1 pointer-events-none">
-                          <span className="block truncate font-mono text-[8px] font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                        <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[var(--media-scrim-strong)] via-[var(--media-scrim)] to-transparent pb-0.5 pt-2.5 px-1 pointer-events-none">
+                          <span className="block truncate font-mono text-[8px] font-bold text-[var(--ink)] drop-shadow-[0_1px_2px_var(--overlay)]">
                             {selectedModel.version_name || "v1.0"}
                           </span>
                         </div>
@@ -3018,23 +3717,23 @@ export default function ControlPanel(props: Props) {
                         )}
 
                         {/* Atmospheric Bottom Gradient Scrim */}
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--overlay)] via-[var(--media-scrim-strong)] via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0 motion-reduce:transition-none" />
 
                         {/* Top Tag Overlays */}
                         <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
-                          <span className="rounded-md border border-white/20 bg-black/40 px-2 py-0.5 text-[9px] font-bold text-white/90 backdrop-blur-md uppercase tracking-wider">
+                          <span className="rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2 py-0.5 text-[9px] font-bold text-[var(--ink)] backdrop-blur-md uppercase tracking-wider">
                             {m.model_type === "Checkpoint"
                               ? "CKPT"
                               : m.model_type}
                           </span>
-                          <span className="rounded-md border border-white/15 bg-black/40 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white/80 backdrop-blur-md">
+                          <span className="rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[var(--ink-soft)] backdrop-blur-md">
                             {m.version_name || "v1.0"}
                           </span>
                         </div>
 
                         {/* Current Active Indicator Badge */}
                         {isCurrent && (
-                          <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-500/80 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
+                          <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 rounded-md border border-[var(--success)] bg-[var(--surface-sunken)] px-2 py-0.5 text-[10px] font-bold text-[var(--success)] shadow-sm">
                             <Check className="h-3 w-3" />
                             <span>Active</span>
                           </div>
@@ -3042,10 +3741,10 @@ export default function ControlPanel(props: Props) {
 
                         {/* Bottom Typography Overlay */}
                         <div className="relative z-10 p-3.5 flex flex-col justify-end w-full pointer-events-none">
-                          <h4 className="truncate text-sm sm:text-base font-bold tracking-tight text-white drop-shadow-sm group-hover:text-[var(--accent)] transition-colors">
+                          <h4 className="truncate text-sm sm:text-base font-bold tracking-tight text-[var(--ink)] drop-shadow-sm group-hover:text-[var(--accent)] transition-colors motion-reduce:transition-none">
                             {m.title}
                           </h4>
-                          <p className="mt-0.5 truncate text-[11px] font-medium text-white/75">
+                          <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--ink-soft)]">
                             {[
                               m.version_name || "v1.0",
                               pub?.category || m.model_type,
@@ -3053,8 +3752,8 @@ export default function ControlPanel(props: Props) {
                               .filter(Boolean)
                               .join(" • ")}
                           </p>
-                          <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px]">
-                            <span className="truncate text-white/55 max-w-[65%]">
+                          <div className="mt-2 flex items-center justify-between pt-1.5 border-t border-[var(--line)] text-[10px]">
+                            <span className="truncate text-[var(--ink-faint)] max-w-[65%]">
                               {pub?.base_model || m.model_type}
                             </span>
                             <span className="font-bold text-[var(--accent)] drop-shadow-sm">
@@ -3443,7 +4142,7 @@ export default function ControlPanel(props: Props) {
 
       {/* Hardware Envelope Pro Modal */}
       {hardwareModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4">
           <div className="w-full max-w-lg rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
             {/* Header */}
             <div className="flex items-start justify-between border-b border-[var(--line)] pb-4">
@@ -3592,7 +4291,7 @@ export default function ControlPanel(props: Props) {
 
       {/* Private Output Pro Upsell Modal */}
       {privateUpsellOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4">
           <div className="w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-2xl">
             <div className="flex items-start justify-between border-b border-[var(--line)] pb-4">
               <div className="flex items-center gap-3">

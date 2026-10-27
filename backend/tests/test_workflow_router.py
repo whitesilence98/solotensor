@@ -15,6 +15,7 @@ from app.services.workflow_router import (
     patch_base_t2i_workflow,
     patch_detailer_workflow,
     patch_seedvr_upscaler_workflow,
+    patch_video_it2v_workflow,
     select_workflow,
 )
 
@@ -169,6 +170,75 @@ class TestWorkflowRouter(unittest.TestCase):
         self.assertNotIn("1054", patched)
         self.assertEqual(patched["1054_load"]["inputs"]["image"], "city_sketch.png")
         self.assertEqual(patched["1059"]["inputs"]["denoise"], 0.75)
+
+
+    def test_patch_video_workflow_mode_matrix(self):
+        """Explicit video_mode drives the per-frame force primitives on the real graph."""
+        cases = [
+            ("text-to-video",  None,        None,       (0, 0)),
+            ("image-to-video", "first.png", None,       (2, 0)),
+            ("image-to-video", "first.png", "last.png", (2, 2)),
+            ("image-to-video", None,        "last.png", (0, 2)),
+        ]
+
+        for stage2 in (False, True):
+            for mode, first, last, (force_first, force_last) in cases:
+                with self.subTest(
+                    stage2_upscale=stage2, video_mode=mode, first=first, last=last
+                ):
+                    raw = load_workflow("workflow_generate_it2v.json")
+                    patched = patch_video_it2v_workflow(
+                        raw,
+                        video_mode=mode,
+                        source_image_filename=first,
+                        last_frame_filename=last,
+                        stage2_upscale=stage2,
+                    )
+
+                    self.assertEqual(
+                        patched["1875_force_first"]["inputs"]["value"], force_first
+                    )
+                    self.assertEqual(
+                        patched["1875_force_last"]["inputs"]["value"], force_last
+                    )
+                    self.assertIs(
+                        patched["1875"]["inputs"]["value"], mode == "image-to-video"
+                    )
+                    # Derived nodes must keep their class; only their inputs change.
+                    self.assertEqual(
+                        patched["389:1929:1111"]["class_type"], "Logic Comparison OR"
+                    )
+                    self.assertEqual(
+                        patched["389:1929:1907"]["class_type"], "easy compare"
+                    )
+
+                    if stage2:
+                        # Stage-2 clone survives pruning and follows the forced compares.
+                        self.assertEqual(
+                            patched["1194:1669"]["class_type"], "Logic Comparison OR"
+                        )
+                        self.assertEqual(
+                            patched["1194:1669"]["inputs"]["boolean_a"],
+                            ["389:1929:1907", 0],
+                        )
+                    else:
+                        self.assertNotIn("1194:1669", patched)
+
+    def test_patch_video_workflow_legacy_adds_no_force_nodes(self):
+        """Omitting video_mode keeps the legacy graph structure unchanged."""
+        raw = load_workflow("workflow_generate_it2v.json")
+        original = json.loads(json.dumps(raw))
+        patched = patch_video_it2v_workflow(
+            raw,
+            source_image_filename="first.png",
+            stage2_upscale=True,
+        )
+
+        self.assertNotIn("1875_force_first", patched)
+        self.assertNotIn("1875_force_last", patched)
+        self.assertIs(patched["1875"]["inputs"]["value"], True)
+        self.assertEqual(patched["389:1929:1905"]["inputs"]["any_01"], ["1875_load_first", 0])
+        self.assertEqual(raw, original)
 
 
 if __name__ == "__main__":

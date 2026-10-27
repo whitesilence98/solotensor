@@ -63,6 +63,12 @@ interface Props {
  activeModelTitle?: string;
  aspectRatio?: string;
  className?: string;
+ /** True when the active studio tab is Video; drives progress copy. */
+ isVideo?: boolean;
+ /** Stage 2 (2x upscale + RIFE) is active for the current video run. */
+ stage2Upscale?: boolean;
+ videoDurationSeconds?: number;
+ videoFps?: number;
 }
 
 function CanvasListCard({
@@ -82,6 +88,8 @@ function CanvasListCard({
 }) {
  const [isLoaded, setIsLoaded] = useState(false);
  const mediaUrl = resolveMediaUrl(item.url) || item.url;
+ const isVideoItem =
+  meta?.kind === "video" || /\.(mp4|webm|mov|mkv)$/i.test(item.key);
 
  return (
   <div
@@ -104,15 +112,29 @@ function CanvasListCard({
       }`}
      />
      {/* eslint-disable-next-line @next/next/no-img-element */}
-     <img
-      src={mediaUrl}
-      alt={item.key}
-      loading="lazy"
-      onLoad={() => setIsLoaded(true)}
-      className={`asset-zoom-media h-full w-full object-cover transition-opacity duration-300 ease-out ${
-       isLoaded ? "opacity-100" : "opacity-0"
-      }`}
-     />
+     {isVideoItem ? (
+      <video
+       src={mediaUrl}
+       muted
+       playsInline
+       preload="metadata"
+       aria-hidden="true"
+       onLoadedMetadata={() => setIsLoaded(true)}
+       className={`asset-zoom-media h-full w-full object-cover transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+        isLoaded ? "opacity-100" : "opacity-0"
+       }`}
+      />
+     ) : (
+      <img
+       src={mediaUrl}
+       alt={item.key}
+       loading="lazy"
+       onLoad={() => setIsLoaded(true)}
+       className={`asset-zoom-media h-full w-full object-cover transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+        isLoaded ? "opacity-100" : "opacity-0"
+       }`}
+      />
+     )}
     </div>
     <div className="min-w-0">
      <div className="flex items-center gap-1.5">
@@ -125,7 +147,7 @@ function CanvasListCard({
         (meta as any)?.has_detailer ||
         (meta as any)?.enable_detailer
       ) && (
-        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-black/60 border border-[var(--accent)]/30 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-[var(--accent)]">
+        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-[var(--overlay)] border border-[var(--accent)]/30 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-[var(--accent)]">
           <Sparkles className="h-2.5 w-2.5 fill-current" />
           <span>Detailer</span>
         </span>
@@ -174,9 +196,9 @@ const STYLE_CATALYSTS = [
     description: "Towering neon arcologies in volumetric acid rain with anamorphic flares",
     prompt:
       "Dystopian towering neon arcology shrouded in volumetric acid rain, reflections in wet asphalt, anamorphic blue flare, 8k cinematic photography, octane render, intricate cybernetic details, raytracing, sharp focus",
-    borderHover: "hover:border-cyan-400/60 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]",
-    badgeStyle: "text-cyan-400 border-cyan-800/50 bg-cyan-950/30",
-    iconColor: "text-cyan-400",
+    borderHover: "hover:border-[var(--line-strong)]",
+    badgeStyle: "text-[var(--ink-soft)] border-[var(--line)] bg-[var(--surface-soft)]",
+    iconColor: "text-[var(--accent)]",
   },
   {
     id: "analog",
@@ -186,9 +208,9 @@ const STYLE_CATALYSTS = [
     description: "Tactile tungsten rim lighting, natural skin micro-pores, Kodak Portra grain",
     prompt:
       "Close-up 35mm film portrait of a thoughtful artisan in a dimly lit workshop, dramatic tungsten rim lighting, natural skin pores and micro-texture, shallow depth of field f/1.4, Kodak Portra 400 film grain, hyperrealistic",
-    borderHover: "hover:border-amber-400/60 hover:shadow-[0_0_20px_rgba(251,191,36,0.15)]",
-    badgeStyle: "text-amber-400 border-amber-800/50 bg-amber-950/30",
-    iconColor: "text-amber-400",
+    borderHover: "hover:border-[var(--line-strong)]",
+    badgeStyle: "text-[var(--ink-soft)] border-[var(--line)] bg-[var(--surface-soft)]",
+    iconColor: "text-[var(--accent)]",
   },
   {
     id: "anime",
@@ -198,9 +220,9 @@ const STYLE_CATALYSTS = [
     description: "Towering cumulonimbus clouds over a glass ocean with crepuscular rays",
     prompt:
       "Makoto Shinkai aesthetic, towering cumulonimbus clouds over a glass ocean, golden hour crepuscular rays, vibrant anime sky, sparkling atmospheric particles, masterpiece, highres, vibrant color palette",
-    borderHover: "hover:border-purple-400/60 hover:shadow-[0_0_20px_rgba(192,132,252,0.15)]",
-    badgeStyle: "text-purple-400 border-purple-800/50 bg-purple-950/30",
-    iconColor: "text-purple-400",
+    borderHover: "hover:border-[var(--line-strong)]",
+    badgeStyle: "text-[var(--ink-soft)] border-[var(--line)] bg-[var(--surface-soft)]",
+    iconColor: "text-[var(--accent)]",
   },
   {
     id: "brutalism",
@@ -239,6 +261,10 @@ export default function CanvasPreview(props: Props) {
   onDeleteOutput,
   activeModelTitle,
   aspectRatio,
+  isVideo = false,
+  stage2Upscale = false,
+  videoDurationSeconds,
+  videoFps,
  } = props;
 
  const [appliedCatalystId, setAppliedCatalystId] = useState<string | null>(null);
@@ -334,7 +360,7 @@ export default function CanvasPreview(props: Props) {
  return (
   <main
    id="main-content"
-   className={`workspace-core workspace-scroll relative flex h-auto min-h-[36rem] min-w-0 flex-1 flex-col overflow-y-auto rounded-[1.35rem] border border-white/10 bg-[color-mix(in_srgb,var(--ground)_88%,var(--surface))] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.18)] lg:min-h-0 lg:flex-1 ${className || ""}`}
+   className={`workspace-core workspace-scroll relative flex h-auto min-h-[36rem] min-w-0 flex-1 flex-col overflow-y-auto rounded-[1.35rem] border border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_88%,var(--surface))] text-[var(--ink)] shadow-[0_24px_80px_rgba(19,28,17,.18)] lg:min-h-0 lg:flex-1 ${className || ""}`}
   >
    {/* Viewport Control Strip */}
    <header className="workspace-command top-0 z-30 m-2 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-[var(--line-strong)] bg-[rgba(15,18,15,.85)] px-3.5 py-2.5 shadow-[0_14px_42px_rgba(3,8,4,.32)] backdrop-blur-xl">
@@ -354,7 +380,7 @@ export default function CanvasPreview(props: Props) {
       />
      </button>
 
-     <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[var(--surface-raised)] px-2.5 py-1 text-[11px] font-mono text-[var(--ink-soft)] shrink-0">
+     <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 py-1 text-[11px] font-mono text-[var(--ink-soft)] shrink-0">
       <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
       <span>{outputWidth} × {outputHeight}</span>
      </div>
@@ -464,7 +490,12 @@ export default function CanvasPreview(props: Props) {
          In Progress
         </p>
         <h3 className="mt-0.5 text-sm font-semibold text-[var(--ink)]">
-         {progressLabel || "Building your image…"}
+         {progressLabel ||
+          (isVideo
+            ? stage2Upscale
+              ? `Rendering video… Stage 2 of 2 (2x upscale + RIFE${videoDurationSeconds ? `, ${videoDurationSeconds}s @ ${videoFps ?? 25} fps` : ""})`
+              : `Rendering video… Stage 1 of 2 (LTX-Video 2.3${videoDurationSeconds ? `, ${videoDurationSeconds}s @ ${videoFps ?? 25} fps` : ""})`
+            : "Building your image…")}
         </h3>
        </div>
        <span className="font-mono text-xl font-bold text-[var(--accent)]">{progress}%</span>
@@ -508,7 +539,7 @@ export default function CanvasPreview(props: Props) {
 
     {/* Outputs Grid or Empty State */}
     {filteredGallery.length === 0 && !busy ? (
-     <section className="relative mx-auto my-auto flex w-full max-w-4xl flex-col items-center justify-center py-10 px-4 sm:px-6 select-none animate-in fade-in duration-300">
+     <section className="relative mx-auto my-auto flex w-full max-w-4xl flex-col items-center justify-center py-10 px-4 sm:px-6 select-none">
       {/* Corner Registration Crosshairs */}
       <div className="absolute top-2 left-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
       <div className="absolute top-2 right-2 font-mono text-[11px] text-[var(--line-strong)] select-none opacity-60" aria-hidden="true">+</div>
@@ -554,7 +585,7 @@ export default function CanvasPreview(props: Props) {
                   </span>
                   <div className="flex items-center gap-1.5">
                     {isApplied ? (
-                      <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--accent)] animate-in fade-in">
+                      <span className="inline-flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--accent)]">
                         <Check className="h-3 w-3" />
                         <span>Loaded to prompt</span>
                       </span>
@@ -570,7 +601,7 @@ export default function CanvasPreview(props: Props) {
                   <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-soft)] ${cat.iconColor}`}>
                     <Icon className="h-3.5 w-3.5" />
                   </div>
-                  <h3 className="font-mono text-xs font-bold text-[var(--ink)] group-hover:text-white transition-colors">
+                  <h3 className="font-mono text-xs font-bold text-[var(--ink)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
                     {cat.title}
                   </h3>
                 </div>
@@ -640,7 +671,7 @@ export default function CanvasPreview(props: Props) {
        onDelete={onDeleteOutput}
       />
     ) : (
-      <div className="space-y-3 animate-in fade-in duration-300 ease-out">
+      <div className="space-y-3">
        {filteredGallery.map((item) => {
         const meta = item.metadata;
         const promptText = meta?.prompt ?? "Generated artwork";

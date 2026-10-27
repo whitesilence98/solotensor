@@ -1259,6 +1259,30 @@ class ComfyClient:
             raise ComfyClientError("ComfyUI returned an invalid uploaded image name")
         return uploaded
 
+    async def upload_audio(self, data: bytes, filename: str, content_type: str = "audio/mpeg") -> str:
+        """Upload a reference audio clip through ComfyUI and return its safe server filename.
+
+        ComfyUI's ``/upload/image`` endpoint also accepts audio: it stores any file whose
+        extension is known and returns the same ``{"name": ...}`` payload. ``LoadAudio``
+        then resolves the clip by that bare name.
+        """
+        safe_name = Path(filename).name or "input.mp3"
+        async with self._http() as client:
+            try:
+                resp = await client.post(
+                    "/upload/image",
+                    files={"image": (safe_name, data, content_type)},
+                    data={"overwrite": "false"},
+                )
+                await self._drain(resp)
+                result = resp.json()
+            except (httpx.HTTPError, ValueError, ComfyClientError) as exc:
+                raise ComfyClientError(f"Could not upload audio to ComfyUI: {exc}") from exc
+        uploaded = result.get("name")
+        if not isinstance(uploaded, str) or not uploaded or Path(uploaded).name != uploaded:
+            raise ComfyClientError("ComfyUI returned an invalid uploaded audio name")
+        return uploaded
+
     async def queue_prompt(
         self,
         graph: dict[str, Any],

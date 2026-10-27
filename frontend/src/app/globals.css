@@ -655,9 +655,16 @@ a {
   color: var(--accent-ink);
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* Keyboard-focus ring for controls that do not style their own focus state.
+   Kept inside @layer base so Tailwind utilities can override it: unlayered CSS
+   outranks every @layer, which previously made this rule beat `outline-none` on
+   text fields and painted a hard accent rectangle around the bare <input> in
+   the negative-prompt row (and every other input relying on outline-none). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
 
 ::-webkit-scrollbar {

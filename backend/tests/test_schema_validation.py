@@ -200,6 +200,58 @@ class PromptValidationTests(unittest.TestCase):
         self.assertEqual(wildcard_compat.base_model, "Universal")
 
 
+class VideoModeValidationTests(unittest.TestCase):
+    """Explicit video sub-mode contract on GenerateRequest."""
+
+    def _video(self, **overrides) -> GenerateRequest:
+        return GenerateRequest(mode="video", prompt="test", **IDS, **overrides)
+
+    def test_legacy_video_omits_video_mode(self) -> None:
+        req = self._video()
+        self.assertIsNone(req.video_mode)
+
+    def test_explicit_t2v_accepted(self) -> None:
+        req = self._video(video_mode="text-to-video")
+        self.assertEqual(req.video_mode, "text-to-video")
+
+    def test_explicit_t2v_rejects_reference_images(self) -> None:
+        with self.assertRaises(ValidationError):
+            self._video(video_mode="text-to-video", reference_images=["frame.png"])
+
+    def test_explicit_t2v_rejects_last_frame(self) -> None:
+        with self.assertRaises(ValidationError):
+            self._video(video_mode="text-to-video", last_frame_image="data:image/png;base64,AAAA")
+
+    def test_explicit_i2v_requires_a_frame(self) -> None:
+        with self.assertRaises(ValidationError):
+            self._video(video_mode="image-to-video")
+
+    def test_explicit_i2v_accepts_reference_image(self) -> None:
+        req = self._video(video_mode="image-to-video", reference_images=["frame.png"])
+        self.assertEqual(req.reference_images, ["frame.png"])
+
+    def test_explicit_i2v_accepts_last_frame(self) -> None:
+        req = self._video(
+            video_mode="image-to-video",
+            last_frame_image="data:image/png;base64,AAAA",
+        )
+        self.assertEqual(req.last_frame_image, "data:image/png;base64,AAAA")
+
+    def test_legacy_last_frame_only_still_accepted(self) -> None:
+        req = self._video(last_frame_image="data:image/png;base64,AAAA")
+        self.assertIsNone(req.video_mode)
+        self.assertIsNotNone(req.last_frame_image)
+
+    def test_video_mode_rejected_on_non_video_mode(self) -> None:
+        with self.assertRaises(ValidationError):
+            GenerateRequest(
+                mode="text-to-image",
+                video_mode="text-to-video",
+                prompt="test",
+                **IDS,
+            )
+
+
 class InstalledGalleryModelSchemaTests(unittest.TestCase):
     def test_installed_gallery_model_category_acceptance(self) -> None:
         from app.schemas import InstalledGalleryModel, ModelFileResponse, ModelPrecision

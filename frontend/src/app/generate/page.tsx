@@ -6,6 +6,8 @@ import ControlPanel, {
   type ActiveLora,
   type FormatKey,
   type TensorMode,
+  VIDEO_DURATION_OPTIONS,
+  VIDEO_FPS_OPTIONS,
 } from "@/components/ControlPanel";
 import CanvasPreview from "@/components/CanvasPreview";
 import StudioPromptBar from "@/components/StudioPromptBar";
@@ -22,12 +24,16 @@ import {
   type InstalledGalleryModel,
   type LoraAdapterPayload,
   type ProgressEvent,
+  type VideoAudioMode,
+  type VideoResizeMode,
+  type VideoSubMode,
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 import { STORAGE_KEYS } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
+import { ARCHITECTURE_FAMILIES } from "@/lib/baseModelArchitectures";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
 
@@ -46,6 +52,21 @@ const DEFAULT_SAMPLE_PROMPT =
 
 const isBaseModel = (type?: string) => (type ? ["Checkpoint", "SVD"].includes(type) : false);
 const isAdapterModel = (type?: string) => (type ? ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(type) : false);
+
+/**
+ * The video graph hardcodes the bundled LTX-2.3 transformer, VAE, and CLIP, so
+ * the studio model picker does not drive the video render. Detect LTX selections
+ * from metadata the models API already returns; no new API calls.
+ */
+const LTX_ALIASES = ARCHITECTURE_FAMILIES.ltx;
+
+function isLtxSelection(model: InstalledGalleryModel | null): boolean {
+  if (!model) return false;
+  const candidates = [model.base_model, model.version_name, model.title, model.filename]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
+  return candidates.some((value) => LTX_ALIASES.some((alias) => value.includes(alias)));
+}
 
 interface ModelIdentity {
   modelId: string;
@@ -90,11 +111,24 @@ interface TabState {
   maskBlur: number;
   inpaintFill: "original" | "latent_noise" | "latent_zero";
   // Video mode
+  videoSubMode?: VideoSubMode;
   motionBucketId: number;
-  videoFrames: number;
   videoFps: number;
-  videoDurationSeconds?: number;
-  stage2Upscale?: boolean;
+  videoDurationSeconds: number;
+  stage2Upscale: boolean;
+  audioMode: VideoAudioMode;
+  referenceAudio: string | null;
+  extractVoice: boolean;
+  lastFrameImage: string | null;
+  resizeMode: VideoResizeMode;
+  videoMegapixels: number;
+  firstFrameStrength: number;
+  lastFrameStrength: number;
+  rifeMultiplier: number;
+  highFps: boolean;
+  filmGrain: boolean;
+  matchColor: boolean;
+  tiledVaeDecode: boolean;
   // Prime mode
   primePreset: string;
   // Img2Img sub-tab
@@ -118,6 +152,27 @@ function getTabStorageKey(tensorMode: TensorMode): string {
       return "solotensor:studio:draft:prime";
   }
 }
+
+/** Video payload fields. Shared defaults mirror `backend/app/schemas.py` GenerateRequest. */
+const DEFAULT_VIDEO_FIELDS = {
+  videoSubMode: "text-to-video" as VideoSubMode,
+  videoFps: 24,
+  videoDurationSeconds: 5,
+  stage2Upscale: false,
+  audioMode: "silent" as VideoAudioMode,
+  referenceAudio: null,
+  extractVoice: true,
+  lastFrameImage: null,
+  resizeMode: "source" as VideoResizeMode,
+  videoMegapixels: 2.1,
+  firstFrameStrength: 1,
+  lastFrameStrength: 1,
+  rifeMultiplier: 2,
+  highFps: false,
+  filmGrain: false,
+  matchColor: true,
+  tiledVaeDecode: false,
+} satisfies Partial<TabState>;
 
 function createDefaultTabState(
   mode: TensorMode,
@@ -150,10 +205,7 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 76,
-        videoFps: 25,
-        videoDurationSeconds: 3,
-        stage2Upscale: false,
+        ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -185,8 +237,7 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 25,
-        videoFps: 16,
+        ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -218,8 +269,7 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 25,
-        videoFps: 16,
+        ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -237,9 +287,9 @@ function createDefaultTabState(
         seed: "-1",
         steps: "25",
         imageCount: "1",
-        cfg: "2.5",
+        cfg: "1.0",
         denoise: "1",
-        format: "16:9",
+        format: "custom",
         customWidth: "1024",
         customHeight: "576",
         referenceImage: null,
@@ -251,8 +301,7 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 25,
-        videoFps: 16,
+        ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -284,8 +333,7 @@ function createDefaultTabState(
         maskBlur: 8,
         inpaintFill: "original",
         motionBucketId: 127,
-        videoFrames: 25,
-        videoFps: 16,
+        ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
         samplerName: "euler",
@@ -331,12 +379,48 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
       maskBlur: typeof saved.maskBlur === "number" ? saved.maskBlur : defaults.maskBlur,
       inpaintFill: ["original", "latent_noise", "latent_zero"].includes(saved.inpaintFill) ? saved.inpaintFill : defaults.inpaintFill,
       motionBucketId: typeof saved.motionBucketId === "number" ? saved.motionBucketId : defaults.motionBucketId,
-      videoFrames: typeof saved.videoFrames === "number" ? saved.videoFrames : defaults.videoFrames,
-      videoFps: typeof saved.videoFps === "number" ? saved.videoFps : defaults.videoFps,
+      videoFps:
+        typeof saved.videoFps === "number" &&
+        (VIDEO_FPS_OPTIONS as readonly number[]).includes(saved.videoFps)
+          ? saved.videoFps
+          : defaults.videoFps,
+      videoDurationSeconds:
+        typeof saved.videoDurationSeconds === "number" &&
+        (VIDEO_DURATION_OPTIONS as readonly number[]).includes(saved.videoDurationSeconds)
+          ? saved.videoDurationSeconds
+          : defaults.videoDurationSeconds,
+      stage2Upscale: typeof saved.stage2Upscale === "boolean" ? saved.stage2Upscale : defaults.stage2Upscale,
+      audioMode: saved.audioMode === "silent" || saved.audioMode === "voice_clone" ? saved.audioMode : defaults.audioMode,
+      referenceAudio: typeof saved.referenceAudio === "string" ? saved.referenceAudio : defaults.referenceAudio,
+      extractVoice: typeof saved.extractVoice === "boolean" ? saved.extractVoice : defaults.extractVoice,
+      lastFrameImage: typeof saved.lastFrameImage === "string" ? saved.lastFrameImage : defaults.lastFrameImage,
+      resizeMode: saved.resizeMode === "preset" || saved.resizeMode === "source" ? saved.resizeMode : defaults.resizeMode,
+      videoMegapixels:
+        typeof saved.videoMegapixels === "number" && saved.videoMegapixels > 0 && saved.videoMegapixels <= 8
+          ? saved.videoMegapixels
+          : defaults.videoMegapixels,
+      firstFrameStrength:
+        typeof saved.firstFrameStrength === "number" ? Math.max(0, Math.min(1, saved.firstFrameStrength)) : defaults.firstFrameStrength,
+      lastFrameStrength:
+        typeof saved.lastFrameStrength === "number" ? Math.max(0, Math.min(1, saved.lastFrameStrength)) : defaults.lastFrameStrength,
+      rifeMultiplier:
+        typeof saved.rifeMultiplier === "number" && saved.rifeMultiplier >= 1 && saved.rifeMultiplier <= 4
+          ? saved.rifeMultiplier
+          : defaults.rifeMultiplier,
+      highFps: typeof saved.highFps === "boolean" ? saved.highFps : defaults.highFps,
+      filmGrain: typeof saved.filmGrain === "boolean" ? saved.filmGrain : defaults.filmGrain,
+      matchColor: typeof saved.matchColor === "boolean" ? saved.matchColor : defaults.matchColor,
+      tiledVaeDecode: typeof saved.tiledVaeDecode === "boolean" ? saved.tiledVaeDecode : defaults.tiledVaeDecode,
       primePreset: typeof saved.primePreset === "string" ? saved.primePreset : defaults.primePreset,
       img2imgSubTab: ["image_to_image", "detailer", "upscaler"].includes(saved.img2imgSubTab)
         ? saved.img2imgSubTab
         : defaults.img2imgSubTab,
+      videoSubMode:
+        saved.videoSubMode === "image-to-video" || saved.videoSubMode === "text-to-video"
+          ? saved.videoSubMode
+          : saved.referenceImage || saved.lastFrameImage
+            ? "image-to-video"
+            : defaults.videoSubMode,
       samplerName: typeof saved.samplerName === "string" ? saved.samplerName : defaults.samplerName,
       scheduler: typeof saved.scheduler === "string" ? saved.scheduler : defaults.scheduler,
     };
@@ -477,6 +561,10 @@ export default function StudioPage() {
     return modelOptions.filter((item) => isBaseModel(item.model_type));
   }, [modelOptions]);
 
+  // The video graph always runs the bundled LTX-2.3 weights. Surface that honestly
+  // when the picker points at a non-LTX checkpoint instead of pretending it applies.
+  const videoModelIsLtx = useMemo(() => isLtxSelection(selectedModel), [selectedModel]);
+
   const refreshGallery = useCallback(async () => {
     try {
       setGallery(await api.getMyGallery());
@@ -606,13 +694,46 @@ export default function StudioPage() {
     if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
       return false;
     }
+    if (
+      activeTensorMode === "Video" &&
+      activeTab.videoSubMode === "image-to-video" &&
+      !activeTab.referenceImage &&
+      !activeTab.lastFrameImage
+    ) {
+      return false;
+    }
     return true;
-  }, [activeTab.prompt, busy, activeTensorMode, activeTab.referenceImage, activeTab.img2imgSubTab]);
+  }, [
+    activeTab.prompt,
+    busy,
+    activeTensorMode,
+    activeTab.referenceImage,
+    activeTab.img2imgSubTab,
+    activeTab.videoSubMode,
+    activeTab.lastFrameImage,
+  ]);
 
   const handleGenerate = useCallback(async () => {
     if (!activeTab.prompt.trim() || busy) return;
     if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
       setError(`Please upload a reference image for ${activeTensorMode} generation.`);
+      return;
+    }
+    if (
+      activeTensorMode === "Video" &&
+      activeTab.videoSubMode === "image-to-video" &&
+      !activeTab.referenceImage &&
+      !activeTab.lastFrameImage
+    ) {
+      setError(
+        "Image-to-Video needs a first or last frame. Drop one in, or switch the mode pill to Text-to-Video."
+      );
+      return;
+    }
+    if (activeTensorMode === "Video" && activeTab.audioMode === "voice_clone" && !activeTab.referenceAudio) {
+      setError(
+        "Voice clone needs a reference audio file. Upload one, or switch the audio track to Model-generated audio."
+      );
       return;
     }
 
@@ -717,6 +838,8 @@ export default function StudioPage() {
       effectiveMode = "video";
     }
 
+    const videoSubMode = activeTab.videoSubMode ?? "text-to-video";
+
     try {
       const payload: GeneratePayload = {
         model_id: targetModel.model_id,
@@ -734,15 +857,29 @@ export default function StudioPage() {
           effectiveMode === "detailer" ||
           effectiveMode === "upscale" ||
           effectiveMode === "video") &&
-        activeTab.referenceImage
+        activeTab.referenceImage &&
+        !(effectiveMode === "video" && videoSubMode === "text-to-video")
           ? { reference_images: [activeTab.referenceImage] }
           : {}),
         ...(effectiveMode === "video"
           ? {
-              video_frames: activeTab.videoFrames,
               video_fps: activeTab.videoFps,
-              video_duration_seconds: activeTab.videoDurationSeconds ?? 3,
-              stage2_upscale: activeTab.stage2Upscale ?? false,
+              video_duration_seconds: activeTab.videoDurationSeconds,
+              stage2_upscale: activeTab.stage2Upscale,
+              audio_mode: activeTab.audioMode,
+              reference_audio: activeTab.audioMode === "voice_clone" ? activeTab.referenceAudio : null,
+              extract_voice: activeTab.extractVoice,
+              video_mode: videoSubMode,
+              last_frame_image: videoSubMode === "image-to-video" ? activeTab.lastFrameImage : null,
+              resize_mode: videoSubMode === "text-to-video" ? "preset" : activeTab.resizeMode,
+              video_megapixels: activeTab.videoMegapixels,
+              first_frame_strength: activeTab.firstFrameStrength,
+              last_frame_strength: activeTab.lastFrameStrength,
+              rife_multiplier: activeTab.rifeMultiplier,
+              high_fps: activeTab.highFps,
+              film_grain: activeTab.filmGrain,
+              match_color: activeTab.matchColor,
+              tiled_vae_decode: activeTab.tiledVaeDecode,
             }
           : {}),
         prompt: activeTab.prompt,
@@ -1026,7 +1163,6 @@ export default function StudioPage() {
             onSchedulerChange={(scheduler) => updateActiveTab({ scheduler })}
             denoise={activeTab.denoise}
             onDenoiseChange={(denoise) => updateActiveTab({ denoise })}
-            negativePrompt={activeTab.negativePrompt}
             onNegativePromptChange={(negativePrompt) => updateActiveTab({ negativePrompt })}
             customWidth={activeTab.customWidth}
             onCustomWidthChange={(customWidth) => updateActiveTab({ customWidth })}
@@ -1050,17 +1186,41 @@ export default function StudioPage() {
             onInpaintFillChange={(inpaintFill) => updateActiveTab({ inpaintFill })}
             motionBucketId={activeTab.motionBucketId}
             onMotionBucketIdChange={(motionBucketId) => updateActiveTab({ motionBucketId })}
-            videoFrames={activeTab.videoFrames}
-            onVideoFramesChange={(videoFrames) => updateActiveTab({ videoFrames })}
             videoFps={activeTab.videoFps}
             onVideoFpsChange={(videoFps) => updateActiveTab({ videoFps })}
-            videoDurationSeconds={activeTab.videoDurationSeconds ?? 3}
-            onVideoDurationSecondsChange={(videoDurationSeconds) => {
-              const videoFrames = videoDurationSeconds * (activeTab.videoFps || 25) + 1;
-              updateActiveTab({ videoDurationSeconds, videoFrames });
-            }}
-            stage2Upscale={activeTab.stage2Upscale ?? false}
+            videoDurationSeconds={activeTab.videoDurationSeconds}
+            onVideoDurationSecondsChange={(videoDurationSeconds) =>
+              updateActiveTab({ videoDurationSeconds })
+            }
+            stage2Upscale={activeTab.stage2Upscale}
             onStage2UpscaleChange={(stage2Upscale) => updateActiveTab({ stage2Upscale })}
+            audioMode={activeTab.audioMode}
+            onAudioModeChange={(audioMode) => updateActiveTab({ audioMode })}
+            referenceAudio={activeTab.referenceAudio}
+            onReferenceAudioChange={(referenceAudio) => updateActiveTab({ referenceAudio })}
+            extractVoice={activeTab.extractVoice}
+            onExtractVoiceChange={(extractVoice) => updateActiveTab({ extractVoice })}
+            lastFrameImage={activeTab.lastFrameImage}
+            onLastFrameImageChange={(lastFrameImage) => updateActiveTab({ lastFrameImage })}
+            resizeMode={activeTab.resizeMode}
+            onResizeModeChange={(resizeMode) => updateActiveTab({ resizeMode })}
+            videoMegapixels={activeTab.videoMegapixels}
+            onVideoMegapixelsChange={(videoMegapixels) => updateActiveTab({ videoMegapixels })}
+            firstFrameStrength={activeTab.firstFrameStrength}
+            onFirstFrameStrengthChange={(firstFrameStrength) => updateActiveTab({ firstFrameStrength })}
+            lastFrameStrength={activeTab.lastFrameStrength}
+            onLastFrameStrengthChange={(lastFrameStrength) => updateActiveTab({ lastFrameStrength })}
+            rifeMultiplier={activeTab.rifeMultiplier}
+            onRifeMultiplierChange={(rifeMultiplier) => updateActiveTab({ rifeMultiplier })}
+            highFps={activeTab.highFps}
+            onHighFpsChange={(highFps) => updateActiveTab({ highFps })}
+            filmGrain={activeTab.filmGrain}
+            onFilmGrainChange={(filmGrain) => updateActiveTab({ filmGrain })}
+            matchColor={activeTab.matchColor}
+            onMatchColorChange={(matchColor) => updateActiveTab({ matchColor })}
+            tiledVaeDecode={activeTab.tiledVaeDecode}
+            onTiledVaeDecodeChange={(tiledVaeDecode) => updateActiveTab({ tiledVaeDecode })}
+            videoModelIsLtx={videoModelIsLtx}
             primePreset={activeTab.primePreset}
             onPrimePresetChange={(primePreset) => updateActiveTab({ primePreset })}
             busy={busy}
@@ -1075,6 +1235,8 @@ export default function StudioPage() {
             onResetDefaults={resetStudioDefaults}
             img2imgSubTab={activeTab.img2imgSubTab}
             onImg2imgSubTabChange={(img2imgSubTab) => updateActiveTab({ img2imgSubTab })}
+            videoSubMode={activeTab.videoSubMode ?? "text-to-video"}
+            onVideoSubModeChange={(videoSubMode) => updateActiveTab({ videoSubMode })}
           />
         </div>
 
@@ -1097,7 +1259,10 @@ export default function StudioPage() {
             onImageCountChange={(imageCount) => updateActiveTab({ imageCount })}
             activeMode={activeTensorMode}
             referenceImage={activeTab.referenceImage}
+            lastFrameImage={activeTab.lastFrameImage}
             img2imgSubTab={activeTab.img2imgSubTab}
+            stage2Upscale={activeTab.stage2Upscale}
+            videoSubMode={activeTab.videoSubMode ?? "text-to-video"}
           />
           <CanvasPreview
           prompt={activeTab.prompt}
@@ -1121,6 +1286,10 @@ export default function StudioPage() {
           onSetReferenceImage={(url) => updateActiveTab({ referenceImage: url })}
           onDeleteOutput={handleDeleteOutput}
           modelOptions={modelOptions}
+          isVideo={activeTensorMode === "Video"}
+          stage2Upscale={activeTab.stage2Upscale}
+          videoDurationSeconds={activeTab.videoDurationSeconds}
+          videoFps={activeTab.videoFps}
           />
         </div>
       </div>

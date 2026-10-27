@@ -30,6 +30,23 @@ Claude Code subagents are located in `.claude/agents/` and can be invoked with `
 - `@backend` ([`.claude/agents/backend.md`](.claude/agents/backend.md)): Full FastAPI service orchestration.
 - `@frontend` ([`.claude/agents/frontend.md`](.claude/agents/frontend.md)): Next.js 15, React 19, Tailwind CSS.
 
+### 2a. Mandatory Subagent Usage
+
+**Always delegate through subagents.** The primary agent routes work; it does not implement it directly.
+
+- **New feature tasks:** use *several* subagents, not one. Decompose the feature by layer and run the independent layers **in parallel in a single message**:
+  - Backend graph/latent work → `@comfy-pipeline`
+  - Schema + `api.ts` parity → `@api-contracts`
+  - FastAPI routes and orchestration → `@backend`
+  - Model scanning / capability tagging → `@model-manager`
+  - Tool runner and `workflow_api.json` tools → `@tool-engine`
+  - Next.js components and state → `@frontend`
+  - Tests, mocks, regression coverage → `@backend-qa`
+- **Sequencing rule:** contracts and graph work are independent and go first, together. Route/orchestration agents depend on both. Frontend may start once contracts are settled. QA runs last, after implementation.
+- A feature touching two or more layers is not done with a single agent. If a task genuinely fits one layer only — a copy fix, a one-file tweak — one agent is fine.
+- Direct edits by the primary agent are reserved for: reading/investigating, verifying results, resolving a subagent's mistakes, and trivial mechanical fixes discovered during verification.
+- Always relay each subagent's findings to the user; the user does not see subagent reports.
+
 ---
 
 ## 3. Verification Protocol
@@ -67,3 +84,4 @@ npm run build
 - **Service Separation:** Routes in `main.py` remain thin; place domain logic in `backend/app/services/`.
 - **ComfyUI Integration:** Do not modify exported node IDs or graph expectations without updating unit tests.
 - **Antigravity / Claude Co-Pilot Etiquette:** Keep `main` in a releasable state. Never overwrite unstaged work from the other agent without confirming. Avoid dirty unstaged collisions across sessions.
+- **Video Tab UI is Frozen:** The `/generate` Video tab (`ControlPanel.tsx` video branch) is in a state the user explicitly approves. Multi-engine or capability work must be structurally additive: LTX-selected must render identically to today, and existing controls are shown/hidden by capability — never relocated, restyled, or supplemented with new drawers, tabs, or wizards. A visual diff on this tab is a regression unless the user asked for it. (Sanctioned exceptions, both explicitly user-requested: the Text-to-Video / Image-to-Video sub-mode pill, and the removal of the duplicate sidebar Prompt Composer — prompt and negative-prompt editing now happen only in the shared `StudioPromptBar` above the canvas, together with the standard `GENERATION MODEL` card. Do not reintroduce a sidebar prompt editor in this branch.)

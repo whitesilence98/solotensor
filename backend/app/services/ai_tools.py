@@ -32,12 +32,14 @@ MAX_NODES = 2_000
 MAX_INPUTS_PER_NODE = 100
 MAX_VALUE_DEPTH = 12
 MAX_STRING_LENGTH = 50_000
+# Every axis is a multiple of 32 so LTX-Video latents stay valid; 1344x576 is
+# the exact 21:9 ratio (1344 / 576 == 21 / 9) inside the shared pixel budget.
 ASPECT_DIMENSIONS: dict[str, tuple[int, int]] = {
     "1:1": (1024, 1024),
     "16:9": (1344, 768),
     "9:16": (768, 1344),
     "4:3": (1152, 864),
-    "21:9": (1536, 656),
+    "21:9": (1344, 576),
 }
 INFRASTRUCTURE_MARKERS = (
     "loader",
@@ -67,6 +69,37 @@ VIDEO_NODE_MARKERS = (
     "cogvideo",
     "hunyuanvideo",
 )
+TERMINAL_NODE_MARKERS = (
+    "saveimage",
+    "videocombine",
+    "savevideo",
+    "previewimage",
+)
+STAGE1_NODE_MARKERS = (
+    "stage1",
+    "firststage",
+    "firstpass",
+    "pass1",
+    "primary",
+    "basepass",
+)
+STAGE2_NODE_MARKERS = (
+    "stage2",
+    "secondstage",
+    "secondpass",
+    "pass2",
+    "refine",
+    "refiner",
+    "upscale",
+    "hires",
+    "highres",
+    "detailer",
+)
+# Bound for the terminal fan-out used by auto-binding; real workflows expose a
+# handful of Save nodes, this only keeps a hostile graph from multiplying walks.
+MAX_BINDING_TERMINALS = 16
+DEFAULT_DIMENSION_MULTIPLE = 8
+LTX_DIMENSION_MULTIPLE = 32
 
 SAMPLER_NAMES = [
     "euler",
@@ -188,6 +221,242 @@ def _build_downstream_graph(
                 if src_id in downstream:
                     downstream[src_id].append((consumer_id, input_name, node))
     return downstream
+
+
+def _is_terminal_node(node: dict[str, Any]) -> bool:
+    """True for nodes that persist or preview a graph result."""
+    normalized = _norm(str(node.get("class_type", "")))
+    if any(marker in normalized for marker in TERMINAL_NODE_MARKERS):
+        return True
+    inputs = node.get("inputs", {})
+    return isinstance(inputs, dict) and (
+        "save_output" in inputs or "filename_prefix" in inputs
+    )
+
+
+def _terminal_nodes(workflow: Workflow) -> list[str]:
+    """Output nodes used to score binding candidates, capped for hostile graphs."""
+    terminals: list[str] = []
+    for node_id in sorted(workflow):
+        node = workflow[node_id]
+        if not isinstance(node, dict) or not _is_terminal_node(node):
+            continue
+        terminals.append(node_id)
+        if len(terminals) >= MAX_BINDING_TERMINALS:
+            break
+    return terminals
+
+
+def _reachable_from(workflow: Workflow, root: str) -> set[str]:
+    """Walk ``[node_id, slot]`` links upstream from root.
+
+    Uses an explicit stack and a visited set so cycles cannot recurse or hang;
+    the walk stops after MAX_NODES unique nodes and each node is scheduled once.
+    """
+    reachable: set[str] = set()
+    scheduled = {root}
+    stack = [root]
+    while stack and len(reachable) < MAX_NODES:
+        node_id = stack.pop()
+        if node_id in reachable or node_id not in workflow:
+            continue
+        reachable.add(node_id)
+        node = workflow[node_id]
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        for value in inputs.values():
+            if (
+                isinstance(value, list)
+                and len(value) == 2
+                and isinstance(value[0], str)
+                and value[0] not in scheduled
+            ):
+                scheduled.add(value[0])
+                stack.append(value[0])
+                if len(scheduled) >= MAX_NODES:
+                    break
+    return reachable
+
+
+def _terminal_reachability(workflow: Workflow) -> dict[str, set[str]]:
+    """Map each terminal node id to the set of nodes it can reach upstream."""
+    reachability: dict[str, set[str]] = {}
+    for terminal in _terminal_nodes(workflow):
+        reachability[terminal] = _reachable_from(workflow, terminal)
+    return reachability
+
+
+def _binding_support(node_id: str, reachability: dict[str, set[str]]) -> int:
+    """How many output nodes depend on this node; higher means more primary."""
+    return sum(1 for reachable in reachability.values() if node_id in reachable)
+
+
+def _binding_preference(node_id: str, node: dict[str, Any], role: str) -> int:
+    """Stage/role preference used to break ties between equally reachable nodes."""
+    if not isinstance(node, dict):
+        node = {}
+    text = _norm(
+        " ".join(
+            (
+                _meta_title(node) or "",
+                str(node.get("class_type", "")),
+                node_id,
+            )
+        )
+    )
+    score = 0
+    if role and role in text:
+        score += 2
+    if any(marker in text for marker in STAGE1_NODE_MARKERS):
+        score += 3
+    if any(marker in text for marker in STAGE2_NODE_MARKERS):
+        score -= 3
+    return score
+
+
+def _select_binding_candidate(
+    workflow: Workflow,
+    candidates: list[tuple[str, str]],
+    role: str,
+    fallback: list[tuple[str, str]] | None = None,
+) -> dict[str, str] | None:
+    """Pick the most output-aware candidate from an ordered legacy scan.
+
+    Candidates reachable from more terminals win, then Stage-1/role hints, then
+    the scan order. With no terminal analysis the first ``fallback`` candidate
+    wins so workflows without output nodes keep their historical bindings.
+    """
+    unique: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    if not unique:
+        return None
+    reachability = _terminal_reachability(workflow)
+    support = {
+        candidate: _binding_support(candidate[0], reachability)
+        for candidate in unique
+    }
+    if not reachability or not any(support.values()):
+        # No usable output topology (or every candidate is orphaned): keep the
+        # historical first-match order so existing tools never regress.
+        if fallback is not None:
+            if not fallback:
+                return None
+            node_id, input_name = fallback[0]
+        else:
+            node_id, input_name = unique[0]
+        return {"node_id": node_id, "input_name": input_name}
+    ranked = sorted(
+        unique,
+        key=lambda item: (
+            -support[item],
+            -_binding_preference(item[0], workflow.get(item[0], {}), role),
+            item[0],
+            item[1],
+        ),
+    )
+    node_id, input_name = ranked[0]
+    return {"node_id": node_id, "input_name": input_name}
+
+
+def _is_latent_dimension_node(class_type: str) -> bool:
+    """True for the empty-latent families that own their own pixel size."""
+    normalized = _norm(class_type)
+    return (
+        "latent" in normalized
+        or "emptylatent" in normalized
+        or "empty" in normalized
+    )
+
+
+def _has_literal_size(value: Any) -> bool:
+    """A positive scalar dimension. Zero is KJ-resize's 'inherit source' sentinel."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value > 0
+    )
+
+
+def _find_dimension_node(workflow: Workflow) -> dict[str, str]:
+    """Find the node that owns the output pixel size, if the graph has one.
+
+    Empty-latent nodes win: they own the output size, whereas a resize node may
+    sit downstream of it and only rescale the result. Literal-size resize nodes
+    count as owners too, which is how an img2img graph that resizes its input
+    gets a size control at all.
+    """
+    fallback: dict[str, str] = {}
+    for node_id in sorted(workflow):
+        node = workflow[node_id]
+        if not isinstance(node, dict):
+            continue
+        normalized = _norm(str(node.get("class_type", "")))
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            continue
+        if _is_latent_dimension_node(str(node.get("class_type", ""))) and (
+            "width" in inputs and "height" in inputs
+        ):
+            w_val = inputs["width"]
+            h_val = inputs["height"]
+            if (
+                isinstance(w_val, (int, float))
+                and not isinstance(w_val, bool)
+                and isinstance(h_val, (int, float))
+                and not isinstance(h_val, bool)
+            ):
+                return {"node_id": node_id, "width": "width", "height": "height"}
+            if (
+                isinstance(w_val, list)
+                and len(w_val) == 2
+                and isinstance(w_val[0], str)
+                and isinstance(h_val, list)
+                and len(h_val) == 2
+                and isinstance(h_val[0], str)
+                and w_val[0] == h_val[0]
+            ):
+                src = workflow.get(w_val[0], {})
+                src_inputs = src.get("inputs", {}) if isinstance(src, dict) else {}
+                if "width" in src_inputs and "height" in src_inputs:
+                    return {"node_id": w_val[0], "width": "width", "height": "height"}
+            continue
+        if (
+            not fallback
+            and not _is_infrastructure(str(node.get("class_type", "")))
+            and _has_literal_size(inputs.get("width"))
+            and _has_literal_size(inputs.get("height"))
+        ):
+            fallback = {"node_id": node_id, "width": "width", "height": "height"}
+    return fallback
+
+
+def _snap_dimension(value: Any, multiple: int) -> Any:
+    """Floor a numeric dimension to a multiple so latent grids stay valid."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    return max(multiple, (int(value) // multiple) * multiple)
+
+
+def _snap_dimensions(width: Any, height: Any, multiple: int) -> tuple[Any, Any]:
+    return _snap_dimension(width, multiple), _snap_dimension(height, multiple)
+
+
+def _required_dimension_multiple(workflow: Workflow) -> int:
+    """LTX-Video needs multiples of 32; every other family uses ComfyUI's minimum."""
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        normalized = _norm(str(node.get("class_type", "")))
+        if "ltxv" in normalized or normalized.startswith("ltx"):
+            return LTX_DIMENSION_MULTIPLE
+    return DEFAULT_DIMENSION_MULTIPLE
 
 
 def _trace_image_role(
@@ -497,6 +766,11 @@ def extract_controls(
     roles = _prompt_roles(workflow)
     downstream = _build_downstream_graph(workflow)
     sampler_fields = {"seed", "noise_seed", "steps", "cfg", "denoise"}
+    # Empty-latent nodes own the output size; resize nodes only rescale it.
+    # Only the node _find_dimension_node picked contributes width/height
+    # controls, otherwise the panel shows two competing size pairs and the
+    # preset lands on a different node than the one the user edited.
+    dimension_node_id = (_find_dimension_node(workflow) or {}).get("node_id")
 
     def add(
         node_id: str,
@@ -796,9 +1070,26 @@ def extract_controls(
             if "denoise" in inputs:
                 add_sampler_value(node_id, node, "denoise", inputs["denoise"])
 
-        # 5. Latent dimensions (EmptyLatentImage, SDXLEmptyLatentImage, EmptySD3LatentImage, FluxLatentImage, EmptyLTXVLatentVideo, etc.)
-        is_latent_dim = ("latent" in normalized or "emptylatent" in normalized or "empty" in normalized) and ("width" in inputs or "height" in inputs)
-        if is_latent_dim:
+        # 5. Dimensions. Empty-latent nodes (EmptyLatentImage,
+        #    EmptyLTXVLatentVideo, …) own the output pixel size outright, and
+        #    resize nodes (ImageResizeKJv2 and friends) do too once given a
+        #    literal size. Both expose the same width/height controls; a resize
+        #    node left at 0 means "inherit the source image", which is the
+        #    documented way to say the user is not sizing anything.
+        #
+        #    Latent nodes are matched by class, not by _find_dimension_node:
+        #    their width/height may link to bare Int primitives, which no single
+        #    node can be sized through but which are still editable controls.
+        #    A resize node only contributes when it *is* the chosen size target,
+        #    so a graph that has both offers exactly one size pair.
+        is_latent_dim = _is_latent_dimension_node(class_type) and (
+            "width" in inputs or "height" in inputs
+        )
+        is_resize_dim = (
+            not _is_latent_dimension_node(class_type)
+            and node_id == dimension_node_id
+        )
+        if is_latent_dim or is_resize_dim:
             for input_name in ("width", "height"):
                 raw_dim = inputs.get(input_name)
                 if isinstance(raw_dim, (int, float)) and not isinstance(raw_dim, bool):
@@ -1278,82 +1569,80 @@ class AIToolService:
 
     @staticmethod
     def _find_dimension_bindings(workflow: Workflow) -> dict[str, str]:
-        """Find an optional server-controlled latent/video size target."""
-        for node_id in sorted(workflow):
-            node = workflow[node_id]
-            normalized = _norm(str(node.get("class_type", "")))
-            inputs = node.get("inputs", {})
-            if not isinstance(inputs, dict):
-                continue
-            if (
-                ("latent" in normalized or "emptylatent" in normalized or "empty" in normalized)
-                and "width" in inputs
-                and "height" in inputs
-            ):
-                w_val = inputs["width"]
-                h_val = inputs["height"]
-                if (
-                    isinstance(w_val, (int, float))
-                    and not isinstance(w_val, bool)
-                    and isinstance(h_val, (int, float))
-                    and not isinstance(h_val, bool)
-                ):
-                    return {"node_id": node_id, "width": "width", "height": "height"}
-                if (
-                    isinstance(w_val, list)
-                    and len(w_val) == 2
-                    and isinstance(w_val[0], str)
-                    and isinstance(h_val, list)
-                    and len(h_val) == 2
-                    and isinstance(h_val[0], str)
-                    and w_val[0] == h_val[0]
-                ):
-                    src = workflow.get(w_val[0], {})
-                    src_inputs = src.get("inputs", {})
-                    if "width" in src_inputs and "height" in src_inputs:
-                        return {"node_id": w_val[0], "width": "width", "height": "height"}
-        return {}
+        """Find an optional server-controlled size target.
+
+        Delegates to ``_find_dimension_node`` so the preset is applied to
+        exactly the node whose width/height controls the UI exposes.
+        """
+        return _find_dimension_node(workflow)
 
     @staticmethod
     def _find_step_binding(workflow: Workflow) -> dict[str, str] | None:
+        # Literal ``steps`` values keep the legacy scan as the no-terminal
+        # fallback; linked primitives are also resolved so modular schedulers
+        # (BasicScheduler fed by an Int node) bind to the editable source.
+        fallback: list[tuple[str, str]] = []
+        candidates: list[tuple[str, str]] = []
         for node_id in sorted(workflow):
             inputs = workflow[node_id].get("inputs", {})
             for input_name, value in inputs.items():
-                if (
-                    input_name.lower() == "steps"
-                    and isinstance(value, (int, float))
-                    and not isinstance(value, bool)
+                if input_name.lower() != "steps":
+                    continue
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    fallback.append((node_id, input_name))
+                    candidates.append((node_id, input_name))
+                elif isinstance(value, list) and len(value) == 2 and isinstance(
+                    value[0], str
                 ):
-                    return {"node_id": node_id, "input_name": input_name}
-        return None
+                    source = workflow.get(value[0], {})
+                    source_inputs = source.get("inputs", {})
+                    for source_param in ("steps", "value"):
+                        source_value = source_inputs.get(source_param)
+                        if isinstance(source_value, (int, float)) and not isinstance(
+                            source_value, bool
+                        ):
+                            candidates.append((value[0], source_param))
+                            break
+        return _select_binding_candidate(
+            workflow, candidates, "steps", fallback=fallback
+        )
 
     @staticmethod
     def _find_seed_binding(workflow: Workflow) -> dict[str, str] | None:
+        candidates: list[tuple[str, str]] = []
         for node_id in sorted(workflow):
             inputs = workflow[node_id].get("inputs", {})
             for s_name in ("seed", "noise_seed"):
-                if s_name in inputs:
-                    val = inputs[s_name]
-                    if isinstance(val, (int, float)) and not isinstance(val, bool):
-                        return {"node_id": node_id, "input_name": s_name}
-                    if isinstance(val, list) and len(val) == 2 and isinstance(val[0], str):
-                        src = workflow.get(val[0], {})
-                        src_inputs = src.get("inputs", {})
-                        for src_param in (s_name, "value"):
-                            if src_param in src_inputs and isinstance(src_inputs[src_param], (int, float)) and not isinstance(src_inputs[src_param], bool):
-                                return {"node_id": val[0], "input_name": src_param}
-        return None
+                if s_name not in inputs:
+                    continue
+                val = inputs[s_name]
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    candidates.append((node_id, s_name))
+                elif isinstance(val, list) and len(val) == 2 and isinstance(val[0], str):
+                    src = workflow.get(val[0], {})
+                    src_inputs = src.get("inputs", {})
+                    for src_param in (s_name, "value"):
+                        if (
+                            src_param in src_inputs
+                            and isinstance(src_inputs[src_param], (int, float))
+                            and not isinstance(src_inputs[src_param], bool)
+                        ):
+                            candidates.append((val[0], src_param))
+                            break
+        return _select_binding_candidate(workflow, candidates, "seed")
 
     @staticmethod
     def _find_cfg_binding(workflow: Workflow) -> dict[str, str] | None:
+        candidates: list[tuple[str, str]] = []
         for node_id in sorted(workflow):
             inputs = workflow[node_id].get("inputs", {})
             for g_name in ("cfg", "guidance"):
-                if g_name in inputs:
-                    val = inputs[g_name]
-                    if isinstance(val, (int, float)) and not isinstance(val, bool):
-                        return {"node_id": node_id, "input_name": g_name}
-        return None
+                if g_name not in inputs:
+                    continue
+                val = inputs[g_name]
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    candidates.append((node_id, g_name))
+        return _select_binding_candidate(workflow, candidates, "cfg")
 
     def create(
         self,
@@ -1605,6 +1894,12 @@ class AIToolService:
 
     def detail(self, tool_id: str) -> ToolDetail:
         record = self.get(tool_id)
+        workflow = record.get("workflow")
+        multiple = (
+            _required_dimension_multiple(workflow)
+            if isinstance(workflow, dict)
+            else DEFAULT_DIMENSION_MULTIPLE
+        )
         return ToolDetail(
             **self._summary(record).model_dump(),
             supported_aspect_ratios=record.get(
@@ -1613,6 +1908,11 @@ class AIToolService:
             output_kind=record.get("output_kind", "image"),
             controls=record.get("controls", []),
             essential_summary=record.get("essential_summary"),
+            aspect_dimensions={
+                ratio: [width, height]
+                for ratio, (width, height) in ASPECT_DIMENSIONS.items()
+            },
+            dimension_multiple=multiple,
         )
 
     def build_graph(
@@ -1695,6 +1995,40 @@ class AIToolService:
         if not dimensions:
             raise AIToolError("Unsupported aspect ratio")
         dimension = record.get("dimension_bindings") or {}
+        if not dimension:
+            # Records written before bindings were persisted still expose
+            # width/height controls. Point the preset at the node those
+            # controls describe, so the reported size is the graph's size in
+            # both directions: an explicit override wins, and an untouched tool
+            # still receives its preset instead of silently keeping old values.
+            width_control = next(
+                (
+                    control
+                    for control in record.get("controls", [])
+                    if control.get("role") == "width"
+                ),
+                None,
+            )
+            height_control = next(
+                (
+                    control
+                    for control in record.get("controls", [])
+                    if control.get("role") == "height"
+                ),
+                None,
+            )
+            if (
+                width_control
+                and height_control
+                and width_control["node_id"] == height_control["node_id"]
+                and width_control["input_name"] == "width"
+                and height_control["input_name"] == "height"
+            ):
+                dimension = {
+                    "node_id": width_control["node_id"],
+                    "width": "width",
+                    "height": "height",
+                }
         dimension_overridden = False
         if dimension:
             dimension_overridden = any(
@@ -1714,6 +2048,22 @@ class AIToolService:
             )
         else:
             resolved_dimensions = dimensions
+        # Latent-space models reject off-grid sizes: LTX-Video needs multiples
+        # of 32, everything else at least ComfyUI's 8, including explicit
+        # width/height control overrides.
+        snapped_dimensions = _snap_dimensions(
+            resolved_dimensions[0],
+            resolved_dimensions[1],
+            _required_dimension_multiple(graph),
+        )
+        if dimension and snapped_dimensions != resolved_dimensions:
+            graph[dimension["node_id"]]["inputs"][dimension["width"]] = (
+                snapped_dimensions[0]
+            )
+            graph[dimension["node_id"]]["inputs"][dimension["height"]] = (
+                snapped_dimensions[1]
+            )
+        resolved_dimensions = snapped_dimensions
         return graph, {
             "width": resolved_dimensions[0],
             "height": resolved_dimensions[1],

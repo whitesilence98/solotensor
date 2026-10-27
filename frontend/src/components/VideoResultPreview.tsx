@@ -55,7 +55,7 @@ export function VideoResultPreview({ url, filename, ratio, bounded = false }: Vi
 
  return <div className={bounded ? "flex h-full min-h-0 flex-col gap-2" : "space-y-3"}>
   <div
-   className={`media-frame relative overflow-hidden rounded-2xl border border-white/10 bg-[var(--ground)] shadow-[0_18px_48px_rgba(0,0,0,.24)] ${bounded ? "min-h-0 flex-1" : ""}`}
+   className={`media-frame relative overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ground)] shadow-[0_18px_48px_rgba(0,0,0,.24)] ${bounded ? "min-h-0 flex-1" : ""}`}
    style={bounded ? undefined : { aspectRatio: intrinsicRatio }}
   >
    <video
@@ -79,7 +79,7 @@ export function VideoResultPreview({ url, filename, ratio, bounded = false }: Vi
     onError={() => setError("The video stream could not be loaded.")}
     aria-label={filename}
    />
-   <div className="workspace-icon-island icon-island absolute inset-x-2 bottom-2 flex items-center gap-1.5 rounded-xl border border-white/10 bg-[var(--surface-sunken)]/95 p-1.5 shadow-[0_10px_30px_rgba(19,28,17,.18)] sm:inset-x-3 sm:bottom-3 sm:gap-2 sm:p-2">
+   <div className="workspace-icon-island icon-island absolute inset-x-2 bottom-2 flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)]/95 p-1.5 shadow-[0_10px_30px_rgba(19,28,17,.18)] sm:inset-x-3 sm:bottom-3 sm:gap-2 sm:p-2">
     <button type="button" onClick={togglePlay} aria-label={playing ? "Pause video" : "Play video"} className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-[var(--accent)] transition-colors hover:bg-[var(--surface-soft)] focus-visible:bg-[var(--surface-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]">{playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}</button>
     <input aria-label="Seek video" type="range" min="0" max={duration || 0} step="0.01" value={current} onChange={(event) => { const next = Number(event.target.value); if (video.current) video.current.currentTime = next; setCurrent(next); }} className="min-w-0 flex-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]" />
     <span className="hidden font-mono text-[10px] tabular-nums text-[var(--ink-soft)] sm:inline">{Math.floor(current)}s / {Math.floor(duration)}s</span>

@@ -48,7 +48,9 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
-import AspectRatioSelector from "@/components/AspectRatioSelector";
+import AspectRatioSelector, {
+  DEFAULT_TOOL_RATIOS,
+} from "@/components/AspectRatioSelector";
 
 const MODES: {
   value: ToolMode;
@@ -83,7 +85,7 @@ const MODES: {
   },
 ];
 
-const RATIOS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
+const RATIOS: ToolAspectRatio[] = DEFAULT_TOOL_RATIOS;
 
 export interface CreateToolDrawerProps {
   open: boolean;
@@ -524,7 +526,7 @@ export default function CreateToolDrawer({
                       if (dropped) void processJsonFile(dropped);
                     }}
                     onClick={() => fileInputRef.current?.click()}
-                    className={`flex min-h-[140px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-6 text-center transition ${
+                    className={`flex h-[140px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-6 text-center transition ${
                       isDraggingWorkflow
                         ? "border-[var(--accent)] bg-[var(--accent)]/10"
                         : file
@@ -987,7 +989,7 @@ export default function CreateToolDrawer({
                         if (f) setThumbnail(f);
                       }}
                       onClick={() => thumbInputRef.current?.click()}
-                      className={`flex min-h-[110px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-4 text-center transition ${
+                      className={`flex h-[110px] cursor-pointer flex-col items-center justify-center rounded-[5px] border border-dashed p-4 text-center transition ${
                         isDraggingThumb
                           ? "border-[var(--accent)] bg-[var(--accent)]/10"
                           : thumbnail
@@ -1009,7 +1011,7 @@ export default function CreateToolDrawer({
                       <div className="mb-1.5 flex h-7 w-7 items-center justify-center rounded-[5px] border border-[var(--line)] bg-[var(--surface-soft)] text-[var(--accent)]">
                         <Upload className="h-3.5 w-3.5" />
                       </div>
-                      <p className="font-mono text-xs font-bold text-[var(--ink)]">
+                      <p className="max-w-full truncate font-mono text-xs font-bold text-[var(--ink)]">
                         {thumbnail
                           ? `Thumbnail: ${thumbnail.name}`
                           : "Upload Tool Cover Image"}

@@ -3,6 +3,18 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Sparkles, Zap, Loader2, Tag, ChevronDown, ChevronUp, X, Check, UploadCloud, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import type { VideoSubMode } from "@/lib/api";
+
+const DEFAULT_POSITIVE_PLACEHOLDER =
+  "Describe your scene, subjects, atmosphere, style, camera angle, and lighting… (Ctrl+Enter to generate)";
+const DEFAULT_NEGATIVE_PLACEHOLDER =
+  "worst quality, low quality, blurry, distorted, extra limbs, bad anatomy, cropped…";
+// Video's LTX graph responds to motion/camera language. This is the copy that
+// lived in the removed sidebar PromptComposer.
+const VIDEO_POSITIVE_PLACEHOLDER =
+  "Describe scene motion, camera movement, actions, and lighting… (e.g. A slow continuous tracking shot through a market, 35mm film)";
+const VIDEO_NEGATIVE_PLACEHOLDER =
+  "worst quality, low quality, jerky camera, jittery frames, blurred subjects…";
 
 export interface StudioPromptBarProps {
   idPrefix?: string;
@@ -25,7 +37,10 @@ export interface StudioPromptBarProps {
   onImageCountChange?: (count: string) => void;
   activeMode?: string;
   referenceImage?: string | null;
+  lastFrameImage?: string | null;
   img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
+  stage2Upscale?: boolean;
+  videoSubMode?: VideoSubMode;
 }
 
 export default function StudioPromptBar({
@@ -42,24 +57,47 @@ export default function StudioPromptBar({
   onInterrogateFile,
   interrogating = false,
   interrogateToast = null,
-  positivePlaceholder = "Describe your scene, subjects, atmosphere, style, camera angle, and lighting… (Ctrl+Enter to generate)",
-  negativePlaceholder = "worst quality, low quality, blurry, distorted, extra limbs, bad anatomy, cropped…",
+  positivePlaceholder,
+  negativePlaceholder,
   className = "",
   imageCount = "1",
   onImageCountChange,
   activeMode = "Text2Img",
   referenceImage = null,
+  lastFrameImage = null,
   img2imgSubTab = "image_to_image",
+  stage2Upscale = false,
+  videoSubMode = "text-to-video",
 }: StudioPromptBarProps) {
   const { isPro, isAdmin, isAuthenticated, openAuthModal } = useAuth();
   const isProUser = isPro || isAdmin;
 
+  const isVideoMode = activeMode === "Video";
+  // Matches the page's canGenerate guard: image-to-video needs a first OR last
+  // frame, because the graph can seed motion from either one.
+  const videoNeedsFrame =
+    isVideoMode &&
+    videoSubMode === "image-to-video" &&
+    !referenceImage &&
+    !lastFrameImage;
+  const timingLabel = busy
+    ? progressLabel || "Rendering"
+    : !isAuthenticated
+    ? "LOGIN"
+    : isVideoMode
+    ? stage2Upscale
+      ? "~45s"
+      : "~15s"
+    : isProUser
+    ? "~4s"
+    : "~28s";
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageCountRef = useRef<HTMLDivElement>(null);
   const [imageCountOpen, setImageCountOpen] = useState(false);
-  const [negativeOpen, setNegativeOpen] = useState(
-    Boolean(negativePrompt && negativePrompt.trim().length > 0)
-  );
+  // Tri-state: null = no explicit user choice yet, so the per-mode default
+  // applies. An explicit true/false always wins and is never overwritten.
+  const [negativeOpenChoice, setNegativeOpenChoice] = useState<boolean | null>(null);
 
   // Close batch count popover on outside click
   useEffect(() => {
@@ -74,12 +112,12 @@ export default function StudioPromptBar({
     }
   }, [imageCountOpen]);
 
-  // Auto-expand negative 1-liner if negative prompt becomes populated from remix/auto-prompt
+  // Re-apply the per-mode default when the tab changes. This clears the
+  // explicit choice rather than forcing the field open, so a toggle made
+  // within the current mode is never fought.
   useEffect(() => {
-    if (negativePrompt && negativePrompt.trim().length > 0) {
-      setNegativeOpen(true);
-    }
-  }, [negativePrompt]);
+    setNegativeOpenChoice(null);
+  }, [activeMode]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -112,6 +150,9 @@ export default function StudioPromptBar({
   };
 
   const hasNegativeText = Boolean(negativePrompt && negativePrompt.trim().length > 0);
+  // Video's LTX graph can consume a real negative prompt once CFG > 1, so the
+  // field defaults open there; every other mode keeps today's behavior.
+  const negativeOpen = negativeOpenChoice ?? (isVideoMode || hasNegativeText);
 
   return (
     <div
@@ -119,13 +160,16 @@ export default function StudioPromptBar({
     >
       {/* 1. Top Row: Positive Prompt Input (Full Width - no buttons beside it) */}
       <div className="relative w-full">
+        <label htmlFor={`${idPrefix}-input`} className="sr-only">
+          Prompt
+        </label>
         <textarea
           id={`${idPrefix}-input`}
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={2}
-          placeholder={positivePlaceholder}
+          placeholder={positivePlaceholder ?? (isVideoMode ? VIDEO_POSITIVE_PLACEHOLDER : DEFAULT_POSITIVE_PLACEHOLDER)}
           disabled={busy}
           className="workspace-field w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 sm:p-3 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[58px]"
         />
@@ -133,7 +177,7 @@ export default function StudioPromptBar({
 
       {/* 2. Middle Row: Compact 1-Liner Negative Prompt (when open) */}
       {negativeOpen && onNegativePromptChange && (
-        <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 transition-all animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 transition-[border-color,box-shadow] duration-150 focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_2px_var(--accent-ambient)] motion-reduce:transition-none">
           <div className="flex items-center gap-1.5 shrink-0 select-none">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
             <label
@@ -149,25 +193,27 @@ export default function StudioPromptBar({
             value={negativePrompt}
             onChange={(e) => onNegativePromptChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={negativePlaceholder}
+            placeholder={negativePlaceholder ?? (isVideoMode ? VIDEO_NEGATIVE_PLACEHOLDER : DEFAULT_NEGATIVE_PLACEHOLDER)}
             disabled={busy}
             className="flex-1 min-w-0 bg-transparent text-xs font-mono text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none"
           />
           <div className="flex items-center gap-2 shrink-0">
-            <span className="font-mono text-[9px] text-[var(--ink-faint)] opacity-60">
+            <span className="w-[4.5rem] shrink-0 text-right font-mono text-[9px] text-[var(--ink-faint)] opacity-60">
               {negativePrompt.trim() ? `${negativePrompt.length} chars` : "Optional"}
             </span>
-            {negativePrompt.trim() && (
-              <button
-                type="button"
-                onClick={() => onNegativePromptChange("")}
-                disabled={busy}
-                title="Clear negative prompt"
-                className="flex h-4 w-4 items-center justify-center rounded text-[var(--ink-faint)] hover:text-[var(--danger)] transition disabled:opacity-50 shrink-0"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
+            <span className="flex w-4 shrink-0 items-center justify-center">
+              {negativePrompt.trim() && (
+                <button
+                  type="button"
+                  onClick={() => onNegativePromptChange("")}
+                  disabled={busy}
+                  title="Clear negative prompt"
+                  className="flex h-4 w-4 items-center justify-center rounded text-[var(--ink-faint)] hover:text-[var(--danger)] transition disabled:opacity-50 shrink-0"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
           </div>
         </div>
       )}
@@ -206,7 +252,7 @@ export default function StudioPromptBar({
           {/* Negative Prompt 1-Liner Toggle with Eye Open / Close SVG */}
           <button
             type="button"
-            onClick={() => setNegativeOpen((v) => !v)}
+            onClick={() => setNegativeOpenChoice((prev) => !(prev ?? (isVideoMode || hasNegativeText)))}
             aria-expanded={negativeOpen}
             aria-label={negativeOpen ? "Hide negative prompt" : "Show negative prompt"}
             className={`inline-flex h-7 sm:h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-mono font-semibold transition border ${
@@ -235,8 +281,8 @@ export default function StudioPromptBar({
 
         {/* Right Group: Char Count, Batch Count Selector & Primary Generate Deck */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Character counter */}
-          <span className="font-mono text-[10px] text-[var(--ink-faint)] hidden sm:inline">
+          {/* Character counter (space reserved so the row never shifts) */}
+          <span className="hidden w-[4.5rem] shrink-0 text-right font-mono text-[10px] text-[var(--ink-faint)] sm:inline">
             {prompt.trim() ? `${prompt.length} chars` : ""}
           </span>
 
@@ -285,7 +331,7 @@ export default function StudioPromptBar({
             <button
               type="button"
               onClick={handleGenerateClick}
-              disabled={busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !referenceImage)}
+              disabled={busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !referenceImage) || videoNeedsFrame}
               aria-label="Generate Artwork"
               className="workspace-action-primary flex h-7 sm:h-8 items-center justify-between gap-2.5 sm:gap-3 rounded-lg bg-[var(--accent)] px-3 sm:px-4 text-xs font-bold text-[var(--accent-ink)] shadow-[0_0_14px_rgba(213,240,111,0.22)] transition active:scale-[0.99] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40 select-none shrink-0"
             >
@@ -305,6 +351,11 @@ export default function StudioPromptBar({
                 <div className="flex items-center gap-1.5">
                   <UploadCloud className="h-3.5 w-3.5" />
                   <span>Upload Image</span>
+                </div>
+              ) : videoNeedsFrame ? (
+                <div className="flex items-center gap-1.5">
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  <span>Add a Frame</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -339,7 +390,7 @@ export default function StudioPromptBar({
               )}
 
               <div className="flex items-center gap-1.5 font-mono text-[10px] opacity-80 shrink-0">
-                <span>{busy ? progressLabel || "Rendering" : !isAuthenticated ? "LOGIN" : isProUser ? "~4s" : "~28s"}</span>
+                <span>{timingLabel}</span>
                 {!busy && isAuthenticated && (
                   <span className="text-[8px] opacity-65 font-bold hidden sm:inline">Ctrl+↵</span>
                 )}

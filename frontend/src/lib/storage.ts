@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
 
   // Tool Studio
   TOOL_VALUES: (toolId: string) => `solotensor:tools:${toolId}:values`,
+  /** Which size mode the user last picked, so the pill does not reset to 1:1. */
+  TOOL_DIMENSIONS: (toolId: string) => `solotensor:tools:${toolId}:dimensions`,
 
   // Creator Studio
   MODEL_CREATOR_DRAFT: "solotensor:models:creator_draft",

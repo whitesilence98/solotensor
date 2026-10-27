@@ -14,7 +14,11 @@ from ..schemas import GalleryItem
 logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"}
 ASSET_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+# Readable uploads are a superset of gallery assets: reference audio is read back for
+# video conditioning but must never surface as a gallery item.
+READABLE_EXTENSIONS = ASSET_EXTENSIONS | AUDIO_EXTENSIONS
 
 
 class StorageError(RuntimeError):
@@ -218,6 +222,24 @@ class StorageService:
 
     def get_image(self, key: str) -> GalleryItem:
         return self.get_asset(key)
+
+    async def get_image_bytes(self, key: str) -> bytes:
+        """Read a stored upload back into memory for reuse as a ComfyUI input.
+
+        Accepts images, videos and audio; the key is resolved under ``root`` so a
+        traversal attempt (``..``) cannot escape storage.
+        """
+        path = (self.root / key).resolve()
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise StorageError("Invalid asset key") from exc
+        if path == self.root or not path.is_file() or path.suffix.lower() not in READABLE_EXTENSIONS:
+            raise FileNotFoundError(key)
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise StorageError(f"Could not read stored asset: {exc}") from exc
 
     def set_saved(self, key: str, saved: bool) -> GalleryItem:
         path = (self.root / key).resolve()

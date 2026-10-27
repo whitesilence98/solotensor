@@ -11,12 +11,80 @@ from app.config import Settings
 from app.main import app
 from app.schemas import ToolAspectRatio, ToolMode
 from app.services.ai_tools import (
+    ASPECT_DIMENSIONS,
     AIToolError,
     AIToolNotFound,
     AIToolService,
+    _required_dimension_multiple,
+    _snap_dimensions,
     extract_controls,
     set_ai_tool_service,
 )
+
+
+def _multi_stage_workflow() -> dict:
+    """Stage-2 nodes that lexicographically sort before the real Stage-1 sources."""
+    return {
+        "0:stage2_seed": {"class_type": "RandomNoise", "inputs": {"noise_seed": 100000}},
+        "0:stage2_steps": {
+            "class_type": "BasicScheduler",
+            "inputs": {"steps": 100, "model": ["0:model", 0]},
+        },
+        "0:stage2_cfg": {
+            "class_type": "CFGGuider",
+            "inputs": {"cfg": 2.5, "model": ["0:model", 0]},
+        },
+        "0:model": {"class_type": "UNETLoader", "inputs": {"unet_name": "x.safetensors"}},
+        "0:stage2_vae": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["9:stage1_sampler", 0]},
+        },
+        "0:stage2_sampler": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["0:stage2_seed", 0],
+                "guider": ["0:stage2_cfg", 0],
+                "sigmas": ["0:stage2_steps", 0],
+                "latent_image": ["0:stage2_vae", 0],
+            },
+        },
+        "9:seed_source": {"class_type": "SeedNode", "inputs": {"seed": 1}},
+        "9:stage1_noise": {
+            "class_type": "RandomNoise",
+            "inputs": {"noise_seed": ["9:seed_source", 0]},
+        },
+        "9:stage1_steps": {"class_type": "easy int", "inputs": {"value": 8}},
+        "9:stage1_sched": {
+            "class_type": "BasicScheduler",
+            "inputs": {"steps": ["9:stage1_steps", 0], "model": ["0:model", 0]},
+        },
+        "9:stage1_cfg": {
+            "class_type": "CFGGuider",
+            "inputs": {"cfg": 1.0, "model": ["0:model", 0]},
+        },
+        "9:stage1_sampler": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["9:stage1_noise", 0],
+                "guider": ["9:stage1_cfg", 0],
+                "sigmas": ["9:stage1_sched", 0],
+            },
+        },
+        "a:stage1_out": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "images": ["9:stage1_sampler", 0],
+                "filename_prefix": "stage1",
+            },
+        },
+        "z:stage2_out": {
+            "class_type": "SaveImage",
+            "inputs": {
+                "images": ["0:stage2_sampler", 0],
+                "filename_prefix": "stage2",
+            },
+        },
+    }
 
 
 class AIToolServiceTests(unittest.TestCase):
@@ -551,6 +619,320 @@ class AIToolServiceTests(unittest.TestCase):
     def test_delete_tool_rejects_path_traversal(self) -> None:
         with self.assertRaises(AIToolNotFound):
             self.service.delete("../../../etc/passwd")
+
+
+class AspectDimensionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.service = AIToolService(Settings(TOOLS_DIR=self.temp.name))
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def test_all_aspect_presets_are_latent_grid_aligned(self) -> None:
+        self.assertEqual(ASPECT_DIMENSIONS["21:9"], (1344, 576))
+        self.assertEqual(1344 / 576, 21 / 9)
+        for ratio, (width, height) in ASPECT_DIMENSIONS.items():
+            with self.subTest(ratio=ratio):
+                self.assertEqual(width % 32, 0)
+                self.assertEqual(height % 32, 0)
+
+    def test_snap_helpers_target_ltx_32_and_default_8(self) -> None:
+        ltx = {"1": {"class_type": "EmptyLTXVLatentVideo", "inputs": {}}}
+        plain = {"1": {"class_type": "EmptyLatentImage", "inputs": {}}}
+        self.assertEqual(_required_dimension_multiple(ltx), 32)
+        self.assertEqual(_required_dimension_multiple(plain), 8)
+        self.assertEqual(_snap_dimensions(1536, 656, 32), (1536, 640))
+        self.assertEqual(_snap_dimensions(65, 1000, 8), (64, 1000))
+        # Non-numeric dimensions are passed through untouched.
+        self.assertEqual(_snap_dimensions(["src", 0], 1000, 8), (["src", 0], 1000))
+
+    def test_build_graph_snaps_resolved_dimensions_to_model_multiple(self) -> None:
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "latent": {
+                "class_type": "EmptyLTXVLatentVideo",
+                "inputs": {"width": 768, "height": 512},
+            },
+            "sampler": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 1, "positive": ["text", 0]},
+            },
+        }
+        created = self.service.create(
+            json.dumps(workflow).encode(),
+            "LTX Tool",
+            ToolMode.TEXT_TO_VIDEO,
+            ToolAspectRatio.ULTRAWIDE,
+        )
+        # 21:9 preset is already /32; an explicit off-grid override is snapped.
+        graph, resolved = self.service.build_graph(
+            created.tool_id, "", ToolAspectRatio.ULTRAWIDE
+        )
+        self.assertEqual(
+            (graph["latent"]["inputs"]["width"], graph["latent"]["inputs"]["height"]),
+            (1344, 576),
+        )
+        self.assertEqual((resolved["width"], resolved["height"]), (1344, 576))
+        graph, resolved = self.service.build_graph(
+            created.tool_id,
+            "",
+            ToolAspectRatio.SQUARE,
+            values={"nodes.latent.inputs.width": 1000, "nodes.latent.inputs.height": 656},
+        )
+        self.assertEqual(
+            (graph["latent"]["inputs"]["width"], graph["latent"]["inputs"]["height"]),
+            (992, 640),
+        )
+        self.assertEqual((resolved["width"], resolved["height"]), (992, 640))
+
+    def test_detail_exposes_aspect_dimensions_and_grid_multiple(self) -> None:
+        """The client renders presets from the server table, so it must be served."""
+        ltx = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "latent": {
+                "class_type": "EmptyLTXVLatentVideo",
+                "inputs": {"width": 768, "height": 512},
+            },
+            "sampler": {"class_type": "KSampler", "inputs": {"seed": 1}},
+        }
+        plain = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "latent": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {"width": 768, "height": 512},
+            },
+            "sampler": {"class_type": "KSampler", "inputs": {"seed": 1}},
+        }
+        for name, workflow, expected_multiple in (
+            ("ltx", ltx, 32),
+            ("plain", plain, 8),
+        ):
+            with self.subTest(workflow=name):
+                created = self.service.create(
+                    json.dumps(workflow).encode(),
+                    f"{name} tool",
+                    ToolMode.TEXT_TO_VIDEO,
+                    ToolAspectRatio.SQUARE,
+                )
+                detail = self.service.detail(created.tool_id)
+                self.assertEqual(detail.dimension_multiple, expected_multiple)
+                # Every preset is served, and each matches ASPECT_DIMENSIONS.
+                self.assertEqual(
+                    detail.aspect_dimensions,
+                    {
+                        ratio: [width, height]
+                        for ratio, (width, height) in ASPECT_DIMENSIONS.items()
+                    },
+                )
+                for ratio, (width, height) in ASPECT_DIMENSIONS.items():
+                    with self.subTest(ratio=ratio):
+                        self.assertEqual(
+                            detail.aspect_dimensions[ratio], [width, height]
+                        )
+
+    def test_custom_dimensions_round_trip_between_controls_and_graph(self) -> None:
+        """A custom size sent through the width/height controls is what runs."""
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "latent": {
+                "class_type": "EmptyLTXVLatentVideo",
+                "inputs": {"width": 768, "height": 512},
+            },
+            "sampler": {"class_type": "KSampler", "inputs": {"seed": 1}},
+        }
+        created = self.service.create(
+            json.dumps(workflow).encode(),
+            "LTX Tool",
+            ToolMode.TEXT_TO_VIDEO,
+            ToolAspectRatio.SQUARE,
+        )
+        graph, resolved = self.service.build_graph(
+            created.tool_id,
+            "",
+            ToolAspectRatio.SQUARE,
+            values={"nodes.latent.inputs.width": 1280, "nodes.latent.inputs.height": 704},
+        )
+        # 1280 and 704 are already /32, so nothing is floored and the caller's
+        # explicit size survives both the graph and the reported metadata.
+        self.assertEqual(
+            (graph["latent"]["inputs"]["width"], graph["latent"]["inputs"]["height"]),
+            (1280, 704),
+        )
+        self.assertEqual((resolved["width"], resolved["height"]), (1280, 704))
+
+    def test_text_only_tools_expose_size_when_any_node_owns_a_literal_size(self) -> None:
+        """A T2I graph without an empty-latent node still has a settable size.
+
+        Resize nodes (ImageResizeKJv2 and friends) carry literal width/height,
+        so a text-to-image graph that sizes by resizing must offer the same
+        aspect presets and Custom pill as one built on EmptyLatentImage.
+        """
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "resize": {
+                "class_type": "ImageResizeKJv2",
+                "inputs": {"width": 1024, "height": 768, "image": ["text", 0]},
+            },
+            "save": {"class_type": "SaveImage", "inputs": {"images": ["resize", 0]}},
+        }
+        created = self.service.create(
+            json.dumps(workflow).encode(),
+            "Resize T2I",
+            ToolMode.TEXT_TO_IMAGE,
+            ToolAspectRatio.SQUARE,
+        )
+        detail = self.service.detail(created.tool_id)
+        dims = {c.role: c.id for c in detail.controls if c.role in {"width", "height"}}
+        self.assertEqual(
+            dims,
+            {
+                "width": "nodes.resize.inputs.width",
+                "height": "nodes.resize.inputs.height",
+            },
+        )
+        # Preset and custom both land on the node the user can edit, and the
+        # reported size is the size that runs.
+        graph, resolved = self.service.build_graph(
+            created.tool_id, "", ToolAspectRatio.LANDSCAPE
+        )
+        self.assertEqual(
+            (graph["resize"]["inputs"]["width"], graph["resize"]["inputs"]["height"]),
+            ASPECT_DIMENSIONS["16:9"],
+        )
+        graph, resolved = self.service.build_graph(
+            created.tool_id,
+            "",
+            ToolAspectRatio.SQUARE,
+            values={
+                "nodes.resize.inputs.width": 1280,
+                "nodes.resize.inputs.height": 704,
+            },
+        )
+        self.assertEqual(
+            (graph["resize"]["inputs"]["width"], graph["resize"]["inputs"]["height"]),
+            (1280, 704),
+        )
+        self.assertEqual((resolved["width"], resolved["height"]), (1280, 704))
+
+    def test_resize_zero_means_inherit_and_offers_no_size_control(self) -> None:
+        """KJ resize at 0×0 inherits the source, so there is nothing to size."""
+        workflow = {
+            "image": {"class_type": "LoadImage", "inputs": {"image": "a.png"}},
+            "resize": {
+                "class_type": "ImageResizeKJv2",
+                "inputs": {"width": 0, "height": 0, "image": ["image", 0]},
+            },
+            "save": {"class_type": "SaveImage", "inputs": {"images": ["resize", 0]}},
+        }
+        created = self.service.create(
+            json.dumps(workflow).encode(),
+            "Inherit Tool",
+            ToolMode.IMAGE_TO_IMAGE,
+            ToolAspectRatio.SQUARE,
+        )
+        detail = self.service.detail(created.tool_id)
+        self.assertEqual(
+            [c.id for c in detail.controls if c.role in {"width", "height"}], []
+        )
+
+    def test_empty_latent_wins_over_a_downstream_resize_node(self) -> None:
+        """Only one width/height pair is offered, and it is the latent's."""
+        workflow = {
+            "text": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+            "latent": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {"width": 512, "height": 512},
+            },
+            "resize": {
+                "class_type": "ImageResizeKJv2",
+                "inputs": {"width": 1024, "height": 1024, "image": ["latent", 0]},
+            },
+            "sampler": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 1, "latent_image": ["latent", 0]},
+            },
+        }
+        created = self.service.create(
+            json.dumps(workflow).encode(),
+            "Both Tool",
+            ToolMode.TEXT_TO_IMAGE,
+            ToolAspectRatio.SQUARE,
+        )
+        detail = self.service.detail(created.tool_id)
+        self.assertEqual(
+            sorted(c.id for c in detail.controls if c.role in {"width", "height"}),
+            ["nodes.latent.inputs.height", "nodes.latent.inputs.width"],
+        )
+        graph, _ = self.service.build_graph(
+            created.tool_id, "", ToolAspectRatio.SQUARE
+        )
+        self.assertEqual(
+            (graph["latent"]["inputs"]["width"], graph["latent"]["inputs"]["height"]),
+            ASPECT_DIMENSIONS["1:1"],
+        )
+        # The resize node keeps its own literal, which is downstream of sizing.
+        self.assertEqual(
+            (graph["resize"]["inputs"]["width"], graph["resize"]["inputs"]["height"]),
+            (1024, 1024),
+        )
+
+
+class OutputAwareBindingTests(unittest.TestCase):
+    def test_seed_steps_and_cfg_bind_to_nodes_reachable_from_every_output(self) -> None:
+        workflow = _multi_stage_workflow()
+        self.assertEqual(
+            AIToolService._find_seed_binding(workflow),
+            {"node_id": "9:seed_source", "input_name": "seed"},
+        )
+        self.assertEqual(
+            AIToolService._find_step_binding(workflow),
+            {"node_id": "9:stage1_steps", "input_name": "value"},
+        )
+        self.assertEqual(
+            AIToolService._find_cfg_binding(workflow),
+            {"node_id": "9:stage1_cfg", "input_name": "cfg"},
+        )
+
+    def test_stage1_title_breaks_ties_between_equally_reachable_nodes(self) -> None:
+        workflow = {
+            "sampler_a": {"class_type": "KSampler", "inputs": {"seed": 1}},
+            "sampler_b": {
+                "class_type": "KSampler",
+                "inputs": {"seed": 2, "latent_image": ["sampler_a", 0]},
+                "_meta": {"title": "Stage 2 Refine Sampler"},
+            },
+            "out": {
+                "class_type": "SaveImage",
+                "inputs": {"images": ["sampler_b", 0], "filename_prefix": "x"},
+            },
+        }
+        # Both are reachable from the only terminal; Stage 2 must lose.
+        self.assertEqual(
+            AIToolService._find_seed_binding(workflow),
+            {"node_id": "sampler_a", "input_name": "seed"},
+        )
+
+    def test_cycle_safe_binding_without_output_nodes(self) -> None:
+        cyclic = {
+            "A": {"class_type": "KSampler", "inputs": {"positive": ["B", 0], "seed": 1}},
+            "B": {"class_type": "CLIPTextEncode", "inputs": {"text": ["A", 0]}},
+        }
+        # Degenerate topology falls back to legacy first-match without hanging.
+        self.assertEqual(
+            AIToolService._find_seed_binding(cyclic),
+            {"node_id": "A", "input_name": "seed"},
+        )
+
+    def test_cyclic_reachability_does_not_hang(self) -> None:
+        cyclic = {
+            "A": {"class_type": "SaveImage", "inputs": {"images": ["B", 0]}},
+            "B": {"class_type": "KSampler", "inputs": {"latent_image": ["A", 0], "seed": 1}},
+        }
+        self.assertEqual(
+            AIToolService._find_seed_binding(cyclic),
+            {"node_id": "B", "input_name": "seed"},
+        )
 
 
 
