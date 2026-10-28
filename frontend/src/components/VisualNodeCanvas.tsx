@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { memo, useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Activity,
   Check,
@@ -45,6 +45,431 @@ import {
   getSocketColor,
 } from "@/lib/graph-topology";
 
+const getCategoryTheme = (cat: VisualCanvasNode["category"]) => {
+  switch (cat) {
+    case "loader":
+      return "border-purple-500/40 bg-purple-500/10 text-purple-300";
+    case "sampler":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-300";
+    case "conditioning":
+      return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
+    case "latent":
+      return "border-pink-500/40 bg-pink-500/10 text-pink-300";
+    case "image":
+      return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
+    case "output":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+    default:
+      return "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)]";
+  }
+};
+
+const getCategoryMinimapColor = (cat: VisualCanvasNode["category"]) => {
+  switch (cat) {
+    case "loader":
+      return "#a855f7";
+    case "sampler":
+      return "#f59e0b";
+    case "conditioning":
+      return "#eab308";
+    case "latent":
+      return "#ec4899";
+    case "image":
+      return "#06b6d4";
+    case "output":
+      return "#10b981";
+    default:
+      return "#71717a";
+  }
+};
+
+const isEssentialInput = (inputName: string) => {
+  const norm = inputName.toLowerCase();
+  return (
+    norm.includes("seed") ||
+    norm === "cfg" ||
+    norm === "guidance" ||
+    norm === "steps" ||
+    norm === "width" ||
+    norm === "height"
+  );
+};
+
+const EMPTY_CONTROLS: ToolControl[] = [];
+
+interface CanvasEdgeViewProps {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  highlighted: boolean;
+  dimmed: boolean;
+  showPulse: boolean;
+  source: string;
+  onHoverEnter: (nodeId: string) => void;
+  onHoverLeave: () => void;
+}
+
+const CanvasEdgeView = memo(function CanvasEdgeView({
+  x1,
+  y1,
+  x2,
+  y2,
+  color,
+  highlighted,
+  dimmed,
+  showPulse,
+  source,
+  onHoverEnter,
+  onHoverLeave,
+}: CanvasEdgeViewProps) {
+  const dx = Math.max(Math.abs(x2 - x1) * 0.45, 60);
+  const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+  return (
+    <g
+      className="pointer-events-auto cursor-pointer group"
+      onMouseEnter={() => onHoverEnter(source)}
+      onMouseLeave={onHoverLeave}
+    >
+      {/* Background Shadow Spline */}
+      <path
+        d={d}
+        fill="none"
+        stroke="#000000"
+        strokeWidth={highlighted ? "7" : "4"}
+        strokeOpacity={dimmed ? "0.15" : "0.6"}
+        className="transition-[stroke,stroke-width,stroke-opacity] duration-150"
+      />
+      {/* Foreground Colored Spline */}
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={highlighted ? "4.5" : "2.5"}
+        strokeOpacity={dimmed ? 0.15 : highlighted ? 1 : 0.85}
+        filter={highlighted ? "url(#noodle-glow)" : undefined}
+        className="transition-[stroke,stroke-width,stroke-opacity] duration-150 group-hover:stroke-white group-hover:stroke-[4px]"
+      />
+      {/* Animated Tensor Direction Pulses */}
+      {showPulse && !dimmed && (
+        <path
+          d={d}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth={highlighted ? "2.5" : "1.8"}
+          strokeOpacity={highlighted ? 0.9 : 0.6}
+          strokeDasharray="6 14"
+          className="noodle-flow-active pointer-events-none"
+        />
+      )}
+    </g>
+  );
+});
+
+interface CanvasNodeViewProps {
+  node: VisualCanvasNode;
+  x: number;
+  y: number;
+  selected: boolean;
+  flashed: boolean;
+  collapsed: boolean;
+  pipeline: boolean;
+  dimmed: boolean;
+  exposedCount: number;
+  nodeControls: ToolControl[];
+  previewValues: Record<string, unknown>;
+  onHoverEnter: (nodeId: string) => void;
+  onHoverLeave: (nodeId: string) => void;
+  onSelect: (nodeId: string) => void;
+  onNodePointerDown: (e: React.PointerEvent, nodeId: string) => void;
+  onToggleCollapse: (nodeId: string) => void;
+  onToggleExpose: (node: VisualCanvasNode, inputName: string, value: unknown) => void;
+  onInputChange: (nodeId: string, inputName: string, value: unknown) => void;
+}
+
+const CanvasNodeView = memo(function CanvasNodeView({
+  node,
+  x,
+  y,
+  selected,
+  flashed,
+  collapsed,
+  pipeline,
+  dimmed,
+  exposedCount,
+  nodeControls,
+  previewValues,
+  onHoverEnter,
+  onHoverLeave,
+  onSelect,
+  onNodePointerDown,
+  onToggleCollapse,
+  onToggleExpose,
+  onInputChange,
+}: CanvasNodeViewProps) {
+  const theme = getCategoryTheme(node.category);
+
+  return (
+    <div
+      id={`canvas_node_${node.id}`}
+      className={`canvas-node absolute rounded-[8px] border transition-colors duration-150 shadow-2xl select-none ${
+        selected
+          ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/50 shadow-[0_0_32px_rgba(199,227,106,0.35)] z-20"
+          : pipeline
+          ? "border-[var(--accent)]/80 ring-1 ring-[var(--accent)]/30 shadow-[0_0_18px_rgba(199,227,106,0.2)] z-15"
+          : "border-[var(--line-strong)] hover:border-[var(--accent)]/60 z-10"
+      } ${dimmed ? "opacity-35 hover:opacity-100" : "opacity-100"} ${
+        flashed ? "animate-bounce ring-4 ring-[var(--accent)]" : ""
+      } bg-[var(--surface-raised)]/95`}
+      style={{
+        transform: `translate(${x}px, ${y}px)`,
+        width: `${node.width}px`,
+      }}
+      onMouseEnter={() => onHoverEnter(node.id)}
+      onMouseLeave={() => onHoverLeave(node.id)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(node.id);
+      }}
+    >
+      {/* Node Header (Draggable Handle & Collapse Toggle) */}
+      <div
+        onPointerDown={(e) => onNodePointerDown(e, node.id)}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onToggleCollapse(node.id);
+        }}
+        className={`flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 cursor-grab active:cursor-grabbing rounded-t-[7px] ${
+          collapsed ? "rounded-b-[7px] border-b-0" : ""
+        }`}
+      >
+        <div className="flex items-center gap-1.5 truncate">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse(node.id);
+            }}
+            className="p-0.5 rounded hover:bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+            title={collapsed ? "Expand Node" : "Collapse Node"}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+          </button>
+          <span
+            className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase border ${theme}`}
+          >
+            {node.category}
+          </span>
+          <span className="font-mono text-xs font-bold text-[var(--ink)] truncate">
+            {node.metaTitle}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          {exposedCount > 0 && (
+            <span className="flex items-center gap-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 px-1 py-0.2 font-mono text-[8px] font-bold text-[var(--accent)]">
+              <Zap className="h-2 w-2" />
+              <span>{exposedCount}</span>
+            </span>
+          )}
+          <span className="font-mono text-[9px] text-[var(--ink-faint)]">
+            #{node.id}
+          </span>
+        </div>
+      </div>
+
+      {/* Node Body: Ports & Parameters (Hidden when collapsed) */}
+      {!collapsed && (
+        <div className="p-2.5 space-y-2.5 text-[10px] font-mono">
+          {/* Inputs List */}
+          <div className="space-y-2">
+            {node.inputs.map((inp) => {
+              const ctrl = nodeControls.find((c) => c.input_name === inp.name);
+              const isExposed = !!ctrl && ctrl.exposed !== false;
+              const effectiveVal =
+                previewValues[`${node.id}.${inp.name}`] ?? ctrl?.default ?? ctrl?.value ?? inp.value;
+
+              const isNum = typeof inp.value === "number" || typeof effectiveVal === "number";
+              const isSeed = inp.name.toLowerCase().includes("seed");
+              const isPrompt =
+                typeof inp.value === "string" &&
+                (inp.name.toLowerCase().includes("text") ||
+                  inp.name.toLowerCase().includes("prompt"));
+
+              return (
+                <div
+                  key={inp.name}
+                  className="space-y-1 rounded-[5px] bg-[var(--surface-sunken)]/40 p-1.5 border border-transparent hover:border-[var(--line)] transition-all"
+                >
+                  <div className="flex items-center justify-between gap-1.5 group/inp">
+                    {/* Socket Port Dot */}
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span
+                        className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
+                        style={{ backgroundColor: inp.color }}
+                        title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
+                      />
+                      <span
+                        className={`truncate text-[9px] ${
+                          inp.isLinked
+                            ? "text-[var(--ink-soft)] font-medium"
+                            : "text-[var(--ink)] font-bold"
+                        }`}
+                      >
+                        {inp.name}
+                      </span>
+                      {!inp.isLinked && isEssentialInput(inp.name) && (
+                        <span
+                          className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
+                          title="Essential Generation Parameter"
+                        >
+                          {isSeed
+                            ? "🎲 Seed"
+                            : inp.name === "cfg" || inp.name === "guidance"
+                            ? "🎚️ CFG"
+                            : inp.name === "steps"
+                            ? "⏱️ Steps"
+                            : "📐 Dim"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Unlinked Parameter Action: Toggle Expose Controller */}
+                    {!inp.isLinked ? (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleExpose(node, inp.name, inp.value);
+                          }}
+                          className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] font-bold transition-all ${
+                            isExposed
+                              ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
+                              : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
+                          }`}
+                          title={isExposed ? "Exposed to users (Click to lock)" : "Expose as UI controller"}
+                        >
+                          <Zap className="h-2.5 w-2.5" />
+                          <span>{isExposed ? "Exposed" : "Expose"}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[8px] text-[var(--ink-faint)] truncate max-w-[60px]">
+                        wire
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Direct Inline Control Tweakers for Unlinked Inputs */}
+                  {!inp.isLinked && (
+                    <div className="pt-0.5 flex items-center justify-between text-[9px]">
+                      {isSeed ? (
+                        <div className="flex items-center gap-1.5 w-full">
+                          <span className="font-mono text-[8px] text-[var(--ink-faint)] truncate flex-1">
+                            {String(effectiveVal ?? "random")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newSeed = Math.floor(Math.random() * 1e14);
+                              onInputChange(node.id, inp.name, newSeed);
+                            }}
+                            className="flex items-center gap-0.5 rounded px-1.5 py-0.2 bg-[var(--surface)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
+                            title="Roll New Random Seed"
+                          >
+                            <Dices className="h-2.5 w-2.5" />
+                            <span>Roll</span>
+                          </button>
+                        </div>
+                      ) : isNum ? (
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-[8px] text-[var(--ink-faint)]">
+                            Val: <b className="text-[var(--ink)]">{String(effectiveVal ?? "—")}</b>
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const step = inp.name === "cfg" ? 0.5 : 1;
+                                const num = Number(effectiveVal) || 0;
+                                onInputChange(node.id, inp.name, Math.max(0, num - step));
+                              }}
+                              className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                            >
+                              -
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const step = inp.name === "cfg" ? 0.5 : 1;
+                                const num = Number(effectiveVal) || 0;
+                                onInputChange(node.id, inp.name, num + step);
+                              }}
+                              className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ) : isPrompt ? (
+                        <textarea
+                          value={String(effectiveVal ?? "")}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onInputChange(node.id, inp.name, e.target.value)}
+                          placeholder="Enter prompt text..."
+                          rows={2}
+                          className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-1 text-[9px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none focus:border-[var(--accent)] resize-none"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between w-full text-[8px] text-[var(--ink-faint)]">
+                          <span>Val:</span>
+                          <span className="truncate max-w-[150px] font-bold text-[var(--ink-soft)]">
+                            {String(effectiveVal ?? "—")}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Outputs List */}
+          {node.outputs.length > 0 && (
+            <div className="pt-2 border-t border-[var(--line)]/50 space-y-1">
+              {node.outputs.map((out) => (
+                <div
+                  key={out.index}
+                  className="flex items-center justify-end gap-1.5 text-right"
+                >
+                  <span className="text-[8px] text-[var(--ink-faint)] uppercase">
+                    {out.name}
+                  </span>
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
+                    style={{ backgroundColor: out.color }}
+                    title={`${out.name} (Slot ${out.index})`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export interface VisualNodeCanvasProps {
   workflow: Record<string, unknown>;
   controls: ToolControl[];
@@ -60,10 +485,10 @@ export default function VisualNodeCanvas({
   onWorkflowChange,
   className = "",
 }: VisualNodeCanvasProps) {
-  // Graph topology memoized from workflow
+  // Graph topology memoized from workflow (controls never affect layout)
   const initialTopology = useMemo(() => {
-    return computeGraphTopology(workflow, controls);
-  }, [workflow, controls]);
+    return computeGraphTopology(workflow);
+  }, [workflow]);
 
   // Node position overrides state (allows dragging nodes)
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -78,15 +503,22 @@ export default function VisualNodeCanvas({
     scale: 0.85,
   });
 
-  // Dragging states
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [nodeDragOffset, setNodeDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Dragging state (refs: never read during render, so no re-render per frame)
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const draggingNodeIdRef = useRef<string | null>(null);
+  const nodeDragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Pointer capture is taken on the first move, not on down: capturing on down retargets
+  // the ensuing click to the container and breaks buttons inside nodes.
+  const pointerCapturedRef = useRef(false);
+  const capturedPointerIdRef = useRef<number | null>(null);
+  const pointerDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Grid snap state (default 20px)
   const [snapToGrid, setSnapToGrid] = useState(true);
   const GRID_SIZE = 20;
+  const snapToGridRef = useRef(snapToGrid);
+  snapToGridRef.current = snapToGrid;
 
   // Visual toggles
   const [showGroups, setShowGroups] = useState(true);
@@ -111,6 +543,8 @@ export default function VisualNodeCanvas({
 
   // Space key down tracking for pan anywhere
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const isSpaceDownRef = useRef(isSpaceDown);
+  isSpaceDownRef.current = isSpaceDown;
   const [showHotkeysHelp, setShowHotkeysHelp] = useState(false);
 
   // Form preview mockup form state
@@ -118,18 +552,87 @@ export default function VisualNodeCanvas({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get effective position for a node
-  const getNodePos = useCallback(
-    (node: VisualCanvasNode) => {
-      return nodePositions[node.id] || { x: node.x, y: node.y };
-    },
-    [nodePositions]
-  );
+  // Latest-value mirrors so pointer handlers can stay identity-stable
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
+  // Index maps & adjacency lists — rebuilt only when their inputs change
+  const nodeById = useMemo(() => {
+    const map = new Map<string, VisualCanvasNode>();
+    for (const n of initialTopology.nodes) map.set(n.id, n);
+    return map;
+  }, [initialTopology.nodes]);
+
+  const positions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number }>();
+    for (const n of initialTopology.nodes) {
+      map.set(n.id, nodePositions[n.id] || { x: n.x, y: n.y });
+    }
+    return map;
+  }, [initialTopology.nodes, nodePositions]);
+
+  const controlsByNode = useMemo(() => {
+    const map = new Map<string, ToolControl[]>();
+    for (const n of initialTopology.nodes) {
+      map.set(
+        n.id,
+        controls.filter((c) => c.node_id === n.id || c.path.includes(`.${n.id}.`))
+      );
+    }
+    return map;
+  }, [initialTopology.nodes, controls]);
+
+  const adjacency = useMemo(() => {
+    const upstream = new Map<string, VisualCanvasEdge[]>();
+    const downstream = new Map<string, VisualCanvasEdge[]>();
+    for (const edge of initialTopology.edges) {
+      const up = upstream.get(edge.target);
+      if (up) up.push(edge);
+      else upstream.set(edge.target, [edge]);
+      const down = downstream.get(edge.source);
+      if (down) down.push(edge);
+      else downstream.set(edge.source, [edge]);
+    }
+    return { upstream, downstream };
+  }, [initialTopology.edges]);
+
+  // Latest-value mirrors for the identity-stable pointer handlers
+  const nodeByIdRef = useRef(nodeById);
+  nodeByIdRef.current = nodeById;
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+
+  // Viewport size tracked by ResizeObserver (never read during render)
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      setContainerSize((prev) =>
+        prev.width === rect.width && prev.height === rect.height
+          ? prev
+          : { width: rect.width, height: rect.height }
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Measure helper: observer value when populated, direct measurement as fallback (mount)
+  const measureViewport = useCallback(() => {
+    const el = containerRef.current;
+    return {
+      width: containerSize.width || el?.clientWidth || 0,
+      height: containerSize.height || el?.clientHeight || 0,
+    };
+  }, [containerSize.width, containerSize.height]);
 
   // Auto-fit to view
   const fitToView = useCallback(() => {
-    if (!containerRef.current) return;
-    const { clientWidth, clientHeight } = containerRef.current;
+    const { width: clientWidth, height: clientHeight } = measureViewport();
+    if (!clientWidth && !clientHeight) return;
     const { bounds } = initialTopology;
 
     const graphWidth = Math.max(bounds.maxX - bounds.minX, 400);
@@ -143,18 +646,18 @@ export default function VisualNodeCanvas({
     const y = (clientHeight - graphHeight * scale) / 2 - bounds.minY * scale;
 
     setTransform({ x, y, scale });
-  }, [initialTopology, showFormPreview]);
+  }, [initialTopology, showFormPreview, measureViewport]);
 
   // Center camera on a specific node with a flash indicator
   const centerOnNode = useCallback(
     (nodeId: string) => {
-      if (!containerRef.current) return;
-      const targetNode = initialTopology.nodes.find((n) => n.id === nodeId);
+      const targetNode = nodeByIdRef.current.get(nodeId);
       if (!targetNode) return;
-      const pos = getNodePos(targetNode);
-      const { clientWidth, clientHeight } = containerRef.current;
+      const pos = positionsRef.current.get(nodeId) || { x: targetNode.x, y: targetNode.y };
+      const { width: clientWidth, height: clientHeight } = measureViewport();
+      if (!clientWidth && !clientHeight) return;
 
-      const scale = transform.scale;
+      const scale = transformRef.current.scale;
       const x = ((clientWidth - (showFormPreview ? 340 : 0)) / 2) - (pos.x + targetNode.width / 2) * scale;
       const y = clientHeight / 2 - (pos.y + targetNode.height / 2) * scale;
 
@@ -163,13 +666,20 @@ export default function VisualNodeCanvas({
       setFlashNodeId(nodeId);
       setTimeout(() => setFlashNodeId((curr) => (curr === nodeId ? null : curr)), 1400);
     },
-    [initialTopology.nodes, getNodePos, transform.scale, showFormPreview]
+    [showFormPreview, measureViewport]
   );
 
-  // Fit to view once mounted
+  // Fit to view once mounted (bounds are stable numbers across value edits)
   useEffect(() => {
     fitToView();
-  }, [fitToView]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    initialTopology.bounds.minX,
+    initialTopology.bounds.minY,
+    initialTopology.bounds.maxX,
+    initialTopology.bounds.maxY,
+    showFormPreview,
+  ]);
 
   // Reset node positions to auto-layout
   const handleResetLayout = () => {
@@ -179,40 +689,55 @@ export default function VisualNodeCanvas({
   };
 
   // Toggle node collapsed state
-  const toggleNodeCollapse = (nodeId: string) => {
+  const toggleNodeCollapse = useCallback((nodeId: string) => {
     setCollapsedNodeIds((prev) => {
       const next = new Set(prev);
       if (next.has(nodeId)) next.delete(nodeId);
       else next.add(nodeId);
       return next;
     });
-  };
+  }, []);
 
-  // Wheel zoom handler
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
+  // Wheel zoom — native listener so preventDefault actually applies (React's root wheel is passive)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-    const zoomFactor = 1.1;
-    const newScale = e.deltaY < 0 ? transform.scale * zoomFactor : transform.scale / zoomFactor;
-    const clampedScale = Math.min(Math.max(newScale, 0.2), 2.5);
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const newX = mouseX - (mouseX - transform.x) * (clampedScale / transform.scale);
-    const newY = mouseY - (mouseY - transform.y) * (clampedScale / transform.scale);
-
-    setTransform({ x: newX, y: newY, scale: clampedScale });
-  };
-
-  // Mouse down on canvas (pan start)
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || isSpaceDown) {
+    const onWheel = (e: WheelEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.(".canvas-hud")) return;
       e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+
+      const zoomFactor = 1.1;
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      setTransform((prev) => {
+        const clampedScale = Math.min(
+          Math.max(e.deltaY < 0 ? prev.scale * zoomFactor : prev.scale / zoomFactor, 0.2),
+          2.5
+        );
+        const ratio = clampedScale / prev.scale;
+        return {
+          x: mouseX - (mouseX - prev.x) * ratio,
+          y: mouseY - (mouseY - prev.y) * ratio,
+          scale: clampedScale,
+        };
+      });
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Pointer down on canvas (pan start)
+  const handleCanvasMouseDown = useCallback((e: React.PointerEvent) => {
+    const { x, y } = transformRef.current;
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+    if (e.button === 1 || isSpaceDownRef.current) {
+      e.preventDefault();
+      isPanningRef.current = true;
+      panStartRef.current = { x: e.clientX - x, y: e.clientY - y };
       return;
     }
 
@@ -223,59 +748,102 @@ export default function VisualNodeCanvas({
       return;
     }
 
-    setIsPanning(true);
-    setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
-  };
+    isPanningRef.current = true;
+    panStartRef.current = { x: e.clientX - x, y: e.clientY - y };
+  }, []);
 
-  // Mouse down on node header (node drag start)
-  const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
-    if (isSpaceDown || e.button === 1) {
-      handleCanvasMouseDown(e);
-      return;
+  // Pointer down on node header (node drag start)
+  const handleNodeMouseDown = useCallback(
+    (e: React.PointerEvent, nodeId: string) => {
+      if (isSpaceDownRef.current || e.button === 1) {
+        handleCanvasMouseDown(e);
+        return;
+      }
+
+      e.stopPropagation();
+      setSelectedNodeId(nodeId);
+      pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+
+      const { scale } = transformRef.current;
+      const targetNode = nodeByIdRef.current.get(nodeId);
+      const currentPos = positionsRef.current.get(nodeId) || {
+        x: targetNode?.x ?? 0,
+        y: targetNode?.y ?? 0,
+      };
+
+      draggingNodeIdRef.current = nodeId;
+      nodeDragOffsetRef.current = {
+        x: e.clientX / scale - currentPos.x,
+        y: e.clientY / scale - currentPos.y,
+      };
+    },
+    [handleCanvasMouseDown]
+  );
+
+  // Pointer move handler (pan or node drag)
+  const handleMouseMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanningRef.current && !draggingNodeIdRef.current) return;
+
+    // Capture only once the pointer has actually travelled, so plain clicks keep their
+    // native target (capturing on down retargets the click to the container).
+    if (!pointerCapturedRef.current) {
+      const start = pointerDownPosRef.current;
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+      containerRef.current?.setPointerCapture(e.pointerId);
+      capturedPointerIdRef.current = e.pointerId;
+      pointerCapturedRef.current = true;
     }
 
-    e.stopPropagation();
-    setSelectedNodeId(nodeId);
-
-    const targetNode = initialTopology.nodes.find((n) => n.id === nodeId);
-    const currentPos = targetNode ? getNodePos(targetNode) : { x: 0, y: 0 };
-
-    setDraggingNodeId(nodeId);
-    setNodeDragOffset({
-      x: e.clientX / transform.scale - currentPos.x,
-      y: e.clientY / transform.scale - currentPos.y,
-    });
-  };
-
-  // Mouse move handler (pan or node drag)
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
+    if (isPanningRef.current) {
+      const start = panStartRef.current;
       setTransform((prev) => ({
         ...prev,
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
+        x: e.clientX - start.x,
+        y: e.clientY - start.y,
       }));
-    } else if (draggingNodeId) {
-      let newX = e.clientX / transform.scale - nodeDragOffset.x;
-      let newY = e.clientY / transform.scale - nodeDragOffset.y;
+    } else if (draggingNodeIdRef.current) {
+      const nodeId = draggingNodeIdRef.current;
+      const offset = nodeDragOffsetRef.current;
+      const scale = transformRef.current.scale;
 
-      if (snapToGrid) {
+      let newX = e.clientX / scale - offset.x;
+      let newY = e.clientY / scale - offset.y;
+
+      if (snapToGridRef.current) {
         newX = Math.round(newX / GRID_SIZE) * GRID_SIZE;
         newY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
       }
 
       setNodePositions((prev) => ({
         ...prev,
-        [draggingNodeId]: { x: Math.round(newX), y: Math.round(newY) },
+        [nodeId]: { x: Math.round(newX), y: Math.round(newY) },
       }));
     }
-  };
+  }, []);
 
-  // Mouse up handler
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDraggingNodeId(null);
-  };
+  // Pointer up handler (also used for lost pointer capture)
+  const releaseCapture = useCallback(() => {
+    const el = containerRef.current;
+    const pointerId = capturedPointerIdRef.current;
+    if (el && pointerCapturedRef.current && pointerId !== null && el.hasPointerCapture(pointerId)) {
+      el.releasePointerCapture(pointerId);
+    }
+    pointerCapturedRef.current = false;
+    capturedPointerIdRef.current = null;
+    isPanningRef.current = false;
+    draggingNodeIdRef.current = null;
+  }, []);
+
+  // Release on a pointerup anywhere: the first move may never reach the container,
+  // so a drag could otherwise stay armed after the button is already up.
+  useEffect(() => {
+    window.addEventListener("pointerup", releaseCapture);
+    window.addEventListener("pointercancel", releaseCapture);
+    return () => {
+      window.removeEventListener("pointerup", releaseCapture);
+      window.removeEventListener("pointercancel", releaseCapture);
+    };
+  }, [releaseCapture]);
 
   // Global Keyboard shortcuts
   useEffect(() => {
@@ -287,6 +855,7 @@ export default function VisualNodeCanvas({
         (activeEl as HTMLElement)?.isContentEditable;
 
       if (e.key === "Escape") {
+        releaseCapture();
         if (isSearchOpen) {
           setIsSearchOpen(false);
           return;
@@ -362,7 +931,7 @@ export default function VisualNodeCanvas({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isSearchOpen, selectedNodeId, showHotkeysHelp, centerOnNode, fitToView]);
+  }, [isSearchOpen, selectedNodeId, showHotkeysHelp, centerOnNode, fitToView, releaseCapture]);
 
   // Focus search input when modal opens
   useEffect(() => {
@@ -374,109 +943,106 @@ export default function VisualNodeCanvas({
   }, [isSearchOpen]);
 
   // Controller helpers
-  const isControlExposed = (nodeId: string, inputName: string) => {
-    return controls.some(
-      (c) =>
-        (c.node_id === nodeId || c.path.includes(`.${nodeId}.`)) &&
-        c.input_name === inputName &&
-        c.exposed !== false
-    );
-  };
+  const isControlExposed = useCallback(
+    (nodeId: string, inputName: string) => {
+      const list = controlsByNode.get(nodeId);
+      return !!list?.some((c) => c.input_name === inputName && c.exposed !== false);
+    },
+    [controlsByNode]
+  );
 
-  const getExistingControl = (nodeId: string, inputName: string): ToolControl | undefined => {
-    return controls.find(
-      (c) =>
-        (c.node_id === nodeId || c.path.includes(`.${nodeId}.`)) &&
-        c.input_name === inputName
-    );
-  };
+  const getExistingControl = useCallback(
+    (nodeId: string, inputName: string): ToolControl | undefined => {
+      return controlsByNode.get(nodeId)?.find((c) => c.input_name === inputName);
+    },
+    [controlsByNode]
+  );
 
-  const toggleControlExposure = (node: VisualCanvasNode, inputName: string, value: unknown) => {
-    const existing = getExistingControl(node.id, inputName);
-    const path = `nodes.${node.id}.inputs.${inputName}`;
+  const toggleControlExposure = useCallback(
+    (node: VisualCanvasNode, inputName: string, value: unknown) => {
+      const existing = getExistingControl(node.id, inputName);
+      const path = `nodes.${node.id}.inputs.${inputName}`;
 
-    if (existing) {
-      onControlsChange(
-        controls.map((c) =>
-          c.id === existing.id ? { ...c, exposed: !c.exposed } : c
-        )
-      );
-    } else {
-      const isNum = typeof value === "number";
-      const isSeed = inputName.toLowerCase().includes("seed");
-      const isPrompt =
-        typeof value === "string" &&
-        (inputName.toLowerCase().includes("text") ||
-          inputName.toLowerCase().includes("prompt"));
+      if (existing) {
+        onControlsChange(
+          controls.map((c) =>
+            c.id === existing.id ? { ...c, exposed: !c.exposed } : c
+          )
+        );
+      } else {
+        const isNum = typeof value === "number";
+        const isSeed = inputName.toLowerCase().includes("seed");
+        const isPrompt =
+          typeof value === "string" &&
+          (inputName.toLowerCase().includes("text") ||
+            inputName.toLowerCase().includes("prompt"));
 
-      const newControl: ToolControl = {
-        id: path,
-        path,
-        node_id: node.id,
-        input_name: inputName,
-        label: `${node.metaTitle} ${inputName.replace(/_/g, " ")}`,
-        meta_title: node.metaTitle,
-        kind: isPrompt ? "prompt" : isSeed ? "seed" : isNum ? "number" : "text",
-        value: (value as string | number | boolean) ?? "",
-        default: (value as string | number | boolean) ?? "",
-        numeric: isNum,
-        seed: isSeed,
-        options: [],
-        minimum: isNum ? 0 : null,
-        maximum: isNum ? (inputName === "steps" ? 100 : 30) : null,
-        step: isNum ? (inputName === "cfg" ? 0.5 : 1) : null,
-        exposed: true,
-      };
+        const newControl: ToolControl = {
+          id: path,
+          path,
+          node_id: node.id,
+          input_name: inputName,
+          label: `${node.metaTitle} ${inputName.replace(/_/g, " ")}`,
+          meta_title: node.metaTitle,
+          kind: isPrompt ? "prompt" : isSeed ? "seed" : isNum ? "number" : "text",
+          value: (value as string | number | boolean) ?? "",
+          default: (value as string | number | boolean) ?? "",
+          numeric: isNum,
+          seed: isSeed,
+          options: [],
+          minimum: isNum ? 0 : null,
+          maximum: isNum ? (inputName === "steps" ? 100 : 30) : null,
+          step: isNum ? (inputName === "cfg" ? 0.5 : 1) : null,
+          exposed: true,
+        };
 
-      onControlsChange([...controls, newControl]);
-    }
-  };
+        onControlsChange([...controls, newControl]);
+      }
+    },
+    [controls, getExistingControl, onControlsChange]
+  );
 
   // Inline value mutator (updates control default and workflow value if callback provided)
-  const handleUpdateInputValue = (nodeId: string, inputName: string, newValue: unknown) => {
-    // 1. Update control if exposed
-    const ctrl = getExistingControl(nodeId, inputName);
-    if (ctrl) {
-      onControlsChange(
-        controls.map((c) =>
-          c.id === ctrl.id
-            ? { ...c, default: newValue as string | number | boolean, value: newValue as string | number | boolean }
-            : c
-        )
-      );
-    }
-
-    // 2. Update preview mock state
-    setPreviewValues((prev) => ({ ...prev, [`${nodeId}.${inputName}`]: newValue }));
-
-    // 3. Update raw workflow graph if onWorkflowChange is connected
-    if (onWorkflowChange) {
-      const updatedWorkflow = { ...workflow };
-      const nodeObj = updatedWorkflow[nodeId] as Record<string, unknown> | undefined;
-      if (nodeObj && typeof nodeObj === "object") {
-        const inputs = (nodeObj.inputs || {}) as Record<string, unknown>;
-        inputs[inputName] = newValue;
-        nodeObj.inputs = inputs;
-        onWorkflowChange(updatedWorkflow);
+  const handleUpdateInputValue = useCallback(
+    (nodeId: string, inputName: string, newValue: unknown) => {
+      // 1. Update control if exposed
+      const ctrl = getExistingControl(nodeId, inputName);
+      if (ctrl) {
+        onControlsChange(
+          controls.map((c) =>
+            c.id === ctrl.id
+              ? { ...c, default: newValue as string | number | boolean, value: newValue as string | number | boolean }
+              : c
+          )
+        );
       }
-    }
-  };
+
+      // 2. Update preview mock state
+      setPreviewValues((prev) => ({ ...prev, [`${nodeId}.${inputName}`]: newValue }));
+
+      // 3. Update raw workflow graph if onWorkflowChange is connected
+      if (onWorkflowChange) {
+        const nodeObj = workflow[nodeId] as Record<string, unknown> | undefined;
+        if (nodeObj && typeof nodeObj === "object") {
+          onWorkflowChange({
+            ...workflow,
+            [nodeId]: {
+              ...nodeObj,
+              inputs: {
+                ...((nodeObj.inputs || {}) as Record<string, unknown>),
+                [inputName]: newValue,
+              },
+            },
+          });
+        }
+      }
+    },
+    [controls, getExistingControl, onControlsChange, onWorkflowChange, workflow]
+  );
 
   const updateControlLabel = (controlId: string, label: string) => {
     onControlsChange(
       controls.map((c) => (c.id === controlId ? { ...c, label } : c))
-    );
-  };
-
-  const isEssentialInput = (inputName: string) => {
-    const norm = inputName.toLowerCase();
-    return (
-      norm.includes("seed") ||
-      norm === "cfg" ||
-      norm === "guidance" ||
-      norm === "steps" ||
-      norm === "width" ||
-      norm === "height"
     );
   };
 
@@ -495,8 +1061,8 @@ export default function VisualNodeCanvas({
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null;
-    return initialTopology.nodes.find((n) => n.id === selectedNodeId) || null;
-  }, [selectedNodeId, initialTopology.nodes]);
+    return nodeById.get(selectedNodeId) || null;
+  }, [selectedNodeId, nodeById]);
 
   // Dynamic Upstream & Downstream Pipeline Highlighting
   const { activePipelineNodes, activePipelineEdges } = useMemo(() => {
@@ -513,16 +1079,14 @@ export default function VisualNodeCanvas({
     const visitedUpstream = new Set<string>([activeId]);
     while (upstreamQueue.length > 0) {
       const curr = upstreamQueue.shift()!;
-      initialTopology.edges.forEach((edge) => {
-        if (edge.target === curr) {
-          edgesSet.add(edge.id);
-          if (!visitedUpstream.has(edge.source)) {
-            visitedUpstream.add(edge.source);
-            nodesSet.add(edge.source);
-            upstreamQueue.push(edge.source);
-          }
+      for (const edge of adjacency.upstream.get(curr) ?? []) {
+        edgesSet.add(edge.id);
+        if (!visitedUpstream.has(edge.source)) {
+          visitedUpstream.add(edge.source);
+          nodesSet.add(edge.source);
+          upstreamQueue.push(edge.source);
         }
-      });
+      }
     }
 
     // Downstream traversal (nodes/edges activeId feeds INTO)
@@ -530,20 +1094,18 @@ export default function VisualNodeCanvas({
     const visitedDownstream = new Set<string>([activeId]);
     while (downstreamQueue.length > 0) {
       const curr = downstreamQueue.shift()!;
-      initialTopology.edges.forEach((edge) => {
-        if (edge.source === curr) {
-          edgesSet.add(edge.id);
-          if (!visitedDownstream.has(edge.target)) {
-            visitedDownstream.add(edge.target);
-            nodesSet.add(edge.target);
-            downstreamQueue.push(edge.target);
-          }
+      for (const edge of adjacency.downstream.get(curr) ?? []) {
+        edgesSet.add(edge.id);
+        if (!visitedDownstream.has(edge.target)) {
+          visitedDownstream.add(edge.target);
+          nodesSet.add(edge.target);
+          downstreamQueue.push(edge.target);
         }
-      });
+      }
     }
 
     return { activePipelineNodes: nodesSet, activePipelineEdges: edgesSet };
-  }, [hoveredNodeId, selectedNodeId, initialTopology.edges]);
+  }, [hoveredNodeId, selectedNodeId, adjacency]);
 
   // Minimap dynamic bounds calculation including custom positions
   const minimapBounds = useMemo(() => {
@@ -553,7 +1115,7 @@ export default function VisualNodeCanvas({
     let maxY = -Infinity;
 
     initialTopology.nodes.forEach((n) => {
-      const pos = getNodePos(n);
+      const pos = positions.get(n.id) || { x: n.x, y: n.y };
       if (pos.x < minX) minX = pos.x;
       if (pos.y < minY) minY = pos.y;
       if (pos.x + n.width > maxX) maxX = pos.x + n.width;
@@ -583,11 +1145,11 @@ export default function VisualNodeCanvas({
       width: Math.max(maxX - minX + pad * 2, 600),
       height: Math.max(maxY - minY + pad * 2, 400),
     };
-  }, [initialTopology.nodes, initialTopology.groups, getNodePos]);
+  }, [initialTopology.nodes, initialTopology.groups, positions]);
 
   // Interactive Minimap Pan by Click or Drag
   const handleMinimapPointerEvent = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!minimapSvgRef.current || !containerRef.current) return;
+    if (!minimapSvgRef.current) return;
     const rect = minimapSvgRef.current.getBoundingClientRect();
     const relX = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
     const relY = Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1);
@@ -595,7 +1157,7 @@ export default function VisualNodeCanvas({
     const worldX = minimapBounds.minX + relX * minimapBounds.width;
     const worldY = minimapBounds.minY + relY * minimapBounds.height;
 
-    const { clientWidth, clientHeight } = containerRef.current;
+    const { width: clientWidth, height: clientHeight } = measureViewport();
     setTransform((prev) => ({
       ...prev,
       x: ((clientWidth - (showFormPreview ? 340 : 0)) / 2) - worldX * prev.scale,
@@ -622,60 +1184,37 @@ export default function VisualNodeCanvas({
       .slice(0, 10);
   }, [initialTopology.nodes, searchQuery]);
 
-  // Category badge colors
-  const getCategoryTheme = (cat: VisualCanvasNode["category"]) => {
-    switch (cat) {
-      case "loader":
-        return "border-purple-500/40 bg-purple-500/10 text-purple-300";
-      case "sampler":
-        return "border-amber-500/40 bg-amber-500/10 text-amber-300";
-      case "conditioning":
-        return "border-yellow-500/40 bg-yellow-500/10 text-yellow-300";
-      case "latent":
-        return "border-pink-500/40 bg-pink-500/10 text-pink-300";
-      case "image":
-        return "border-cyan-500/40 bg-cyan-500/10 text-cyan-300";
-      case "output":
-        return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
-      default:
-        return "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-soft)]";
-    }
-  };
-
-  const getCategoryMinimapColor = (cat: VisualCanvasNode["category"]) => {
-    switch (cat) {
-      case "loader":
-        return "#a855f7";
-      case "sampler":
-        return "#f59e0b";
-      case "conditioning":
-        return "#eab308";
-      case "latent":
-        return "#ec4899";
-      case "image":
-        return "#06b6d4";
-      case "output":
-        return "#10b981";
-      default:
-        return "#71717a";
-    }
-  };
-
   const exposedControlsList = useMemo(() => {
     return controls.filter((c) => c.exposed !== false);
   }, [controls]);
 
+  // Stable hover callbacks so memoized nodes/edges can bail out
+  const handleHoverEnter = useCallback((nodeId: string) => {
+    setHoveredNodeId(nodeId);
+  }, []);
+  const handleHoverLeave = useCallback((nodeId?: string) => {
+    setHoveredNodeId((curr) => (nodeId === undefined || curr === nodeId ? null : curr));
+  }, []);
+  const handleSelectNode = useCallback((nodeId: string) => {
+    setSelectedNodeId(nodeId);
+  }, []);
+  const handleClearHover = useCallback(() => {
+    setHoveredNodeId(null);
+  }, []);
+
   return (
     <div
       ref={containerRef}
-      onWheel={handleWheel}
-      onMouseDown={handleCanvasMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onPointerDown={handleCanvasMouseDown}
+      onPointerMove={handleMouseMove}
+      onPointerUp={releaseCapture}
+      onPointerCancel={releaseCapture}
+      onLostPointerCapture={releaseCapture}
       className={`relative w-full h-full overflow-hidden select-none bg-[var(--ground)] ${
         isSpaceDown ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${className}`}
       style={{
+        touchAction: "none",
         backgroundImage: `radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px)`,
         backgroundSize: `${30 * transform.scale}px ${30 * transform.scale}px`,
         backgroundPosition: `${transform.x}px ${transform.y}px`,
@@ -794,7 +1333,7 @@ export default function VisualNodeCanvas({
                 ? "bg-[var(--surface-sunken)] border border-[var(--accent)]/30 text-[var(--accent)]"
                 : "hover:bg-[var(--surface-soft)] text-[var(--ink-faint)]"
             }`}
-            title="Toggle Animated Tensor Flow Particles"
+            title="Toggle Animated Data Flow Particles"
           >
             <Waves className="h-3 w-3" />
             <span className="text-[10px]">Flow</span>
@@ -914,12 +1453,12 @@ export default function VisualNodeCanvas({
 
           {/* Bezier Noodles */}
           {initialTopology.edges.map((edge) => {
-            const srcNode = initialTopology.nodes.find((n) => n.id === edge.source);
-            const tgtNode = initialTopology.nodes.find((n) => n.id === edge.target);
+            const srcNode = nodeById.get(edge.source);
+            const tgtNode = nodeById.get(edge.target);
             if (!srcNode || !tgtNode) return null;
 
-            const srcPos = getNodePos(srcNode);
-            const tgtPos = getNodePos(tgtNode);
+            const srcPos = positions.get(edge.source) || { x: srcNode.x, y: srcNode.y };
+            const tgtPos = positions.get(edge.target) || { x: tgtNode.x, y: tgtNode.y };
 
             const isSrcCollapsed = collapsedNodeIds.has(srcNode.id);
             const isTgtCollapsed = collapsedNodeIds.has(tgtNode.id);
@@ -936,56 +1475,24 @@ export default function VisualNodeCanvas({
               ? srcPos.y + 18
               : srcPos.y + 37 + 10 + srcNode.inputs.length * 24 + 10 + edge.sourceIndex * 20 + 8;
 
-            const x1 = srcPos.x + srcNode.width;
-            const y1 = srcY;
-            const x2 = tgtPos.x;
-            const y2 = tgtY;
-
-            const dx = Math.max(Math.abs(x2 - x1) * 0.45, 60);
-
-            // Pipeline trace highlight check
             const isHighlighted = activePipelineEdges ? activePipelineEdges.has(edge.id) : false;
             const isDimmed = activePipelineEdges !== null && !isHighlighted;
 
             return (
-              <g
+              <CanvasEdgeView
                 key={edge.id}
-                className="pointer-events-auto cursor-pointer group"
-                onMouseEnter={() => setHoveredNodeId(edge.source)}
-                onMouseLeave={() => setHoveredNodeId(null)}
-              >
-                {/* Background Shadow Spline */}
-                <path
-                  d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                  fill="none"
-                  stroke="#000000"
-                  strokeWidth={isHighlighted ? "7" : "4"}
-                  strokeOpacity={isDimmed ? "0.15" : "0.6"}
-                  className="transition-all duration-150"
-                />
-                {/* Foreground Colored Spline */}
-                <path
-                  d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                  fill="none"
-                  stroke={edge.color}
-                  strokeWidth={isHighlighted ? "4.5" : "2.5"}
-                  strokeOpacity={isDimmed ? 0.15 : isHighlighted ? 1 : 0.85}
-                  filter={isHighlighted ? "url(#noodle-glow)" : undefined}
-                  className="transition-all duration-150 group-hover:stroke-white group-hover:stroke-[4px]"
-                />
-                {/* Animated Tensor Direction Pulses */}
-                {showFlowPulses && !isDimmed && (
-                  <path
-                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-                    fill="none"
-                    stroke="#ffffff"
-                    strokeWidth={isHighlighted ? "2.5" : "1.8"}
-                    strokeOpacity={isHighlighted ? 0.9 : 0.6}
-                    strokeDasharray="6 14"
-                    className="noodle-flow-active pointer-events-none"
-                  />
-                )}
-              </g>
+                x1={srcPos.x + srcNode.width}
+                y1={srcY}
+                x2={tgtPos.x}
+                y2={tgtY}
+                color={edge.color}
+                highlighted={isHighlighted}
+                dimmed={isDimmed}
+                showPulse={showFlowPulses}
+                source={edge.source}
+                onHoverEnter={handleHoverEnter}
+                onHoverLeave={handleClearHover}
+              />
             );
           })}
         </svg>
@@ -993,279 +1500,36 @@ export default function VisualNodeCanvas({
         {/* Nodes Layer */}
         <div className="absolute inset-0 pointer-events-auto">
           {initialTopology.nodes.map((node) => {
-            const pos = getNodePos(node);
-            const isSelected = selectedNodeId === node.id;
-            const isFlashed = flashNodeId === node.id;
-            const isCollapsed = collapsedNodeIds.has(node.id);
-            const theme = getCategoryTheme(node.category);
-
-            // Upstream/Downstream trace calculation
-            const isPipelineActive = activePipelineNodes !== null;
-            const isPartOfPipeline = activePipelineNodes ? activePipelineNodes.has(node.id) : false;
-            const isDimmed = isPipelineActive && !isPartOfPipeline;
-
-            // Count exposed controls on this node
-            const nodeExposedCount = controls.filter(
-              (c) => (c.node_id === node.id || c.path.includes(`.${node.id}.`)) && c.exposed !== false
-            ).length;
+            const pos = positions.get(node.id) || { x: node.x, y: node.y };
+            const isPartOfPipeline = activePipelineNodes
+              ? activePipelineNodes.has(node.id)
+              : false;
+            const nodeControls = controlsByNode.get(node.id) ?? EMPTY_CONTROLS;
+            let exposedCount = 0;
+            for (const c of nodeControls) if (c.exposed !== false) exposedCount++;
 
             return (
-              <div
+              <CanvasNodeView
                 key={node.id}
-                id={`canvas_node_${node.id}`}
-                className={`canvas-node absolute rounded-[8px] border transition-all duration-150 shadow-2xl backdrop-blur-md select-none ${
-                  isSelected
-                    ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/50 shadow-[0_0_32px_rgba(199,227,106,0.35)] z-20"
-                    : isPartOfPipeline
-                    ? "border-[var(--accent)]/80 ring-1 ring-[var(--accent)]/30 shadow-[0_0_18px_rgba(199,227,106,0.2)] z-15"
-                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/60 z-10"
-                } ${isDimmed ? "opacity-35 hover:opacity-100" : "opacity-100"} ${
-                  isFlashed ? "animate-bounce ring-4 ring-[var(--accent)]" : ""
-                } bg-[var(--surface-raised)]/95`}
-                style={{
-                  transform: `translate(${pos.x}px, ${pos.y}px)`,
-                  width: `${node.width}px`,
-                }}
-                onMouseEnter={() => setHoveredNodeId(node.id)}
-                onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedNodeId(node.id);
-                }}
-              >
-                {/* Node Header (Draggable Handle & Collapse Toggle) */}
-                <div
-                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    toggleNodeCollapse(node.id);
-                  }}
-                  className={`flex items-center justify-between border-b border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 cursor-grab active:cursor-grabbing rounded-t-[7px] ${
-                    isCollapsed ? "rounded-b-[7px] border-b-0" : ""
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 truncate">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleNodeCollapse(node.id);
-                      }}
-                      className="p-0.5 rounded hover:bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                      title={isCollapsed ? "Expand Node" : "Collapse Node"}
-                    >
-                      {isCollapsed ? (
-                        <ChevronRight className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )}
-                    </button>
-                    <span
-                      className={`rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase border ${theme}`}
-                    >
-                      {node.category}
-                    </span>
-                    <span className="font-mono text-xs font-bold text-[var(--ink)] truncate">
-                      {node.metaTitle}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {nodeExposedCount > 0 && (
-                      <span className="flex items-center gap-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 px-1 py-0.2 font-mono text-[8px] font-bold text-[var(--accent)]">
-                        <Zap className="h-2 w-2" />
-                        <span>{nodeExposedCount}</span>
-                      </span>
-                    )}
-                    <span className="font-mono text-[9px] text-[var(--ink-faint)]">
-                      #{node.id}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Node Body: Ports & Parameters (Hidden when collapsed) */}
-                {!isCollapsed && (
-                  <div className="p-2.5 space-y-2.5 text-[10px] font-mono">
-                    {/* Inputs List */}
-                    <div className="space-y-2">
-                      {node.inputs.map((inp) => {
-                        const isExposed = isControlExposed(node.id, inp.name);
-                        const ctrl = getExistingControl(node.id, inp.name);
-                        const effectiveVal =
-                          previewValues[`${node.id}.${inp.name}`] ?? ctrl?.default ?? ctrl?.value ?? inp.value;
-
-                        const isNum = typeof inp.value === "number" || typeof effectiveVal === "number";
-                        const isSeed = inp.name.toLowerCase().includes("seed");
-                        const isPrompt =
-                          typeof inp.value === "string" &&
-                          (inp.name.toLowerCase().includes("text") ||
-                            inp.name.toLowerCase().includes("prompt"));
-
-                        return (
-                          <div
-                            key={inp.name}
-                            className="space-y-1 rounded-[5px] bg-[var(--surface-sunken)]/40 p-1.5 border border-transparent hover:border-[var(--line)] transition-all"
-                          >
-                            <div className="flex items-center justify-between gap-1.5 group/inp">
-                              {/* Socket Port Dot */}
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span
-                                  className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
-                                  style={{ backgroundColor: inp.color }}
-                                  title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
-                                />
-                                <span
-                                  className={`truncate text-[9px] ${
-                                    inp.isLinked
-                                      ? "text-[var(--ink-soft)] font-medium"
-                                      : "text-[var(--ink)] font-bold"
-                                  }`}
-                                >
-                                  {inp.name}
-                                </span>
-                                {!inp.isLinked && isEssentialInput(inp.name) && (
-                                  <span
-                                    className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
-                                    title="Essential Generation Parameter"
-                                  >
-                                    {isSeed
-                                      ? "🎲 Seed"
-                                      : inp.name === "cfg" || inp.name === "guidance"
-                                      ? "🎚️ CFG"
-                                      : inp.name === "steps"
-                                      ? "⏱️ Steps"
-                                      : "📐 Dim"}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Unlinked Parameter Action: Toggle Expose Controller */}
-                              {!inp.isLinked ? (
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleControlExposure(node, inp.name, inp.value);
-                                    }}
-                                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] font-bold transition-all ${
-                                      isExposed
-                                        ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                                        : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                                    }`}
-                                    title={isExposed ? "Exposed to users (Click to lock)" : "Expose as UI controller"}
-                                  >
-                                    <Zap className="h-2.5 w-2.5" />
-                                    <span>{isExposed ? "Exposed" : "Expose"}</span>
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[8px] text-[var(--ink-faint)] truncate max-w-[60px]">
-                                  wire
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Direct Inline Control Tweakers for Unlinked Inputs */}
-                            {!inp.isLinked && (
-                              <div className="pt-0.5 flex items-center justify-between text-[9px]">
-                                {isSeed ? (
-                                  <div className="flex items-center gap-1.5 w-full">
-                                    <span className="font-mono text-[8px] text-[var(--ink-faint)] truncate flex-1">
-                                      {String(effectiveVal ?? "random")}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const newSeed = Math.floor(Math.random() * 1e14);
-                                        handleUpdateInputValue(node.id, inp.name, newSeed);
-                                      }}
-                                      className="flex items-center gap-0.5 rounded px-1.5 py-0.2 bg-[var(--surface)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
-                                      title="Roll New Random Seed"
-                                    >
-                                      <Dices className="h-2.5 w-2.5" />
-                                      <span>Roll</span>
-                                    </button>
-                                  </div>
-                                ) : isNum ? (
-                                  <div className="flex items-center justify-between w-full">
-                                    <span className="text-[8px] text-[var(--ink-faint)]">
-                                      Val: <b className="text-[var(--ink)]">{String(effectiveVal ?? "—")}</b>
-                                    </span>
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const step = inp.name === "cfg" ? 0.5 : 1;
-                                          const num = Number(effectiveVal) || 0;
-                                          handleUpdateInputValue(node.id, inp.name, Math.max(0, num - step));
-                                        }}
-                                        className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                                      >
-                                        -
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const step = inp.name === "cfg" ? 0.5 : 1;
-                                          const num = Number(effectiveVal) || 0;
-                                          handleUpdateInputValue(node.id, inp.name, num + step);
-                                        }}
-                                        className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                                      >
-                                        +
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : isPrompt ? (
-                                  <textarea
-                                    value={String(effectiveVal ?? "")}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => handleUpdateInputValue(node.id, inp.name, e.target.value)}
-                                    placeholder="Enter prompt text..."
-                                    rows={2}
-                                    className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-1 text-[9px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none focus:border-[var(--accent)] resize-none"
-                                  />
-                                ) : (
-                                  <div className="flex items-center justify-between w-full text-[8px] text-[var(--ink-faint)]">
-                                    <span>Val:</span>
-                                    <span className="truncate max-w-[150px] font-bold text-[var(--ink-soft)]">
-                                      {String(effectiveVal ?? "—")}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Outputs List */}
-                    {node.outputs.length > 0 && (
-                      <div className="pt-2 border-t border-[var(--line)]/50 space-y-1">
-                        {node.outputs.map((out) => (
-                          <div
-                            key={out.index}
-                            className="flex items-center justify-end gap-1.5 text-right"
-                          >
-                            <span className="text-[8px] text-[var(--ink-faint)] uppercase">
-                              {out.name}
-                            </span>
-                            <span
-                              className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
-                              style={{ backgroundColor: out.color }}
-                              title={`${out.name} (Slot ${out.index})`}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                node={node}
+                x={pos.x}
+                y={pos.y}
+                selected={selectedNodeId === node.id}
+                flashed={flashNodeId === node.id}
+                collapsed={collapsedNodeIds.has(node.id)}
+                pipeline={isPartOfPipeline}
+                dimmed={activePipelineNodes !== null && !isPartOfPipeline}
+                exposedCount={exposedCount}
+                nodeControls={nodeControls}
+                previewValues={previewValues}
+                onHoverEnter={handleHoverEnter}
+                onHoverLeave={handleHoverLeave}
+                onSelect={handleSelectNode}
+                onNodePointerDown={handleNodeMouseDown}
+                onToggleCollapse={toggleNodeCollapse}
+                onToggleExpose={toggleControlExposure}
+                onInputChange={handleUpdateInputValue}
+              />
             );
           })}
         </div>
@@ -1328,7 +1592,7 @@ export default function VisualNodeCanvas({
 
                 {/* Mini Nodes */}
                 {initialTopology.nodes.map((n) => {
-                  const pos = getNodePos(n);
+                  const pos = positions.get(n.id) || { x: n.x, y: n.y };
                   const isSelected = selectedNodeId === n.id;
                   const catColor = getCategoryMinimapColor(n.category);
 
@@ -1349,12 +1613,12 @@ export default function VisualNodeCanvas({
                 })}
 
                 {/* Viewport Boundary Frame */}
-                {containerRef.current && (
+                {containerSize.width > 0 && (
                   <rect
                     x={-transform.x / transform.scale}
                     y={-transform.y / transform.scale}
-                    width={(containerRef.current.clientWidth - (showFormPreview ? 340 : 0)) / transform.scale}
-                    height={containerRef.current.clientHeight / transform.scale}
+                    width={(containerSize.width - (showFormPreview ? 340 : 0)) / transform.scale}
+                    height={containerSize.height / transform.scale}
                     fill="rgba(199, 227, 106, 0.12)"
                     stroke="#c7e36a"
                     strokeWidth={Math.max(6 / transform.scale, 8)}

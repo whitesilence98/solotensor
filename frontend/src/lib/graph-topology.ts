@@ -3,8 +3,6 @@
  * Converts execution graphs (workflow_api.json) into visual nodes, ports, groups, and bezier link wires.
  */
 
-import { ToolControl } from "@/lib/api";
-
 export interface CanvasNodeInput {
   name: string;
   isLinked: boolean;
@@ -85,8 +83,7 @@ export function getNodeCategory(classType: string): VisualCanvasNode["category"]
 }
 
 export function computeGraphTopology(
-  workflow: Record<string, unknown>,
-  existingControls: ToolControl[] = []
+  workflow: Record<string, unknown>
 ): CanvasGraphTopology {
   const nodesMap = new Map<string, VisualCanvasNode>();
   const edges: VisualCanvasEdge[] = [];

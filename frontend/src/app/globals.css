@@ -847,6 +847,11 @@ button:hover>.asset-zoom-media {
     animation: none !important;
   }
 
+  /* Node-canvas data-flow pulses are looping decoration (inline SVG <style> follows this sheet, so !important is required to win) */
+  .noodle-flow-active {
+    animation: none !important;
+  }
+
   /* Disable hover scale transforms to prevent vestibular discomfort */
   .workspace-action-primary:hover,
   .workspace-action-secondary:hover,
