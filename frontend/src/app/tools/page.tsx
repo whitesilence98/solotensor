@@ -238,7 +238,7 @@ export default function ToolStudioPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get("create") === "true") {
-        router.push("/tools/create");
+        router.push("/tools/canvas");
       }
     }
   }, [router]);
@@ -303,12 +303,12 @@ export default function ToolStudioPage() {
   };
 
   const handleOpenStandardCreate = () => {
-    router.push("/tools/create");
+    router.push("/tools/canvas");
   };
 
   const handleInitializeStarterKit = (kit: StarterKit) => {
     sessionStorage.setItem("st_tool_starter_template", kit.id);
-    router.push(`/tools/create?template=${kit.id}`);
+    router.push(`/tools/canvas?template=${kit.id}`);
   };
 
   const handleDropWorkflow = async (e: React.DragEvent) => {
@@ -320,7 +320,7 @@ export default function ToolStudioPage() {
         const text = await file.text();
         sessionStorage.setItem("st_tool_upload_json", text);
         sessionStorage.setItem("st_tool_upload_filename", file.name);
-        router.push("/tools/create");
+        router.push("/tools/canvas");
       } catch (err) {
         console.error("Failed to read dropped workflow:", err);
       }
@@ -334,7 +334,7 @@ export default function ToolStudioPage() {
         const text = await file.text();
         sessionStorage.setItem("st_tool_upload_json", text);
         sessionStorage.setItem("st_tool_upload_filename", file.name);
-        router.push("/tools/create");
+        router.push("/tools/canvas");
       } catch (err) {
         console.error("Failed to read selected workflow:", err);
       }
@@ -424,9 +424,9 @@ export default function ToolStudioPage() {
                 </Link>
 
                 <Link
-                  href="/tools/create"
+                  href="/tools/canvas"
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_16px_var(--accent-ambient)]"
-                  title="Open dedicated AI Tool Studio"
+                  title="Build an AI tool in the node canvas"
                 >
                   <Plus className="h-4 w-4 stroke-[2.5]" />
                   <span>Create AI Tool</span>

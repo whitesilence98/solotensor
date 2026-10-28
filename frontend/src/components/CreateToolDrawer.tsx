@@ -406,7 +406,7 @@ export default function CreateToolDrawer({
 
           <div className="flex items-center gap-3">
             <Link
-              href="/tools/create"
+              href="/tools/canvas"
               onClick={onClose}
               title="Expand to Full-Screen Tool Studio Workspace"
               className="hidden sm:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
