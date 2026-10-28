@@ -162,7 +162,7 @@ export default function AssetCard({
     const k = asset.key || "";
     for (let i = 0; i < k.length; i++) hash = (hash * 31 + k.charCodeAt(i)) | 0;
     const handles = [
-      "tensor_art",
+      "solo_studio",
       "latent_flow",
       "cyber_core",
       "studio_prime",

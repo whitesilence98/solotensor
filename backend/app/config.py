@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
-    EMAIL_FROM: str = "SoloTensor Studio <noreply@solotensor.ai>"
+    EMAIL_FROM: str = "Solo Studio <noreply@solotensor.ai>"
 
     @property
     def comfy_http(self) -> str:

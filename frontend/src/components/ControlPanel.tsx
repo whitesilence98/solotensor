@@ -2804,7 +2804,7 @@ export default function ControlPanel(props: Props) {
               </span>
               <div>
                 <h3 className="text-xs font-bold text-[var(--accent)] uppercase tracking-wider">
-                  SOLOTENSOR PRIME™
+                  SOLO STUDIO PRIME™
                 </h3>
                 <p className="text-[10px] text-[var(--ink-faint)]">
                   Autonomous Multi-Stage Pro Pipeline
@@ -3558,7 +3558,7 @@ export default function ControlPanel(props: Props) {
             title={
               isProUser
                 ? `Private Output: ${isPrivateActive ? "ENABLED (Confidential, hidden from gallery)" : "DISABLED (Visible in local gallery)"}`
-                : "Private Output requires SoloTensor Pro"
+                : "Private Output requires Solo Studio Pro"
             }
           >
             {isPrivateActive ? (
@@ -4152,7 +4152,7 @@ export default function ControlPanel(props: Props) {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[var(--ink)] tracking-tight">
-                    SoloTensor Pro: 4K Synthesis & High-Step Pipelines
+                    Solo Studio Pro: 4K Synthesis & High-Step Pipelines
                   </h3>
                   <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
                     Hardware Envelope Guard
@@ -4176,7 +4176,7 @@ export default function ControlPanel(props: Props) {
                 resolution and{" "}
                 <strong className="text-[var(--ink)]">35 steps</strong> to
                 ensure shared VRAM isolation. Extended pipelines require
-                SoloTensor Pro.
+                Solo Studio Pro.
               </p>
 
               {/* Current Request Exceeded Diagnostics */}
@@ -4220,7 +4220,7 @@ export default function ControlPanel(props: Props) {
               {/* Pro Capabilities Specs */}
               <div className="space-y-2">
                 <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block">
-                  SoloTensor Pro Capabilities
+                  Solo Studio Pro Capabilities
                 </span>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
@@ -4303,7 +4303,7 @@ export default function ControlPanel(props: Props) {
                     Private Generation Enclave
                   </h3>
                   <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
-                    SoloTensor Pro Exclusive
+                    Solo Studio Pro Exclusive
                   </span>
                 </div>
               </div>

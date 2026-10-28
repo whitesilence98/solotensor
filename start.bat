@@ -1,27 +1,27 @@
 @echo off
-title SoloTensor Studio Launcher
+title Solo Studio Launcher
 color 0A
 
 echo =======================================================================
-echo                     Starting SoloTensor Studio
+echo                     Starting Solo Studio
 echo =======================================================================
 echo.
 echo [1/3] Starting ComfyUI Engine on port 8188...
 if exist "D:\ComfyUI-master\venv\Scripts\activate.bat" (
-    start "SoloTensor [1/3] - ComfyUI (:8188)" cmd /k "title ComfyUI (:8188) && cd /d D:\ComfyUI-master && call .\venv\Scripts\activate.bat && python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch"
+    start "Solo Studio [1/3] - ComfyUI (:8188)" cmd /k "title ComfyUI (:8188) && cd /d D:\ComfyUI-master && call .\venv\Scripts\activate.bat && python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch"
 ) else (
-    start "SoloTensor [1/3] - ComfyUI (:8188)" cmd /k "title ComfyUI (:8188) && cd /d D:\ComfyUI-master && python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch"
+    start "Solo Studio [1/3] - ComfyUI (:8188)" cmd /k "title ComfyUI (:8188) && cd /d D:\ComfyUI-master && python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch"
 )
 
 ping -n 3 127.0.0.1 >nul
 
-echo [2/3] Starting SoloTensor FastAPI Backend on port 8000...
-start "SoloTensor [2/3] - Backend (:8000)" cmd /k "title SoloTensor Backend (:8000) && cd /d %~dp0backend && uvicorn app.main:app --reload --port 8000"
+echo [2/3] Starting Solo Studio FastAPI Backend on port 8000...
+start "Solo Studio [2/3] - Backend (:8000)" cmd /k "title Solo Studio Backend (:8000) && cd /d %~dp0backend && uvicorn app.main:app --reload --port 8000"
 
 ping -n 3 127.0.0.1 >nul
 
-echo [3/3] Starting SoloTensor Next.js Frontend on port 3000...
-start "SoloTensor [3/3] - Frontend (:3000)" cmd /k "title SoloTensor Frontend (:3000) && cd /d %~dp0frontend && npm run dev"
+echo [3/3] Starting Solo Studio Next.js Frontend on port 3000...
+start "Solo Studio [3/3] - Frontend (:3000)" cmd /k "title Solo Studio Frontend (:3000) && cd /d %~dp0frontend && npm run dev"
 
 echo.
 echo =======================================================================

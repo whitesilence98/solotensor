@@ -880,7 +880,7 @@ export default function SettingsPage() {
               {isAuthenticated && (
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-rose-500/20">
                   <div>
-                    <span className="block text-xs font-bold text-[var(--ink)]">Sign Out of SoloTensor</span>
+                    <span className="block text-xs font-bold text-[var(--ink)]">Sign Out of Solo Studio</span>
                     <span className="text-[11px] text-[var(--ink-faint)]">
                       Terminates current session token on this browser.
                     </span>
@@ -1177,7 +1177,7 @@ export default function SettingsPage() {
                   Quickstart Integration Snippet
                 </span>
                 <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                  Pass your key as a Bearer authorization header to any SoloTensor endpoint:
+                  Pass your key as a Bearer authorization header to any Solo Studio endpoint:
                 </p>
                 <div className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs text-[var(--ink)] overflow-x-auto">
                   <code>

@@ -103,7 +103,7 @@ def render_obsidian_template(
                 <tr>
                   <td>
                     <span style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: #ededed;">
-                      SOLOTENSOR
+                      SOLO STUDIO
                     </span>
                     <span style="color: #d5f06f; font-size: 20px; font-weight: 800;">.</span>
                   </td>
@@ -138,7 +138,7 @@ def render_obsidian_template(
           <tr>
             <td style="padding: 32px 0 0 0; text-align: center;">
               <p style="margin: 0; font-family: 'SF Mono', Consolas, Monaco, monospace; font-size: 11px; color: #50554e; letter-spacing: 1.5px; text-transform: uppercase;">
-                SOLOTENSOR &bull; LOCAL-FIRST AI CREATION ENGINE
+                SOLO STUDIO &bull; LOCAL-FIRST AI CREATION ENGINE
               </p>
             </td>
           </tr>
@@ -167,8 +167,8 @@ class MailerService:
     ) -> bool:
         """Send account email verification link and 6-digit OTP code."""
         verification_url = f"{self.settings.FRONTEND_URL}/verify-email?token={token}"
-        subject = "Verify your SoloTensor Creator account"
-        headline = f"Welcome to SoloTensor, {username}"
+        subject = "Verify your Solo Studio account"
+        headline = f"Welcome to Solo Studio, {username}"
         preheader = f"Your verification code is {otp_code}. Click to verify your email."
         body = [
             "Your local-first AI studio account has been initialized with 100 daily energy credits.",
@@ -191,7 +191,7 @@ class MailerService:
         )
 
         plain_text = (
-            f"Welcome to SoloTensor, {username}!\n\n"
+            f"Welcome to Solo Studio, {username}!\n\n"
             f"Your 6-digit verification code: {otp_code}\n\n"
             f"Or verify directly via this link:\n{verification_url}\n\n"
             f"This code expires in 24 hours.\n"
@@ -214,11 +214,11 @@ class MailerService:
     ) -> bool:
         """Send password reset link and 6-digit OTP code."""
         reset_url = f"{self.settings.FRONTEND_URL}/reset-password?token={token}"
-        subject = "Reset your SoloTensor account password"
+        subject = "Reset your Solo Studio account password"
         headline = "Reset your password"
         preheader = f"Your password reset code is {otp_code}."
         body = [
-            f"We received a request to reset the password for your SoloTensor creator account ({username}).",
+            f"We received a request to reset the password for your Solo Studio account ({username}).",
             "Use the button below or enter the 6-digit security code to set a new password.",
         ]
         subtext = (
@@ -315,7 +315,7 @@ class MailerService:
         info = dev_context or {}
         logger.info(
             "\n"
-            "======================= [SOLOTENSOR MAILER (DEV CONSOLE)] =======================\n"
+            "======================= [SOLO STUDIO MAILER (DEV CONSOLE)] =======================\n"
             "To: %s\n"
             "Subject: %s\n"
             "Type: %s\n"

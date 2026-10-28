@@ -333,7 +333,7 @@ export default function SidebarNav() {
             <Link
               href="/"
               className="group relative flex h-11 items-center rounded-2xl select-none"
-              aria-label="SoloTensor Studio Home"
+              aria-label="Solo Studio Home"
             >
               <span className="relative flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-2xl border border-white/[0.08] bg-[var(--surface-raised)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_4px_16px_rgba(0,0,0,0.4)] transition-all duration-200 group-hover:border-[var(--accent)] group-hover:shadow-[0_0_16px_color-mix(in_srgb,var(--accent)_20%,transparent)] group-active:scale-95">
                 <span className="flex flex-col items-center justify-center -space-y-0.5 leading-none">
@@ -349,13 +349,13 @@ export default function SidebarNav() {
                   expanded ? "ml-3 max-w-[7.5rem] opacity-100" : "ml-0 max-w-0 opacity-0"
                 }`}
               >
-                Solotensor<span className="text-[var(--accent)]">.</span>
+                Solo Studio<span className="text-[var(--accent)]">.</span>
               </span>
 
               {/* Collapsed-only tooltip */}
               {!expanded && (
                 <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 font-heading text-xs font-bold tracking-tight text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
-                  SOLOTENSOR<span className="text-[var(--accent)] font-extrabold">.</span>
+                  SOLO STUDIO<span className="text-[var(--accent)] font-extrabold">.</span>
                 </span>
               )}
             </Link>

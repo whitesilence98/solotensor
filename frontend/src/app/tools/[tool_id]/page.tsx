@@ -1244,13 +1244,13 @@ export default function ToolDetailPage() {
           <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">
             <div className="flex items-center gap-2">
               <UserAvatar
-                username={tool!.author_username || "SoloTensor"}
+                username={tool!.author_username || "Solo Studio"}
                 size="xs"
                 shape="square"
               />
               <span className="text-[var(--ink-faint)]">by</span>
               <span className="font-mono font-bold text-[var(--ink)]">
-                {tool!.author_username ? `@${tool!.author_username}` : "@solotensor"}
+                {tool!.author_username ? `@${tool!.author_username}` : "@solo_studio"}
               </span>
             </div>
 

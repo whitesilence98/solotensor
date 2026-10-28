@@ -228,7 +228,7 @@ class NotificationSystemTests(unittest.TestCase):
         """Verify authenticated retrieval of notification list and unread count."""
         self.notification_service.notify_user(
             user_id=self.creator.id,
-            title="Welcome to SoloTensor",
+            title="Welcome to Solo Studio",
             message="Your account is active.",
             category="system",
             type="system_announcement",
@@ -242,7 +242,7 @@ class NotificationSystemTests(unittest.TestCase):
         self.assertEqual(data["total"], 1)
         self.assertEqual(data["unread_count"], 1)
         self.assertEqual(len(data["items"]), 1)
-        self.assertEqual(data["items"][0]["title"], "Welcome to SoloTensor")
+        self.assertEqual(data["items"][0]["title"], "Welcome to Solo Studio")
         self.assertFalse(data["items"][0]["is_read"])
 
         # Verify quick badge endpoint

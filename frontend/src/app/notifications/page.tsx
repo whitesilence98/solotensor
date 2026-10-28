@@ -293,7 +293,7 @@ export default function NotificationsPage() {
               Authentication Required
             </h2>
             <p className="mt-1 font-mono text-xs text-[var(--ink-faint)] max-w-md">
-              Please sign in with your SoloTensor account to receive model approvals, moderation updates, and generation signals.
+              Please sign in with your Solo Studio account to receive model approvals, moderation updates, and generation signals.
             </p>
             <button
               type="button"

@@ -96,8 +96,8 @@ export default function UserNavProfile() {
         <button
           type="button"
           onClick={openAuthModal}
-          aria-label="Sign In to SoloTensor"
-          title="Sign In to SoloTensor"
+          aria-label="Sign In to Solo Studio"
+          title="Sign In to Solo Studio"
           className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[var(--ink-faint)] transition-all duration-200 hover:border-[var(--accent)] hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:border-[var(--accent)]"
         >
           <User className="h-4.5 w-4.5" />

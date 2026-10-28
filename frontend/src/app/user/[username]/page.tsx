@@ -428,7 +428,7 @@ export default function UserProfilePage({
 
               <div
                 className="group relative flex h-6 items-center gap-0.5 rounded-md border border-purple-600/50 bg-purple-950/80 px-1.5 text-purple-200 shadow-sm hover:scale-105 transition"
-                title="SoloTensor Pioneer"
+                title="Solo Studio Pioneer"
               >
                 <Gift className="h-3.5 w-3.5 text-purple-300" />
                 <span className="font-mono text-[10px] font-bold">★</span>
@@ -1096,7 +1096,7 @@ export default function UserProfilePage({
                   {displayName}&apos;s Studio Pass
                 </h3>
                 <p className="mt-1 text-xs text-[var(--ink-soft)] max-w-md mx-auto">
-                  Access tools, custom model checkpoints, and workflows maintained by {displayName} on SoloTensor.
+                  Access tools, custom model checkpoints, and workflows maintained by {displayName} on Solo Studio.
                 </p>
               </div>
               <button

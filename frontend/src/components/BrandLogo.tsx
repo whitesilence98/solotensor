@@ -120,7 +120,7 @@ export function BrandLogo({
             <span
               className={`font-heading font-extrabold tracking-[-0.035em] text-[var(--ink)] uppercase leading-none ${sizeStyles.wordmark}`}
             >
-              SOLOTENSOR
+              SOLO STUDIO
             </span>
             {showDot && (
               <span
@@ -140,7 +140,7 @@ export function BrandLogo({
       <Link
         href={href}
         className="group inline-flex items-center transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded-lg"
-        aria-label="SoloTensor Studio"
+        aria-label="Solo Studio"
       >
         {content}
       </Link>

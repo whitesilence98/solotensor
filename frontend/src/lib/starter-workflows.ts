@@ -41,7 +41,7 @@ export function detectComfyUIFormat(data: unknown): {
       isUiFormat: true,
       nodeCount: obj.nodes.length,
       message:
-        "This file is a ComfyUI Editor Graph (workflow.json) with GUI layout data. SoloTensor requires the execution API graph format (workflow_api.json).",
+        "This file is a ComfyUI Editor Graph (workflow.json) with GUI layout data. Solo Studio requires the execution API graph format (workflow_api.json).",
     };
   }
 
@@ -131,7 +131,7 @@ export const STARTER_TEMPLATES: StarterWorkflowTemplate[] = [
       },
       "9": {
         class_type: "SaveImage",
-        inputs: { filename_prefix: "SoloTensor_SDXL", images: ["8", 0] },
+        inputs: { filename_prefix: "SoloStudio_SDXL", images: ["8", 0] },
       },
     },
   },
@@ -188,7 +188,7 @@ export const STARTER_TEMPLATES: StarterWorkflowTemplate[] = [
       },
       "17": {
         class_type: "SaveImage",
-        inputs: { filename_prefix: "SoloTensor_Flux", images: ["16", 0] },
+        inputs: { filename_prefix: "SoloStudio_Flux", images: ["16", 0] },
       },
     },
   },
@@ -249,7 +249,7 @@ export const STARTER_TEMPLATES: StarterWorkflowTemplate[] = [
       },
       "592": {
         class_type: "SaveImage",
-        inputs: { filename_prefix: "SoloTensor_VisionEdit", images: ["137", 0] },
+        inputs: { filename_prefix: "SoloStudio_VisionEdit", images: ["137", 0] },
       },
     },
   },
@@ -294,7 +294,7 @@ export const STARTER_TEMPLATES: StarterWorkflowTemplate[] = [
           frame_rate: 24,
           format: "video/h264-mp4",
           images: ["157:58", 0],
-          filename_prefix: "SoloTensor_LTX_Video",
+          filename_prefix: "SoloStudio_LTX_Video",
         },
       },
     },

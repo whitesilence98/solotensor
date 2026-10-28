@@ -1156,7 +1156,7 @@ export default function PublicModelDetailPage({
           <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-[var(--ink-faint)]">
             <span className="inline-flex items-center gap-1.5 font-medium text-[var(--accent)]">
               <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
-              ORIGINAL · SOLOTENSOR MODEL
+              ORIGINAL · SOLO STUDIO MODEL
             </span>
             <span className="text-[var(--line-strong)]">|</span>
             <Link
@@ -1166,11 +1166,11 @@ export default function PublicModelDetailPage({
               <UserAvatar
                 src={model.author_avatar_url}
                 username={model.author_username || model.user_id}
-                name={model.author_display_name || model.author_username || "SoloTensor Creator"}
+                name={model.author_display_name || model.author_username || "Solo Studio Creator"}
                 size="xs"
                 shape="circle"
               />
-              <span>{model.author_display_name || model.author_username || "SoloTensor Creator"}</span>
+              <span>{model.author_display_name || model.author_username || "Solo Studio Creator"}</span>
             </Link>
             <span className="text-[var(--line-strong)]">|</span>
             <span>UPDATED: {updatedDate}</span>
@@ -2321,7 +2321,7 @@ export default function PublicModelDetailPage({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-[var(--ink)] truncate group-hover:text-[var(--accent)] transition-colors">
-                      {model.author_display_name || model.author_username || "SoloTensor Creator"}
+                      {model.author_display_name || model.author_username || "Solo Studio Creator"}
                     </span>
                     <span className="shrink-0 rounded border border-[var(--warning)]/40 bg-[var(--warning-surface)] px-1 py-0.2 font-mono text-[9px] font-bold text-[var(--warning)]">
                       CREATOR

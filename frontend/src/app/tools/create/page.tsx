@@ -913,7 +913,7 @@ export default function CreateToolStudioPage() {
             <span>ComfyUI GUI Graph Detected (workflow.json)</span>
           </div>
           <p className="text-[11px] leading-relaxed text-amber-200/90">
-            This JSON contains UI canvas data (`nodes` & `links`). To build a headless executable tool in SoloTensor, export the execution graph format:
+            This JSON contains UI canvas data (`nodes` & `links`). To build a headless executable tool in Solo Studio, export the execution graph format:
           </p>
           <div className="rounded border border-amber-500/20 bg-black/40 p-2 text-[10px] space-y-1">
             <p>1. In ComfyUI, click the <strong>Settings (⚙️)</strong> gear icon.</p>

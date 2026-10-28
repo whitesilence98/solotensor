@@ -19,7 +19,7 @@ export interface ProGateProps {
 export function ProGate({
   children,
   fallback,
-  featureName = "SoloTensor Pro VIP Pipeline",
+  featureName = "Solo Studio Pro VIP Pipeline",
   actionLabel = "Upgrade to Pro VIP",
   showInlineUpsell = true,
 }: ProGateProps) {
@@ -83,7 +83,7 @@ export function ProGate({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[var(--ink)] tracking-tight">
-                    SoloTensor Pro VIP
+                    Solo Studio Pro VIP
                   </h3>
                   <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] font-semibold">
                     UNRESTRICTED GENERATIVE ENCLAVE
@@ -118,7 +118,7 @@ export function ProGate({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[var(--accent)] font-bold">⚡</span>
-                <span className="font-mono text-[11px] text-[var(--ink)]">High-Speed Model Safetensor Weight Downloads</span>
+                <span className="font-mono text-[11px] text-[var(--ink)]">High-Speed Model Weight Downloads</span>
               </div>
             </div>
 

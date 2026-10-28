@@ -74,7 +74,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       "border-[var(--accent)]/25 bg-[var(--accent)]/5 text-[var(--accent)] ring-1 ring-inset ring-[var(--accent)]/10",
     iconClasses: "text-[var(--accent)] fill-[var(--accent)]",
     icon: Zap,
-    description: "SoloTensor Pro VIP • Priority GPU Queue & 4K Pipelines",
+    description: "Solo Studio Pro VIP • Priority GPU Queue & 4K Pipelines",
   },
   creator: {
     label: "CREATOR",
@@ -85,7 +85,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       "border-neutral-800 bg-neutral-950/60 text-neutral-400 ring-1 ring-inset ring-white/[0.02]",
     iconClasses: "text-neutral-400",
     icon: Sparkles,
-    description: "SoloTensor Creator • Daily Energy Pool & Generation Enclave",
+    description: "Solo Studio Creator • Daily Energy Pool & Generation Enclave",
   },
   user: {
     label: "USER",

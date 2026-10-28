@@ -329,7 +329,7 @@ class MailerServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#171b08", html)
         self.assertIn("#282c28", html)
         self.assertIn("123456", html)
-        self.assertIn("SOLOTENSOR", html)
+        self.assertIn("SOLO STUDIO", html)
 
     async def test_mailer_service_dispatch(self) -> None:
         mailer = MailerService(Settings())

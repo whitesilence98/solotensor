@@ -271,7 +271,7 @@ export default function AuthModal() {
                 : authModalReason === "download_weights"
                 ? "Sign in to download safetensors checkpoint files and local workstation weights."
                 : authModalReason === "flag_content"
-                ? "Sign in to submit content flags directly to the SoloTensor Trust & Safety darkroom."
+                ? "Sign in to submit content flags directly to the Solo Studio Trust & Safety darkroom."
                 : "Sign in to access privileged studio capabilities and preserve your local workflows."}
             </p>
           </div>

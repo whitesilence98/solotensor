@@ -2566,7 +2566,7 @@ export function getFallbackUserProfile(username: string): UserPublicProfile {
     roles: userRoles,
     primary_role: userRole,
     permissions,
-    bio: "Visual AI practitioner and workflow engineer creating neural pipelines on SoloTensor.",
+    bio: "Visual AI practitioner and workflow engineer creating neural pipelines on Solo Studio.",
     created_at: isSelf && currentUser?.createdAt ? currentUser.createdAt : "2024-02-10T10:00:00Z",
     is_following: isFollowing,
     followers_count: isFollowing ? baseFollowers + 1 : baseFollowers,
@@ -2966,7 +2966,7 @@ export function submitFallbackContentFlag(targetType: string, targetId: string, 
       severity: "medium",
     });
     localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(items));
-    return { success: true, message: "Content report dispatched to the SoloTensor Moderation Darkroom." };
+    return { success: true, message: "Content report dispatched to the Solo Studio Moderation Darkroom." };
   } catch {
     return { success: true, message: "Report recorded." };
   }

@@ -10,10 +10,10 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-jakarta" });
 
 export const metadata: Metadata = {
-  applicationName: "SoloTensor Studio",
+  applicationName: "Solo Studio",
   title: {
-    default: "SoloTensor Studio",
-    template: "%s | SoloTensor",
+    default: "Solo Studio",
+    template: "%s | Solo Studio",
   },
   description: "A private, local-first workspace for generating, organizing, and running visual AI workflows.",
   icons: { icon: "/icon.svg" },

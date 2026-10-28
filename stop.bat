@@ -1,9 +1,9 @@
 @echo off
-title SoloTensor Studio Stopper
+title Solo Studio Stopper
 color 0C
 
 echo =======================================================================
-echo                     Stopping SoloTensor Services
+echo                     Stopping Solo Studio Services
 echo =======================================================================
 echo.
 
@@ -18,6 +18,6 @@ for %%P in (3000 8000 8188) do (
 
 echo.
 echo =======================================================================
-echo  SoloTensor services stopped.
+echo  Solo Studio services stopped.
 echo =======================================================================
 pause

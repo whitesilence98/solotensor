@@ -403,7 +403,7 @@ export default function ModerationDashboardPage() {
           {/* Local Studio Role Switcher for Pairing & Development */}
           <div className="border-t border-[var(--line)] pt-4 space-y-2">
             <span className="block font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
-              SoloTensor Studio • Local RBAC Role Switcher
+              Solo Studio • Local RBAC Role Switcher
             </span>
             <div className="grid grid-cols-2 gap-2">
               <button

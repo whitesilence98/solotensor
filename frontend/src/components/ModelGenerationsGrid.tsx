@@ -262,7 +262,7 @@ export default function ModelGenerationsGrid({
 
             {/* Explanatory Body */}
             <p className="mt-2.5 text-xs sm:text-sm leading-relaxed text-[var(--ink-faint)] max-w-md mx-auto">
-              Run inference with <span className="font-medium text-[var(--ink-soft)]">{modelTitle || "this model"}</span> in SoloTensor Studio. Every generation is automatically cataloged here with full prompt recipes, seeds, and sampling telemetry.
+              Run inference with <span className="font-medium text-[var(--ink-soft)]">{modelTitle || "this model"}</span> in Solo Studio. Every generation is automatically cataloged here with full prompt recipes, seeds, and sampling telemetry.
             </p>
 
             {/* Feature Highlights Row */}

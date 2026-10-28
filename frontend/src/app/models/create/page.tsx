@@ -1257,7 +1257,7 @@ export default function CreateModelPage() {
                         Model Identity & Taxonomy
                       </span>
                       <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                        Core metadata displayed across SoloTensor search & catalog
+                        Core metadata displayed across Solo Studio search & catalog
                       </span>
                     </div>
                   </div>
@@ -2795,14 +2795,14 @@ export default function CreateModelPage() {
                       />
                     </label>
 
-                    {/* 4. SoloTensor Generation Services */}
+                    {/* 4. Solo Studio Generation Services */}
                     <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition-all">
                       <div>
                         <span className="text-[var(--ink)] font-bold block text-[11px]">
-                          SoloTensor Generation Services
+                          Solo Studio Generation Services
                         </span>
                         <span className="text-[9px] text-[var(--ink-faint)]">
-                          Allow hosting and running this model on SoloTensor online generation services
+                          Allow hosting and running this model on Solo Studio online generation services
                         </span>
                       </div>
                       <input

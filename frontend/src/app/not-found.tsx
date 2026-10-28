@@ -37,7 +37,7 @@ export default function NotFound() {
         {/* Confident, Anti-Apologetic Typography */}
         <div className="relative z-10 mt-6">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">
-            This tensor was not found in local memory.
+            This artifact was not found in local memory.
           </h1>
           <p className="mt-3 text-xs sm:text-sm leading-relaxed text-[var(--ink-soft)]">
             The requested workflow, model checkpoint, or asset may have been relocated, deleted, or was never generated in this local storage.

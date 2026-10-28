@@ -68,7 +68,7 @@ export default function HomePage() {
           modelsRes.status === "rejected" &&
           toolsRes.status === "rejected"
         ) {
-          setError("Failed to communicate with SoloTensor backend services.");
+          setError("Failed to communicate with Solo Studio backend services.");
         }
       })
       .catch((err: unknown) => {

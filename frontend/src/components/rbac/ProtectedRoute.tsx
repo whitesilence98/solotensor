@@ -148,7 +148,7 @@ export function ProtectedRoute({
             </h2>
             <p className="font-sans text-xs text-[var(--ink-soft)] leading-relaxed">
               {description ||
-                "This studio enclave is protected by SoloTensor security protocols. Sign in with your creator credentials to initialize node access."}
+                "This studio enclave is protected by Solo Studio security protocols. Sign in with your creator credentials to initialize node access."}
             </p>
           </div>
 
@@ -245,7 +245,7 @@ export function ProtectedRoute({
         <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-3.5 text-left space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-bold">
-              SOLOTENSOR STUDIO // RBAC EMULATION
+              SOLO STUDIO // RBAC EMULATION
             </span>
             <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
               LOCAL DEMO MODE

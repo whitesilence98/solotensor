@@ -69,7 +69,7 @@ export default function WorkspaceNavbar({
               <Link
                 href="/admin/moderation"
                 className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors"
-                title={pendingReviewCount > 0 ? `${pendingReviewCount} pending model reviews` : "SoloTensor Moderation Darkroom"}
+                title={pendingReviewCount > 0 ? `${pendingReviewCount} pending model reviews` : "Solo Studio Moderation Darkroom"}
               >
                 <Shield className="h-3 w-3" />
                 <span>MOD DARKROOM</span>

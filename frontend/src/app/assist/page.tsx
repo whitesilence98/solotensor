@@ -145,7 +145,7 @@ export default function AssistPage() {
             </>
           }
           title="Code Assist"
-          description="Ask for implementation guidance. Answers use the selected SoloTensor persona; no files, images, secrets, or workspace history are sent."
+          description="Ask for implementation guidance. Answers use the selected Solo Studio persona; no files, images, secrets, or workspace history are sent."
           showCreditPill={false}
         />
 
