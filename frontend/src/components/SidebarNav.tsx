@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, ChevronRight, Folder, Home, MessageSquareCode, MoreHorizontal, Settings, Shield, Wand2, Wrench } from "lucide-react";
+import { Box, ChevronRight, Film, Folder, Home, MessageSquareCode, MoreHorizontal, Settings, Shield, SlidersHorizontal, Wand2, Wrench } from "lucide-react";
 import UserNavProfile from "./UserNavProfile";
 import BrandLogo, { TensorPrismEmblem } from "./BrandLogo";
 import { useAuth } from "@/lib/auth-context";
@@ -22,6 +22,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { id: "tools", icon: Wrench, label: "Tool studio", href: "/tools", primary: true },
   { id: "models", icon: Box, label: "Models", href: "/models", primary: true },
   { id: "assets", icon: Folder, label: "Library", href: "/assets", primary: true },
+  { id: "flow", icon: Film, label: "Flow", href: "/flow", primary: true },
   { id: "assist", icon: MessageSquareCode, label: "Code Assist", href: "/assist", primary: false },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings", primary: false },
 ];
@@ -88,6 +89,15 @@ export default function SidebarNav() {
         icon: Shield,
         label: "Moderation",
         href: "/admin/moderation",
+        primary: false,
+      });
+    }
+    if (isAdmin) {
+      items.push({
+        id: "admin-settings",
+        icon: SlidersHorizontal,
+        label: "AI runtime",
+        href: "/admin/settings",
         primary: false,
       });
     }

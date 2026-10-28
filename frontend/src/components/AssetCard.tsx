@@ -9,6 +9,7 @@ import {
   Play,
   Sparkles,
   Trash2,
+  Wand2,
   Zap,
 } from "lucide-react";
 import {
@@ -248,6 +249,15 @@ export default function AssetCard({
 
       {/* Top-left Specs / Type Badges (Always visible at rest, with high-contrast obsidian styling) */}
       <div className="absolute top-2.5 left-2.5 z-20 flex flex-wrap items-center gap-1 pointer-events-auto">
+        {asset.metadata?.source === "tool" && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-md border border-white/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90 shadow-sm"
+            title={asset.metadata?.tool_name ? `Built with ${asset.metadata.tool_name}` : "Built with a Solo Tool"}
+          >
+            <Wand2 className="h-2.5 w-2.5 text-[var(--accent)]" />
+            <span>TOOL</span>
+          </span>
+        )}
         {type === "video" && (
           <span className="inline-flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-md border border-white/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-white/90 shadow-sm">
             <Play className="h-2.5 w-2.5 text-[var(--accent)] fill-current" />

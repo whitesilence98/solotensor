@@ -28,6 +28,9 @@ export const STORAGE_KEYS = {
 
   // Code Assist
   ASSIST_STATE: "solotensor:assist:state",
+
+  // Creative Director
+  FLOW_STATE: "solotensor:flow:state",
 } as const;
 
 /** Safely read and parse a value from localStorage */

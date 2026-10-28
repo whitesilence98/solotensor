@@ -67,7 +67,7 @@ function getNotificationVisuals(notif: NotificationItem) {
       return {
         icon: CheckCircle2,
         iconColor: "text-[var(--accent)]",
-        badgeBg: "bg-[var(--accent)]/10 border-[var(--accent)]/30",
+        badgeBg: "bg-[var(--accent-ambient)] border-[var(--accent)]",
         badgeText: "Approved",
       };
     case "model_vault_installed":
@@ -200,12 +200,12 @@ export default function NotificationPopover({
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-1.5rem)] z-50 rounded-xl border border-[var(--line-strong)] bg-[var(--ground)]/95 shadow-[0_24px_60px_rgba(0,0,0,0.95)] backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      className="absolute right-0 top-full mt-2 w-[380px] max-w-[calc(100vw-1.5rem)] z-50 rounded-xl border border-[var(--line-strong)] bg-[rgba(11,13,12,0.97)] shadow-[0_24px_60px_rgba(0,0,0,0.95)] backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
       role="dialog"
       aria-label="In-app Notifications"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3 bg-[var(--surface-sunken)]/60">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3 bg-[var(--surface-sunken)]">
         <div className="flex items-center gap-2">
           <Bell className="h-4 w-4 text-[var(--accent)]" />
           <span className="font-heading text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
@@ -241,7 +241,7 @@ export default function NotificationPopover({
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1 border-b border-[var(--line)] bg-[var(--surface-sunken)]/30 px-3 py-1.5">
+      <div className="flex items-center gap-1 border-b border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5">
         {(
           [
             { id: "all", label: "All" },
@@ -266,7 +266,7 @@ export default function NotificationPopover({
       </div>
 
       {/* List Content */}
-      <div className="max-h-[380px] overflow-y-auto divide-y divide-[var(--line)]/50">
+      <div className="max-h-[380px] overflow-y-auto divide-y divide-[var(--line)]">
         {loading && notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-[var(--ink-faint)]">
             <Loader2 className="h-5 w-5 animate-spin text-[var(--accent)]" />
@@ -294,8 +294,8 @@ export default function NotificationPopover({
                 onClick={() => handleItemClick(notif)}
                 className={`group relative flex items-start gap-3 p-3.5 transition-colors cursor-pointer ${
                   notif.is_read
-                    ? "bg-transparent hover:bg-[var(--surface-soft)]/50"
-                    : "bg-[var(--surface-raised)]/70 hover:bg-[var(--surface-raised)]"
+                    ? "bg-transparent hover:bg-[var(--surface-soft)]"
+                    : "bg-[var(--surface-raised)] hover:bg-[var(--surface-soft)]"
                 }`}
               >
                 {/* Unread dot */}

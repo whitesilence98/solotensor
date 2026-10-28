@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useState, useRef, useEffect, useMemo, useCallback } from "react";
+import React, { memo, useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import {
   Activity,
   Check,
@@ -16,7 +16,7 @@ import {
   FolderOpen,
   Grid,
   Keyboard,
-  Layers,
+  Link2,
   Magnet,
   Maximize2,
   Minimize2,
@@ -30,8 +30,8 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Timer,
   Type,
-  Waves,
   X,
   Zap,
 } from "lucide-react";
@@ -48,7 +48,6 @@ import {
   CanvasGraphTopology,
   VisualCanvasNode,
   VisualCanvasEdge,
-  CanvasNodeGroup,
   getSocketColor,
 } from "@/lib/graph-topology";
 
@@ -104,6 +103,80 @@ const isEssentialInput = (inputName: string) => {
 
 const EMPTY_CONTROLS: ToolControl[] = [];
 
+/**
+ * Numeric row field. Keeps a local text draft so partial input ("0.", "-", "1e")
+ * stays visible while typing; commits only values that parse as numbers.
+ * Draft resets on blur, so external updates (seed roll) show immediately.
+ */
+function NodeNumberInput({
+  value,
+  onCommit,
+  className,
+  label,
+  placeholder,
+  step = 1,
+}: {
+  value: unknown;
+  onCommit: (n: number) => void;
+  className: string;
+  label: string;
+  placeholder?: string;
+  step?: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown =
+    draft ?? (value === null || value === undefined ? "" : String(value));
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      data-node-control
+      value={shown}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        if (raw.trim() !== "" && Number.isFinite(Number(raw))) onCommit(Number(raw));
+      }}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        // Arrows commit the same way the +/- buttons do, without leaving the field.
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          const base = Number(shown) || 0;
+          const next = base + (e.key === "ArrowUp" ? step : -step) * (e.shiftKey ? 10 : 1);
+          setDraft(null);
+          onCommit(next);
+        }
+      }}
+      placeholder={placeholder}
+      aria-label={label}
+      className={className}
+    />
+  );
+}
+
+type PinOffsets = Record<
+  string,
+  { inputs: Record<string, number>; outputs: Record<string, number>; header: number }
+>;
+
+const pinsEqual = (a: PinOffsets, b: PinOffsets) => {
+  const ids = Object.keys(a);
+  if (ids.length !== Object.keys(b).length) return false;
+  for (const id of ids) {
+    const prev = a[id];
+    const next = b[id];
+    if (!next || prev.header !== next.header) return false;
+    if (Object.keys(prev.inputs).length !== Object.keys(next.inputs).length) return false;
+    if (Object.keys(prev.outputs).length !== Object.keys(next.outputs).length) return false;
+    for (const k in prev.inputs) if (prev.inputs[k] !== next.inputs[k]) return false;
+    for (const k in prev.outputs) if (prev.outputs[k] !== next.outputs[k]) return false;
+  }
+  return true;
+};
+
 interface CanvasEdgeViewProps {
   x1: number;
   y1: number;
@@ -112,7 +185,6 @@ interface CanvasEdgeViewProps {
   color: string;
   highlighted: boolean;
   dimmed: boolean;
-  showPulse: boolean;
   source: string;
   onHoverEnter: (nodeId: string) => void;
   onHoverLeave: () => void;
@@ -126,7 +198,6 @@ const CanvasEdgeView = memo(function CanvasEdgeView({
   color,
   highlighted,
   dimmed,
-  showPulse,
   source,
   onHoverEnter,
   onHoverLeave,
@@ -159,18 +230,6 @@ const CanvasEdgeView = memo(function CanvasEdgeView({
         filter={highlighted ? "url(#noodle-glow)" : undefined}
         className="transition-[stroke,stroke-width,stroke-opacity] duration-150 group-hover:stroke-white group-hover:stroke-[4px]"
       />
-      {/* Animated Tensor Direction Pulses */}
-      {showPulse && !dimmed && (
-        <path
-          d={d}
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth={highlighted ? "2.5" : "1.8"}
-          strokeOpacity={highlighted ? 0.9 : 0.6}
-          strokeDasharray="6 14"
-          className="noodle-flow-active pointer-events-none"
-        />
-      )}
     </g>
   );
 });
@@ -277,7 +336,7 @@ const CanvasNodeView = memo(function CanvasNodeView({
         </div>
         <div className="flex items-center gap-1">
           {exposedCount > 0 && (
-            <span className="flex items-center gap-0.5 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/30 px-1 py-0.2 font-mono text-[8px] font-bold text-[var(--accent)]">
+            <span className="flex items-center gap-0.5 rounded border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] px-1 py-0.2 font-mono text-[8px] font-bold text-[var(--accent)]">
               <Zap className="h-2 w-2" />
               <span>{exposedCount}</span>
             </span>
@@ -290,159 +349,234 @@ const CanvasNodeView = memo(function CanvasNodeView({
 
       {/* Node Body: Ports & Parameters (Hidden when collapsed) */}
       {!collapsed && (
-        <div className="p-2.5 space-y-2.5 text-[10px] font-mono">
-          {/* Inputs List */}
-          <div className="space-y-2">
+        <div className="p-2 text-[10px] font-mono">
+          {/* Inputs List — one row per input, shared name/value/action columns */}
+          <div className="space-y-0.5">
             {node.inputs.map((inp) => {
               const ctrl = nodeControls.find((c) => c.input_name === inp.name);
               const isExposed = !!ctrl && ctrl.exposed !== false;
-              const effectiveVal =
-                ctrl?.default ?? ctrl?.value ?? inp.value;
+              const effectiveVal = ctrl?.default ?? ctrl?.value ?? inp.value;
 
               const isNum = typeof inp.value === "number" || typeof effectiveVal === "number";
               const isSeed = inp.name.toLowerCase().includes("seed");
+              const isBool =
+                typeof inp.value === "boolean" || typeof effectiveVal === "boolean";
               const isPrompt =
                 typeof inp.value === "string" &&
                 (inp.name.toLowerCase().includes("text") ||
                   inp.name.toLowerCase().includes("prompt"));
+              const step =
+                inp.name === "cfg" || inp.name === "guidance" ? 0.5 : 1;
+              const numVal = Number(effectiveVal) || 0;
+
+              // Shared control skin: sunken field, lime caret, visible focus ring.
+              const fieldCls =
+                "h-6 w-full min-w-0 rounded-[4px] border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 text-[10px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none transition-colors caret-[var(--accent)] hover:border-[var(--line-strong)] focus-visible:border-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)]";
+              const stepBtnCls =
+                "flex h-6 w-5 shrink-0 items-center justify-center rounded-[4px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]";
 
               return (
                 <div
                   key={inp.name}
-                  className="space-y-1 rounded-[5px] bg-[var(--surface-sunken)]/40 p-1.5 border border-transparent hover:border-[var(--line)] transition-all"
+                  className={`group/inp flex flex-wrap gap-1 rounded-[4px] px-1 ${
+                    isPrompt ? "items-center py-1" : "min-h-[24px] items-center"
+                  } hover:bg-[color-mix(in_srgb,var(--surface)_50%,transparent)]`}
                 >
-                  <div className="flex items-center justify-between gap-1.5 group/inp">
-                    {/* Socket Port Dot */}
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span
-                        className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
-                        style={{ backgroundColor: inp.color }}
-                        title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
-                      />
-                      <span
-                        className={`truncate text-[9px] ${
-                          inp.isLinked
-                            ? "text-[var(--ink-soft)] font-medium"
-                            : "text-[var(--ink)] font-bold"
-                        }`}
-                      >
-                        {inp.name}
-                      </span>
-                      {!inp.isLinked && isEssentialInput(inp.name) && (
-                        <span
-                          className="rounded px-1 py-0.2 font-mono text-[7px] font-bold uppercase tracking-wider bg-[var(--accent)]/15 border border-[var(--accent)]/30 text-[var(--accent)] shrink-0"
-                          title="Essential Generation Parameter"
-                        >
-                          {isSeed
-                            ? "🎲 Seed"
-                            : inp.name === "cfg" || inp.name === "guidance"
-                            ? "🎚️ CFG"
-                            : inp.name === "steps"
-                            ? "⏱️ Steps"
-                            : "📐 Dim"}
-                        </span>
-                      )}
-                    </div>
+                  {/* Socket Port Dot — wire geometry is measured from this element */}
+                  <span
+                    data-socket-input={inp.name}
+                    className="h-2 w-2 shrink-0 rounded-full border border-black/40 shadow-sm"
+                    style={{ backgroundColor: inp.color }}
+                    title={`${inp.name} (${inp.isLinked ? "Connected" : "Parameter"})`}
+                  />
 
-                    {/* Unlinked Parameter Action: Toggle Expose Controller */}
-                    {!inp.isLinked ? (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleExpose(node, inp.name, inp.value);
-                          }}
-                          className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] font-bold transition-all ${
-                            isExposed
-                              ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
-                              : "bg-[var(--surface-sunken)] border border-[var(--line)] text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--ink)]"
-                          }`}
-                          title={isExposed ? "Exposed to users (Click to lock)" : "Expose as UI controller"}
-                        >
-                          <Zap className="h-2.5 w-2.5" />
-                          <span>{isExposed ? "Exposed" : "Expose"}</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[8px] text-[var(--ink-faint)] truncate max-w-[60px]">
-                        wire
+                  {/* Name column — fixed width keeps every value column aligned.
+                      The essential marker lives inside it so the value column never shifts. */}
+                  <span className="flex w-[66px] shrink-0 items-center gap-1">
+                    <span
+                      className={`truncate text-[10px] leading-none ${
+                        inp.isLinked
+                          ? "font-medium text-[var(--ink-soft)]"
+                          : "font-semibold text-[var(--ink)]"
+                      }`}
+                      title={inp.name}
+                    >
+                      {inp.name}
+                    </span>
+                    {!inp.isLinked && isEssentialInput(inp.name) && (
+                      <span
+                        className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--accent)]"
+                        title="Essential Generation Parameter"
+                      >
+                        {isSeed ? (
+                          <Dices className="h-2.5 w-2.5" aria-hidden="true" />
+                        ) : inp.name === "cfg" || inp.name === "guidance" ? (
+                          <SlidersHorizontal className="h-2.5 w-2.5" aria-hidden="true" />
+                        ) : inp.name === "steps" ? (
+                          <Timer className="h-2.5 w-2.5" aria-hidden="true" />
+                        ) : (
+                          <Maximize2 className="h-2.5 w-2.5" aria-hidden="true" />
+                        )}
                       </span>
                     )}
-                  </div>
+                  </span>
 
-                  {/* Direct Inline Control Tweakers for Unlinked Inputs */}
-                  {!inp.isLinked && (
-                    <div className="pt-0.5 flex items-center justify-between text-[9px]">
-                      {isSeed ? (
-                        <div className="flex items-center gap-1.5 w-full">
-                          <span className="font-mono text-[8px] text-[var(--ink-faint)] truncate flex-1">
-                            {String(effectiveVal ?? "random")}
-                          </span>
+                  {inp.isLinked ? (
+                    /* Wired input: quiet one-line marker, no editor */
+                    <span className="ml-auto flex items-center gap-1 text-[9px] leading-none text-[var(--ink-faint)]">
+                      <Link2 className="h-2.5 w-2.5" aria-hidden="true" />
+                      linked
+                    </span>
+                  ) : (
+                    <>
+                      {/* Value column: identical left/right edges on every row; step and
+                          roll affordances live inside it so text fields get full width.
+                          Prompts drop to a full-width second line to keep a readable measure. */}
+                      <div
+                        className={
+                          isPrompt
+                            ? "order-last w-full basis-full pt-0.5"
+                            : "flex min-w-0 flex-1 items-center gap-0.5"
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isSeed ? (
+                          <>
+                            <NodeNumberInput
+                              value={effectiveVal}
+                              onCommit={(n) => onInputChange(node.id, inp.name, n)}
+                              placeholder="random"
+                              label={inp.name}
+                              className={`${fieldCls} tabular-nums`}
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onInputChange(
+                                  node.id,
+                                  inp.name,
+                                  Math.floor(Math.random() * 1e14)
+                                );
+                              }}
+                              className={stepBtnCls}
+                              title="Roll New Random Seed"
+                              aria-label="Roll new random seed"
+                            >
+                              <Dices className="h-3 w-3" />
+                            </button>
+                          </>
+                        ) : isNum ? (
+                          <>
+                            <NodeNumberInput
+                              value={effectiveVal}
+                              onCommit={(n) => onInputChange(node.id, inp.name, n)}
+                              placeholder="0"
+                              label={inp.name}
+                              step={step}
+                              className={`${fieldCls} tabular-nums`}
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onInputChange(node.id, inp.name, Math.max(0, numVal - step));
+                              }}
+                              className={stepBtnCls}
+                              title={`Decrease ${inp.name} by ${step}`}
+                              aria-label={`Decrease ${inp.name}`}
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onInputChange(node.id, inp.name, numVal + step);
+                              }}
+                              className={stepBtnCls}
+                              title={`Increase ${inp.name} by ${step}`}
+                              aria-label={`Increase ${inp.name}`}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </>
+                        ) : isBool ? (
                           <button
                             type="button"
+                            role="switch"
+                            data-node-control
+                            aria-checked={Boolean(effectiveVal)}
+                            aria-label={inp.name}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const newSeed = Math.floor(Math.random() * 1e14);
-                              onInputChange(node.id, inp.name, newSeed);
+                              onInputChange(node.id, inp.name, !Boolean(effectiveVal));
                             }}
-                            className="flex items-center gap-0.5 rounded px-1.5 py-0.2 bg-[var(--surface)] border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)]"
-                            title="Roll New Random Seed"
+                            className={`flex h-6 w-full items-center justify-between rounded-[4px] border px-1.5 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                              Boolean(effectiveVal)
+                                ? "border-[color-mix(in_srgb,var(--accent)_50%,transparent)] bg-[color-mix(in_srgb,var(--accent)_15%,transparent)] text-[var(--accent)]"
+                                : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
+                            }`}
                           >
-                            <Dices className="h-2.5 w-2.5" />
-                            <span>Roll</span>
+                            <span>{Boolean(effectiveVal) ? "true" : "false"}</span>
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                Boolean(effectiveVal)
+                                  ? "bg-[var(--accent)]"
+                                  : "bg-[var(--ink-faint)]"
+                              }`}
+                            />
                           </button>
-                        </div>
-                      ) : isNum ? (
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-[8px] text-[var(--ink-faint)]">
-                            Val: <b className="text-[var(--ink)]">{String(effectiveVal ?? "—")}</b>
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const step = inp.name === "cfg" ? 0.5 : 1;
-                                const num = Number(effectiveVal) || 0;
-                                onInputChange(node.id, inp.name, Math.max(0, num - step));
-                              }}
-                              className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                            >
-                              -
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const step = inp.name === "cfg" ? 0.5 : 1;
-                                const num = Number(effectiveVal) || 0;
-                                onInputChange(node.id, inp.name, num + step);
-                              }}
-                              className="h-4 w-4 rounded bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      ) : isPrompt ? (
-                        <textarea
-                          value={String(effectiveVal ?? "")}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => onInputChange(node.id, inp.name, e.target.value)}
-                          placeholder="Enter prompt text..."
-                          rows={2}
-                          className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-1 text-[9px] text-[var(--ink)] placeholder:text-[var(--ink-faint)] outline-none focus:border-[var(--accent)] resize-none"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-between w-full text-[8px] text-[var(--ink-faint)]">
-                          <span>Val:</span>
-                          <span className="truncate max-w-[150px] font-bold text-[var(--ink-soft)]">
-                            {String(effectiveVal ?? "—")}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                        ) : isPrompt ? (
+                          <textarea
+                            data-node-control
+                            value={String(effectiveVal ?? "")}
+                            onChange={(e) => onInputChange(node.id, inp.name, e.target.value)}
+                            placeholder="Enter prompt text..."
+                            rows={2}
+                            aria-label={inp.name}
+                            className="w-full resize-none rounded-[4px] border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 py-1 text-[10px] leading-[1.35] text-[var(--ink)] outline-none transition-colors caret-[var(--accent)] placeholder:text-[var(--ink-faint)] hover:border-[var(--line-strong)] focus-visible:border-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            data-node-control
+                            value={String(effectiveVal ?? "")}
+                            onChange={(e) => onInputChange(node.id, inp.name, e.target.value)}
+                            placeholder="empty"
+                            aria-label={inp.name}
+                            title={String(effectiveVal ?? "")}
+                            className={fieldCls}
+                          />
+                        )}
+                      </div>
+
+                      {/* Expose affordance: fixed trailing column, so every value field
+                          ends on the same edge. Quiet until hover or published. */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleExpose(node, inp.name, inp.value);
+                        }}
+                        className={`flex h-6 w-5 shrink-0 items-center justify-center rounded-[4px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                          isPrompt ? "ml-auto" : ""
+                        } ${
+                          isExposed
+                            ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                            : "text-[var(--ink-faint)] opacity-40 hover:text-[var(--accent)] group-hover/inp:opacity-100 focus-visible:opacity-100"
+                        }`}
+                        title={isExposed ? "Exposed to users" : "Expose as UI parameter"}
+                        aria-label={
+                          isExposed
+                            ? `Unexpose ${inp.name} from tool form`
+                            : `Expose ${inp.name} as a UI parameter`
+                        }
+                        aria-pressed={isExposed}
+                      >
+                        <Zap className={`h-3 w-3 ${isExposed ? "fill-current" : ""}`} />
+                      </button>
+                    </>
                   )}
                 </div>
               );
@@ -451,16 +585,17 @@ const CanvasNodeView = memo(function CanvasNodeView({
 
           {/* Outputs List */}
           {node.outputs.length > 0 && (
-            <div className="pt-2 border-t border-[var(--line)]/50 space-y-1">
+            <div className="mt-1.5 pt-1.5 border-t border-[color-mix(in_srgb,var(--line)_60%,transparent)] space-y-0.5">
               {node.outputs.map((out) => (
                 <div
                   key={out.index}
-                  className="flex items-center justify-end gap-1.5 text-right"
+                  className="flex min-h-[22px] items-center justify-end gap-1.5 text-right"
                 >
-                  <span className="text-[8px] text-[var(--ink-faint)] uppercase">
+                  <span className="text-[9px] text-[var(--ink-faint)] uppercase leading-none">
                     {out.name}
                   </span>
                   <span
+                    data-socket-output={out.index}
                     className="h-2 w-2 rounded-full shrink-0 border border-black/40 shadow-sm"
                     style={{ backgroundColor: out.color }}
                     title={`${out.name} (Slot ${out.index})`}
@@ -526,9 +661,10 @@ export default function VisualNodeCanvas({
   snapToGridRef.current = snapToGrid;
 
   // Visual toggles
-  const [showGroups, setShowGroups] = useState(true);
-  const [showFlowPulses, setShowFlowPulses] = useState(true);
   const [showFormPreview, setShowFormPreview] = useState(false);
+
+  // Measured socket-dot centers (vertical offset from node root, unscaled CSS px)
+  const [pinOffsets, setPinOffsets] = useState<PinOffsets>({});
 
   // Selected & Hovered nodes for pipeline trace & side inspector
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -712,6 +848,13 @@ export default function VisualNodeCanvas({
 
     const onWheel = (e: WheelEvent) => {
       if ((e.target as HTMLElement | null)?.closest?.(".canvas-hud")) return;
+      // A focused prompt box scrolls its own text instead of zooming the world.
+      if (
+        e.target instanceof HTMLTextAreaElement &&
+        document.activeElement === e.target
+      ) {
+        return;
+      }
       e.preventDefault();
 
       const zoomFactor = 1.1;
@@ -856,10 +999,14 @@ export default function VisualNodeCanvas({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
+      // Any focus inside a node's row controls is editing, not navigating: typing "f", "g",
+      // "m", "p", "1" or Space must never fit/snap/toggle/minimap. Covering inputs,
+      // textareas and the boolean switch (a focusable button) alike.
       const isInput =
         activeEl instanceof HTMLInputElement ||
         activeEl instanceof HTMLTextAreaElement ||
-        (activeEl as HTMLElement)?.isContentEditable;
+        (activeEl as HTMLElement)?.isContentEditable ||
+        !!activeEl?.closest?.(".canvas-node [data-node-control]");
 
       if (e.key === "Escape") {
         releaseCapture();
@@ -1111,6 +1258,32 @@ export default function VisualNodeCanvas({
     return { activePipelineNodes: nodesSet, activePipelineEdges: edgesSet };
   }, [hoveredNodeId, selectedNodeId, adjacency]);
 
+  // Measure socket-dot and header centers after layout (never during render).
+  // Node roots are position:absolute, so offsetTop is already relative to the node
+  // and unaffected by the world transform's scale. Drag/pan do not re-run this.
+  useLayoutEffect(() => {
+    const next: PinOffsets = {};
+    for (const node of initialTopology.nodes) {
+      const nodeEl = document.getElementById(`canvas_node_${node.id}`);
+      if (!nodeEl) continue;
+      const headerEl = nodeEl.firstElementChild as HTMLElement | null;
+      if (!headerEl) continue;
+      const header = headerEl.offsetTop + headerEl.offsetHeight / 2;
+      const inputs: Record<string, number> = {};
+      const outputs: Record<string, number> = {};
+      nodeEl.querySelectorAll<HTMLElement>("[data-socket-input]").forEach((el) => {
+        const key = el.getAttribute("data-socket-input");
+        if (key !== null) inputs[key] = el.offsetTop + el.offsetHeight / 2;
+      });
+      nodeEl.querySelectorAll<HTMLElement>("[data-socket-output]").forEach((el) => {
+        const key = el.getAttribute("data-socket-output");
+        if (key !== null) outputs[key] = el.offsetTop + el.offsetHeight / 2;
+      });
+      next[node.id] = { inputs, outputs, header };
+    }
+    setPinOffsets((prev) => (pinsEqual(prev, next) ? prev : next));
+  }, [initialTopology.nodes, collapsedNodeIds, workflow]);
+
   // Minimap dynamic bounds calculation including custom positions
   const minimapBounds = useMemo(() => {
     let minX = Infinity;
@@ -1124,13 +1297,6 @@ export default function VisualNodeCanvas({
       if (pos.y < minY) minY = pos.y;
       if (pos.x + n.width > maxX) maxX = pos.x + n.width;
       if (pos.y + n.height > maxY) maxY = pos.y + n.height;
-    });
-
-    initialTopology.groups.forEach((g) => {
-      if (g.x < minX) minX = g.x;
-      if (g.y < minY) minY = g.y;
-      if (g.x + g.width > maxX) maxX = g.x + g.width;
-      if (g.y + g.height > maxY) maxY = g.y + g.height;
     });
 
     if (!isFinite(minX)) {
@@ -1149,7 +1315,7 @@ export default function VisualNodeCanvas({
       width: Math.max(maxX - minX + pad * 2, 600),
       height: Math.max(maxY - minY + pad * 2, 400),
     };
-  }, [initialTopology.nodes, initialTopology.groups, positions]);
+  }, [initialTopology.nodes, positions]);
 
   // Interactive Minimap Pan by Click or Drag
   const handleMinimapPointerEvent = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -1316,32 +1482,6 @@ export default function VisualNodeCanvas({
             <Magnet className="h-3 w-3" />
             <span className="text-[10px]">Snap</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setShowGroups(!showGroups)}
-            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-              showGroups
-                ? "bg-[var(--surface-sunken)] border border-[var(--line-strong)] text-[var(--ink)]"
-                : "hover:bg-[var(--surface-soft)] text-[var(--ink-faint)]"
-            }`}
-            title="Toggle Group Containers"
-          >
-            <Layers className="h-3 w-3" />
-            <span className="text-[10px]">Groups</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFlowPulses(!showFlowPulses)}
-            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-              showFlowPulses
-                ? "bg-[var(--surface-sunken)] border border-[var(--accent)]/30 text-[var(--accent)]"
-                : "hover:bg-[var(--surface-soft)] text-[var(--ink-faint)]"
-            }`}
-            title="Toggle Animated Data Flow Particles"
-          >
-            <Waves className="h-3 w-3" />
-            <span className="text-[10px]">Flow</span>
-          </button>
         </div>
 
         <div className="h-3 w-px bg-[var(--line)] mx-0.5" />
@@ -1390,70 +1530,14 @@ export default function VisualNodeCanvas({
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
         }}
       >
-        {/* SVG Connection Noodles Layer with Flow Pulses */}
+        {/* SVG Connection Noodles Layer */}
         <svg className="absolute inset-0 overflow-visible w-full h-full pointer-events-none z-0">
           <defs>
-            <style>
-              {`
-                @keyframes noodleFlowAnimation {
-                  from { stroke-dashoffset: 24; }
-                  to { stroke-dashoffset: 0; }
-                }
-                .noodle-flow-active {
-                  animation: noodleFlowAnimation 1.1s linear infinite;
-                }
-              `}
-            </style>
             <filter id="noodle-glow" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
-
-          {/* Group Containers (ComfyUI Backdrops) */}
-          {showGroups &&
-            initialTopology.groups.map((group) => {
-              return (
-                <g key={group.id} className="pointer-events-none select-none">
-                  <rect
-                    x={group.x}
-                    y={group.y}
-                    width={group.width}
-                    height={group.height}
-                    rx="14"
-                    fill={group.color}
-                    fillOpacity="0.04"
-                    stroke={group.color}
-                    strokeOpacity="0.25"
-                    strokeWidth="1.5"
-                    strokeDasharray="6 4"
-                  />
-                  {/* Group Title Badge */}
-                  <rect
-                    x={group.x + 12}
-                    y={group.y - 12}
-                    width={Math.min(group.title.length * 7 + 28, group.width - 24)}
-                    height="22"
-                    rx="4"
-                    fill="#18181b"
-                    stroke={group.color}
-                    strokeOpacity="0.4"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={group.x + 20}
-                    y={group.y + 3}
-                    fill={group.color}
-                    fontSize="9.5"
-                    fontFamily="monospace"
-                    fontWeight="bold"
-                    letterSpacing="0.05em"
-                  >
-                    {group.title.toUpperCase()}
-                  </text>
-                </g>
-              );
-            })}
 
           {/* Bezier Noodles */}
           {initialTopology.edges.map((edge) => {
@@ -1467,17 +1551,17 @@ export default function VisualNodeCanvas({
             const isSrcCollapsed = collapsedNodeIds.has(srcNode.id);
             const isTgtCollapsed = collapsedNodeIds.has(tgtNode.id);
 
-            // Compute exact pixel pin coordinates
-            // Input pin Y
-            const tgtInputIndex = tgtNode.inputs.findIndex((inp) => inp.name === edge.targetPort);
-            const tgtY = isTgtCollapsed
-              ? tgtPos.y + 18
-              : tgtPos.y + 37 + 10 + Math.max(tgtInputIndex, 0) * 24 + 10;
+            // Endpoint Y from measured pin centers; node center until the first measurement lands
+            const srcPins = pinOffsets[edge.source];
+            const tgtPins = pinOffsets[edge.target];
 
-            // Output pin Y
+            const tgtY = isTgtCollapsed
+              ? tgtPos.y + (tgtPins?.header ?? tgtNode.height / 2)
+              : tgtPos.y + (tgtPins?.inputs[edge.targetPort] ?? tgtNode.height / 2);
+
             const srcY = isSrcCollapsed
-              ? srcPos.y + 18
-              : srcPos.y + 37 + 10 + srcNode.inputs.length * 24 + 10 + edge.sourceIndex * 20 + 8;
+              ? srcPos.y + (srcPins?.header ?? srcNode.height / 2)
+              : srcPos.y + (srcPins?.outputs[edge.sourceIndex] ?? srcNode.height / 2);
 
             const isHighlighted = activePipelineEdges ? activePipelineEdges.has(edge.id) : false;
             const isDimmed = activePipelineEdges !== null && !isHighlighted;
@@ -1492,7 +1576,6 @@ export default function VisualNodeCanvas({
                 color={edge.color}
                 highlighted={isHighlighted}
                 dimmed={isDimmed}
-                showPulse={showFlowPulses}
                 source={edge.source}
                 onHoverEnter={handleHoverEnter}
                 onHoverLeave={handleClearHover}
@@ -1576,23 +1659,6 @@ export default function VisualNodeCanvas({
                   setIsMinimapDragging(false);
                 }}
               >
-                {/* Mini Group Backdrops */}
-                {initialTopology.groups.map((g) => (
-                  <rect
-                    key={g.id}
-                    x={g.x}
-                    y={g.y}
-                    width={g.width}
-                    height={g.height}
-                    rx="18"
-                    fill={g.color}
-                    fillOpacity="0.08"
-                    stroke={g.color}
-                    strokeWidth="4"
-                    strokeDasharray="8 6"
-                  />
-                ))}
-
                 {/* Mini Nodes */}
                 {initialTopology.nodes.map((n) => {
                   const pos = positions.get(n.id) || { x: n.x, y: n.y };

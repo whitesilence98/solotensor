@@ -19,6 +19,8 @@ env/
 .env.local
 .env.*.local
 *.env
+# Admin-managed provider keys, written at runtime by the settings page
+backend/app_settings.json
 
 # SQLite Databases & WAL files
 *.db

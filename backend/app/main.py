@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .db import Database, get_db
 from .dependencies.permissions import RequireOwnerOrPermission, RequirePermission
+from .routers.admin_settings import router as admin_settings_router
 from .routers.auth import get_current_user, get_optional_user
 from .routers.auth import router as auth_router
 from .routers.moderation import router as moderation_router
@@ -46,6 +47,9 @@ from .schemas import (
     CreateToolRequest,
     DeleteAssetResponse,
     DeleteToolResponse,
+    DirectorProviderStatus,
+    DirectorReply,
+    DirectorRequest,
     GalleryItem,
     GalleryResponse,
     GenerateRequest,
@@ -96,6 +100,7 @@ from .schemas import (
     UserPublicProfileResponse,
     UserResponse,
 )
+from .services.app_settings import get_app_settings_service
 from .services.ai_tools import AIToolError, AIToolNotFound, get_ai_tool_service
 from .services.code_assistant import (
     AssistantRateLimited,
@@ -104,7 +109,14 @@ from .services.code_assistant import (
     get_code_assistant_service,
 )
 from .services.comfy_client import ComfyClientError, get_comfy_client
+from .services.director import (
+    DirectorRateLimited,
+    DirectorUnavailable,
+    DirectorUpstreamError,
+    get_director_service,
+)
 from .services.credit_service import get_credit_service
+from .services.model_attribution import attribute_graph, build_index
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.rbac_service import RBACService, get_rbac_service
 from .services.redis_service import get_redis_service
@@ -122,11 +134,14 @@ logging.basicConfig(
 logger = logging.getLogger("comfy_studio")
 
 settings = get_settings()
+app_settings = get_app_settings_service(settings)
+app_settings.load()
 storage = get_storage()
 storage.ensure_root()
 model_storage = get_model_service()
 model_storage.ensure_root()
 code_assistant = get_code_assistant_service(settings)
+director = get_director_service(settings)
 redis_service = get_redis_service(settings)
 
 db = get_db()
@@ -165,6 +180,7 @@ app.include_router(moderation_router, prefix="/api/moderation")
 app.include_router(moderation_router, prefix="/api/admin/moderation")
 app.include_router(notifications_router, prefix="/api/v1/notifications")
 app.include_router(notifications_router, prefix="/api/notifications")
+app.include_router(admin_settings_router, prefix="/api/admin/settings")
 
 
 # --- Creator Profiles & Social Endpoints ------------------------------------
@@ -228,6 +244,7 @@ def startup_event() -> None:
 @app.on_event("shutdown")
 async def close_code_assistant() -> None:
     await code_assistant.close()
+    await director.close()
 
 
 # Serve saved images: http://localhost:8000/files/<prompt_id>/<hash>.png
@@ -323,6 +340,35 @@ async def assist(req: AssistantRequest) -> AssistantResponse:
     except AssistantUpstreamError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return AssistantResponse(persona=req.persona, answer=answer)
+
+
+@app.get("/api/v1/director/providers", response_model=list[DirectorProviderStatus])
+async def director_providers() -> list[DirectorProviderStatus]:
+    """Report which director providers are configured, without calling either."""
+    if not settings.DIRECTOR_ENABLED:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Creative Director is disabled. Set DIRECTOR_ENABLED=true in the backend environment.",
+        )
+    return director.status()
+
+
+@app.post("/api/v1/director", response_model=DirectorReply)
+async def director_reply(req: DirectorRequest) -> DirectorReply:
+    """Answer a creative-direction turn. Stateless: the client sends the whole transcript."""
+    if not settings.DIRECTOR_ENABLED:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Creative Director is disabled. Set DIRECTOR_ENABLED=true in the backend environment.",
+        )
+    try:
+        return await director.reply(req.messages, req.provider)
+    except DirectorRateLimited as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except DirectorUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except DirectorUpstreamError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 MODEL_CATEGORIES = {
@@ -2500,6 +2546,19 @@ async def _run_tool(
         "tags": ["ai_tool_studio", detail.mode.value],
         "user_id": user_id,
     }
+    # Gate on save_to_gallery: the public model page lists generations with no
+    # gallery_saved filter, so attributing a private run would publish it.
+    if save_to_gallery:
+        try:
+            base_fields, loras = attribute_graph(
+                record.get("workflow") or {}, build_index(model_storage)
+            )
+        except Exception as exc:
+            logger.warning("Could not attribute tool run to a model: %s", exc)
+            base_fields, loras = {}, []
+        metadata_base.update(base_fields)
+    else:
+        base_fields, loras = {}, []
     try:
         for output in await comfy.list_output_files(prompt_id, kind):
             blob = await comfy.fetch_image_bytes(output)
@@ -2550,7 +2609,11 @@ async def _run_tool(
                         "gallery_saved": 1 if save_to_gallery else 0,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "metadata_json": json.dumps(asset_meta),
-                    }
+                        "model_id": base_fields.get("model_id"),
+                        "version_id": base_fields.get("version_id"),
+                        "file_id": base_fields.get("file_id"),
+                    },
+                    loras,
                 )
             except Exception as exc:
                 logger.warning(

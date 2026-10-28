@@ -60,6 +60,70 @@ export interface AssistantResponse {
   answer: string;
 }
 
+export type DirectorProvider = "local" | "anthropic";
+
+export interface DirectorMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface DirectorReply {
+  provider: string;
+  model: string;
+  answer: string;
+}
+
+export interface DirectorProviderStatus {
+  id: string;
+  label: string;
+  available: boolean;
+  model: string;
+  detail?: string | null;
+}
+
+/** Admin-managed provider settings. Keys are never returned in full. */
+export type AppSettingsSource = "file" | "env" | "default";
+
+export interface AppSettingsSnapshot {
+  director_enabled: boolean;
+  director_provider: DirectorProvider;
+  director_model: string;
+  assistant_enabled: boolean;
+  assistant_model: string;
+  local_llm_url: string;
+  local_llm_model: string;
+  anthropic_api_key_set: boolean;
+  anthropic_api_key_hint: string | null;
+  local_llm_api_key_set: boolean;
+  local_llm_api_key_hint: string | null;
+  proxy_url: string;
+  proxy_bypass_local: boolean;
+  sources: Partial<Record<string, AppSettingsSource>>;
+  settings_paths: string[];
+}
+
+export interface AppSettingsUpdate {
+  anthropic_api_key?: string;
+  clear_anthropic_api_key?: boolean;
+  director_enabled?: boolean;
+  director_provider?: DirectorProvider;
+  director_model?: string;
+  assistant_enabled?: boolean;
+  assistant_model?: string;
+  local_llm_url?: string;
+  local_llm_model?: string;
+  local_llm_api_key?: string;
+  clear_local_llm_api_key?: boolean;
+  proxy_url?: string;
+  proxy_bypass_local?: boolean;
+}
+
+export interface AppSettingsTestResult {
+  provider: DirectorProvider;
+  ok: boolean;
+  detail: string;
+}
+
 export type GenerationMode =
   | "text-to-image"
   | "image-to-image"
@@ -1314,6 +1378,44 @@ export const api = {
     return request<AssistantResponse>("/api/v1/assist", {
       method: "POST",
       body: JSON.stringify({ persona, message }),
+    });
+  },
+
+  async getDirectorProviders(): Promise<DirectorProviderStatus[]> {
+    return request<DirectorProviderStatus[]>("/api/v1/director/providers");
+  },
+
+  async getAppSettings(): Promise<AppSettingsSnapshot> {
+    return request<AppSettingsSnapshot>("/api/admin/settings");
+  },
+
+  async updateAppSettings(patch: AppSettingsUpdate): Promise<AppSettingsSnapshot> {
+    return request<AppSettingsSnapshot>("/api/admin/settings", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  },
+
+  async testAppProvider(provider: DirectorProvider): Promise<AppSettingsTestResult> {
+    return request<AppSettingsTestResult>("/api/admin/settings/test", {
+      method: "POST",
+      body: JSON.stringify({ provider }),
+    });
+  },
+
+  async clearProviderKey(provider: DirectorProvider): Promise<AppSettingsSnapshot> {
+    return request<AppSettingsSnapshot>(`/api/admin/settings/keys/${provider}`, {
+      method: "DELETE",
+    });
+  },
+
+  async askDirector(
+    messages: DirectorMessage[],
+    provider?: DirectorProvider,
+  ): Promise<DirectorReply> {
+    return request<DirectorReply>("/api/v1/director", {
+      method: "POST",
+      body: JSON.stringify({ messages, provider: provider ?? null }),
     });
   },
 

@@ -49,6 +49,24 @@ class Settings(BaseSettings):
     ANTHROPIC_MODEL: str = "claude-opus-5-5"
     ASSISTANT_TIMEOUT_SECONDS: float = 45.0
 
+    # --- Creative director ------------------------------------------------
+    DIRECTOR_ENABLED: bool = False
+    DIRECTOR_PROVIDER: str = "local"
+    DIRECTOR_MODEL: str = "claude-opus-5-5"
+    LOCAL_LLM_URL: str = "http://127.0.0.1:11434"
+    LOCAL_LLM_MODEL: str = ""
+    LOCAL_LLM_TIMEOUT_SECONDS: float = 120.0
+
+    # --- AI provider credentials ------------------------------------------
+    # Optional: the Anthropic SDK resolves OAuth/WIF profiles on its own.
+    ANTHROPIC_API_KEY: str | None = None
+    LOCAL_LLM_API_KEY: str | None = None
+
+    # --- Outbound network -------------------------------------------------
+    # Transport-only HTTP proxy for outbound AI calls (never ComfyUI).
+    PROXY_URL: str = ""
+    PROXY_BYPASS_LOCAL: bool = True
+
     # --- App -------------------------------------------------------------
     APP_NAME: str = "Comfy Studio API"
     ALLOWED_ORIGINS: str = (

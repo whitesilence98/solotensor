@@ -1142,13 +1142,15 @@ class ToolApiEndpointTests(unittest.TestCase):
     @patch("app.main.storage")
     @patch("app.main.get_comfy_client")
     @patch("app.main.get_ai_tool_service")
+    @patch("app.main.model_storage")
     def test_run_tool_records_generation_with_user_attribution(
-        self, mock_get_tools: MagicMock, mock_get_comfy: MagicMock, mock_storage: MagicMock, mock_get_db: MagicMock
+        self, mock_model_storage: MagicMock, mock_get_tools: MagicMock, mock_get_comfy: MagicMock, mock_storage: MagicMock, mock_get_db: MagicMock
     ) -> None:
         import asyncio
         from app.main import _run_tool
         from app.schemas import ToolDetail
 
+        mock_model_storage.selectable_gallery_files.return_value = []
         mock_tools = MagicMock()
         mock_tools.get.return_value = {"default_aspect_ratio": "1:1"}
         mock_detail = MagicMock(spec=ToolDetail)
@@ -1182,6 +1184,7 @@ class ToolApiEndpointTests(unittest.TestCase):
         ))
 
         self.assertEqual(result.status, "completed")
+        mock_model_storage.selectable_gallery_files.assert_called_once()
         mock_storage.upload_asset.assert_called_once()
         _, s_kwargs = mock_storage.upload_asset.call_args
         self.assertEqual(s_kwargs["metadata"]["user_id"], "user-456")

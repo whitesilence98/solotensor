@@ -28,6 +28,7 @@ Claude Code subagents are located in `.claude/agents/` and can be invoked with `
 - `@tool-engine` ([`.claude/agents/tool-engine.md`](.claude/agents/tool-engine.md)): Parametric `workflow_api.json` tools, dynamic inputs, execution runner.
 - `@backend-qa` ([`.claude/agents/backend-qa.md`](.claude/agents/backend-qa.md)): Python unit tests, mocks, path traversal fuzzing.
 - `@backend` ([`.claude/agents/backend.md`](.claude/agents/backend.md)): Full FastAPI service orchestration.
+- `@flow-ai-engineer` ([`.claude/agents/flow-ai-engineer.md`](.claude/agents/flow-ai-engineer.md)): `/flow` creative-director LLM work — provider adapters, prompt design, cost/latency budgets, provider-agnostic tests.
 - `@frontend` ([`.claude/agents/frontend.md`](.claude/agents/frontend.md)): Next.js 15, React 19, Tailwind CSS.
 
 ### 2a. Mandatory Subagent Usage

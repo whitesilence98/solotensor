@@ -373,6 +373,95 @@ class AssistantResponse(BaseModel):
     answer: str
 
 
+class DirectorRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class DirectorMessage(BaseModel):
+    """One turn of a creative-director conversation."""
+
+    model_config = {"extra": "forbid"}
+
+    role: DirectorRole
+    content: str = Field(..., min_length=1, max_length=8_000)
+
+
+class DirectorRequest(BaseModel):
+    """Body for POST /api/v1/director."""
+
+    model_config = {"extra": "forbid"}
+
+    provider: Literal["local", "anthropic"] | None = None
+    messages: list[DirectorMessage] = Field(..., min_length=1, max_length=40)
+
+
+class DirectorReply(BaseModel):
+    provider: str
+    model: str
+    answer: str
+
+
+class DirectorProviderStatus(BaseModel):
+    id: str
+    label: str
+    available: bool
+    model: str
+    detail: str | None = None
+
+
+class AppSettingsUpdate(BaseModel):
+    """Partial update for admin-managed provider settings."""
+
+    model_config = {"extra": "forbid"}
+
+    anthropic_api_key: str | None = Field(None, max_length=200)
+    clear_anthropic_api_key: bool = False
+    director_enabled: bool | None = None
+    director_provider: Literal["local", "anthropic"] | None = None
+    director_model: str | None = Field(None, max_length=120)
+    assistant_enabled: bool | None = None
+    assistant_model: str | None = Field(None, max_length=120)
+    local_llm_url: str | None = Field(None, max_length=400)
+    local_llm_model: str | None = Field(None, max_length=200)
+    local_llm_api_key: str | None = Field(None, max_length=200)
+    clear_local_llm_api_key: bool = False
+    proxy_url: str | None = Field(None, max_length=400)
+    proxy_bypass_local: bool | None = None
+
+
+class AppSettingsSnapshot(BaseModel):
+    """Redacted view of the live provider settings. Never carries a full key."""
+
+    director_enabled: bool
+    director_provider: str
+    director_model: str
+    assistant_enabled: bool
+    assistant_model: str
+    local_llm_url: str
+    local_llm_model: str
+    anthropic_api_key_set: bool
+    anthropic_api_key_hint: str | None
+    local_llm_api_key_set: bool
+    local_llm_api_key_hint: str | None
+    proxy_url: str
+    proxy_bypass_local: bool
+    sources: dict[str, str]
+    settings_paths: list[str]
+
+
+class AppSettingsTestRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    provider: Literal["anthropic", "local"]
+
+
+class AppSettingsTestResult(BaseModel):
+    provider: str
+    ok: bool
+    detail: str
+
+
 class LoraSelection(BaseModel):
     """One ordered entry for rgthree's Power Lora Loader."""
 

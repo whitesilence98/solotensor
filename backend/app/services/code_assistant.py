@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 
 import anthropic
+import httpx
 
 from ..config import Settings
 from ..schemas import AssistantPersona
+from .app_settings import proxy_for
 
 logger = logging.getLogger("comfy_studio.code_assistant")
 
@@ -47,15 +49,26 @@ class CodeAssistantService:
 
     def _client(self) -> anthropic.AsyncAnthropic:
         if self.client is None:
-            self.client = anthropic.AsyncAnthropic(
-                timeout=self.settings.ASSISTANT_TIMEOUT_SECONDS,
-                max_retries=0,
-            )
+            kwargs: dict = {
+                "timeout": self.settings.ASSISTANT_TIMEOUT_SECONDS,
+                "max_retries": 0,
+            }
+            if self.settings.ANTHROPIC_API_KEY:
+                kwargs["api_key"] = self.settings.ANTHROPIC_API_KEY
+            proxy = proxy_for("https://api.anthropic.com", self.settings)
+            if proxy:
+                kwargs["http_client"] = httpx.AsyncClient(proxy=proxy, trust_env=False)
+            self.client = anthropic.AsyncAnthropic(**kwargs)
         return self.client
+
+    async def reset_client(self) -> None:
+        """Close and drop the cached SDK client so a new key/proxy is picked up."""
+        await self.close()
 
     async def close(self) -> None:
         if self.client is not None:
             await self.client.close()
+            self.client = None
 
     async def answer(self, persona: AssistantPersona, message: str) -> str:
         try:

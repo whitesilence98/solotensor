@@ -1,6 +1,6 @@
 /**
  * Graph Topology Layout Engine for ComfyUI API Workflows.
- * Converts execution graphs (workflow_api.json) into visual nodes, ports, groups, and bezier link wires.
+ * Converts execution graphs (workflow_api.json) into visual nodes, ports, and bezier link wires.
  */
 
 export interface CanvasNodeInput {
@@ -41,21 +41,9 @@ export interface VisualCanvasEdge {
   color: string;
 }
 
-export interface CanvasNodeGroup {
-  id: string;
-  title: string;
-  color: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  nodeIds: string[];
-}
-
 export interface CanvasGraphTopology {
   nodes: VisualCanvasNode[];
   edges: VisualCanvasEdge[];
-  groups: CanvasNodeGroup[];
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -239,87 +227,6 @@ export function computeGraphTopology(
 
   const nodes = Array.from(nodesMap.values());
 
-  // Extract explicit or smart functional groups
-  const groups: CanvasNodeGroup[] = [];
-
-  // Check if explicit groups exist in workflow metadata
-  const rawGroups =
-    (workflow.groups as Array<{ title?: string; bounding?: number[]; color?: string }>) ||
-    ((workflow.extra as Record<string, unknown>)?.groups as Array<{ title?: string; bounding?: number[]; color?: string }>);
-
-  if (Array.isArray(rawGroups) && rawGroups.length > 0) {
-    rawGroups.forEach((g, idx) => {
-      if (Array.isArray(g.bounding) && g.bounding.length >= 4) {
-        const [gx, gy, gw, gh] = g.bounding;
-        // Find nodes inside this bounding box
-        const containedNodes = nodes
-          .filter((n) => n.x >= gx && n.x + n.width <= gx + gw && n.y >= gy && n.y + n.height <= gy + gh)
-          .map((n) => n.id);
-
-        groups.push({
-          id: `group_explicit_${idx}`,
-          title: g.title || `Stage ${idx + 1}`,
-          color: g.color || "#c7e36a",
-          x: gx,
-          y: gy,
-          width: gw,
-          height: gh,
-          nodeIds: containedNodes,
-        });
-      }
-    });
-  }
-
-  // If no explicit groups, compute smart architectural stage clusters
-  if (groups.length === 0 && nodes.length > 0) {
-    // Stage 1: Loaders & Model Checkpoints
-    const loaders = nodes.filter((n) => n.category === "loader");
-    // Stage 2: Conditioning & Prompts
-    const conditioning = nodes.filter((n) => n.category === "conditioning");
-    // Stage 3: Samplers & Latents
-    const samplers = nodes.filter((n) => n.category === "sampler" || n.category === "latent");
-    // Stage 4: Image & Pixel Post-processing
-    const imageOps = nodes.filter((n) => n.category === "image");
-    // Stage 5: Outputs & Storage
-    const outputs = nodes.filter((n) => n.category === "output");
-
-    const clusters = [
-      { name: "01 · Model & Resource Loaders", color: "#a855f7", items: loaders },
-      { name: "02 · Prompt & Conditioning", color: "#eab308", items: conditioning },
-      { name: "03 · Latent Sampling & Diffusion", color: "#f59e0b", items: samplers },
-      { name: "04 · VAE Decode & Pixel Processing", color: "#06b6d4", items: imageOps },
-      { name: "05 · Artifact Delivery & Output", color: "#10b981", items: outputs },
-    ];
-
-    clusters.forEach((c, idx) => {
-      if (c.items.length === 0) return;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-
-      c.items.forEach((n) => {
-        if (n.x < minX) minX = n.x;
-        if (n.y < minY) minY = n.y;
-        if (n.x + n.width > maxX) maxX = n.x + n.width;
-        if (n.y + n.height > maxY) maxY = n.y + n.height;
-      });
-
-      const padX = 35;
-      const padY = 45;
-      groups.push({
-        id: `cluster_${idx}`,
-        title: c.name,
-        color: c.color,
-        x: minX - padX,
-        y: minY - padY,
-        width: maxX - minX + padX * 2,
-        height: maxY - minY + padY * 2,
-        nodeIds: c.items.map((n) => n.id),
-      });
-    });
-  }
-
   // Compute bounding box
   let minX = Infinity;
   let minY = Infinity;
@@ -333,13 +240,6 @@ export function computeGraphTopology(
     if (n.y + n.height > maxY) maxY = n.y + n.height;
   });
 
-  groups.forEach((g) => {
-    if (g.x < minX) minX = g.x;
-    if (g.y < minY) minY = g.y;
-    if (g.x + g.width > maxX) maxX = g.x + g.width;
-    if (g.y + g.height > maxY) maxY = g.y + g.height;
-  });
-
   if (nodes.length === 0) {
     minX = minY = 0;
     maxX = maxY = 800;
@@ -348,7 +248,6 @@ export function computeGraphTopology(
   return {
     nodes,
     edges,
-    groups,
     bounds: {
       minX: minX - 100,
       minY: minY - 100,
