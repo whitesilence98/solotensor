@@ -88,6 +88,7 @@ from .schemas import (
     ToolDetail,
     ToolExecuteRequest,
     ToolExecutionResult,
+    ToolEditorPayload,
     ToolMode,
     ToolParseResponse,
     UploadedAsset,
@@ -2143,18 +2144,23 @@ async def parse_tool(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@app.post("/api/tools/create", response_model=ToolDetail)
-async def create_tool(
-    workflow_api: UploadFile = File(...),
-    name: str = Form("Untitled tool"),
-    mode: ToolMode | None = Form(None),
-    aspect_ratio: ToolAspectRatio = Form(ToolAspectRatio.SQUARE),
-    thumbnail: UploadFile | None = File(None),
-    controls: str | None = Form(None),
-    user_id: str | None = Form(None),
-    author_username: str | None = Form(None),
-    current_user: UserResponse = Depends(RequirePermission("tool:publish")),
-) -> ToolDetail:
+async def _parse_tool_upload(
+    workflow_api: UploadFile,
+    name: str,
+    mode: ToolMode | None,
+    aspect_ratio: ToolAspectRatio,
+    thumbnail: UploadFile | None,
+    controls: str | None,
+) -> tuple[
+    bytes,
+    str,
+    ToolMode | None,
+    ToolAspectRatio,
+    bytes | None,
+    str | None,
+    list[ToolControl] | None,
+]:
+    """Shared multipart parsing for tool create and update."""
     if workflow_api.filename and not workflow_api.filename.lower().endswith(".json"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Upload a valid ComfyUI JSON file"
@@ -2194,6 +2200,40 @@ async def create_tool(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid controls JSON: {exc}",
             ) from exc
+    return (
+        payload,
+        name,
+        mode,
+        aspect_ratio,
+        thumbnail_data,
+        thumbnail_ext,
+        custom_controls,
+    )
+
+
+@app.post("/api/tools/create", response_model=ToolDetail)
+async def create_tool(
+    workflow_api: UploadFile = File(...),
+    name: str = Form("Untitled tool"),
+    mode: ToolMode | None = Form(None),
+    aspect_ratio: ToolAspectRatio = Form(ToolAspectRatio.SQUARE),
+    thumbnail: UploadFile | None = File(None),
+    controls: str | None = Form(None),
+    user_id: str | None = Form(None),
+    author_username: str | None = Form(None),
+    current_user: UserResponse = Depends(RequirePermission("tool:publish")),
+) -> ToolDetail:
+    (
+        payload,
+        name,
+        mode,
+        aspect_ratio,
+        thumbnail_data,
+        thumbnail_ext,
+        custom_controls,
+    ) = await _parse_tool_upload(
+        workflow_api, name, mode, aspect_ratio, thumbnail, controls
+    )
     effective_user_id = current_user.id
     effective_author = author_username or current_user.username
     try:
@@ -2273,6 +2313,73 @@ async def delete_tool_endpoint(
         return DeleteToolResponse(deleted=True, tool_id=tool_id)
     except AIToolNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.put("/api/tools/{tool_id}", response_model=ToolDetail)
+async def update_tool(
+    tool_id: str,
+    workflow_api: UploadFile = File(...),
+    name: str = Form("Untitled tool"),
+    mode: ToolMode | None = Form(None),
+    aspect_ratio: ToolAspectRatio = Form(ToolAspectRatio.SQUARE),
+    thumbnail: UploadFile | None = File(None),
+    controls: str | None = Form(None),
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ToolDetail:
+    # ponytail: reuse tool:delete_any as the moderator override; split out
+    # tool:edit_any when non-moderator editors exist.
+    tools = get_ai_tool_service()
+    try:
+        record = tools.get(tool_id)
+        await RequireOwnerOrPermission("tool:delete_any").enforce(
+            record.get("user_id"), current_user, rbac
+        )
+        (
+            payload,
+            name,
+            mode,
+            aspect_ratio,
+            thumbnail_data,
+            thumbnail_ext,
+            custom_controls,
+        ) = await _parse_tool_upload(
+            workflow_api, name, mode, aspect_ratio, thumbnail, controls
+        )
+        tools.update(
+            tool_id,
+            payload,
+            name,
+            mode,
+            aspect_ratio,
+            thumbnail_data,
+            thumbnail_ext,
+            custom_controls=custom_controls,
+        )
+        return tools.detail(tool_id)
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
+    except AIToolError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/tools/{tool_id}/edit", response_model=ToolEditorPayload)
+async def get_tool_for_edit(
+    tool_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> ToolEditorPayload:
+    tools = get_ai_tool_service()
+    try:
+        record = tools.get(tool_id)
+        await RequireOwnerOrPermission("tool:delete_any").enforce(
+            record.get("user_id"), current_user, rbac
+        )
+        return ToolEditorPayload.model_validate(tools.editor_payload(tool_id))
+    except AIToolNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tool not found") from exc
     except AIToolError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

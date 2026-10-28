@@ -862,6 +862,11 @@ class ToolDetail(ToolSummary):
     dimension_multiple: int = 8
 
 
+class ToolEditorPayload(ToolSummary):
+    workflow_api: dict[str, Any]
+    controls: list[ToolControl] = Field(default_factory=list)
+
+
 class ToolCatalogResponse(BaseModel):
     items: list[ToolSummary]
 

@@ -1445,8 +1445,376 @@ class ToolApiEndpointTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["deleted"])
 
+    def test_put_tool_updates_graph_and_control_default(self) -> None:
+        payload = {
+            "workflow_api": self.workflow,
+            "name": "Editable Tool",
+            "mode": "text-to-image",
+            "aspect_ratio": "1:1",
+        }
+        create_resp = self.client.post("/api/tools", json=payload)
+        self.assertEqual(create_resp.status_code, 200)
+        tool_id = create_resp.json()["tool_id"]
+
+        edited = copy.deepcopy(self.workflow)
+        edited["sampler"]["inputs"]["steps"] = 40
+        controls = [
+            {
+                "id": "nodes.sampler.inputs.steps",
+                "path": "nodes.sampler.inputs.steps",
+                "label": "Steps",
+                "kind": "number",
+                "value": 40,
+                "default": 40,
+                "numeric": True,
+                "node_id": "sampler",
+                "input_name": "steps",
+                "role": "steps",
+            }
+        ]
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(edited).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}",
+            files=files,
+            data={
+                "name": "Editable Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+                "controls": json.dumps(controls),
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["controls"][0]["default"], 40)
+
+        graph, _ = self.test_tools_service.build_graph(
+            tool_id, "", ToolAspectRatio.SQUARE
+        )
+        self.assertEqual(graph["sampler"]["inputs"]["steps"], 40)
+
+    def test_put_tool_preserves_identity_and_sets_updated_at(self) -> None:
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Identity Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        before = self.test_tools_service.get(tool_id)
+
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}",
+            files=files,
+            data={"name": "Renamed Tool", "aspect_ratio": "16:9"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        after = self.test_tools_service.get(tool_id)
+        self.assertEqual(after["created_at"], before["created_at"])
+        self.assertEqual(after["user_id"], before["user_id"])
+        self.assertEqual(after["author_username"], before["author_username"])
+        self.assertIn("updated_at", after)
+        self.assertEqual(after["name"], "Renamed Tool")
+        self.assertEqual(after["default_aspect_ratio"], "16:9")
+        self.assertFalse(after["is_draft"])
+
+    def test_put_tool_rejects_changed_node_set(self) -> None:
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Fixed Nodes",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        edited = copy.deepcopy(self.workflow)
+        edited["extra"] = {"class_type": "SaveImage", "inputs": {"images": ["sampler", 0]}}
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(edited).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}", files=files, data={"name": "Nope"}
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Node set cannot change", resp.json()["detail"])
+
+    def test_put_tool_rejects_control_on_linked_input(self) -> None:
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Linked Target",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        controls = [
+            {
+                "id": "nodes.sampler.inputs.positive",
+                "path": "nodes.sampler.inputs.positive",
+                "label": "Linked",
+                "kind": "number",
+                "value": 1,
+                "node_id": "sampler",
+                "input_name": "positive",
+            }
+        ]
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}",
+            files=files,
+            data={"name": "Linked Target", "controls": json.dumps(controls)},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("literal input", resp.json()["detail"])
+
+    def test_put_tool_rejects_duplicate_control_ids(self) -> None:
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Dupes",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        dup_control = {
+            "id": "same-id",
+            "path": "nodes.sampler.inputs.steps",
+            "label": "Steps",
+            "kind": "number",
+            "value": 20,
+            "node_id": "sampler",
+            "input_name": "steps",
+        }
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}",
+            files=files,
+            data={"name": "Dupes", "controls": json.dumps([dup_control, dup_control])},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Duplicate control id", resp.json()["detail"])
+
+    def test_put_tool_rbac_ownership_and_moderation(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+
+        self.mock_rbac.has_permission = AsyncMock(return_value=True)
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "RBAC Update Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        stranger = UserResponse(
+            id="stranger-user-id",
+            email="stranger@test.com",
+            username="stranger",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+        moderator = UserResponse(
+            id="moderator-user-id",
+            email="moderator@test.com",
+            username="moderator",
+            role="moderator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.put(
+                f"/api/tools/{tool_id}", files=files, data={"name": "Anon"}
+            )
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+        app.dependency_overrides[get_current_user] = lambda: stranger
+        self.mock_rbac.has_permission = AsyncMock(return_value=False)
+        resp = self.client.put(
+            f"/api/tools/{tool_id}", files=files, data={"name": "Stranger"}
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        app.dependency_overrides[get_current_user] = lambda: moderator
+        self.mock_rbac.has_permission = AsyncMock(
+            side_effect=lambda uid, perm: perm == "tool:delete_any"
+        )
+        resp = self.client.put(
+            f"/api/tools/{tool_id}", files=files, data={"name": "Moderated"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["name"], "Moderated")
+
+    def test_put_tool_thumbnail_replaced_only_when_supplied(self) -> None:
+        from app.schemas import ToolControl
+
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Thumbnail Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        record = self.test_tools_service.get(tool_id)
+        record["thumbnail"] = self.test_tools_service._save_thumbnail(
+            tool_id, b"old-thumb", ".png"
+        )
+        self.test_tools_service._write_record(record)
+
+        files = {
+            "workflow_api": (
+                "workflow_api.json",
+                json.dumps(self.workflow).encode(),
+                "application/json",
+            )
+        }
+        resp = self.client.put(
+            f"/api/tools/{tool_id}", files=files, data={"name": "Thumbnail Tool"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            self.test_tools_service.thumbnail_path(tool_id).read_bytes(), b"old-thumb"
+        )
+
+        files["thumbnail"] = ("thumb.png", b"new-thumb", "image/png")
+        resp = self.client.put(
+            f"/api/tools/{tool_id}", files=files, data={"name": "Thumbnail Tool"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            self.test_tools_service.thumbnail_path(tool_id).read_bytes(), b"new-thumb"
+        )
+
+    def test_get_tool_for_edit_returns_workflow_api_for_owner_only(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Editor Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+
+        resp = self.client.get(f"/api/tools/{tool_id}/edit")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["workflow_api"], self.workflow)
+        self.assertIn("controls", data)
+        self.assertNotIn("locked_nodes", data)
+        self.assertNotIn("available_nodes", data)
+        self.assertNotIn("essential_summary", data)
+
+        stranger = UserResponse(
+            id="stranger-user-id",
+            email="stranger@test.com",
+            username="stranger",
+            role="creator",
+            created_at="2026-10-18T00:00:00Z",
+        )
+        app.dependency_overrides[get_current_user] = lambda: stranger
+        self.mock_rbac.has_permission = AsyncMock(return_value=False)
+        resp = self.client.get(f"/api/tools/{tool_id}/edit")
+        self.assertEqual(resp.status_code, 403)
+
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.get(f"/api/tools/{tool_id}/edit")
+            self.assertEqual(resp.status_code, 401)
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.mock_user
+
+    def test_public_tool_detail_never_exposes_workflow_api(self) -> None:
+        create_resp = self.client.post(
+            "/api/tools",
+            json={
+                "workflow_api": self.workflow,
+                "name": "Public Tool",
+                "mode": "text-to-image",
+                "aspect_ratio": "1:1",
+            },
+        )
+        tool_id = create_resp.json()["tool_id"]
+        resp = self.client.get(f"/api/tools/{tool_id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("workflow_api", resp.json())
+
+    def test_edit_and_update_routes_reject_traversal_tool_ids(self) -> None:
+        for bad_id in ("..%2f..%2fetc%2fpasswd", "%2e%2e%2fetc"):
+            with self.subTest(tool_id=bad_id):
+                resp = self.client.get(f"/api/tools/{bad_id}/edit")
+                self.assertEqual(resp.status_code, 404)
+                files = {
+                    "workflow_api": (
+                        "workflow_api.json",
+                        json.dumps(self.workflow).encode(),
+                        "application/json",
+                    )
+                }
+                resp = self.client.put(
+                    f"/api/tools/{bad_id}", files=files, data={"name": "x"}
+                )
+                self.assertEqual(resp.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 

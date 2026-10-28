@@ -1401,19 +1401,21 @@ class AIToolService:
         ]
         return [], locked
 
-    def parse(
-        self,
-        payload: bytes,
-        name: str = "Untitled tool",
-        *,
-        require_controls: bool = True,
-    ) -> ToolParseResponse:
+    @staticmethod
+    def _validate_workflow(payload: bytes) -> Workflow:
         try:
             workflow = json.loads(payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise AIToolError("Workflow must be valid UTF-8 JSON") from exc
         if not isinstance(workflow, dict) or not workflow:
             raise AIToolError("Workflow must be a non-empty API-format object")
+        # ComfyUI's editor export (``{"nodes": [...], "links": [...]}``) would
+        # otherwise fail node-by-node with the generic shape error; reject it up
+        # front with the same message the shape check emits.
+        if isinstance(workflow.get("nodes"), list) and "links" in workflow:
+            raise AIToolError(
+                "Workflow nodes must contain class_type and inputs objects"
+            )
         if len(workflow) > MAX_NODES:
             raise AIToolError("Workflow contains too many nodes")
         for node_id, node in workflow.items():
@@ -1430,19 +1432,10 @@ class AIToolService:
             if len(node["inputs"]) > MAX_INPUTS_PER_NODE:
                 raise AIToolError("Workflow node has too many inputs")
             _validate_json_value(node)
-        controls, locked = (
-            extract_controls(workflow)
-            if require_controls
-            else self._safe_controls(workflow)
-        )
-        meta = detect_workflow_modality(workflow)
-        tool_id = uuid.uuid4().hex
-        clean_name = re.sub(r"\s+", " ", name.strip())[:120] or "Untitled tool"
-        mode_val = (
-            meta["detected_mode"].value
-            if hasattr(meta["detected_mode"], "value")
-            else str(meta["detected_mode"])
-        )
+        return workflow
+
+    @staticmethod
+    def _available_nodes(workflow: Workflow) -> list[dict[str, Any]]:
         available_nodes: list[dict[str, Any]] = []
         for n_id, n_data in sorted(workflow.items()):
             c_type = str(n_data.get("class_type", ""))
@@ -1481,6 +1474,30 @@ class AIToolService:
                     "inputs": inputs_summary,
                 }
             )
+        return available_nodes
+
+    def parse(
+        self,
+        payload: bytes,
+        name: str = "Untitled tool",
+        *,
+        require_controls: bool = True,
+    ) -> ToolParseResponse:
+        workflow = self._validate_workflow(payload)
+        controls, locked = (
+            extract_controls(workflow)
+            if require_controls
+            else self._safe_controls(workflow)
+        )
+        meta = detect_workflow_modality(workflow)
+        tool_id = uuid.uuid4().hex
+        clean_name = re.sub(r"\s+", " ", name.strip())[:120] or "Untitled tool"
+        mode_val = (
+            meta["detected_mode"].value
+            if hasattr(meta["detected_mode"], "value")
+            else str(meta["detected_mode"])
+        )
+        available_nodes = self._available_nodes(workflow)
         record = {
             "tool_id": tool_id,
             "name": clean_name,
@@ -1644,25 +1661,22 @@ class AIToolService:
                     candidates.append((node_id, g_name))
         return _select_binding_candidate(workflow, candidates, "cfg")
 
-    def create(
+    def _finalize_custom_controls(
         self,
-        payload: bytes,
-        name: str,
-        mode: ToolMode | None = None,
-        aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE,
-        thumbnail_data: bytes | None = None,
-        thumbnail_ext: str | None = None,
-        custom_controls: list[ToolControl | dict[str, Any]] | None = None,
-        user_id: str | None = None,
-        author_username: str | None = None,
-    ) -> ToolSummary:
-        parsed = self.parse(payload, name, require_controls=(custom_controls is None))
-        effective_mode = mode if mode is not None else parsed.detected_mode
-        record = self.get(parsed.tool_id)
-        workflow = record["workflow"]
-        if custom_controls is not None:
+        workflow: Workflow,
+        raw_controls: list[ToolControl | dict[str, Any]] | None,
+        mode: ToolMode,
+    ) -> dict[str, Any]:
+        """Validate controls and derive every execution binding for a tool.
+
+        Shared by ``create`` and ``update`` so the two paths cannot drift; a
+        divergent copy leaves saved tools subtly unrunnable.
+        """
+        if raw_controls is not None:
             validated_controls: list[dict[str, Any]] = []
-            for item in custom_controls:
+            seen_ids: set[str] = set()
+            seen_paths: set[str] = set()
+            for item in raw_controls:
                 c_dict = (
                     item.model_dump() if hasattr(item, "model_dump") else dict(item)
                 )
@@ -1672,15 +1686,26 @@ class AIToolService:
                     raise AIToolError(
                         f"Custom control references invalid node_id: {node_id}"
                     )
-                if not input_name or input_name not in workflow[node_id].get(
-                    "inputs", {}
-                ):
+                inputs = workflow[node_id].get("inputs", {})
+                if not input_name or input_name not in inputs:
                     raise AIToolError(
                         f"Custom control references invalid input: {node_id}.{input_name}"
                     )
                 path = c_dict.get("path") or f"nodes.{node_id}.inputs.{input_name}"
+                if isinstance(inputs[input_name], list):
+                    # A control on a linked input replaces an edge with a
+                    # scalar at run time.
+                    raise AIToolError(
+                        f"Control target must be a literal input, not a link: {path}"
+                    )
                 c_dict["path"] = path
                 c_dict["id"] = c_dict.get("id") or path
+                if c_dict["id"] in seen_ids:
+                    raise AIToolError(f"Duplicate control id: {c_dict['id']}")
+                if path in seen_paths:
+                    raise AIToolError(f"Duplicate control path: {path}")
+                seen_ids.add(c_dict["id"])
+                seen_paths.add(path)
                 if "default" not in c_dict and "value" in c_dict:
                     c_dict["default"] = c_dict["value"]
                 if "value" not in c_dict and "default" in c_dict:
@@ -1697,11 +1722,9 @@ class AIToolService:
             if not validated_controls:
                 raise AIToolError("Tool must have at least one editable control")
             controls = validated_controls
-            locked = parsed.locked_nodes
+            locked = self._safe_controls(workflow)[1]
         else:
             controls, locked = extract_controls(workflow)
-        record["controls"] = controls
-        record["locked_nodes"] = locked
         prompt_binding = None
         for c in controls:
             if c.get("kind") == "prompt" or c.get("role") in {
@@ -1727,21 +1750,9 @@ class AIToolService:
         ]
         dimension_bindings = self._find_dimension_bindings(workflow)
         step_binding = self._find_step_binding(workflow)
-        requires_image = effective_mode in {ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO}
+        requires_image = mode in {ToolMode.IMAGE_TO_IMAGE, ToolMode.IMAGE_TO_VIDEO}
         if requires_image and not image_bindings:
             raise AIToolError("Image-based tools require a LoadImage input node")
-        thumbnail_name = None
-        if thumbnail_data is not None:
-            if thumbnail_ext not in IMAGE_EXTENSIONS:
-                raise AIToolError("Unsupported thumbnail image type")
-            thumbnail_name = f"thumbnail{thumbnail_ext}"
-            thumbnail_path = self._thumbnail_path(parsed.tool_id, thumbnail_name)
-            temp = thumbnail_path.with_suffix(".tmp")
-            try:
-                temp.write_bytes(thumbnail_data)
-                temp.replace(thumbnail_path)
-            except OSError as exc:
-                raise AIToolError("Could not save tool thumbnail") from exc
         has_seed = any(c.get("seed") or c.get("role") == "seed" for c in controls)
         seed_id = next((c["id"] for c in controls if c.get("seed") or c.get("role") == "seed"), None)
         has_aspect_ratio = bool(dimension_bindings) or any(c.get("role") in {"width", "height"} for c in controls)
@@ -1762,23 +1773,76 @@ class AIToolService:
             "has_steps": has_steps,
             "steps_control_id": steps_id,
         }
+        return {
+            "controls": controls,
+            "locked_nodes": locked,
+            "prompt_binding": prompt_binding,
+            "image_bindings": image_bindings,
+            "dimension_bindings": dimension_bindings,
+            "step_binding": step_binding,
+            "requires_image": requires_image,
+            "output_kind": "video"
+            if mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
+            else "image",
+            "essential_summary": essential_summary,
+        }
+
+    def _save_thumbnail(
+        self, tool_id: str, thumbnail_data: bytes, thumbnail_ext: str | None
+    ) -> str:
+        if thumbnail_ext not in IMAGE_EXTENSIONS:
+            raise AIToolError("Unsupported thumbnail image type")
+        thumbnail_name = f"thumbnail{thumbnail_ext}"
+        thumbnail_path = self._thumbnail_path(tool_id, thumbnail_name)
+        temp = thumbnail_path.with_suffix(".tmp")
+        try:
+            temp.write_bytes(thumbnail_data)
+            temp.replace(thumbnail_path)
+        except OSError as exc:
+            raise AIToolError("Could not save tool thumbnail") from exc
+        return thumbnail_name
+
+    def create(
+        self,
+        payload: bytes,
+        name: str,
+        mode: ToolMode | None = None,
+        aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE,
+        thumbnail_data: bytes | None = None,
+        thumbnail_ext: str | None = None,
+        custom_controls: list[ToolControl | dict[str, Any]] | None = None,
+        user_id: str | None = None,
+        author_username: str | None = None,
+    ) -> ToolSummary:
+        parsed = self.parse(payload, name, require_controls=(custom_controls is None))
+        effective_mode = mode if mode is not None else parsed.detected_mode
+        record = self.get(parsed.tool_id)
+        workflow = record["workflow"]
+        final = self._finalize_custom_controls(workflow, custom_controls, effective_mode)
+        record["controls"] = final["controls"]
+        record["locked_nodes"] = final["locked_nodes"]
+        thumbnail_name = None
+        if thumbnail_data is not None:
+            thumbnail_name = self._save_thumbnail(
+                parsed.tool_id, thumbnail_data, thumbnail_ext
+            )
         record.update(
             {
                 "is_draft": False,
                 "mode": effective_mode.value if hasattr(effective_mode, "value") else str(effective_mode),
                 "default_aspect_ratio": aspect_ratio.value,
                 "supported_aspect_ratios": list(ASPECT_DIMENSIONS),
-                "prompt_binding": prompt_binding,
-                "image_bindings": image_bindings,
-                "image_binding": image_bindings[0] if image_bindings else None,
-                "step_binding": step_binding,
-                "dimension_bindings": dimension_bindings,
-                "requires_image": requires_image,
-                "output_kind": "video"
-                if effective_mode in {ToolMode.TEXT_TO_VIDEO, ToolMode.IMAGE_TO_VIDEO}
-                else "image",
+                "prompt_binding": final["prompt_binding"],
+                "image_bindings": final["image_bindings"],
+                "image_binding": final["image_bindings"][0]
+                if final["image_bindings"]
+                else None,
+                "step_binding": final["step_binding"],
+                "dimension_bindings": final["dimension_bindings"],
+                "requires_image": final["requires_image"],
+                "output_kind": final["output_kind"],
                 "thumbnail": thumbnail_name,
-                "essential_summary": essential_summary,
+                "essential_summary": final["essential_summary"],
             }
         )
         if user_id is not None:
@@ -1787,6 +1851,68 @@ class AIToolService:
             record["author_username"] = author_username
         self._write_record(record)
         return self._summary(record)
+
+    def update(
+        self,
+        tool_id: str,
+        payload: bytes,
+        name: str,
+        mode: ToolMode | None = None,
+        aspect_ratio: ToolAspectRatio = ToolAspectRatio.SQUARE,
+        thumbnail_data: bytes | None = None,
+        thumbnail_ext: str | None = None,
+        custom_controls: list[ToolControl | dict[str, Any]] | None = None,
+    ) -> ToolSummary:
+        record = self.get(tool_id)
+        workflow = self._validate_workflow(payload)
+        if set(workflow) != set(record["workflow"]):
+            raise AIToolError("Node set cannot change when updating a tool")
+        effective_mode = (
+            mode
+            if mode is not None
+            else ToolMode(record.get("mode", ToolMode.TEXT_TO_IMAGE.value))
+        )
+        final = self._finalize_custom_controls(workflow, custom_controls, effective_mode)
+        clean_name = re.sub(r"\s+", " ", name.strip())[:120] or record["name"]
+        record.update(
+            {
+                "name": clean_name,
+                "workflow": _copy(workflow),
+                "controls": final["controls"],
+                "locked_nodes": final["locked_nodes"],
+                "available_nodes": self._available_nodes(workflow),
+                "mode": effective_mode.value
+                if hasattr(effective_mode, "value")
+                else str(effective_mode),
+                "default_aspect_ratio": aspect_ratio.value,
+                "supported_aspect_ratios": list(ASPECT_DIMENSIONS),
+                "prompt_binding": final["prompt_binding"],
+                "image_bindings": final["image_bindings"],
+                "image_binding": final["image_bindings"][0]
+                if final["image_bindings"]
+                else None,
+                "step_binding": final["step_binding"],
+                "dimension_bindings": final["dimension_bindings"],
+                "requires_image": final["requires_image"],
+                "output_kind": final["output_kind"],
+                "essential_summary": final["essential_summary"],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        if thumbnail_data is not None:
+            record["thumbnail"] = self._save_thumbnail(
+                tool_id, thumbnail_data, thumbnail_ext
+            )
+        self._write_record(record)
+        return self._summary(record)
+
+    def editor_payload(self, tool_id: str) -> dict[str, Any]:
+        record = self.get(tool_id)
+        return {
+            **self._summary(record).model_dump(),
+            "workflow_api": _copy(record["workflow"]),
+            "controls": record.get("controls", []),
+        }
 
     def inject(self, tool_id: str, values: dict[str, Any]) -> dict[str, Any]:
         """Compatibility path for the legacy parser endpoint.
@@ -1926,6 +2052,17 @@ class AIToolService:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         record = self.get(tool_id)
         graph = _copy(record["workflow"])
+        # Every binding below indexes ``graph[node_id]`` directly. A record whose
+        # graph lost a node is unrecoverable at run time, so report it as a 400
+        # instead of a KeyError 500.
+        for referenced in (
+            *(control.get("node_id") for control in record.get("controls", [])),
+            (record.get("prompt_binding") or {}).get("node_id"),
+            (record.get("image_binding") or {}).get("node_id"),
+            (record.get("dimension_bindings") or {}).get("node_id"),
+        ):
+            if referenced is not None and referenced not in graph:
+                raise AIToolError("Tool graph is stale; re-save the tool")
         submitted = dict(values or {})
         controls = {control["id"]: control for control in record.get("controls", [])}
         unknown = set(submitted) - set(controls)
