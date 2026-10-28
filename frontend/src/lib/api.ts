@@ -313,6 +313,11 @@ export interface ToolDetail extends ToolSummary {
   dimension_multiple?: number;
 }
 
+export interface ToolEditorPayload extends ToolSummary {
+  workflow_api: Record<string, unknown>;
+  controls: ToolControl[];
+}
+
 export interface ToolRunResult extends ToolExecutionResult {
   tool_mode: ToolMode | null;
   aspect_ratio: ToolAspectRatio | null;
@@ -1691,6 +1696,30 @@ export const api = {
     const resp = await fetch(`${API_BASE}/api/tools/create`, { method: "POST", headers: getAuthHeaders(), body: form });
     if (!resp.ok) {
       const errorMsg = await parseErrorResponse(resp, "Could not create tool");
+      throw new ApiError(resp.status, errorMsg);
+    }
+    return (await resp.json()) as ToolDetail;
+  },
+
+  async getToolForEdit(toolId: string): Promise<ToolEditorPayload> {
+    const payload = await request<ToolEditorPayload>(`/api/tools/${encodeURIComponent(toolId)}/edit`);
+    return {
+      ...payload,
+      thumbnail_url: resolveMediaUrl(payload.thumbnail_url),
+    };
+  },
+
+  async updateTool(toolId: string, file: File, name: string, mode?: ToolMode, aspectRatio: ToolAspectRatio = "1:1", thumbnail?: File, controls?: ToolControl[]): Promise<ToolDetail> {
+    const form = new FormData();
+    form.append("workflow_api", file, file.name || "workflow_api.json");
+    form.append("name", name);
+    if (mode) form.append("mode", mode);
+    form.append("aspect_ratio", aspectRatio);
+    if (thumbnail) form.append("thumbnail", thumbnail, thumbnail.name);
+    if (controls) form.append("controls", JSON.stringify(controls));
+    const resp = await fetch(`${API_BASE}/api/tools/${encodeURIComponent(toolId)}`, { method: "PUT", headers: getAuthHeaders(), body: form });
+    if (!resp.ok) {
+      const errorMsg = await parseErrorResponse(resp, "Could not update tool");
       throw new ApiError(resp.status, errorMsg);
     }
     return (await resp.json()) as ToolDetail;
