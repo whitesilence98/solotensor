@@ -5,20 +5,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  ChevronDown,
+  Check,
   Cpu,
+  ExternalLink,
   FileCode2,
-  FileJson,
-  Layout,
+  Loader2,
   Play,
-  RotateCcw,
-  Sparkles,
+  Settings2,
   Upload,
-  X,
   Zap,
 } from "lucide-react";
 import {
+  ApiError,
   api,
+  uuid,
   type ToolAspectRatio,
   type ToolControl,
   type ToolMode,
@@ -27,18 +27,31 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import VisualNodeCanvas from "@/components/VisualNodeCanvas";
+import CustomSelect from "@/components/CustomSelect";
 import {
   STARTER_TEMPLATES,
-  detectComfyUIFormat,
   type StarterWorkflowTemplate,
 } from "@/lib/starter-workflows";
+
+const MODE_LABELS: Record<ToolMode, string> = {
+  "text-to-image": "Text to Image",
+  "image-to-image": "Image to Image",
+  "text-to-video": "Text to Video",
+  "image-to-video": "Image to Video",
+};
+
+const MODE_OPTIONS = (Object.keys(MODE_LABELS) as ToolMode[]).map((value) => ({
+  value,
+  label: MODE_LABELS[value],
+}));
+
+const RATIO_OPTIONS: ToolAspectRatio[] = ["1:1", "16:9", "9:16", "4:3", "21:9"];
 
 export default function ToolCanvasPage() {
   const router = useRouter();
   const { isAuthenticated, openAuthModal } = useAuth();
 
   const [workflow, setWorkflow] = useState<Record<string, unknown> | null>(null);
-  const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("Visual Node Studio Tool");
   const [mode, setMode] = useState<ToolMode>("text-to-image");
   const [ratio, setRatio] = useState<ToolAspectRatio>("1:1");
@@ -48,7 +61,105 @@ export default function ToolCanvasPage() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-edit round trip
+  const [editingToolId, setEditingToolId] = useState<string | null>(null);
+  const [isLoadingTool, setIsLoadingTool] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [thumbnail, setThumbnail] = useState<File | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Post-save test run
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ToolRunResult | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate on mount. Read window.location.search directly — the repo avoids
+  // useSearchParams (Suspense boundary required at build time).
+  // Precedence: ?from=<tool_id> wins outright (a re-edit must not be clobbered
+  // by stale handoff state); then a workflow dropped on /tools; then a starter.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    const toolId = params.get("from");
+    if (toolId) {
+      let cancelled = false;
+      setIsLoadingTool(true);
+      api
+        .getToolForEdit(toolId)
+        .then((res) => {
+          if (cancelled) return;
+          setWorkflow(res.workflow_api);
+          setControls(res.controls.map((c) => ({ ...c, exposed: c.exposed !== false })));
+          setName(res.name);
+          setMode(res.mode);
+          setRatio(res.default_aspect_ratio);
+          setEditingToolId(res.tool_id);
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          const status = cause instanceof ApiError ? cause.status : 0;
+          if (status === 401 || status === 403) setLoadError("You do not own this tool.");
+          else if (status === 404) setLoadError("Tool not found.");
+          else setLoadError(cause instanceof Error ? cause.message : "Could not load tool.");
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingTool(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // 1. Workflow dropped / browsed on /tools (consumed, never replayed).
+    try {
+      const savedJson = sessionStorage.getItem("st_tool_upload_json");
+      const savedFilename = sessionStorage.getItem("st_tool_upload_filename");
+      if (savedJson && savedFilename) {
+        sessionStorage.removeItem("st_tool_upload_json");
+        sessionStorage.removeItem("st_tool_upload_filename");
+        void processWorkflowFile(
+          new File([savedJson], savedFilename, { type: "application/json" }),
+        );
+        return;
+      }
+    } catch (e) {
+      console.error("Failed to restore workflow from session:", e);
+    }
+
+    // 2. Starter kit from ?template= or sessionStorage.
+    try {
+      const templateId = params.get("template") ?? sessionStorage.getItem("st_tool_starter_template");
+      if (templateId) {
+        sessionStorage.removeItem("st_tool_starter_template");
+        const matched = STARTER_TEMPLATES.find((t) => t.id === templateId);
+        if (matched) handleApplyTemplate(matched);
+      }
+    } catch (e) {
+      console.error("Failed to load starter template:", e);
+    }
+  }, []);
+
+  // "Saved" is stale the moment the user edits anything again.
+  useEffect(() => {
+    setSavedAt(null);
+  }, [workflow, controls, name, mode, ratio]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setIsSettingsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isSettingsOpen]);
 
   // Ingest workflow file
   const processWorkflowFile = async (targetFile: File) => {
@@ -57,7 +168,6 @@ export default function ToolCanvasPage() {
       return;
     }
     setError(null);
-    setFile(targetFile);
     setIsAnalyzing(true);
 
     try {
@@ -65,11 +175,10 @@ export default function ToolCanvasPage() {
       const rawJson = JSON.parse(text) as Record<string, unknown>;
       setWorkflow(rawJson);
 
-      const defaultName =
-        targetFile.name
-          .replace(/\.json$/i, "")
-          .replace(/[_-]/g, " ")
-          .replace(/\b\w/g, (c) => c.toUpperCase());
+      const defaultName = targetFile.name
+        .replace(/\.json$/i, "")
+        .replace(/[_-]/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
       setName(defaultName);
 
       const res = await api.parseTool(targetFile, defaultName);
@@ -93,12 +202,16 @@ export default function ToolCanvasPage() {
     void processWorkflowFile(tmplFile);
   };
 
-  const handleDeploy = async () => {
+  const handleSave = async () => {
     if (!isAuthenticated) {
-      openAuthModal("create_tool");
+      if (editingToolId) {
+        setError("You do not own this tool.");
+      } else {
+        openAuthModal("create_tool");
+      }
       return;
     }
-    if (!file) {
+    if (!workflow) {
       setError("Workflow file is required to deploy.");
       return;
     }
@@ -110,19 +223,76 @@ export default function ToolCanvasPage() {
 
     setIsDeploying(true);
     setError(null);
+    setTestError(null);
     try {
-      const tool = await api.createTool(
-        file,
-        name,
-        mode,
+      // Serialize the current graph — the canvas state is the source of truth.
+      const graphFile = new File([JSON.stringify(workflow)], "workflow_api.json", {
+        type: "application/json",
+      });
+      const exposed = exposedControls.length > 0 ? exposedControls : undefined;
+
+      if (editingToolId) {
+        await api.updateTool(editingToolId, graphFile, name, mode, ratio, thumbnail ?? undefined, exposed);
+        setSavedAt(new Date().toLocaleTimeString());
+      } else {
+        const tool = await api.createTool(graphFile, name, mode, ratio, thumbnail ?? undefined, exposed);
+        router.push(`/tools/${tool.tool_id}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : editingToolId ? "Failed to update tool." : "Failed to deploy tool.");
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
+  const handleTestRun = async () => {
+    if (!editingToolId) return;
+    setIsTesting(true);
+    setTestError(null);
+    setTestResult(null);
+    try {
+      const exposed = controls.filter((c) => c.exposed !== false);
+      const promptControl = exposed.find((c) => c.kind === "prompt");
+      const values: Record<string, string | number | boolean> = {};
+      for (const c of exposed) {
+        if (c.kind === "prompt") continue;
+        const v = c.default ?? c.value;
+        if (v !== undefined) values[c.id] = v;
+      }
+      const result = await api.runTool(
+        editingToolId,
+        promptControl ? String(promptControl.default ?? promptControl.value ?? "") : "",
         ratio,
         undefined,
-        controls.length > 0 ? exposedControls : undefined
+        values,
+        {},
+        { clientId: uuid(), saveToGallery: false },
       );
-      router.push(`/tools/${tool.tool_id}`);
+      setTestResult(result);
+      if (result.status === "failed") setTestError(result.error || "Run failed.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to deploy tool.");
-      setIsDeploying(false);
+      setTestError(e instanceof Error ? e.message : "Test run failed.");
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // Snapshot the first output as the next save's cover.
+  const handleUseOutputAsCover = async () => {
+    const mediaUrl = testResult?.images?.[0]?.url;
+    if (!mediaUrl) return;
+    setCoverBusy(true);
+    try {
+      const res = await fetch(mediaUrl);
+      const blob = await res.blob();
+      const ext = blob.type.includes("webp") ? ".webp" : blob.type.includes("jpeg") ? ".jpg" : ".png";
+      setThumbnail(
+        new File([blob], `cover_snapshot_${Date.now()}${ext}`, { type: blob.type || "image/png" }),
+      );
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : "Could not capture cover.");
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -152,7 +322,7 @@ export default function ToolCanvasPage() {
                 </span>
                 <span className="font-mono text-[9px] text-[var(--line-strong)]">/</span>
                 <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
-                  VISUAL FUNCTION CONTROLLER
+                  {editingToolId ? "EDITING SAVED TOOL" : "VISUAL FUNCTION CONTROLLER"}
                 </span>
               </div>
               <h1 className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)]">
@@ -162,17 +332,8 @@ export default function ToolCanvasPage() {
           </div>
         </div>
 
-        {/* View Switcher & Action Buttons */}
+        {/* Tool settings & save */}
         <div className="flex items-center gap-3">
-          {/* Mode Switcher to Form Studio */}
-          <Link
-            href="/tools/create"
-            className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-3 py-1 font-mono text-[11px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-          >
-            <Layout className="h-3.5 w-3.5" />
-            <span>Form Studio Mode</span>
-          </Link>
-
           {parsedData && (
             <span className="hidden md:inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--accent)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
@@ -180,14 +341,77 @@ export default function ToolCanvasPage() {
             </span>
           )}
 
+          {/* Tool Settings — the retired wizard's identity step */}
+          <div className="relative" ref={settingsRef}>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen((v) => !v)}
+              aria-expanded={isSettingsOpen}
+              aria-haspopup="dialog"
+              aria-label="Tool settings"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface)] px-3 font-mono text-[11px] font-bold text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition-colors"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              <span>Settings</span>
+            </button>
+            {isSettingsOpen && (
+              <div
+                role="dialog"
+                aria-label="Tool settings"
+                className="absolute right-0 top-10 z-40 w-72 space-y-3 rounded-[6px] border border-[var(--line-strong)] bg-[var(--surface-raised)] p-4 shadow-xl"
+              >
+                <div className="space-y-1">
+                  <label className="block font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-faint)]">
+                    Tool name
+                  </label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="h-8 w-full rounded border border-[var(--line)] bg-[var(--surface)] px-2 text-xs text-[var(--ink)] outline-none focus-visible:border-[var(--accent)]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-faint)]">
+                    Mode
+                  </span>
+                  <CustomSelect
+                    value={mode}
+                    onChange={(v) => setMode(v as ToolMode)}
+                    options={MODE_OPTIONS}
+                    ariaLabel="Tool mode"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-faint)]">
+                    Aspect ratio
+                  </span>
+                  <CustomSelect
+                    value={ratio}
+                    onChange={(v) => setRatio(v as ToolAspectRatio)}
+                    options={RATIO_OPTIONS}
+                    ariaLabel="Default aspect ratio"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             disabled={isDeploying || !workflow || exposedCount === 0}
-            onClick={() => void handleDeploy()}
+            onClick={() => void handleSave()}
             className="inline-flex h-8 items-center gap-1.5 rounded-[5px] bg-[var(--accent)] px-4 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_12px_rgba(213,240,111,0.25)] disabled:opacity-40"
           >
-            <Zap className="h-3.5 w-3.5" />
-            <span>{isDeploying ? "Deploying…" : "Deploy Tool ⚡"}</span>
+            {isDeploying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            <span>
+              {isDeploying
+                ? editingToolId
+                  ? "Updating…"
+                  : "Deploying…"
+                : editingToolId
+                  ? "Update Tool"
+                  : "Deploy Tool ⚡"}
+            </span>
           </button>
         </div>
       </header>
@@ -205,9 +429,74 @@ export default function ToolCanvasPage() {
         </div>
       )}
 
+      {/* Saved bar: View tool, test run, cover capture */}
+      {savedAt && editingToolId && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)] px-6 py-2 z-30">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[var(--accent)]">
+            <Check className="h-3.5 w-3.5" />
+            Saved
+            <span className="font-normal text-[var(--ink-faint)]">{savedAt}</span>
+          </span>
+          <Link
+            href={`/tools/${editingToolId}`}
+            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:text-[var(--accent)]"
+          >
+            View tool <ExternalLink className="h-3 w-3" />
+          </Link>
+          <button
+            type="button"
+            disabled={isTesting}
+            onClick={() => void handleTestRun()}
+            className="inline-flex h-6 items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
+          >
+            {isTesting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            <span>{isTesting ? "Running…" : "Test run"}</span>
+          </button>
+          {testError && (
+            <span role="alert" className="font-mono text-[10px] text-[var(--danger)]">
+              {testError}
+            </span>
+          )}
+          {testResult?.images?.[0] && (
+            <div className="flex items-center gap-2">
+              {testResult.images[0].kind === "video" ? (
+                <a
+                  href={testResult.images[0].url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-[10px] text-[var(--accent)] hover:underline"
+                >
+                  Open output
+                </a>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={testResult.images[0].url}
+                  alt="Test run output"
+                  className="h-8 w-8 rounded border border-[var(--line)] object-cover"
+                />
+              )}
+              <button
+                type="button"
+                disabled={coverBusy}
+                onClick={() => void handleUseOutputAsCover()}
+                className="font-mono text-[10px] text-[var(--ink-soft)] underline hover:text-[var(--accent)] disabled:opacity-40"
+              >
+                {thumbnail ? "Cover set" : "Use as cover"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Body: Visual Canvas or Ingestion Empty State */}
       <div className="flex-1 min-h-0 relative">
-        {workflow ? (
+        {isLoadingTool ? (
+          <div className="flex h-full w-full items-center justify-center font-mono text-xs text-[var(--ink-faint)]">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin text-[var(--accent)]" />
+            Loading tool…
+          </div>
+        ) : workflow ? (
           <VisualNodeCanvas
             workflow={workflow}
             controls={controls}
@@ -218,6 +507,15 @@ export default function ToolCanvasPage() {
         ) : (
           <div className="flex h-full w-full items-center justify-center p-6 overflow-y-auto">
             <div className="max-w-2xl w-full space-y-6">
+              {loadError && (
+                <div
+                  role="alert"
+                  className="rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 text-center font-mono text-xs text-[var(--danger)]"
+                >
+                  {loadError}
+                </div>
+              )}
+
               {/* Drop / Ingest Card */}
               <div className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-raised)] p-6 shadow-xl space-y-4 text-center">
                 <div className="h-12 w-12 rounded-[8px] border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--accent)] flex items-center justify-center mx-auto">
