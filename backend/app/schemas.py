@@ -965,6 +965,7 @@ class ModelCompatibility(BaseModel):
     base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     vae: str | None = None
     text_encoder: str | None = Field(None, min_length=1, max_length=255)
+    text_encoder_2: str | None = Field(None, min_length=1, max_length=255)
     clip_type: str | None = Field(None, min_length=1, max_length=64)
     parent_model: str | None = Field(None, max_length=255)
 
@@ -988,6 +989,8 @@ class ModelCompatibility(BaseModel):
 
     @model_validator(mode="after")
     def validate_encoder_stack(self) -> "ModelCompatibility":
+        if self.text_encoder_2 is not None and self.text_encoder is None:
+            raise ValueError("text_encoder_2 requires text_encoder")
         if (self.text_encoder is None) != (self.clip_type is None):
             raise ValueError("text_encoder and clip_type must be set together")
         return self
@@ -1404,6 +1407,7 @@ class InstalledGalleryModel(BaseModel):
     sha256: str
     vae: str | None = None
     text_encoder: str | None = None
+    text_encoder_2: str | None = None
     clip_type: str | None = None
     base_model: str | None = None
     base_model_id: str | None = None

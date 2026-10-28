@@ -95,6 +95,7 @@ classDiagram
         +string base_file_id
         +string vae
         +string text_encoder
+        +string text_encoder_2
         +string clip_type
         +string parent_model
     }
@@ -102,6 +103,7 @@ classDiagram
     class CoreBaseProfile {
         +RecommendedVAESelector vae
         +TextEncoderDropdown text_encoder
+        +TextEncoderDropdown text_encoder_2
         +CLIPProtocolSelector clip_type
     }
 
@@ -158,8 +160,18 @@ video architecture changes the banner and quick-picks but never the layout.
   resolves `compatibility.base_model` against `VIDEO_ENGINES`
   (`ltx`, `wan`, `hunyuan-video`, `svd`, `cogvideo`, `mochi`). The creation wizard
   mirrors it client-side as `videoFamilyOf()` for unsaved selections.
-- **Controls Displayed**: the same three Core Base selectors, with video quick-picks
+- **Controls Displayed**: the same Core Base selectors, with video quick-picks
   (`LTX23_video_vae_bf16.safetensors`, `taeltx2_3.safetensors`, CLIP protocol `ltxv`).
+- **Dual-encoder stack (LTX)**: LTX video loads **two** encoders through a single
+  `DualCLIPLoader` — `gemma_3_12B_it` as `clip_name1` and
+  `ltx-2.3_text_projection` as `clip_name2` — sharing **one** protocol type
+  (`ltxv`), which is why `clip_type` stays a single field while `text_encoder`
+  gains an optional second slot (`text_encoder_2`). The wizard renders the second
+  selector only when `videoFamilyOf()` resolves to `ltx`, auto-detected like the
+  banner. Image graphs use a single-input `CLIPLoader` and never show it. The
+  values are prefilled from [`workflow_template_info`](backend/app/main.py), which
+  reads both `clip_name1`/`clip_name2` and skips the template's live-preview and
+  audio VAEs when picking the decode VAE.
 - **Honesty constraint**: video rendering runs the **bundled LTX-Video 2.3 graph**.
   [`patch_video_it2v_workflow`](backend/app/services/workflow_router.py) accepts no
   transformer, VAE, or text-encoder names, so a gallery checkpoint is a label and a
@@ -237,6 +249,7 @@ async def models(category: str) -> list[str]:
 In `ModelCompatibility` ([`app/schemas.py`](backend/app/schemas.py#L428)):
 - `vae` is optional (`str | None`).
 - `text_encoder` and `clip_type` are co-dependent: either both are provided, or both are `None`.
+- `text_encoder_2` is optional but requires `text_encoder`; it records the second encoder of a dual-encoder stack (LTX video) and is always `None` for single-encoder models.
 - `base_model_id`, `base_version_id`, and `base_file_id` must be set together when linking to an installed base model.
 
 ---

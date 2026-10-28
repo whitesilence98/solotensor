@@ -827,6 +827,7 @@ class ModelService:
             "sha256": item["sha256"],
             "vae": compatibility.get("vae"),
             "text_encoder": compatibility.get("text_encoder"),
+            "text_encoder_2": compatibility.get("text_encoder_2"),
             "clip_type": compatibility.get("clip_type"),
             "base_model": compatibility.get("base_model"),
             "base_model_id": compatibility.get("base_model_id"),

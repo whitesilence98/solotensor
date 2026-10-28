@@ -100,22 +100,35 @@ class ComfyClient:
             raise ComfyClientError(f"ComfyUI returned an invalid model list for {category}")
         return data
 
-    async def clip_types(self) -> list[str]:
-        """Return CLIPLoader architecture types advertised by ComfyUI."""
-        async with self._http() as client:
-            try:
-                resp = await client.get("/object_info/CLIPLoader")
+    async def _node_enum(self, class_type: str) -> list[str]:
+        """Return one ComfyUI node's required `type` enum, or [] if unavailable."""
+        try:
+            async with self._http() as client:
+                resp = await client.get(f"/object_info/{class_type}")
                 await self._drain(resp)
                 data = resp.json()
-            except (httpx.HTTPError, ValueError, ComfyClientError) as exc:
-                raise ComfyClientError(f"Could not list CLIP loader types: {exc}") from exc
-        try:
-            values = data["CLIPLoader"]["input"]["required"]["type"][0]
-        except (KeyError, IndexError, TypeError):
-            raise ComfyClientError("ComfyUI returned no CLIP loader types")
+            values = data[class_type]["input"]["required"]["type"][0]
+        except (httpx.HTTPError, ValueError, ComfyClientError, KeyError, IndexError, TypeError):
+            return []
         if not isinstance(values, list) or not all(isinstance(item, str) and item for item in values):
-            raise ComfyClientError("ComfyUI returned invalid CLIP loader types")
+            return []
         return values
+
+    async def clip_types(self) -> list[str]:
+        """Return CLIP loader architecture types from both loader nodes.
+
+        Video graphs use DualCLIPLoader (the video-only `ltxv` protocol lives
+        there), image graphs use CLIPLoader; a protocol valid on one node is
+        not necessarily listed on the other.
+        """
+        merged: list[str] = []
+        for values in (await self._node_enum("CLIPLoader"), await self._node_enum("DualCLIPLoader")):
+            for value in values:
+                if value not in merged:
+                    merged.append(value)
+        if not merged:
+            raise ComfyClientError("ComfyUI returned no CLIP loader types")
+        return merged
 
     async def resolve_clip_type(self, clip_type: str) -> str:
         """Validate a CLIPLoader type against ComfyUI's node metadata."""

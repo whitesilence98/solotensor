@@ -73,6 +73,25 @@ class TestModelHandlerFactory(unittest.TestCase):
         self.assertIsNone(cleaned_control["vae"])
         self.assertIsNone(cleaned_control["text_encoder"])
 
+    def test_sanitize_compatibility_text_encoder_2(self) -> None:
+        raw = {
+            "base_model": "LTX-Video 2.3",
+            "text_encoder": "gemma_3_12B_it_fp8_e4m3fn.safetensors",
+            "text_encoder_2": "ltx-2.3_text_projection_bf16.safetensors",
+            "clip_type": "ltxv",
+        }
+
+        cleaned_ckpt = ModelHandlerFactory.sanitize_compatibility("Checkpoint", raw)
+        self.assertEqual(
+            cleaned_ckpt["text_encoder_2"], "ltx-2.3_text_projection_bf16.safetensors"
+        )
+
+        for model_type in ("VAE", "Wildcards", "ControlNet"):
+            with self.subTest(model_type=model_type):
+                cleaned = ModelHandlerFactory.sanitize_compatibility(model_type, raw)
+                self.assertIsNone(cleaned["text_encoder_2"])
+                self.assertIsNone(cleaned["text_encoder"])
+
     def test_checkpoint_dual_folder_resolution(self) -> None:
         handler = ModelHandlerFactory.get_handler("Checkpoint")
         self.assertEqual(handler.candidate_categories, ("checkpoints", "diffusion_models"))

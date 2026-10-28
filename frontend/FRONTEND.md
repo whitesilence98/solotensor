@@ -46,7 +46,7 @@ This document outlines the architecture, design system, and coding standards for
 - **16 Standardized Types**: Strictly use the `CreatorModelType` union defined in `src/lib/api.ts` (e.g. `Checkpoint`, `LoRA`, `VAE`, `ControlNet`, etc.).
 - **Dual SafeTensors Extensions**: Always accept both `.safetensors` and `.sft` across all file inputs, drag-and-drop dropzones, and ComfyUI enclave model scanners.
 - **Persistent Compatibility Container**: In `src/app/models/create/page.tsx` (and `EditModelDrawer.tsx` for existing models), keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:
-  - *Core Base (`Checkpoint`, `SVD`)*: Dual-source VAE Selector + Text Encoders + CLIP protocol. When the base architecture resolves to a video engine (`videoFamilyOf()`), the banner switches to a `[VIDEO BACKBONE · <ENGINE>]` pill and the same selectors gain video quick-picks — auto-detected, never a toggle.
+  - *Core Base (`Checkpoint`, `SVD`)*: Dual-source VAE Selector + Text Encoder (a second `Text Encoder 2 / Projection` slot for LTX video, which loads two encoders through one `DualCLIPLoader`) + CLIP protocol. When the base architecture resolves to a video engine (`videoFamilyOf()`), the banner switches to a `[VIDEO BACKBONE · <ENGINE>]` pill and the same selectors gain video quick-picks — auto-detected, never a toggle.
   - *Adapters (`LoRA`, `DoRA`, etc.)*: Base Checkpoint gallery link + auto-inherited stack card + optional override.
   - *VAE*: Latent channel profile (16ch / 4ch) with zero redundant VAE selectors.
   - *Guidance (`ControlNet`, `Poses`)*: Preprocessor modality selector.

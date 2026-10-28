@@ -64,6 +64,7 @@ class BaseModelHandler(ABC):
             data["vae"] = None
         if not self.supports_text_encoder:
             data["text_encoder"] = None
+            data["text_encoder_2"] = None
             data["clip_type"] = None
         return data
 

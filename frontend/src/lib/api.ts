@@ -189,6 +189,7 @@ export interface WorkflowTemplateInfo {
   has_template: boolean;
   vae_name?: string | null;
   clip_name?: string | null;
+  clip_name2?: string | null;
   clip_type?: string | null;
   unet_name?: string | null;
   sampler_name?: string | null;
@@ -941,6 +942,10 @@ export interface CreatorModelCompatibility {
   base_file_id: string | null;
   vae: string | null;
   text_encoder: string | null;
+  /** Second encoder of a dual-encoder stack (LTX video). Optional: the backend
+   *  defaults it to null, and updates merge, so omitting it preserves the
+   *  stored value. */
+  text_encoder_2?: string | null;
   clip_type: string | null;
   parent_model: string | null;
 }
@@ -1229,6 +1234,7 @@ export interface InstalledGalleryModel {
   sha256: string;
   vae: string | null;
   text_encoder: string | null;
+  text_encoder_2: string | null;
   clip_type: string | null;
   base_model?: string | null;
   base_model_id: string | null;

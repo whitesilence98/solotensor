@@ -1111,9 +1111,12 @@ async def clip_options() -> dict[str, list[str]]:
 async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
     try:
         comfy = get_comfy_client()
-        # The node-scan loop below is graph-agnostic: the video template exposes
-        # its LTX VAE and CLIP protocol through the same VAELoader/CLIPLoader
-        # nodes as the image graph, so only the template source changes.
+        # The scan below keys off node class, not graph shape, because the two
+        # templates differ: image graphs use CLIPLoader + a single VAELoader,
+        # while video graphs use DualCLIPLoader (two encoders, the second fed to
+        # the text projection) and VAELoaderKJ. Video also loads preview and
+        # audio VAEs alongside the decode VAE, so the VAE branch skips nodes by
+        # title rather than taking the first loader it sees.
         if mode == "video":
             template = comfy.load_video_it2v_template()
         else:
@@ -1123,6 +1126,7 @@ async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
 
         vae_name = None
         clip_name = None
+        clip_name2 = None
         clip_type = None
         unet_name = None
         sampler_name = None
@@ -1159,13 +1163,19 @@ async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
             if not isinstance(inputs, dict):
                 continue
 
-            if c_type == "VAELoader" and not vae_name:
-                vae_name = inputs.get("vae_name")
+            if c_type in ("VAELoader", "VAELoaderKJ") and not vae_name:
+                title = str(node.get("_meta", {}).get("title", "")).lower()
+                if "preview" not in title and "audio" not in title:
+                    vae_name = inputs.get("vae_name")
+            elif c_type == "DualCLIPLoader":
+                # Independent of the primary guard so a graph mixing both loader
+                # classes still reports its second encoder.
+                clip_name2 = inputs.get("clip_name2") or clip_name2
+                if not clip_name:
+                    clip_name = inputs.get("clip_name1") or inputs.get("clip_name2")
+                    clip_type = inputs.get("type")
             elif c_type == "CLIPLoader" and not clip_name:
                 clip_name = inputs.get("clip_name")
-                clip_type = inputs.get("type")
-            elif c_type == "DualCLIPLoader" and not clip_name:
-                clip_name = inputs.get("clip_name1") or inputs.get("clip_name2")
                 clip_type = inputs.get("type")
             elif c_type in ("UNETLoader", "CheckpointLoaderSimple") and not unet_name:
                 unet_name = inputs.get("unet_name") or inputs.get("ckpt_name")
@@ -1234,6 +1244,7 @@ async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
             "has_template": True,
             "vae_name": vae_name,
             "clip_name": clip_name,
+            "clip_name2": clip_name2,
             "clip_type": clip_type,
             "unet_name": unet_name,
             "sampler_name": sampler_name,

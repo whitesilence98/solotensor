@@ -234,6 +234,10 @@ export default function CreateModelPage() {
   const [encoderFiles, setEncoderFiles] = useState<string[]>([]);
   const [encoderLoading, setEncoderLoading] = useState(false);
   const [encoderError, setEncoderError] = useState<string | null>(null);
+  // LTX video loads a second projection encoder through the same DualCLIPLoader.
+  const [textEncoder2, setTextEncoder2] = useState("");
+  const [isCustomEncoder2, setIsCustomEncoder2] = useState(false);
+  const [customEncoder2, setCustomEncoder2] = useState("");
 
   // Dynamic Compatibility: CLIP Type (from ComfyUI clip-options & workflow)
   const [clipType, setClipType] = useState("");
@@ -738,12 +742,15 @@ export default function CreateModelPage() {
    * and a value the creator already typed is never replaced.
    */
   const applyVideoTemplateDefaults = (info: WorkflowTemplateInfo) => {
-    const { vae_name, clip_name, clip_type } = info;
+    const { vae_name, clip_name, clip_name2, clip_type } = info;
     if (vae_name) {
       setVae((current) => (current.trim() ? current : vae_name));
     }
     if (clip_name) {
       setTextEncoder((current) => (current.trim() ? current : clip_name));
+    }
+    if (clip_name2) {
+      setTextEncoder2((current) => (current.trim() ? current : clip_name2));
     }
     if (clip_type) {
       setClipType((current) => (current.trim() ? current : clip_type));
@@ -825,11 +832,14 @@ export default function CreateModelPage() {
     if (workflowInfo?.clip_name && !list.includes(workflowInfo.clip_name)) {
       list.push(workflowInfo.clip_name);
     }
+    if (workflowInfo?.clip_name2 && !list.includes(workflowInfo.clip_name2)) {
+      list.push(workflowInfo.clip_name2);
+    }
     encoderFiles.forEach((name) => {
       if (!list.includes(name)) list.push(name);
     });
     return list;
-  }, [workflowInfo?.clip_name, encoderFiles]);
+  }, [workflowInfo?.clip_name, workflowInfo?.clip_name2, encoderFiles]);
 
   // Dynamic CLIP conditioning types (natural order, unpinned)
   const clipTypeOptions = useMemo(() => {
@@ -871,6 +881,9 @@ export default function CreateModelPage() {
     }
   }, [encoderOptions, textEncoder, isCustomEncoder]);
 
+  // No auto-select for the second slot: `applyVideoTemplateDefaults` already
+  // seeds it from the template, and the field is optional. Auto-filling here
+  // would immediately undo an explicit "None / Not Required" choice.
   useEffect(() => {
     if (clipTypeOptions.length > 0 && (!clipType || !clipTypeOptions.includes(clipType))) {
       setClipType(clipTypeOptions[0]);
@@ -896,6 +909,8 @@ export default function CreateModelPage() {
   const resolvedVae = (isCustomVae ? customVae.trim() : vae.trim()) || null;
 
   const resolvedEncoder = (isCustomEncoder ? customEncoder.trim() : textEncoder.trim()) || null;
+
+  const resolvedEncoder2 = (isCustomEncoder2 ? customEncoder2.trim() : textEncoder2.trim()) || null;
 
   const resolvedClipType = clipType.trim() || null;
 
@@ -935,26 +950,31 @@ export default function CreateModelPage() {
     const currentTier = getModelTier(modelType);
     let resolvedVaePayload: string | null = null;
     let resolvedEncoderPayload: string | null = null;
+    let resolvedEncoder2Payload: string | null = null;
     let resolvedClipPayload: string | null = null;
 
     if (currentTier === "Core Base") {
       resolvedVaePayload = resolvedVae;
       resolvedEncoderPayload = resolvedEncoder;
+      resolvedEncoder2Payload = resolvedEncoder2;
       resolvedClipPayload = resolvedClipType;
     } else if (currentTier === "Adapter") {
       if (showAdapterOverride) {
         resolvedVaePayload = resolvedVae;
         resolvedEncoderPayload = resolvedEncoder;
+        resolvedEncoder2Payload = resolvedEncoder2;
         resolvedClipPayload = resolvedClipType;
       } else {
         resolvedVaePayload = selectedBase?.vae || null;
         resolvedEncoderPayload = selectedBase?.text_encoder || null;
+        resolvedEncoder2Payload = selectedBase?.text_encoder_2 || null;
         resolvedClipPayload = selectedBase?.clip_type || null;
       }
     } else {
       // Autoencoder, Guidance, Inversion, Prompt Asset
       resolvedVaePayload = null;
       resolvedEncoderPayload = null;
+      resolvedEncoder2Payload = null;
       resolvedClipPayload = null;
     }
 
@@ -962,6 +982,10 @@ export default function CreateModelPage() {
     if (!resolvedEncoderPayload || !resolvedClipPayload) {
       resolvedEncoderPayload = null;
       resolvedClipPayload = null;
+    }
+    // The second encoder only exists for LTX video; never record it for another family.
+    if (!isLtxVideo || !resolvedEncoderPayload || !resolvedEncoder2Payload) {
+      resolvedEncoder2Payload = null;
     }
 
     try {
@@ -980,6 +1004,7 @@ export default function CreateModelPage() {
           base_file_id: selectedBase?.file_id ?? null,
           vae: resolvedVaePayload,
           text_encoder: resolvedEncoderPayload,
+          text_encoder_2: resolvedEncoder2Payload,
           clip_type: resolvedClipPayload,
           parent_model: null,
         },
@@ -1566,6 +1591,66 @@ export default function CreateModelPage() {
                             )}
                           </div>
 
+                          {/* Text Encoder 2 / Projection — LTX video's second DualCLIPLoader slot */}
+                          {isLtxVideo && (
+                            <div className="space-y-1.5">
+                              <div>
+                                <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                  Text Encoder 2 / Projection
+                                </label>
+                                <span className="block font-mono text-[9px] text-[var(--ink-faint)]">
+                                  LTX video loads a second projection encoder
+                                </span>
+                              </div>
+
+                              <CustomSelect
+                                value={isCustomEncoder2 ? "__custom__" : textEncoder2}
+                                onChange={(val) => {
+                                  if (val === "__custom__") {
+                                    setIsCustomEncoder2(true);
+                                    setTextEncoder2(customEncoder2);
+                                  } else {
+                                    setIsCustomEncoder2(false);
+                                    setTextEncoder2(val);
+                                  }
+                                }}
+                                options={[
+                                  { value: "", label: "None / Not Required" },
+                                  ...encoderOptions.map((enc) => ({
+                                    value: enc,
+                                    label: enc,
+                                  })),
+                                  {
+                                    value: "__custom__",
+                                    label: "Custom Encoder filename (.safetensors, .sft)…",
+                                  },
+                                ]}
+                                className="w-full"
+                                buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                              />
+
+                              {isCustomEncoder2 && (
+                                <input
+                                  type="text"
+                                  value={customEncoder2}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomEncoder2(val);
+                                    setTextEncoder2(val);
+                                  }}
+                                  placeholder="e.g. ltx-2.3_text_projection_bf16.safetensors…"
+                                  className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                                />
+                              )}
+
+                              {encoderError && (
+                                <p className="font-mono text-[9px] text-[var(--danger)]">
+                                  {encoderError}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
                           {/* CLIP Type / Protocol */}
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
@@ -1747,7 +1832,65 @@ export default function CreateModelPage() {
                                   className="w-full"
                                   buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
                                 />
+                                {isCustomEncoder && (
+                                  <input
+                                    type="text"
+                                    value={customEncoder}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setCustomEncoder(val);
+                                      setTextEncoder(val);
+                                    }}
+                                    placeholder="e.g. t5xxl_fp8_e4m3fn.sft or clip_l.safetensors…"
+                                    className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                                  />
+                                )}
                               </div>
+                              {/* Second projection encoder — LTX video's DualCLIPLoader slot 2 */}
+                              {isLtxVideo && (
+                                <div className="space-y-1.5">
+                                  <div>
+                                    <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
+                                      Text Encoder 2 / Projection
+                                    </label>
+                                    <span className="block font-mono text-[9px] text-[var(--ink-faint)]">
+                                      LTX video loads a second projection encoder
+                                    </span>
+                                  </div>
+                                  <CustomSelect
+                                    value={isCustomEncoder2 ? "__custom__" : textEncoder2}
+                                    onChange={(val) => {
+                                      if (val === "__custom__") {
+                                        setIsCustomEncoder2(true);
+                                        setTextEncoder2(customEncoder2);
+                                      } else {
+                                        setIsCustomEncoder2(false);
+                                        setTextEncoder2(val);
+                                      }
+                                    }}
+                                    options={[
+                                      { value: "", label: "None / Not Required" },
+                                      ...encoderOptions.map((enc) => ({ value: enc, label: enc })),
+                                      { value: "__custom__", label: "Custom Encoder filename (.safetensors, .sft)…" },
+                                    ]}
+                                    className="w-full"
+                                    buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"
+                                  />
+                                  {isCustomEncoder2 && (
+                                    <input
+                                      type="text"
+                                      value={customEncoder2}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setCustomEncoder2(val);
+                                        setTextEncoder2(val);
+                                      }}
+                                      placeholder="e.g. ltx-2.3_text_projection_bf16.safetensors…"
+                                      className="workspace-field h-8 w-full rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:border-[var(--accent)] outline-none"
+                                    />
+                                  )}
+                                </div>
+                              )}
                               <div className="space-y-1.5">
                                 <label className="block font-mono text-[9px] font-bold tracking-wider text-[var(--ink-soft)] uppercase">
                                   CLIP Type Protocol
@@ -1804,7 +1947,7 @@ export default function CreateModelPage() {
                             </span>
                           </div>
                           <p className="font-mono text-[10px] text-[var(--ink-soft)] leading-relaxed">
-                            This asset functions directly as the continuous autoencoder, transforming spatial RGB pixel arrays into compressed latent representations and reconstructing latent tensors back to image canvas. Downstream VAE decoders, text encoders, and CLIP protocols are inactive for this tier.
+                            This asset functions directly as the continuous autoencoder, transforming spatial RGB pixel arrays into compressed latent representations and decoding them back to image canvas. Downstream VAE decoders, text encoders, and CLIP protocols are inactive for this tier.
                           </p>
                           <div className="flex items-center gap-1.5 pt-1">
                             <span className="font-mono text-[9px] text-[var(--ink-faint)]">Supported file extensions:</span>
@@ -1867,7 +2010,7 @@ export default function CreateModelPage() {
                             </span>
                           </div>
                           <p className="font-mono text-[10px] text-[var(--ink-soft)] leading-relaxed">
-                            Guidance tensors inject structural edge, depth, or vision conditioning cues directly into diffusion transformer blocks (DiT / U-Net zero-convolutions), maintaining geometric fidelity without altering prompt conditioning or requiring external VAE/CLIP decoders.
+                            Guidance encodings inject structural edge, depth, or vision conditioning cues directly into diffusion transformer blocks (DiT / U-Net zero-convolutions), maintaining geometric fidelity without altering prompt conditioning or requiring external VAE/CLIP decoders.
                           </p>
                         </div>
                       </div>

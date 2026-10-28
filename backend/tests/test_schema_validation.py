@@ -166,6 +166,34 @@ class PromptValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ModelCompatibility(clip_type="krea2")
 
+    def test_rejects_second_text_encoder_without_first(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelCompatibility(text_encoder_2="projection.safetensors")
+
+    def test_accepts_dual_text_encoder_stack(self) -> None:
+        compatibility = ModelCompatibility(
+            text_encoder="gemma_3_12B_it_fp8_e4m3fn.safetensors",
+            text_encoder_2="ltx-2.3_text_projection_bf16.safetensors",
+            clip_type="ltxv",
+        )
+        self.assertEqual(compatibility.text_encoder, "gemma_3_12B_it_fp8_e4m3fn.safetensors")
+        self.assertEqual(compatibility.text_encoder_2, "ltx-2.3_text_projection_bf16.safetensors")
+        self.assertEqual(compatibility.clip_type, "ltxv")
+
+    def test_text_encoder_2_defaults_to_none(self) -> None:
+        self.assertIsNone(ModelCompatibility().text_encoder_2)
+        self.assertIsNone(
+            ModelCompatibility(text_encoder="t5xxl.safetensors", clip_type="flux2").text_encoder_2
+        )
+
+    def test_legacy_encoder_list_does_not_promote_second_slot(self) -> None:
+        compatibility = ModelCompatibility(
+            text_encoders=["encoder.safetensors", "projection.safetensors"],
+            clip_type="ltxv",
+        )
+        self.assertEqual(compatibility.text_encoder, "encoder.safetensors")
+        self.assertIsNone(compatibility.text_encoder_2)
+
     def test_tier_specific_compatibilities(self) -> None:
         # VAE: standalone, no VAE or text encoder needed
         vae_compat = ModelCompatibility(base_model="FLUX.1", vae=None, text_encoder=None, clip_type=None)

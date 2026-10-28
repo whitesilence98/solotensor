@@ -559,6 +559,53 @@ class TestVideoGeneration(unittest.TestCase):
         mock_comfy.load_video_it2v_template.assert_called_once_with()
         mock_comfy.load_workflow_template.assert_not_called()
 
+    def test_template_info_video_mode_reports_dual_clip_and_decode_vae(self):
+        """DualCLIPLoader exposes slot 2; preview/audio VAEs are skipped."""
+        mock_comfy = MagicMock()
+        mock_comfy.load_video_it2v_template = MagicMock(
+            return_value=json.loads(json.dumps(self.template))
+        )
+
+        with patch("app.main.get_comfy_client", return_value=mock_comfy):
+            resp = self.client.get(
+                "/api/v1/workflow/template-info", params={"mode": "video"}
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        info = resp.json()
+        self.assertEqual(info["clip_name"], "gemma_3_12B_it_fp8_e4m3fn.safetensors")
+        self.assertEqual(info["clip_name2"], "ltx-2.3_text_projection_bf16.safetensors")
+        self.assertEqual(info["clip_type"], "ltxv")
+        self.assertEqual(info["vae_name"], "LTX23_video_vae_bf16.safetensors")
+        self.assertNotEqual(info["vae_name"], "taeltx2_3.safetensors")
+
+    def test_template_info_image_mode_has_no_second_clip(self):
+        """Single CLIPLoader graph reports clip_name2 as None."""
+        mock_comfy = MagicMock()
+        mock_comfy.load_workflow_template = MagicMock(
+            return_value={
+                "616": {
+                    "class_type": "CLIPLoader",
+                    "inputs": {
+                        "clip_name": "qwen3vl_4B_Instruct-abliterated-fp8_scaled.safetensors",
+                        "type": "krea2",
+                    },
+                },
+                "617": {
+                    "class_type": "VAELoader",
+                    "inputs": {"vae_name": "wan_2.1_vae.safetensors"},
+                },
+            }
+        )
+
+        with patch("app.main.get_comfy_client", return_value=mock_comfy):
+            resp = self.client.get("/api/v1/workflow/template-info")
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        info = resp.json()
+        self.assertIsNone(info["clip_name2"])
+        self.assertEqual(info["vae_name"], "wan_2.1_vae.safetensors")
+
 
 if __name__ == "__main__":
     unittest.main()
