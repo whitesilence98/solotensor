@@ -42,6 +42,7 @@
     --media-control-ink: #12150f;
 
     --nav-width: 4.5rem;
+    --nav-width-expanded: 13.5rem;
     --mobile-nav-height: 4.5rem;
 
     --radius-control: 0.5rem;
@@ -136,7 +137,7 @@
   /* Tactile Focus Ring */
   .workspace-field:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(213, 240, 111, 0.16), inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent), inset 0 1px 2px rgba(0, 0, 0, 0.4);
     outline: none;
   }
 
@@ -460,13 +461,14 @@
 
   .group:hover .ai-magic-icon path {
     stroke: url(#ai-magic-wand-gradient-bright) !important;
-    filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.75));
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 65%, transparent));
   }
 
-  /* When active / selected: pure luminous white icon against the solid cyan/blue gradient fill */
-  .ai-magic-active .ai-magic-icon path {
-    stroke: #ffffff !important;
-    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.85));
+  /* When active / selected: dark ink stroke against the solid lime fill */
+  .ai-magic-active .ai-magic-icon path,
+  .ai-magic-active.group:hover .ai-magic-icon path {
+    stroke: var(--accent-ink) !important;
+    filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.35));
   }
 
   @keyframes sparkle-twinkle {
@@ -482,6 +484,37 @@
 
   .animate-sparkle {
     animation: sparkle-twinkle 2s ease-in-out infinite;
+  }
+
+  /*
+   * Collapsible studio rail.
+   * Width and label choreography share the workspace easing so the rail opens as one
+   * movement. The motion class is only mounted after the stored preference has been
+   * restored, which keeps the first paint free of a non-user-initiated layout animation.
+   */
+  .studio-rail-motion {
+    transition: width var(--motion-base) var(--ease-workspace);
+  }
+
+  .studio-rail-motion .studio-rail-label {
+    transition:
+      max-width var(--motion-base) var(--ease-workspace),
+      margin-left var(--motion-base) var(--ease-workspace),
+      opacity var(--motion-fast) var(--ease-workspace);
+  }
+
+  .studio-rail-motion .studio-rail-chevron {
+    transition: transform var(--motion-fast) var(--ease-workspace);
+  }
+
+  @media (min-width: 768px) {
+    .studio-rail {
+      width: var(--nav-width);
+    }
+
+    .studio-rail[data-expanded="true"] {
+      width: var(--nav-width-expanded);
+    }
   }
 }
 
@@ -820,6 +853,13 @@ button:hover>.asset-zoom-media {
   .workspace-action-quiet:hover,
   .workspace-action-icon:hover {
     transform: none !important;
+  }
+
+  /* The rail expands and collapses instantly when motion is reduced. */
+  .studio-rail-motion,
+  .studio-rail-motion .studio-rail-label,
+  .studio-rail-motion .studio-rail-chevron {
+    transition: none !important;
   }
 
   /*

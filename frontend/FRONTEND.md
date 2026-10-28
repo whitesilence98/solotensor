@@ -15,16 +15,20 @@ This document outlines the architecture, design system, and coding standards for
 
 ## 2. Design System: Obsidian & Acid Lime Brutalist Studio
 - **Design Spec**: Refer to [`DESIGN.md`](DESIGN.md).
-- **Core Tokens**:
-  - `--ground`: `#0a0b0a` (Deep obsidian backdrop)
-  - `--surface`: `#121412` (Panel and inspector surface)
-  - `--surface-raised`: `#181b18` (Card and popover surface)
-  - `--surface-sunken`: `#0e100e` (Input background, canvas frame backdrop)
-  - `--line`: `#282c28` (Hairline dividers, borders)
-  - `--accent`: `#d5f06f` (Acid lime accent)
-  - `--accent-hover`: `#e2f88a` (Interactive hover glow)
-  - `--accent-ink`: `#171b08` (Dark text on accent)
-- **Token Rule**: No hardcoded hex values in component files. Use CSS variables or Tailwind utility classes.
+- **Core Tokens** (authority: [`src/app/globals.css`](src/app/globals.css)):
+  - `--ground`: `#0b0d0c` (Deep obsidian backdrop)
+  - `--surface`: `#111411` (Panel and inspector surface)
+  - `--surface-raised`: `#181c18` (Card, popover, tooltip surface)
+  - `--surface-soft`: `#242924` (Hover wash, secondary chips)
+  - `--surface-sunken`: `#080a09` (Input background, canvas frame backdrop)
+  - `--core`: `rgba(15,18,15,0.96)` (Navigation rail / desktop shell core)
+  - `--line`: `rgba(226,232,221,0.09)` (Hairline dividers, borders)
+  - `--ink` / `--ink-soft` / `--ink-faint`: `#f2f5ef` / `#b0b8ad` / `#858e82`
+  - `--accent`: `#c7e36a` (Acid lime accent)
+  - `--accent-hover`: `#d4ec87` (Interactive hover glow)
+  - `--accent-ink`: `#12170d` (Dark text/glyphs on accent)
+  - `--accent-ambient`: `rgba(170,205,80,0.14)` (Ambient accent bloom)
+- **Token Rule**: No hardcoded hex values in component files. Use CSS variables or Tailwind utility classes. The left rail (`SidebarNav.tsx`) is the worked example: every surface, tooltip, idle icon and active/hover treatment resolves from tokens, including the **Generate** flourish.
 
 ---
 
@@ -41,8 +45,8 @@ This document outlines the architecture, design system, and coding standards for
 - **Architecture Spec**: Refer to [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`DESIGN.md`](DESIGN.md#L82).
 - **16 Standardized Types**: Strictly use the `CreatorModelType` union defined in `src/lib/api.ts` (e.g. `Checkpoint`, `LoRA`, `VAE`, `ControlNet`, etc.).
 - **Dual SafeTensors Extensions**: Always accept both `.safetensors` and `.sft` across all file inputs, drag-and-drop dropzones, and ComfyUI enclave model scanners.
-- **Persistent Compatibility Container**: In `CreateModelDrawer.tsx`, keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:
-  - *Core Base (`Checkpoint`, `SVD`)*: Dual-source VAE Selector + Text Encoders + CLIP protocol.
+- **Persistent Compatibility Container**: In `src/app/models/create/page.tsx` (and `EditModelDrawer.tsx` for existing models), keep the *Compatibility & Conditioning Stack* card persistently mounted. The internal components adapt polymorphically:
+  - *Core Base (`Checkpoint`, `SVD`)*: Dual-source VAE Selector + Text Encoders + CLIP protocol. When the base architecture resolves to a video engine (`videoFamilyOf()`), the banner switches to a `[VIDEO BACKBONE · <ENGINE>]` pill and the same selectors gain video quick-picks — auto-detected, never a toggle.
   - *Adapters (`LoRA`, `DoRA`, etc.)*: Base Checkpoint gallery link + auto-inherited stack card + optional override.
   - *VAE*: Latent channel profile (16ch / 4ch) with zero redundant VAE selectors.
   - *Guidance (`ControlNet`, `Poses`)*: Preprocessor modality selector.

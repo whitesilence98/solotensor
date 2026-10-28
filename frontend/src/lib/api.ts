@@ -1056,6 +1056,7 @@ export interface PublicModelSummary {
   author_avatar_url?: string | null;
   author_role?: string;
   moderation_status?: ModelModerationStatus;
+  video_family?: VideoFamily | null;
 }
 
 export type ModerationTargetType = "model" | "post" | "comment" | "user";
@@ -1212,6 +1213,10 @@ export interface ModelPendingReviewQueueResponse {
   total: number;
 }
 
+/** Derived, advisory video-engine key. Not persisted; the backend computes it
+ *  from the model's base architecture. Mirrors `VIDEO_ENGINES` in schemas.py. */
+export type VideoFamily = "ltx" | "wan" | "hunyuan-video" | "svd" | "cogvideo" | "mochi";
+
 export interface InstalledGalleryModel {
   model_id: string;
   version_id: string;
@@ -1230,6 +1235,7 @@ export interface InstalledGalleryModel {
   base_version_id: string | null;
   base_file_id: string | null;
   cover_url?: string | null;
+  video_family?: VideoFamily | null;
 }
 
 export interface InstalledGalleryModelList { items: InstalledGalleryModel[]; }
@@ -1508,8 +1514,11 @@ export const api = {
     return request<ClipOptions>("/api/v1/clip-options");
   },
 
-  async getWorkflowTemplateInfo(): Promise<WorkflowTemplateInfo> {
-    return request<WorkflowTemplateInfo>("/api/v1/workflow/template-info");
+  async getWorkflowTemplateInfo(mode?: string): Promise<WorkflowTemplateInfo> {
+    // Omit the query entirely for the default image template so existing
+    // callers keep hitting the exact same URL as before.
+    const query = mode && mode !== "text-to-image" ? `?mode=${encodeURIComponent(mode)}` : "";
+    return request<WorkflowTemplateInfo>(`/api/v1/workflow/template-info${query}`);
   },
 
   async generate(payload: GeneratePayload): Promise<GenerationResult> {

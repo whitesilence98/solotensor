@@ -385,5 +385,180 @@ class TestVideoGeneration(unittest.TestCase):
         self.assertEqual(queued_graph["1875_force_last"]["inputs"]["value"], 0)
 
 
+    def _mock_comfy_success(self, suffix: str = "gate") -> AsyncMock:
+        """ComfyUI mock that completes a video job without touching the network."""
+        mock_comfy = AsyncMock()
+        mock_comfy.resolve_model_name = AsyncMock(
+            return_value="ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors"
+        )
+        mock_comfy.resolve_clip_type = AsyncMock(return_value="ltxv")
+        mock_comfy.upload_image = AsyncMock(return_value="input_video_starter.png")
+        mock_comfy.load_video_it2v_template = lambda: json.loads(json.dumps(self.template))
+        mock_comfy.queue_prompt = AsyncMock(return_value=f"prompt-video-{suffix}")
+        mock_comfy.wait_until_done = AsyncMock(return_value="completed")
+        mock_comfy.list_output_files = AsyncMock(
+            return_value=[
+                {
+                    "filename": f"VideoFlow-LTX23-{suffix}_00001.mp4",
+                    "subfolder": "video",
+                    "folder_type": "output",
+                }
+            ]
+        )
+        mock_comfy.fetch_image_bytes = AsyncMock(
+            return_value=b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+        )
+        return mock_comfy
+
+    # ------------------------------------------------------------------
+    # _ensure_video_capable — the LTX hard gate.
+    # ------------------------------------------------------------------
+
+    def test_video_gate_rejects_non_ltx_architecture_and_refunds_credits(self):
+        """A non-LTX checkpoint is rejected with 409 and the deducted credits refunded."""
+        self.mock_model_storage.resolve_installed_gallery_file.return_value = {
+            **self.mock_model_storage.resolve_installed_gallery_file.return_value,
+            "title": "SDXL Photoreal",
+            "base_model": "Stable Diffusion XL (SDXL)",
+            "filename": "sdxl_photoreal.safetensors",
+        }
+        mock_comfy = self._mock_comfy_success("non-ltx")
+        initial_credits = self.credits.get_user_credits(self.user.id).balance
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate", json=self._video_payload(), headers=self.headers
+            )
+
+        self.assertEqual(resp.status_code, 409, resp.text)
+        detail = resp.json()["detail"]
+        self.assertIn("LTX", detail)
+        self.assertIn("SDXL Photoreal", detail)
+        # The gate fires before any graph is queued.
+        mock_comfy.queue_prompt.assert_not_awaited()
+
+        refunded = self.credits.get_user_credits(self.user.id).balance
+        self.assertEqual(refunded, initial_credits)
+
+    def test_video_gate_fails_open_without_base_model(self):
+        """An unrecorded architecture is treated as compatible (fail-open)."""
+        self.mock_model_storage.resolve_installed_gallery_file.return_value = {
+            **self.mock_model_storage.resolve_installed_gallery_file.return_value,
+            "base_model": None,
+        }
+        mock_comfy = self._mock_comfy_success("missing-arch")
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate", json=self._video_payload(), headers=self.headers
+            )
+
+        # Not rejected by the LTX gate; the fixture can complete the request.
+        self.assertNotEqual(resp.status_code, 409, resp.text)
+        if resp.status_code != 200:
+            self.assertNotIn("is not an LTX model", resp.text)
+        else:
+            self.assertEqual(resp.json()["status"], "completed")
+
+    def test_video_gate_fails_open_with_empty_base_model(self):
+        """An empty-string architecture is likewise not rejected by the gate."""
+        self.mock_model_storage.resolve_installed_gallery_file.return_value = {
+            **self.mock_model_storage.resolve_installed_gallery_file.return_value,
+            "base_model": "",
+        }
+        mock_comfy = self._mock_comfy_success("empty-arch")
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate", json=self._video_payload(), headers=self.headers
+            )
+
+        self.assertNotEqual(resp.status_code, 409, resp.text)
+        if resp.status_code != 200:
+            self.assertNotIn("is not an LTX model", resp.text)
+        else:
+            self.assertEqual(resp.json()["status"], "completed")
+
+    def test_video_gate_accepts_ltx_aliases(self):
+        """Every LTX alias family the picker can produce passes the gate."""
+        for architecture in ("LTX Video", "LTX-2.3", "ltx-2.5"):
+            with self.subTest(architecture=architecture):
+                self.mock_model_storage.resolve_installed_gallery_file.return_value = {
+                    **self.mock_model_storage.resolve_installed_gallery_file.return_value,
+                    "title": f"{architecture} model",
+                    "base_model": architecture,
+                }
+                mock_comfy = self._mock_comfy_success(
+                    "alias-" + architecture.replace(" ", "-").lower()
+                )
+
+                with (
+                    patch("app.main.model_storage", self.mock_model_storage),
+                    patch("app.main.storage", self.storage),
+                    patch("app.main.get_comfy_client", return_value=mock_comfy),
+                ):
+                    resp = self.client.post(
+                        "/api/v1/generate",
+                        json=self._video_payload(),
+                        headers=self.headers,
+                    )
+
+                self.assertNotEqual(resp.status_code, 409, resp.text)
+                if resp.status_code != 200:
+                    self.assertNotIn("is not an LTX model", resp.text)
+                else:
+                    self.assertEqual(resp.json()["status"], "completed")
+
+    # ------------------------------------------------------------------
+    # workflow_template_info(mode=...) selects the graph source.
+    # ------------------------------------------------------------------
+
+    def test_template_info_default_reads_image_template(self):
+        """No mode param keeps the historical image-template source."""
+        mock_comfy = MagicMock()
+        mock_comfy.load_workflow_template = MagicMock(
+            return_value={"1": {"class_type": "KSampler", "inputs": {"seed": 1}}}
+        )
+        mock_comfy.load_video_it2v_template = MagicMock(return_value={})
+
+        with patch("app.main.get_comfy_client", return_value=mock_comfy):
+            resp = self.client.get("/api/v1/workflow/template-info")
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(resp.json()["has_template"])
+        mock_comfy.load_workflow_template.assert_called_once_with()
+        mock_comfy.load_video_it2v_template.assert_not_called()
+
+    def test_template_info_video_mode_reads_video_template(self):
+        """mode=video swaps the template source but keeps the node scan."""
+        mock_comfy = MagicMock()
+        mock_comfy.load_workflow_template = MagicMock(return_value={})
+        mock_comfy.load_video_it2v_template = MagicMock(
+            return_value=json.loads(json.dumps(self.template))
+        )
+
+        with patch("app.main.get_comfy_client", return_value=mock_comfy):
+            resp = self.client.get(
+                "/api/v1/workflow/template-info", params={"mode": "video"}
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertTrue(resp.json()["has_template"])
+        mock_comfy.load_video_it2v_template.assert_called_once_with()
+        mock_comfy.load_workflow_template.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

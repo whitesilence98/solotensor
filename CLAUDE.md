@@ -11,7 +11,7 @@ Before modifying backend or frontend code, inspect and follow these ground-truth
 - **System Architecture & 16 Model Types**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
   - Strict 16 model taxonomy (`CreatorModelType`), dual `.safetensors` and `.sft` extension support, dynamic conditioning stack.
 - **Design System**: [`DESIGN.md`](DESIGN.md)
-  - Obsidian (`#0a0b0a`) & Acid Lime (`#d5f06f`) brutalist design tokens. No hardcoded hex values in UI components.
+  - Obsidian (`#0b0d0c`) & Acid Lime (`#c7e36a`) brutalist design tokens — `frontend/src/app/globals.css` is the authority. One signal accent: no second palette, no hardcoded hex values in UI components.
 - **Product Scope & Limits**: [`PRODUCT.md`](PRODUCT.md)
 - **Backend Agents & Personas**: [`backend/AGENTS.md`](backend/AGENTS.md)
 - **Frontend Guidelines**: [`frontend/FRONTEND.md`](frontend/FRONTEND.md)

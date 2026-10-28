@@ -101,14 +101,14 @@ export default function UserNavProfile() {
           className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[var(--ink-faint)] transition-all duration-200 hover:border-[var(--accent)] hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:border-[var(--accent)]"
         >
           <User className="h-4.5 w-4.5" />
-          {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
+          {/* Dual status indicators: warm top, accent bottom */}
           <span
             aria-hidden="true"
-            className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sky-400 border border-[var(--ground)] shadow-[0_0_6px_rgba(56,189,248,0.8)] z-20"
+            className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--warning)] border border-[var(--ground)] shadow-[0_0_6px_color-mix(in_srgb,var(--warning)_80%,transparent)] z-20"
           />
           <span
             aria-hidden="true"
-            className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_rgba(213,240,111,0.8)] z-20"
+            className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_color-mix(in_srgb,var(--accent)_80%,transparent)] z-20"
           />
           {/* Tooltip on desktop */}
           <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 font-mono text-[11px] font-semibold tracking-wider uppercase text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
@@ -128,7 +128,7 @@ export default function UserNavProfile() {
         aria-expanded={menuOpen}
         aria-haspopup="menu"
         aria-label={`User menu for ${user?.displayName || user?.username}`}
-        className="group relative flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 hover:ring-2 hover:ring-[var(--accent)] hover:shadow-[0_0_12px_rgba(213,240,111,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 hover:ring-2 hover:ring-[var(--accent)] hover:shadow-[0_0_12px_color-mix(in_srgb,var(--accent)_25%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       >
         <UserAvatar
           src={user?.avatarUrl}
@@ -141,14 +141,14 @@ export default function UserNavProfile() {
           online={false}
         />
 
-        {/* Dual Status Indicators: Cyan (top) and Lime (bottom) matching reference image */}
+        {/* Dual status indicators: warm top, accent bottom */}
         <span
           aria-hidden="true"
-          className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-sky-400 border border-[var(--ground)] shadow-[0_0_6px_rgba(56,189,248,0.8)] z-20"
+          className="absolute top-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--warning)] border border-[var(--ground)] shadow-[0_0_6px_color-mix(in_srgb,var(--warning)_80%,transparent)] z-20"
         />
         <span
           aria-hidden="true"
-          className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_rgba(213,240,111,0.8)] z-20"
+          className="absolute bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[var(--accent)] border border-[var(--ground)] shadow-[0_0_6px_color-mix(in_srgb,var(--accent)_80%,transparent)] z-20"
         />
 
         {/* Tooltip on desktop when menu is closed */}
@@ -241,7 +241,7 @@ export default function UserNavProfile() {
                     className={`rounded py-1 px-1 font-mono text-[9px] uppercase font-bold transition disabled:opacity-50 text-center truncate ${
                       isActive
                         ? r === "pro_creator"
-                          ? "border border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--accent)] shadow-[0_0_8px_rgba(213,240,111,0.2)]"
+                          ? "border border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--accent)] shadow-[0_0_8px_color-mix(in_srgb,var(--accent)_20%,transparent)]"
                           : r === "verified_creator"
                           ? "border border-amber-500/40 bg-amber-950/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
                           : r === "moderator"

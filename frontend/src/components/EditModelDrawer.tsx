@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Save,
@@ -21,6 +21,7 @@ import {
   Upload,
   Trash2,
   Edit3,
+  Film,
   ChevronLeft,
   ChevronRight,
   ImageIcon,
@@ -43,6 +44,7 @@ import {
   getFirstOptionValue,
   isArchitectureInList,
   isArchitectureCompatible,
+  videoFamilyOf,
 } from "@/lib/baseModelArchitectures";
 import StudioStepperTabs, { type StudioStepItem } from "@/components/StudioStepperTabs";
 import { getBaseFilename } from "@/lib/models";
@@ -85,6 +87,15 @@ const DEFAULT_CLIP_TYPES = [
   "sd3_clip",
   "sdxl_clip",
 ];
+
+/** Bundled LTX-Video 2.3 autoencoders, surfaced first for video backbones. */
+const VIDEO_VAE_QUICK_PICKS = [
+  "LTX23_video_vae_bf16.safetensors",
+  "taeltx2_3.safetensors",
+] as const;
+
+/** CLIP protocol token the bundled LTX-Video 2.3 graph loads. */
+const VIDEO_CLIP_TYPE = "ltxv";
 
 const EDIT_MODEL_TABS: StudioStepItem<1 | 2 | 3 | 4 | 5>[] = [
   { id: 1, code: "01", label: "Identity & Metadata" },
@@ -165,6 +176,31 @@ export default function EditModelDrawer({
   const [clipTypeOptions, setClipTypeOptions] = useState<string[]>(DEFAULT_CLIP_TYPES);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+
+  const activeVideoFamily = useMemo(() => videoFamilyOf(resolvedBaseModel), [resolvedBaseModel]);
+  // Only the LTX family runs in this studio's bundled video graph, so only its
+  // known-good VAE/CLIP tokens join the pickers.
+  const isLtxVideo = activeVideoFamily === "ltx";
+  // The banner describes a backbone being recorded, so it belongs to base
+  // models only — a Wan-based LoRA is an adapter, not a video backbone.
+  const showVideoBanner =
+    Boolean(activeVideoFamily) && ["Checkpoint", "SVD"].includes(model.model_type);
+
+  // Video quick-picks are derived, never written back into the scanned arrays.
+  const displayedVaeOptions = useMemo(() => {
+    if (!isLtxVideo) return vaeOptions;
+    return [
+      ...VIDEO_VAE_QUICK_PICKS.filter((pick) => !vaeOptions.includes(pick)),
+      ...vaeOptions,
+    ];
+  }, [isLtxVideo, vaeOptions]);
+
+  const displayedClipTypeOptions = useMemo(() => {
+    if (!isLtxVideo || clipTypeOptions.includes(VIDEO_CLIP_TYPE)) {
+      return clipTypeOptions;
+    }
+    return [VIDEO_CLIP_TYPE, ...clipTypeOptions];
+  }, [isLtxVideo, clipTypeOptions]);
 
   // Tab 3: Prompts & Presets
   const promptable = isPromptableModelType(model.model_type);
@@ -1075,6 +1111,23 @@ export default function EditModelDrawer({
                 )}
               </div>
 
+              {/* Video Backbone Profile (advisory) */}
+              {showVideoBanner && activeVideoFamily && (
+                <div className="flex items-start gap-3 rounded-[5px] border border-[var(--accent)]/25 bg-[var(--accent)]/5 p-3">
+                  <Film className="h-4 w-4 shrink-0 text-[var(--accent)] mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
+                        [VIDEO BACKBONE · {activeVideoFamily.replace(/-/g, " ").toUpperCase()}]
+                      </span>
+                    </div>
+                    <p className="font-mono text-[10px] leading-relaxed text-[var(--ink-soft)]">
+                      Video generations run the bundled LTX-Video 2.3 graph, which loads its own transformer, VAE and text encoder. The values below are recorded as metadata so the gallery and the studio picker show what this model needs — they do not drive the video render.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Adapter Enclave Selector */}
               {isAdapterModelType(model.model_type) && (
                 <div className="rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3.5 space-y-2">
@@ -1128,7 +1181,7 @@ export default function EditModelDrawer({
                   }}
                   options={[
                     { value: "", label: "None / Bundled in Checkpoint" },
-                    ...vaeOptions.map((vp) => ({ value: vp, label: vp })),
+                    ...displayedVaeOptions.map((vp) => ({ value: vp, label: vp })),
                     { value: "__custom__", label: "Custom VAE filename (.safetensors, .sft)…" },
                   ]}
                   className="w-full"
@@ -1196,7 +1249,7 @@ export default function EditModelDrawer({
                     onChange={(val) => setClipType(val)}
                     options={[
                       { value: "", label: "Auto / Standard" },
-                      ...clipTypeOptions.map((ct) => ({ value: ct, label: ct })),
+                      ...displayedClipTypeOptions.map((ct) => ({ value: ct, label: ct })),
                     ]}
                     className="w-full"
                     buttonClassName="w-full h-8 rounded-[5px] text-xs font-mono"

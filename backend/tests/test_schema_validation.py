@@ -270,6 +270,32 @@ class InstalledGalleryModelSchemaTests(unittest.TestCase):
             )
             self.assertEqual(model.category, cat)
 
+    def test_installed_gallery_model_video_family(self) -> None:
+        from app.schemas import InstalledGalleryModel
+
+        base = dict(
+            model_id="a" * 32,
+            version_id="b" * 32,
+            file_id="c" * 32,
+            title="Title",
+            model_type="Checkpoint",
+            version_name="v1.0",
+            filename="model.safetensors",
+            category="checkpoints",
+            sha256="d" * 64,
+        )
+
+        # Omitted -> defaults to None (old payloads/serialized records still valid)
+        self.assertIsNone(InstalledGalleryModel(**base).video_family)
+
+        # Explicit value is preserved
+        declared = InstalledGalleryModel(**base, video_family="ltx")
+        self.assertEqual(declared.video_family, "ltx")
+
+        # Explicit null round-trips
+        nulled = InstalledGalleryModel(**base, video_family=None)
+        self.assertIsNone(nulled.video_family)
+
     def test_model_file_response_category(self) -> None:
         from app.schemas import ModelFileResponse, ModelPrecision
 

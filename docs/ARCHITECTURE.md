@@ -82,7 +82,7 @@ MODEL_EXTENSIONS = {".safetensors", ".sft", ".ckpt", ".pt", ".pth", ".bin", ".gg
 ## 3. Compatibility & Conditioning Stack Architecture
 
 ### Design Philosophy: Persistent Container, Polymorphic Slots
-The **Compatibility & Conditioning Stack** panel (`Panel 1B` in `CreateModelDrawer.tsx`) must **always remain visible** to prevent jarring layout shifts (CLS) and keep the creation flow intuitive.
+The **Compatibility & Conditioning Stack** panel (`Panel 1B` in [`app/models/create/page.tsx`](frontend/src/app/models/create/page.tsx)) must **always remain visible** to prevent jarring layout shifts (CLS) and keep the creation flow intuitive.
 
 The internal contents adapt dynamically into one of 6 specialized component profiles based on the active `modelType`:
 
@@ -147,6 +147,30 @@ classDiagram
   - `Recommended VAE Decoder`: Dual-source scanner (`.safetensors` & `.sft`) with quick pills (`ae.sft`, `ae.safetensors`, `wan_2.1_vae.safetensors`) and manual filename input.
   - `Text Encoder File`: Dropdown for ComfyUI `models/text_encoders/` (e.g. `t5xxl_fp8_e4m3fn.sft`, `clip_l.safetensors`).
   - `CLIP Conditioning Type`: ComfyUI architecture protocol (`flux2`, `sdxl`, `sd3`, `wan`, `lumina2`, etc.).
+
+#### Profile 1B: Video Backbone Variant (Core Base, auto-detected)
+The Core Base profile gains a **video variant** whenever the selected base architecture
+resolves to a video engine. There is no toggle and no new model type — the 16-type
+taxonomy is unchanged — and the panel is the same mounted container, so selecting a
+video architecture changes the banner and quick-picks but never the layout.
+
+- **Trigger**: `video_family()` in [`backend/app/schemas.py`](backend/app/schemas.py)
+  resolves `compatibility.base_model` against `VIDEO_ENGINES`
+  (`ltx`, `wan`, `hunyuan-video`, `svd`, `cogvideo`, `mochi`). The creation wizard
+  mirrors it client-side as `videoFamilyOf()` for unsaved selections.
+- **Controls Displayed**: the same three Core Base selectors, with video quick-picks
+  (`LTX23_video_vae_bf16.safetensors`, `taeltx2_3.safetensors`, CLIP protocol `ltxv`).
+- **Honesty constraint**: video rendering runs the **bundled LTX-Video 2.3 graph**.
+  [`patch_video_it2v_workflow`](backend/app/services/workflow_router.py) accepts no
+  transformer, VAE, or text-encoder names, so a gallery checkpoint is a label and a
+  gate, never the loaded weights. The video profile therefore records what the model
+  *is* and what it *needs*; it does not claim the checkpoint drives the render.
+- **Advisory only**: `video_family` feeds gallery labelling and the studio picker.
+  `_ensure_video_capable` in [`backend/app/main.py`](backend/app/main.py) remains the
+  hard gate (non-LTX → `409`).
+- **Ambiguity guard**: `hunyuan-video` matches `hunyuanvideo` / `hunyuan video` only.
+  Bare `hunyuan` is deliberately excluded because `ARCHITECTURE_FAMILIES["hunyuan"]`
+  also contains HunyuanDiT, an image model.
 
 #### Profile 2: Weight Adapters (`LoRA`, `LoKr`, `LoCon`, `LyCORIS`, `DoRA`, `Motion LoRA`)
 - **Use Case**: Character LoRAs, Style LoRAs, AnimateDiff motion adapters.
@@ -224,7 +248,7 @@ In `ModelCompatibility` ([`app/schemas.py`](backend/app/schemas.py#L428)):
 | Component | Location | Role |
 | :--- | :--- | :--- |
 | **API Client** | [`frontend/src/lib/api.ts`](frontend/src/lib/api.ts) | `CreatorModelType` union, `listLocalModels()`, `getModels()`, `getClipOptions()`, `uploadModelFile()`. |
-| **Model Creation Drawer** | [`frontend/src/components/CreateModelDrawer.tsx`](frontend/src/components/CreateModelDrawer.tsx) | Step 1 Identity & Polymorphic Compatibility Stack, Step 2 Presets, Step 3 Multi-version Weights Upload. |
+| **Model Creation Wizard** | [`frontend/src/app/models/create/page.tsx`](frontend/src/app/models/create/page.tsx) | Three-step wizard: Identity & Polymorphic Compatibility Stack, Weights & Versions, Showcase & Governance. The edit equivalent is [`EditModelDrawer.tsx`](frontend/src/components/EditModelDrawer.tsx). |
 | **Generation Studio** | [`frontend/src/components/ControlPanel.tsx`](frontend/src/components/ControlPanel.tsx) | Base Model Selector (`Checkpoint`, `SVD`) and Active Adapter Slots (`LoRA`, `LoKr`, `DoRA`, etc.). |
 | **Prompt Bar** | [`frontend/src/components/StudioPromptBar.tsx`](frontend/src/components/StudioPromptBar.tsx) | The single prompt surface for every `/generate` mode: positive prompt, optional one-line negative prompt, batch count, and the primary Generate action. |
 | **Generation Model Card** | [`frontend/src/components/GenerationModelCard.tsx`](frontend/src/components/GenerationModelCard.tsx) | `GENERATION MODEL` card showing the selected checkpoint, its architecture chip, and the "Change" affordance that opens the model picker. |
@@ -236,7 +260,7 @@ In `ModelCompatibility` ([`app/schemas.py`](backend/app/schemas.py#L428)):
 The frontend calls both local disk scanner and live ComfyUI endpoints via `Promise.allSettled`, guaranteeing that files like `ae.sft` are instantly available regardless of deployment configuration:
 
 ```typescript
-// Pattern in CreateModelDrawer.tsx
+// Pattern in app/models/create/page.tsx
 Promise.allSettled([
   api.listLocalModels("", "vae"),
   api.getModels("vae"),

@@ -277,6 +277,21 @@ ARCHITECTURE_FAMILIES: dict[str, set[str]] = {
 }
 
 
+# Video engine signatures: engine key -> lowercase substring tokens.
+# Ordered most-specific first so a later, broader token cannot shadow a
+# more precise one. "hunyuan-video" deliberately matches only the concatenated
+# and spaced spellings, never bare "hunyuan", because ARCHITECTURE_FAMILIES
+# ["hunyuan"] also contains HunyuanDiT, which is an image model.
+VIDEO_ENGINES: dict[str, tuple[str, ...]] = {
+    "hunyuan-video": ("hunyuanvideo", "hunyuan video"),
+    "cogvideo": ("cogvideox",),
+    "mochi": ("mochi",),
+    "svd": ("svd",),
+    "ltx": ("ltx-2.3", "ltx-2.5", "ltx video", "ltx"),
+    "wan": ("wan2.1", "wan2.2", "wan_2_6", "wan"),
+}
+
+
 def is_architecture_compatible(base_arch: str | None, adapter_arch: str | None) -> bool:
     """Check if a base model architecture and an adapter architecture are cross-compatible."""
     if not base_arch or not adapter_arch:
@@ -307,6 +322,28 @@ def is_architecture_compatible(base_arch: str | None, adapter_arch: str | None) 
         if b_match and a_match:
             return True
     return False
+
+
+def video_family(architecture: str | None) -> str | None:
+    """Return the video engine key for an architecture string, if any.
+
+    ADVISORY METADATA only. This feeds gallery labelling and the studio model
+    picker; it is NOT a generation gate. `_ensure_video_capable` in main.py
+    remains the authority for whether a request may render video.
+
+    Matching is a case-insensitive substring scan over VIDEO_ENGINES in
+    declaration order, so the most specific engine wins. Unknown or empty
+    architectures yield None.
+    """
+    if not architecture:
+        return None
+    value = architecture.strip().lower()
+    if not value:
+        return None
+    for engine, tokens in VIDEO_ENGINES.items():
+        if any(token in value for token in tokens):
+            return engine
+    return None
 
 
 class AssistantPersona(str, Enum):
@@ -1215,6 +1252,7 @@ class PublicModelSummary(BaseModel):
     file_count: int
     sample_count: int
     moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
+    video_family: str | None = None
 
     @field_validator("model_type", mode="before")
     @classmethod
@@ -1372,6 +1410,7 @@ class InstalledGalleryModel(BaseModel):
     base_version_id: str | None = None
     base_file_id: str | None = None
     cover_url: str | None = None
+    video_family: str | None = None
 
 
 class InstalledGalleryModelList(BaseModel):

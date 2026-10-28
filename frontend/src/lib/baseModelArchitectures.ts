@@ -1,3 +1,5 @@
+import type { VideoFamily } from "./api";
+
 export interface BaseArchitectureItem {
   label: string;
   value: string;
@@ -385,6 +387,43 @@ export const ARCHITECTURE_FAMILIES: Record<string, string[]> = {
     "z-image-omni",
   ],
 };
+
+/**
+ * Video engine signatures, mirrored verbatim from `VIDEO_ENGINES` in
+ * `backend/app/schemas.py`. Keys and tokens must stay in lockstep — same keys,
+ * same order, same lowercase tokens.
+ *
+ * WHY THIS TABLE IS DUPLICATED: the model creation wizard must resolve an
+ * UNSAVED architecture selection for live preview, and at that point no API
+ * record exists to read `video_family` from. For persisted models the API
+ * `video_family` field is the authority; this table only serves form preview.
+ */
+export const VIDEO_ENGINE_TOKENS: Record<VideoFamily, readonly string[]> = {
+  "hunyuan-video": ["hunyuanvideo", "hunyuan video"],
+  cogvideo: ["cogvideox"],
+  mochi: ["mochi"],
+  svd: ["svd"],
+  ltx: ["ltx-2.3", "ltx-2.5", "ltx video", "ltx"],
+  wan: ["wan2.1", "wan2.2", "wan_2_6", "wan"],
+};
+
+/**
+ * Resolves the advisory video engine for an architecture string.
+ * Mirrors `video_family` in `backend/app/schemas.py`: case-insensitive
+ * substring scan in declaration order, first match wins; empty/unknown -> null.
+ * Advisory only — never a generation gate.
+ */
+export function videoFamilyOf(architecture?: string | null): VideoFamily | null {
+  if (!architecture) return null;
+  const value = architecture.trim().toLowerCase();
+  if (!value) return null;
+  for (const [engine, tokens] of Object.entries(VIDEO_ENGINE_TOKENS)) {
+    if (tokens.some((token) => value.includes(token))) {
+      return engine as VideoFamily;
+    }
+  }
+  return null;
+}
 
 /**
  * Checks if a base model architecture and an adapter architecture are cross-compatible.

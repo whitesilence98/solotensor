@@ -70,7 +70,7 @@ export function getSocketColor(portName: string): string {
   if (norm.includes("image") || norm.includes("frame") || norm.includes("pixel")) return "#00e5ff"; // Cyan
   if (norm.includes("mask")) return "#e040fb"; // Violet
   if (norm.includes("cond") || norm.includes("positive") || norm.includes("negative")) return "#ff9100"; // Orange
-  return "#d5f06f"; // SoloTensor Accent Lime
+  return "#c7e36a"; // SoloTensor Accent Lime (mirrors --accent)
 }
 
 export function getNodeCategory(classType: string): VisualCanvasNode["category"] {
@@ -262,7 +262,7 @@ export function computeGraphTopology(
         groups.push({
           id: `group_explicit_${idx}`,
           title: g.title || `Stage ${idx + 1}`,
-          color: g.color || "#d5f06f",
+          color: g.color || "#c7e36a",
           x: gx,
           y: gy,
           width: gw,

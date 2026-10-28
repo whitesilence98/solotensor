@@ -38,6 +38,7 @@ from ..schemas import (
     ModelVersionResponse,
     ModelVisibility,
     is_architecture_compatible,
+    video_family,
 )
 from app.services.model_factory import ModelHandlerFactory, ModelTier
 
@@ -832,6 +833,7 @@ class ModelService:
             "base_version_id": compatibility.get("base_version_id"),
             "base_file_id": compatibility.get("base_file_id"),
             "cover_url": cover_url,
+            "video_family": video_family(compatibility.get("base_model")),
         }
 
     def selectable_gallery_files(self) -> list[dict[str, Any]]:

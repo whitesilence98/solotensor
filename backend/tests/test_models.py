@@ -22,7 +22,9 @@ from app.schemas import (
     ModelUpdateRequest,
     ModelVisibility,
     ModelVersionCreateRequest,
+    VIDEO_ENGINES,
     is_architecture_compatible,
+    video_family,
 )
 import app.services.model_storage as model_storage_module
 from app.services.models import ModelConflict, ModelError, ModelNotFound, ModelService
@@ -1256,6 +1258,129 @@ class ModelSampleMediaManagementTests(unittest.TestCase):
         new_ids = [s.sample_id for s in reordered.versions[0].samples]
         self.assertEqual(new_ids, reversed_ids)
         self.assertTrue(reordered.versions[0].samples[0].metadata.get("is_cover"))
+
+
+class VideoFamilyTests(unittest.TestCase):
+    """`video_family()` maps a base architecture to an advisory video engine key.
+
+    The table is deliberately exhaustive about the mixed Hunyuan family: the
+    image-only HunyuanDiT entries must never be reported as video.
+    """
+
+    def test_video_family_truth_table(self) -> None:
+        cases = [
+            # LTX family
+            ("LTX-2.3", "ltx"),
+            ("LTX-2.5", "ltx"),
+            ("LTX Video", "ltx"),
+            ("ltx", "ltx"),
+            # Wan family
+            ("Wan2.1", "wan"),
+            ("Wan2.2 S2V 14B", "wan"),
+            ("WAN_2_6", "wan"),
+            # HunyuanVideo only — never bare "hunyuan"
+            ("HunyuanVideo 1.5 720P", "hunyuan-video"),
+            ("HunyuanVideo Fast", "hunyuan-video"),
+            ("HunyuanDiT", None),
+            ("Hunyuan-DiT", None),
+            ("HunyuanImage-2.1", None),
+            # SVD family; SV3D must not match the "svd" token
+            ("SVD", "svd"),
+            ("SVD XT", "svd"),
+            ("SV3D", None),
+            # Other video engines
+            ("CogVideoX 5B", "cogvideo"),
+            ("Mochi 1 10B", "mochi"),
+            # Image architectures and empty input
+            ("FLUX.1", None),
+            ("Stable Diffusion XL (SDXL)", None),
+            ("", None),
+            ("   ", None),
+            (None, None),
+            # Case / whitespace normalization
+            ("  ltx-2.3  ", "ltx"),
+        ]
+        for architecture, expected in cases:
+            with self.subTest(architecture=architecture):
+                self.assertEqual(video_family(architecture), expected)
+
+    def test_hunyuan_dit_is_never_a_video_family(self) -> None:
+        """Regression guard for the mixed Hunyuan family trap."""
+        for architecture in ("HunyuanDiT", "Hunyuan-DiT", "hunyuan dit", "HunyuanDiT-v1.2"):
+            with self.subTest(architecture=architecture):
+                self.assertIsNone(video_family(architecture))
+
+    def test_video_engine_tokens_are_lowercase(self) -> None:
+        """Tokens are matched against a lowercased value; mixed case would never hit."""
+        self.assertIn("ltx", VIDEO_ENGINES)
+        self.assertIn("hunyuan-video", VIDEO_ENGINES)
+        for engine, tokens in VIDEO_ENGINES.items():
+            with self.subTest(engine=engine):
+                self.assertTrue(tokens)
+                for token in tokens:
+                    self.assertEqual(token, token.lower())
+        # Bare "hunyuan" would swallow HunyuanDiT, so it must not be a token.
+        self.assertNotIn("hunyuan", VIDEO_ENGINES["hunyuan-video"])
+
+
+class VideoFamilyResolutionTests(unittest.TestCase):
+    """The derived field must survive resolution and the selectable listing."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.comfy = tempfile.TemporaryDirectory()
+        self.settings = Settings(
+            MODELS_DIR=self.temp.name,
+            COMFY_MODEL_ROOT=self.comfy.name,
+            FILES_PUBLIC_BASE="http://test",
+        )
+        self.service = ModelService(self.settings)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+        self.comfy.cleanup()
+
+    def _published_checkpoint(self, base_model: str):
+        model = self.service.create(
+            ModelCreateRequest(
+                title=f"{base_model} checkpoint",
+                model_type=CreatorModelType.CHECKPOINT,
+                visibility=ModelVisibility.PUBLIC,
+                compatibility=ModelCompatibility(base_model=base_model),
+            ),
+            is_moderator=True,
+        )
+        version_id = model.versions[0].version_id
+        data = b"video family weights"
+        updated = self.service.add_file(
+            model.model_id, version_id, "weights.safetensors", data, ModelPrecision.FP16
+        )
+        file_id = updated.versions[0].files[0].file_id
+        self.service.install_file(model.model_id, version_id, file_id)
+        return model, version_id, file_id
+
+    def test_resolver_reports_video_family_for_ltx(self) -> None:
+        model, version_id, file_id = self._published_checkpoint("LTX-2.3")
+
+        resolved = self.service.resolve_installed_gallery_file(
+            model.model_id, version_id, file_id
+        )
+        self.assertEqual(resolved["video_family"], "ltx")
+
+        selectable = self.service.selectable_gallery_files()
+        item = next(i for i in selectable if i["file_id"] == file_id)
+        self.assertEqual(item["video_family"], "ltx")
+
+    def test_resolver_reports_none_for_image_architecture(self) -> None:
+        model, version_id, file_id = self._published_checkpoint(
+            "Stable Diffusion XL (SDXL)"
+        )
+
+        resolved = self.service.resolve_installed_gallery_file(
+            model.model_id, version_id, file_id
+        )
+        self.assertIn("video_family", resolved)
+        self.assertIsNone(resolved["video_family"])
 
 
 if __name__ == "__main__":

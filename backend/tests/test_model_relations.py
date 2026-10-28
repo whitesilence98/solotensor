@@ -6,16 +6,21 @@ from pathlib import Path
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.db import Database, get_db, set_db
 from app.main import app, model_storage, storage
+from app.services.models import ModelService
 from app.schemas import (
+    CreatorModelType,
     GenerationRecordResponse,
+    ModelCompatibility,
     ModelCreateRequest,
     ModelPrecision,
+    ModelVisibility,
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
 )
@@ -731,6 +736,91 @@ class ModelRelationsApiTests(unittest.TestCase):
 
         finally:
             model_storage.settings.COMFY_MODEL_ROOT = orig_comfy
+
+
+class PublicModelVideoFamilyApiTests(unittest.TestCase):
+    """`video_family` must be serialized on both public model listings.
+
+    Uses a real ModelService rooted in a temp dir (no network, no ComfyUI) and
+    patches the module-level service the routes read from.
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db = Database(db_path=f"{self.temp_dir.name}/video_family.db")
+        self.db.init_db()
+        set_db(self.db)
+        app.dependency_overrides[get_db] = lambda: self.db
+
+        self.comfy_root = Path(self.temp_dir.name) / "comfy"
+        (self.comfy_root / "models" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        self.settings = Settings(
+            MODELS_DIR=str(Path(self.temp_dir.name) / "models"),
+            COMFY_MODEL_ROOT=str(self.comfy_root),
+            FILES_PUBLIC_BASE="http://test",
+        )
+        self.service = ModelService(self.settings)
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        set_db(None)
+        app.dependency_overrides.clear()
+        self.temp_dir.cleanup()
+
+    def _published_model(self, title: str, base_model: str, filename: str) -> str:
+        model = self.service.create(
+            ModelCreateRequest(
+                title=title,
+                model_type=CreatorModelType.CHECKPOINT,
+                visibility=ModelVisibility.PUBLIC,
+                compatibility=ModelCompatibility(base_model=base_model),
+            ),
+            is_moderator=True,
+        )
+        version_id = model.versions[0].version_id
+        updated = self.service.add_file(
+            model.model_id, version_id, filename, b"weights", ModelPrecision.FP16
+        )
+        file_id = updated.versions[0].files[0].file_id
+        self.service.install_file(model.model_id, version_id, file_id)
+        return model.model_id
+
+    def test_public_listing_includes_video_family(self) -> None:
+        ltx_id = self._published_model("LTX Video Model", "LTX-2.3", "ltx_weights.safetensors")
+        sdxl_id = self._published_model(
+            "SDXL Model", "Stable Diffusion XL (SDXL)", "sdxl_weights.safetensors"
+        )
+
+        with patch("app.main.model_storage", self.service):
+            resp = self.client.get("/api/v1/models/public")
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        items = resp.json()["items"]
+        self.assertEqual(len(items), 2)
+        by_id = {item["model_id"]: item for item in items}
+        for item in items:
+            self.assertIn("video_family", item)
+        self.assertEqual(by_id[ltx_id]["video_family"], "ltx")
+        self.assertIsNone(by_id[sdxl_id]["video_family"])
+
+    def test_selectable_listing_includes_video_family(self) -> None:
+        ltx_id = self._published_model("LTX Video Model", "LTX-2.3", "ltx_weights.safetensors")
+        self._published_model(
+            "SDXL Model", "Stable Diffusion XL (SDXL)", "sdxl_weights.safetensors"
+        )
+
+        with patch("app.main.model_storage", self.service):
+            resp = self.client.get("/api/v1/models/public/selectable")
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        items = resp.json()["items"]
+        self.assertTrue(items)
+        for item in items:
+            self.assertIn("video_family", item)
+        self.assertEqual(
+            next(item for item in items if item["model_id"] == ltx_id)["video_family"],
+            "ltx",
+        )
 
 
 if __name__ == "__main__":

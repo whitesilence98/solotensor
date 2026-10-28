@@ -40,6 +40,7 @@ from .routers.notifications import router as notifications_router
 from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
+    video_family,
     AssistantRequest,
     AssistantResponse,
     CreateToolRequest,
@@ -408,6 +409,10 @@ def _ensure_video_capable(selected_model: dict, base_model: dict, is_lora: bool)
     The graph hardcodes the LTX-2.3 22B transformer plus its LTX-2.3 VAE and text
     encoders, so the selected weights never reach the renderer. Requiring an LTX
     architecture keeps the picker honest instead of silently ignoring it.
+
+    This is the hard LTX generation gate. `schemas.video_family` is the shared
+    vocabulary for non-blocking, advisory checks (gallery labels, picker
+    affordances); it must not replace this matcher, whose 409 boundary is fixed.
     """
     target = base_model if is_lora else selected_model
     architecture = str(target.get("base_model") or "").strip().lower()
@@ -492,6 +497,7 @@ async def list_public_models(
                 "version_count": len(model.versions),
                 "file_count": public_files,
                 "sample_count": public_samples,
+                "video_family": video_family(model.compatibility.base_model),
             }
         )
     return PublicModelListResponse(items=items)
@@ -1102,10 +1108,16 @@ async def clip_options() -> dict[str, list[str]]:
 
 
 @app.get("/api/v1/workflow/template-info")
-async def workflow_template_info() -> dict[str, Any]:
+async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
     try:
         comfy = get_comfy_client()
-        template = comfy.load_workflow_template()
+        # The node-scan loop below is graph-agnostic: the video template exposes
+        # its LTX VAE and CLIP protocol through the same VAELoader/CLIPLoader
+        # nodes as the image graph, so only the template source changes.
+        if mode == "video":
+            template = comfy.load_video_it2v_template()
+        else:
+            template = comfy.load_workflow_template()
         if not template or not isinstance(template, dict):
             return {"has_template": False}
 

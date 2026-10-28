@@ -62,6 +62,16 @@ const LTX_ALIASES = ARCHITECTURE_FAMILIES.ltx;
 
 function isLtxSelection(model: InstalledGalleryModel | null): boolean {
   if (!model) return false;
+  // Mirror the backend gate's fail-open rule: `_ensure_video_capable` returns
+  // early when the architecture is unrecorded, so an unlabelled model must not
+  // warn red here either. `video_family` is null for both an empty architecture
+  // and a known image architecture, so it cannot tell them apart on its own.
+  if (!model.base_model?.trim()) return true;
+  // For a recorded architecture the API-derived family is authority: it uses
+  // the same table the backend does, so the two cannot drift.
+  if (model.video_family) {
+    return model.video_family === "ltx";
+  }
   const candidates = [model.base_model, model.version_name, model.title, model.filename]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim().toLowerCase());

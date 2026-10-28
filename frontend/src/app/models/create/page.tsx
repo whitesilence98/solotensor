@@ -21,6 +21,7 @@ import {
   FileArchive,
   FileCode2,
   FileImage,
+  Film,
   FolderDown,
   HardDrive,
   Info,
@@ -50,6 +51,7 @@ import {
   type LocalModelSummary,
   type ModelPrecision,
   type ModelVisibility,
+  type VideoFamily,
   type WorkflowTemplateInfo,
 } from "@/lib/api";
 import TensorModelCard from "@/components/TensorModelCard";
@@ -60,6 +62,7 @@ import {
   getFirstOptionValue,
   isArchitectureInList,
   isArchitectureCompatible,
+  videoFamilyOf,
 } from "@/lib/baseModelArchitectures";
 import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
@@ -140,6 +143,20 @@ const isPromptableModelType = (t: string) =>
 
 const isAdapterModelType = (t: string) =>
   ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(t);
+
+/** Uppercase display label for an advisory video engine key ("hunyuan-video" → "HUNYUAN VIDEO"). */
+function formatVideoFamilyLabel(family: VideoFamily): string {
+  return family.replace(/-/g, " ").toUpperCase();
+}
+
+/** Bundled LTX-Video 2.3 autoencoders, surfaced first when a video backbone is selected. */
+const VIDEO_VAE_QUICK_PICKS = [
+  "LTX23_video_vae_bf16.safetensors",
+  "taeltx2_3.safetensors",
+] as const;
+
+/** CLIP protocol token the bundled LTX-Video 2.3 graph loads. */
+const VIDEO_CLIP_TYPE = "ltxv";
 
 const categories: CreatorModelCategory[] = [
   "General",
@@ -292,6 +309,12 @@ export default function CreateModelPage() {
       );
     });
   }, [activeVersion?.files]);
+
+  const activeVideoFamily = useMemo(() => videoFamilyOf(baseModel), [baseModel]);
+  // Only the LTX family can actually run in this studio's bundled video graph,
+  // and only its VAE/CLIP tokens are known-good here. Other video families get
+  // the advisory banner but must not inherit LTX conditioning values.
+  const isLtxVideo = activeVideoFamily === "ltx";
 
   const totalFilesCount = useMemo(() => {
     return versions.reduce((sum, v) => sum + v.files.length, 0);
@@ -708,6 +731,46 @@ export default function CreateModelPage() {
     }
   };
 
+  /**
+   * Video variant of the template prefill. Video rendering always runs the
+   * bundled LTX-Video 2.3 graph, so this only records the conditioning the
+   * model needs. It is a convenience, never a dependency: errors stay silent
+   * and a value the creator already typed is never replaced.
+   */
+  const applyVideoTemplateDefaults = (info: WorkflowTemplateInfo) => {
+    const { vae_name, clip_name, clip_type } = info;
+    if (vae_name) {
+      setVae((current) => (current.trim() ? current : vae_name));
+    }
+    if (clip_name) {
+      setTextEncoder((current) => (current.trim() ? current : clip_name));
+    }
+    if (clip_type) {
+      setClipType((current) => (current.trim() ? current : clip_type));
+    }
+  };
+
+  useEffect(() => {
+    // The video template's VAE/CLIP values are LTX-Video 2.3's; stamping them
+    // onto a Wan/CogVideo/Mochi/SVD record would record conditioning that model
+    // does not use, so the prefill stays inside the family it describes.
+    if (!isLtxVideo) return;
+    let cancelled = false;
+    api
+      .getWorkflowTemplateInfo("video")
+      .then((info) => {
+        if (cancelled || !info?.has_template) return;
+        applyVideoTemplateDefaults(info);
+      })
+      .catch(() => {
+        // Convenience prefill only — no banner, no blocking state.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLtxVideo]);
+
   // Base model select handler for LoRA / LyCORIS
   const onSelectBaseModel = (key: string) => {
     setSelectedBaseKey(key);
@@ -736,6 +799,12 @@ export default function CreateModelPage() {
   // Dynamic VAE options from ComfyUI enclave & workflow nodes
   const vaeOptions = useMemo(() => {
     const list: string[] = [];
+    // LTX backbones: the bundled LTX-Video 2.3 autoencoders lead the list.
+    if (isLtxVideo) {
+      VIDEO_VAE_QUICK_PICKS.forEach((pick) => {
+        if (!list.includes(pick)) list.push(pick);
+      });
+    }
     if (workflowInfo?.vae_name && !list.includes(workflowInfo.vae_name)) {
       list.push(workflowInfo.vae_name);
     }
@@ -748,7 +817,7 @@ export default function CreateModelPage() {
       if (!list.includes(std)) list.push(std);
     });
     return list;
-  }, [workflowInfo?.vae_name, vaeFiles]);
+  }, [isLtxVideo, workflowInfo?.vae_name, vaeFiles]);
 
   // Dynamic Text Encoder options from ComfyUI enclave & workflow nodes
   const encoderOptions = useMemo(() => {
@@ -776,6 +845,10 @@ export default function CreateModelPage() {
     ];
     const source = clipTypes.length ? clipTypes : defaultTypes;
     const list: string[] = [];
+    // LTX backbones speak the LTXV protocol; keep it at the head of the list.
+    if (isLtxVideo && !source.includes(VIDEO_CLIP_TYPE)) {
+      list.push(VIDEO_CLIP_TYPE);
+    }
     source.forEach((name) => {
       if (!list.includes(name)) list.push(name);
     });
@@ -783,7 +856,7 @@ export default function CreateModelPage() {
       list.push(workflowInfo.clip_type);
     }
     return list;
-  }, [workflowInfo?.clip_type, clipTypes]);
+  }, [isLtxVideo, workflowInfo?.clip_type, clipTypes]);
 
   // Auto-select first available option as default
   useEffect(() => {
@@ -1310,7 +1383,26 @@ export default function CreateModelPage() {
                     {getModelTier(modelType) === "Core Base" && (
                       <div className="space-y-4 animate-in fade-in duration-150">
                         {/* Contextual Architecture Banner */}
-                        {isModularBackbone ? (
+                        {activeVideoFamily ? (
+                          <div className="flex items-start gap-3 rounded-[5px] border border-[var(--accent)]/25 bg-[var(--accent)]/5 p-3">
+                            <Film className="h-4 w-4 shrink-0 text-[var(--accent)] mt-0.5" />
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center rounded-[3px] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/30">
+                                  [VIDEO BACKBONE · {formatVideoFamilyLabel(activeVideoFamily)}]
+                                </span>
+                              </div>
+                              <p className="font-mono text-[10px] leading-relaxed text-[var(--ink-soft)]">
+                                Video generations run the bundled LTX-Video 2.3 graph, which loads its own transformer, VAE and text encoder. The values below are recorded as metadata so the gallery and the studio picker show what this model needs — they do not drive the video render.
+                              </p>
+                              <p className="font-mono text-[9px] leading-relaxed text-[var(--ink-faint)]">
+                                {isModularBackbone
+                                  ? "Weights are a modular DiT/UNET backbone (models/diffusion_models/)."
+                                  : "Weights are a monolithic checkpoint (models/checkpoints/)."}
+                              </p>
+                            </div>
+                          </div>
+                        ) : isModularBackbone ? (
                           <div className="flex items-start gap-3 rounded-[5px] border border-purple-500/30 bg-purple-500/5 p-3">
                             <Layers3 className="h-4 w-4 shrink-0 text-purple-400 mt-0.5" />
                             <div className="space-y-1">
@@ -2660,6 +2752,14 @@ export default function CreateModelPage() {
                     {resolvedBaseModel}
                   </span>
                 </div>
+                {activeVideoFamily && (
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-[var(--ink-faint)]">Video family:</span>
+                    <span className="font-semibold text-[var(--accent)] truncate max-w-[140px]">
+                      {formatVideoFamilyLabel(activeVideoFamily)}
+                    </span>
+                  </div>
+                )}
                 {resolvedVae && (
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-[var(--ink-faint)]">Target VAE:</span>

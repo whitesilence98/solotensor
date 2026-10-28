@@ -807,7 +807,7 @@ export default function VisualNodeCanvas({
         <button
           type="button"
           onClick={handleExposeEssentials}
-          className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] hover:bg-[var(--accent)]/25 font-bold transition shadow-[0_0_8px_rgba(213,240,111,0.2)]"
+          className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--accent)]/15 border border-[var(--accent)]/40 text-[var(--accent)] hover:bg-[var(--accent)]/25 font-bold transition shadow-[0_0_8px_rgba(199,227,106,0.2)]"
           title="Expose Essential Parameters (Seed, Dimensions, CFG, Steps)"
         >
           <Zap className="h-3.5 w-3.5 fill-current" />
@@ -1015,9 +1015,9 @@ export default function VisualNodeCanvas({
                 id={`canvas_node_${node.id}`}
                 className={`canvas-node absolute rounded-[8px] border transition-all duration-150 shadow-2xl backdrop-blur-md select-none ${
                   isSelected
-                    ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/50 shadow-[0_0_32px_rgba(213,240,111,0.35)] z-20"
+                    ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/50 shadow-[0_0_32px_rgba(199,227,106,0.35)] z-20"
                     : isPartOfPipeline
-                    ? "border-[var(--accent)]/80 ring-1 ring-[var(--accent)]/30 shadow-[0_0_18px_rgba(213,240,111,0.2)] z-15"
+                    ? "border-[var(--accent)]/80 ring-1 ring-[var(--accent)]/30 shadow-[0_0_18px_rgba(199,227,106,0.2)] z-15"
                     : "border-[var(--line-strong)] hover:border-[var(--accent)]/60 z-10"
                 } ${isDimmed ? "opacity-35 hover:opacity-100" : "opacity-100"} ${
                   isFlashed ? "animate-bounce ring-4 ring-[var(--accent)]" : ""
@@ -1342,7 +1342,7 @@ export default function VisualNodeCanvas({
                       rx="14"
                       fill={catColor}
                       fillOpacity={isSelected ? 1 : 0.75}
-                      stroke={isSelected ? "#d5f06f" : "none"}
+                      stroke={isSelected ? "#c7e36a" : "none"}
                       strokeWidth={isSelected ? 12 : 0}
                     />
                   );
@@ -1355,8 +1355,8 @@ export default function VisualNodeCanvas({
                     y={-transform.y / transform.scale}
                     width={(containerRef.current.clientWidth - (showFormPreview ? 340 : 0)) / transform.scale}
                     height={containerRef.current.clientHeight / transform.scale}
-                    fill="rgba(213, 240, 111, 0.12)"
-                    stroke="#d5f06f"
+                    fill="rgba(199, 227, 106, 0.12)"
+                    stroke="#c7e36a"
                     strokeWidth={Math.max(6 / transform.scale, 8)}
                     strokeDasharray="16 8"
                     rx="8"
@@ -1651,7 +1651,7 @@ export default function VisualNodeCanvas({
           <div className="p-3 border-t border-[var(--line)] bg-[var(--surface-sunken)] space-y-2">
             <button
               type="button"
-              className="w-full flex items-center justify-center gap-2 rounded-[6px] bg-[var(--accent)] py-2 text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-[0_0_14px_rgba(213,240,111,0.25)] hover:bg-[var(--accent-hover)] transition-all"
+              className="w-full flex items-center justify-center gap-2 rounded-[6px] bg-[var(--accent)] py-2 text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] shadow-[0_0_14px_rgba(199,227,106,0.25)] hover:bg-[var(--accent-hover)] transition-all"
             >
               <Zap className="h-3.5 w-3.5" />
               <span>Generate Output ⚡</span>

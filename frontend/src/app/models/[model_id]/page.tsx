@@ -59,6 +59,7 @@ import UserAvatar from "@/components/UserAvatar";
 import Carousel from "@/components/Carousel";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
+import { videoFamilyOf } from "@/lib/baseModelArchitectures";
 
 interface CommentItem {
   id: string;
@@ -219,6 +220,12 @@ export default function PublicModelDetailPage({
       (t) => t.toLowerCase() === "mature" || t.toLowerCase() === "nsfw" || t.toLowerCase() === "18+"
     );
   }, [model?.tags]);
+
+  // Advisory video engine, derived from the architecture the record already keeps.
+  const videoFamily = useMemo(
+    () => videoFamilyOf(model?.compatibility?.base_model),
+    [model?.compatibility?.base_model],
+  );
 
   const handleTakedownOrUnlist = async () => {
     if (!model) return;
@@ -1970,6 +1977,16 @@ export default function PublicModelDetailPage({
                     {model.compatibility?.clip_type || "Auto-detected"}
                   </span>
                 </div>
+
+                {/* Video Family (advisory — bundled graph runs the render) */}
+                {videoFamily && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[var(--ink-faint)] font-mono text-[11px]">Video Family</span>
+                    <span className="font-mono text-xs font-semibold text-[var(--accent)]">
+                      {videoFamily.replace(/-/g, " ").toUpperCase()}
+                    </span>
+                  </div>
+                )}
 
                 {/* Tested / Recommended Base Checkpoint (if adapter) */}
                 {model.compatibility?.base_model_id ? (
