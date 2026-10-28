@@ -37,6 +37,13 @@ import {
 } from "lucide-react";
 import { ToolControl } from "@/lib/api";
 import {
+  DynamicControl,
+  resolveControlMeta,
+  type Scalar,
+} from "@/components/ToolControlWidget";
+import ModelFilePicker from "@/components/ModelFilePicker";
+import { modelCategoryForInput, type ModelFileCategory } from "@/lib/comfy-model-inputs";
+import {
   computeGraphTopology,
   CanvasGraphTopology,
   VisualCanvasNode,
@@ -179,7 +186,6 @@ interface CanvasNodeViewProps {
   dimmed: boolean;
   exposedCount: number;
   nodeControls: ToolControl[];
-  previewValues: Record<string, unknown>;
   onHoverEnter: (nodeId: string) => void;
   onHoverLeave: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
@@ -200,7 +206,6 @@ const CanvasNodeView = memo(function CanvasNodeView({
   dimmed,
   exposedCount,
   nodeControls,
-  previewValues,
   onHoverEnter,
   onHoverLeave,
   onSelect,
@@ -292,7 +297,7 @@ const CanvasNodeView = memo(function CanvasNodeView({
               const ctrl = nodeControls.find((c) => c.input_name === inp.name);
               const isExposed = !!ctrl && ctrl.exposed !== false;
               const effectiveVal =
-                previewValues[`${node.id}.${inp.name}`] ?? ctrl?.default ?? ctrl?.value ?? inp.value;
+                ctrl?.default ?? ctrl?.value ?? inp.value;
 
               const isNum = typeof inp.value === "number" || typeof effectiveVal === "number";
               const isSeed = inp.name.toLowerCase().includes("seed");
@@ -527,6 +532,9 @@ export default function VisualNodeCanvas({
 
   // Selected & Hovered nodes for pipeline trace & side inspector
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [pickerTarget, setPickerTarget] = useState<
+    { nodeId: string; inputName: string; category: ModelFileCategory } | null
+  >(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [flashNodeId, setFlashNodeId] = useState<string | null>(null);
 
@@ -547,8 +555,7 @@ export default function VisualNodeCanvas({
   isSpaceDownRef.current = isSpaceDown;
   const [showHotkeysHelp, setShowHotkeysHelp] = useState(false);
 
-  // Form preview mockup form state
-  const [previewValues, setPreviewValues] = useState<Record<string, unknown>>({});
+  // Form preview drawer visibility
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1017,10 +1024,7 @@ export default function VisualNodeCanvas({
         );
       }
 
-      // 2. Update preview mock state
-      setPreviewValues((prev) => ({ ...prev, [`${nodeId}.${inputName}`]: newValue }));
-
-      // 3. Update raw workflow graph if onWorkflowChange is connected
+      // 2. Update raw workflow graph if onWorkflowChange is connected
       if (onWorkflowChange) {
         const nodeObj = workflow[nodeId] as Record<string, unknown> | undefined;
         if (nodeObj && typeof nodeObj === "object") {
@@ -1521,7 +1525,6 @@ export default function VisualNodeCanvas({
                 dimmed={activePipelineNodes !== null && !isPartOfPipeline}
                 exposedCount={exposedCount}
                 nodeControls={nodeControls}
-                previewValues={previewValues}
                 onHoverEnter={handleHoverEnter}
                 onHoverLeave={handleHoverLeave}
                 onSelect={handleSelectNode}
@@ -1727,6 +1730,7 @@ export default function VisualNodeCanvas({
                     .map((inp) => {
                       const isExposed = isControlExposed(selectedNode.id, inp.name);
                       const ctrl = getExistingControl(selectedNode.id, inp.name);
+                      const modelCategory = modelCategoryForInput(inp.name, selectedNode.classType);
 
                       return (
                         <div
@@ -1737,22 +1741,36 @@ export default function VisualNodeCanvas({
                               : "border-[var(--line)] bg-[var(--surface-sunken)]/30 opacity-70"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-1">
                             <label className="text-[10px] font-bold text-[var(--ink)] truncate max-w-[180px]">
                               {inp.name}
                             </label>
-                            <button
-                              type="button"
-                              onClick={() => toggleControlExposure(selectedNode, inp.name, inp.value)}
-                              className={`flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold transition-all ${
-                                isExposed
-                                  ? "bg-[var(--accent)] text-[var(--accent-ink)]"
-                                  : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
-                              }`}
-                            >
-                              <Zap className="h-3 w-3" />
-                              <span>{isExposed ? "Exposed" : "Expose"}</span>
-                            </button>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {modelCategory && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPickerTarget({ nodeId: selectedNode.id, inputName: inp.name, category: modelCategory })
+                                  }
+                                  className="rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 text-[9px] font-bold text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                                  aria-label={`Browse model files for ${inp.name}`}
+                                >
+                                  Browse
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => toggleControlExposure(selectedNode, inp.name, inp.value)}
+                                className={`flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold transition-all ${
+                                  isExposed
+                                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                                    : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
+                                }`}
+                              >
+                                <Zap className="h-3 w-3" />
+                                <span>{isExposed ? "Exposed" : "Expose"}</span>
+                              </button>
+                            </div>
                           </div>
 
                           {isExposed && ctrl && (
@@ -1825,86 +1843,24 @@ export default function VisualNodeCanvas({
               </div>
             ) : (
               <div className="space-y-3.5">
-                {exposedControlsList.map((ctrl) => {
-                  const val = previewValues[ctrl.id] ?? ctrl.default ?? ctrl.value;
-                  const isPrompt = ctrl.kind === "prompt" || ctrl.input_name.toLowerCase().includes("prompt");
-                  const isSeed = ctrl.kind === "seed" || ctrl.input_name.toLowerCase().includes("seed");
-                  const isNum = ctrl.numeric || typeof val === "number";
-
+                {exposedControlsList.map((ctrl, idx) => {
+                  const node = workflow[ctrl.node_id] as
+                    | { inputs?: Record<string, unknown> }
+                    | undefined;
+                  const value = (ctrl.default ??
+                    node?.inputs?.[ctrl.input_name] ??
+                    ctrl.value) as Scalar;
                   return (
-                    <div
+                    <DynamicControl
                       key={ctrl.id}
-                      className="rounded-[6px] border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-[var(--ink)]">
-                          {ctrl.label || ctrl.input_name}
-                        </label>
-                        <span className="font-mono text-[8px] uppercase tracking-wider text-[var(--accent)] bg-[var(--accent)]/10 px-1.5 py-0.2 rounded border border-[var(--accent)]/30">
-                          {ctrl.kind}
-                        </span>
-                      </div>
-
-                      {isPrompt ? (
-                        <textarea
-                          rows={2}
-                          value={String(val ?? "")}
-                          onChange={(e) =>
-                            setPreviewValues((prev) => ({ ...prev, [ctrl.id]: e.target.value }))
-                          }
-                          placeholder="User prompt input placeholder..."
-                          className="w-full rounded border border-[var(--line)] bg-[var(--surface)] p-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)] resize-none"
-                        />
-                      ) : isSeed ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            value={String(val ?? "")}
-                            onChange={(e) =>
-                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Number(e.target.value) }))
-                            }
-                            className="w-full h-7 rounded border border-[var(--line)] bg-[var(--surface)] px-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Math.floor(Math.random() * 1e14) }))
-                            }
-                            className="h-7 px-2 rounded border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)] hover:text-[var(--accent)] hover:border-[var(--accent)] shrink-0 flex items-center gap-1 text-[9px] font-bold"
-                          >
-                            <Dices className="h-3 w-3" />
-                            <span>Roll</span>
-                          </button>
-                        </div>
-                      ) : isNum ? (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[9px] text-[var(--ink-faint)]">
-                            <span>Value: {String(val ?? 0)}</span>
-                            <span>Range: {ctrl.minimum ?? 0} — {ctrl.maximum ?? 100}</span>
-                          </div>
-                          <input
-                            type="range"
-                            min={ctrl.minimum ?? 0}
-                            max={ctrl.maximum ?? 100}
-                            step={ctrl.step ?? (ctrl.input_name === "cfg" ? 0.5 : 1)}
-                            value={Number(val) || 0}
-                            onChange={(e) =>
-                              setPreviewValues((prev) => ({ ...prev, [ctrl.id]: Number(e.target.value) }))
-                            }
-                            className="w-full accent-[var(--accent)]"
-                          />
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={String(val ?? "")}
-                          onChange={(e) =>
-                            setPreviewValues((prev) => ({ ...prev, [ctrl.id]: e.target.value }))
-                          }
-                          className="w-full h-7 rounded border border-[var(--line)] bg-[var(--surface)] px-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                        />
-                      )}
-                    </div>
+                      control={ctrl}
+                      value={value}
+                      busy={false}
+                      meta={resolveControlMeta(ctrl, idx, exposedControlsList)}
+                      onChange={(v) =>
+                        handleUpdateInputValue(ctrl.node_id, ctrl.input_name, v)
+                      }
+                    />
                   );
                 })}
               </div>
@@ -2125,6 +2081,17 @@ export default function VisualNodeCanvas({
           </div>
         </div>
       )}
+
+      <ModelFilePicker
+        open={pickerTarget !== null}
+        category={pickerTarget?.category ?? "checkpoints"}
+        title={pickerTarget ? `Select ${pickerTarget.inputName}` : undefined}
+        onSelect={(filename) => {
+          if (!pickerTarget) return;
+          handleUpdateInputValue(pickerTarget.nodeId, pickerTarget.inputName, filename);
+        }}
+        onClose={() => setPickerTarget(null)}
+      />
     </div>
   );
 }
