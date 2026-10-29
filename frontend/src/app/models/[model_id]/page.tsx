@@ -46,7 +46,9 @@ import {
   type CreatorModel,
   type CreatorModelFile,
   type GalleryItem,
+  type ModelComment,
   type ModelPrecision,
+  type ModelSocialStats,
   type LocalModelSummary,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -61,14 +63,44 @@ import WorkspaceFooter from "@/components/WorkspaceFooter";
 import { detectPrecisionFromFilename, getBaseFilename } from "@/lib/models";
 import { videoFamilyOf } from "@/lib/baseModelArchitectures";
 
-interface CommentItem {
-  id: string;
-  author: string;
-  initials: string;
-  date: string;
-  text: string;
-  likes: number;
-  liked?: boolean;
+// Formatting helper: 1234 -> 1.2K, 6200000 -> 6.2M
+function formatMetric(n: number): string {
+  if (n >= 1_000_000) {
+    const formatted = (n / 1_000_000).toFixed(1);
+    return formatted.endsWith(".0") ? `${Math.floor(n / 1_000_000)}M` : `${formatted}M`;
+  }
+  if (n >= 1_000) {
+    const formatted = (n / 1_000).toFixed(1);
+    return formatted.endsWith(".0") ? `${Math.floor(n / 1_000)}K` : `${formatted}K`;
+  }
+  return n.toLocaleString("en-US");
+}
+
+// Derive display initials from a real author name.
+function initialsOf(name: string): string {
+  const words = name
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+// Short relative/short-date rendering of a server timestamp.
+function formatCommentDate(iso: string): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "";
+  const diffMs = Date.now() - then.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return then.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export default function PublicModelDetailPage({
@@ -88,40 +120,20 @@ export default function PublicModelDetailPage({
   const [installedFileIds, setInstalledFileIds] = useState<Set<string>>(new Set());
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
-  const [isStarred, setIsStarred] = useState(false);
-  const [starCount, setStarCount] = useState(6920);
+  const [social, setSocial] = useState<ModelSocialStats | null>(null);
   const [isFollowed, setIsFollowed] = useState(false);
+  const [followError, setFollowError] = useState<string | null>(null);
   const [copiedTrigger, setCopiedTrigger] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [expandedDescription, setExpandedDescription] = useState(false);
   const [commentTab, setCommentTab] = useState<"latest" | "liked">("latest");
   const [commentInput, setCommentInput] = useState("");
-  const [comments, setComments] = useState<CommentItem[]>([
-    {
-      id: "c1",
-      author: "user_1034544682488576099",
-      initials: "U1",
-      date: "2 months ago",
-      text: "Incredible model! The skin textures and ambient lighting match porcelain doll aesthetics perfectly without losing anatomical realism.",
-      likes: 24,
-    },
-    {
-      id: "c2",
-      author: "user_998231273019323125",
-      initials: "U2",
-      date: "2 months ago",
-      text: "Works like magic with CFG 4.5 and Euler a sampler. Best Niji-realistic merge I've tested this month.",
-      likes: 18,
-    },
-    {
-      id: "c3",
-      author: "user_981858362691973493",
-      initials: "U3",
-      date: "2 months ago",
-      text: "Prompt adherence is top notch! Remember to include the trigger words in the beginning of your prompt for best fidelity.",
-      likes: 9,
-    },
-  ]);
+  const [comments, setComments] = useState<ModelComment[]>([]);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [postingComment, setPostingComment] = useState(false);
+  const [starError, setStarError] = useState<string | null>(null);
   const [selectedSample, setSelectedSample] = useState<GalleryItem | null>(null);
 
   // Authentication & RBAC Actions
@@ -301,6 +313,7 @@ export default function PublicModelDetailPage({
         visibility: model.visibility,
       });
 
+      let auditFailed = false;
       try {
         await api.flagContent(
           "model",
@@ -308,12 +321,21 @@ export default function PublicModelDetailPage({
           willBeMature ? "mature_content_flagged" : "mature_content_cleared",
           willBeMature ? "Marked as Mature (18+) by moderator" : "Cleared mature tag by moderator"
         );
-      } catch {
-        /* telemetry callback */
+      } catch (err) {
+        // The tag itself was saved; only the moderation audit entry failed.
+        // Say so rather than reporting a clean success.
+        auditFailed = true;
+        console.warn("Could not record mature-content audit entry", err);
       }
 
       setModel(updated);
-      setModToast(willBeMature ? "Content safety: Marked as Mature (18+)" : "Content safety: Cleared Mature flag");
+      setModToast(
+        auditFailed
+          ? "Mature tag saved, but the moderation log entry could not be recorded"
+          : willBeMature
+            ? "Content safety: Marked as Mature (18+)"
+            : "Content safety: Cleared Mature flag"
+      );
       setTimeout(() => setModToast(null), 3500);
     } catch (err) {
       setModToast(err instanceof Error ? err.message : "Failed to update safety tag");
@@ -534,13 +556,28 @@ export default function PublicModelDetailPage({
     setLoading(true);
     setError(null);
     void params.then(({ model_id }) =>
-      api
-        .getPublicModel(model_id)
-        .then((value) => {
+      Promise.all([
+        api.getPublicModel(model_id),
+        api.getModelSocial(model_id).catch(() => null),
+        api
+          .getModelComments(model_id, { sort: "latest", page: 1, limit: 20 })
+          .catch(() => null),
+      ])
+        .then(([value, socialData, commentsData]) => {
           if (!cancelled) {
             setModel(value);
             if (value.versions.length > 0) {
               setSelectedVersionId(value.versions[0].version_id);
+            }
+            // Social data is non-critical: a failure leaves the page without
+            // metrics rather than inventing any.
+            setSocial(socialData);
+            if (commentsData) {
+              setComments(commentsData.items);
+              setCommentsTotal(commentsData.total);
+            } else {
+              setComments([]);
+              setCommentsTotal(0);
             }
           }
         })
@@ -560,6 +597,45 @@ export default function PublicModelDetailPage({
   }, [params]);
 
   useEffect(() => load(), [load]);
+
+  // Refetch the comment list when the sort tab changes. The first run is
+  // skipped because `load` already fetched the default "latest" ordering.
+  const commentsInitialized = useRef(false);
+  const modelId = model?.model_id;
+  useEffect(() => {
+    if (!modelId) {
+      commentsInitialized.current = false;
+      return;
+    }
+    if (!commentsInitialized.current) {
+      commentsInitialized.current = true;
+      return;
+    }
+    let cancelled = false;
+    setCommentsLoading(true);
+    api
+      .getModelComments(modelId, { sort: commentTab, page: 1, limit: 20 })
+      .then((res) => {
+        if (!cancelled) {
+          setComments(res.items);
+          setCommentsTotal(res.total);
+          setCommentError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setCommentError(
+            err instanceof Error ? err.message : "Could not load comments",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCommentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [commentTab, modelId]);
 
   const activeVersion =
     model?.versions.find((v) => v.version_id === selectedVersionId) ||
@@ -757,45 +833,88 @@ export default function PublicModelDetailPage({
     }
   };
 
-  const toggleStar = () => {
-    if (isStarred) {
-      setIsStarred(false);
-      setStarCount((c) => c - 1);
-    } else {
-      setIsStarred(true);
-      setStarCount((c) => c + 1);
+  const toggleStar = async () => {
+    if (!model) return;
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    setStarError(null);
+    try {
+      const res = await api.toggleModelStar(model.model_id);
+      setSocial((prev) =>
+        prev
+          ? { ...prev, star_count: res.star_count, viewer_starred: res.starred }
+          : prev,
+      );
+    } catch (err) {
+      setStarError(
+        err instanceof Error ? err.message : "Could not update star",
+      );
     }
   };
 
-  const handleAddComment = () => {
-    if (!commentInput.trim()) return;
-    const newComment: CommentItem = {
-      id: `c_${Date.now()}`,
-      author: "you (creator)",
-      initials: "ME",
-      date: "Just now",
-      text: commentInput.trim(),
-      likes: 1,
-      liked: true,
-    };
-    setComments([newComment, ...comments]);
-    setCommentInput("");
+  const handleAddComment = async () => {
+    const body = commentInput.trim();
+    if (!body || !model) return;
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    setPostingComment(true);
+    try {
+      const created = await api.postModelComment(model.model_id, body);
+      setComments((prev) => [created, ...prev]);
+      setCommentsTotal((t) => t + 1);
+      setCommentInput("");
+      setCommentError(null);
+    } catch (err) {
+      setCommentError(
+        err instanceof Error ? err.message : "Could not post comment",
+      );
+    } finally {
+      setPostingComment(false);
+    }
   };
 
-  const toggleCommentLike = (id: string) => {
-    setComments((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          const liked = !c.liked;
-          return {
-            ...c,
-            liked,
-            likes: liked ? c.likes + 1 : c.likes - 1,
-          };
-        }
-        return c;
-      }),
-    );
+  const toggleCommentLike = async (id: string) => {
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    try {
+      const res = await api.toggleCommentLike(id);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? { ...c, viewer_liked: res.liked, like_count: res.like_count }
+            : c,
+        ),
+      );
+      setCommentError(null);
+    } catch (err) {
+      setCommentError(
+        err instanceof Error ? err.message : "Could not update comment like",
+      );
+    }
+  };
+
+  const handleToggleFollowAuthor = async () => {
+    const authorUsername = model?.author_username;
+    if (!authorUsername) return;
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    setFollowError(null);
+    try {
+      const res = await api.toggleFollowUser(authorUsername);
+      setIsFollowed(res.following);
+    } catch (err) {
+      setFollowError(
+        err instanceof Error ? err.message : "Could not update follow",
+      );
+    }
   };
 
   const backLink = (
@@ -956,18 +1075,24 @@ export default function PublicModelDetailPage({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={toggleStar}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${isStarred
+                onClick={() => void toggleStar()}
+                aria-pressed={social?.viewer_starred ?? false}
+                aria-label={
+                  social?.viewer_starred ? "Remove star from model" : "Star model"
+                }
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${social?.viewer_starred
                     ? "border-[var(--warning)] bg-[var(--warning-surface)] text-[var(--warning)]"
                     : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
                   }`}
               >
                 <Star
-                  className={`h-3.5 w-3.5 ${isStarred ? "fill-[var(--warning)] text-[var(--warning)]" : ""
+                  className={`h-3.5 w-3.5 ${social?.viewer_starred ? "fill-[var(--warning)] text-[var(--warning)]" : ""
                     }`}
                 />
                 <span className="font-mono text-[11px]">
-                  {(starCount / 1000).toFixed(1)}K star
+                  {(social?.star_count ?? 0) > 0
+                    ? `${formatMetric(social?.star_count ?? 0)} star`
+                    : "Star"}
                 </span>
               </button>
 
@@ -1175,6 +1300,15 @@ export default function PublicModelDetailPage({
             <span className="text-[var(--line-strong)]">|</span>
             <span>UPDATED: {updatedDate}</span>
           </div>
+
+          {starError && (
+            <p
+              role="alert"
+              className="mt-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-1.5 font-mono text-[11px] text-[var(--danger)]"
+            >
+              {starError}
+            </p>
+          )}
 
           {/* Tags & Categories Row */}
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -1539,17 +1673,6 @@ export default function PublicModelDetailPage({
                 )}
               </div>
 
-              {/* Reaction Pill */}
-              <div className="mt-5 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 text-xs text-[var(--ink-soft)] transition hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                >
-                  <Flame className="h-3.5 w-3.5 text-[var(--accent)]" />
-                  <span>Buffet</span>
-                  <span className="font-mono text-[10px] text-[var(--ink-faint)]">42</span>
-                </button>
-              </div>
             </div>
 
             {/* Recommended Prompts & Presets Card */}
@@ -1700,105 +1823,140 @@ export default function PublicModelDetailPage({
             <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-5">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-[var(--ink)] text-sm uppercase tracking-wider">
-                  Comments ({comments.length})
+                  Comments ({commentsTotal})
                 </h3>
-                <div className="flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setCommentTab("latest")}
-                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "latest"
-                        ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
-                        : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                      }`}
-                  >
-                    Latest
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCommentTab("liked")}
-                    className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "liked"
-                        ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
-                        : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                      }`}
-                  >
-                    Most Liked
-                  </button>
-                </div>
+                {commentsTotal >= 2 && (
+                  <div className="flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setCommentTab("latest")}
+                      className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "latest"
+                          ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
+                          : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        }`}
+                    >
+                      Latest
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCommentTab("liked")}
+                      className={`rounded px-2.5 py-1 font-mono text-[11px] font-medium transition ${commentTab === "liked"
+                          ? "bg-[var(--surface-raised)] text-[var(--ink)] border border-[var(--line)]"
+                          : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        }`}
+                    >
+                      Most Liked
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Comment Input */}
               <div className="mt-4 flex items-center gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] border border-[var(--line)] font-mono text-xs font-bold text-[var(--accent)]">
-                  U
+                  {initialsOf(user?.displayName || user?.username || "U")}
                 </div>
                 <div className="flex flex-1 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-2 focus-within:border-[var(--accent)]">
                   <input
                     type="text"
                     value={commentInput}
                     onChange={(e) => setCommentInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleAddComment();
+                    }}
                     placeholder="Enter your comments here..."
                     className="w-full bg-transparent text-xs text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none"
                   />
                   <button
                     type="button"
-                    onClick={handleAddComment}
-                    disabled={!commentInput.trim()}
+                    onClick={() => void handleAddComment()}
+                    disabled={!commentInput.trim() || postingComment}
                     className="rounded bg-[var(--accent)] px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--accent-ink)] transition hover:bg-[var(--accent-hover)] disabled:opacity-40"
                   >
-                    Post
+                    {postingComment ? "Posting…" : "Post"}
                   </button>
                 </div>
               </div>
 
+              {commentError && (
+                <p
+                  role="alert"
+                  className="mt-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-1.5 font-mono text-[11px] text-[var(--danger)]"
+                >
+                  {commentError}
+                </p>
+              )}
+
               {/* Comments Thread */}
               <div className="mt-5 space-y-4">
-                {comments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="flex items-start gap-3 border-t border-[var(--line)] pt-3 text-xs"
-                  >
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] border border-[var(--line)] font-mono text-[10px] font-bold text-[var(--ink-soft)]">
-                      {comment.initials}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[var(--ink)]">
-                          {comment.author}
-                        </span>
-                        <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                          {comment.date}
-                        </span>
+                {commentsLoading && comments.length === 0 ? (
+                  <p className="border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-faint)]">
+                    Loading comments…
+                  </p>
+                ) : comments.length === 0 ? (
+                  <p className="border-t border-[var(--line)] pt-3 text-xs text-[var(--ink-faint)]">
+                    No comments yet — be the first to share how this model performs.
+                  </p>
+                ) : (
+                  comments.map((comment) => {
+                    const authorName =
+                      comment.author_display_name ||
+                      comment.author_username ||
+                      "Unknown creator";
+                    return (
+                      <div
+                        key={comment.id}
+                        className="flex items-start gap-3 border-t border-[var(--line)] pt-3 text-xs"
+                      >
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] border border-[var(--line)] font-mono text-[10px] font-bold text-[var(--ink-soft)]">
+                          {initialsOf(authorName)}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-[var(--ink)]">
+                              {authorName}
+                            </span>
+                            <span className="font-mono text-[10px] text-[var(--ink-faint)]">
+                              {formatCommentDate(comment.created_at)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[var(--ink-soft)] leading-relaxed">
+                            {comment.body}
+                          </p>
+                          <div className="mt-2 flex items-center gap-4 text-[11px] text-[var(--ink-faint)]">
+                            <button
+                              type="button"
+                              onClick={() => void toggleCommentLike(comment.id)}
+                              aria-label={
+                                comment.viewer_liked
+                                  ? "Remove like from comment"
+                                  : "Like comment"
+                              }
+                              aria-pressed={comment.viewer_liked}
+                              className={`inline-flex items-center gap-1 transition ${comment.viewer_liked
+                                  ? "text-[var(--danger)]"
+                                  : "hover:text-[var(--ink)]"
+                                }`}
+                            >
+                              <Heart
+                                className={`h-3 w-3 ${comment.viewer_liked ? "fill-[var(--danger)]" : ""
+                                  }`}
+                              />
+                              <span className="font-mono text-[10px]">{comment.like_count}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 hover:text-[var(--ink)] transition"
+                            >
+                              <CornerDownRight className="h-3 w-3" />
+                              <span>Reply</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <p className="mt-1 text-[var(--ink-soft)] leading-relaxed">
-                        {comment.text}
-                      </p>
-                      <div className="mt-2 flex items-center gap-4 text-[11px] text-[var(--ink-faint)]">
-                        <button
-                          type="button"
-                          onClick={() => toggleCommentLike(comment.id)}
-                          className={`inline-flex items-center gap-1 transition ${comment.liked
-                              ? "text-[var(--danger)]"
-                              : "hover:text-[var(--ink)]"
-                            }`}
-                        >
-                          <Heart
-                            className={`h-3 w-3 ${comment.liked ? "fill-[var(--danger)]" : ""
-                              }`}
-                          />
-                          <span className="font-mono text-[10px]">{comment.likes}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 hover:text-[var(--ink)] transition"
-                        >
-                          <CornerDownRight className="h-3 w-3" />
-                          <span>Reply</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -1821,7 +1979,11 @@ export default function PublicModelDetailPage({
             >
               <Play className="h-4 w-4 fill-[var(--accent-ink)]" />
               <span>Run</span>
-              <span className="font-mono text-[10px] opacity-80">⚡ 2M</span>
+              {(social?.run_count ?? 0) > 0 && (
+                <span className="font-mono text-[10px] opacity-80">
+                  ⚡ {formatMetric(social?.run_count ?? 0)}
+                </span>
+              )}
             </button>
 
             {/* Quick Actions Row */}
@@ -2335,8 +2497,15 @@ export default function PublicModelDetailPage({
 
               <button
                 type="button"
-                onClick={() => setIsFollowed(!isFollowed)}
-                className={`rounded-lg px-3.5 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition ${isFollowed
+                onClick={() => void handleToggleFollowAuthor()}
+                disabled={!model.author_username}
+                aria-pressed={isFollowed}
+                title={
+                  model.author_username
+                    ? undefined
+                    : "Author handle unavailable — cannot follow"
+                }
+                className={`rounded-lg px-3.5 py-1.5 font-mono text-xs font-semibold uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${isFollowed
                     ? "border border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
                     : "bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
                   }`}
@@ -2344,6 +2513,15 @@ export default function PublicModelDetailPage({
                 {isFollowed ? "Following" : "Follow"}
               </button>
             </div>
+
+            {followError && (
+              <p
+                role="alert"
+                className="rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-2 font-mono text-[11px] text-[var(--danger)]"
+              >
+                {followError}
+              </p>
+            )}
           </aside>
         </div>
       </div>

@@ -28,7 +28,6 @@ import {
   Share2,
   Sliders,
   Sparkles,
-  Star,
   Tag,
   Trash2,
   UploadCloud,
@@ -111,8 +110,6 @@ export default function ToolDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [isStarred, setIsStarred] = useState(false);
-  const [starCount, setStarCount] = useState(1280);
   const [shareCopied, setShareCopied] = useState(false);
   const [copiedRecipeIndex, setCopiedRecipeIndex] = useState<number | null>(null);
   const [sessionHistory, setSessionHistory] = useState<ToolRunResult[]>([]);
@@ -902,29 +899,6 @@ export default function ToolDetailPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Star Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsStarred((prev) => !prev);
-                  setStarCount((prev) => (isStarred ? prev - 1 : prev + 1));
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                  isStarred
-                    ? "border-[var(--warning)] bg-[var(--warning-surface)] text-[var(--warning)]"
-                    : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                }`}
-              >
-                <Star
-                  className={`h-3.5 w-3.5 ${
-                    isStarred ? "fill-[var(--warning)] text-[var(--warning)]" : ""
-                  }`}
-                />
-                <span className="font-mono text-[11px]">
-                  {(starCount / 1000).toFixed(1)}K star
-                </span>
-              </button>
-
               {/* Share Button */}
               <button
                 type="button"

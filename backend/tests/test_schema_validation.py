@@ -4,6 +4,9 @@ from pydantic import ValidationError
 
 from app.schemas import (
     AssistantRequest,
+    DirectorMedia,
+    DirectorReply,
+    DirectorShot,
     GenerateRequest,
     GeneratedAsset,
     LoraAdapterSelection,
@@ -366,6 +369,75 @@ class CodeAssistantSchemaTests(unittest.TestCase):
         ):
             with self.subTest(payload=payload), self.assertRaises(ValidationError):
                 AssistantRequest(**payload)
+
+
+class DirectorShotSchemaTests(unittest.TestCase):
+    def test_reply_defaults_shots_to_empty_list(self) -> None:
+        reply = DirectorReply(provider="local", model="llama3", answer="A plan.")
+        self.assertEqual(reply.shots, [])
+
+    def test_shot_ignores_unknown_keys(self) -> None:
+        shot = DirectorShot(
+            title="Night drive",
+            prompt="Neon-lit street, 35mm",
+            media="video",
+            unknown_field="ignored",
+        )
+        self.assertEqual(shot.title, "Night drive")
+        self.assertFalse(hasattr(shot, "unknown_field"))
+
+    def test_shot_defaults(self) -> None:
+        shot = DirectorShot(title="Frame", prompt="A frame", media="image")
+        self.assertEqual(shot.negative_prompt, "")
+        self.assertEqual(shot.aspect, "1:1")
+        self.assertIsNone(shot.duration_seconds)
+        self.assertIsNone(shot.fps)
+        self.assertIsNone(shot.model_id)
+        self.assertIsNone(shot.model_label)
+
+    def test_shot_accepts_video_parameters(self) -> None:
+        shot = DirectorShot(
+            title="Rooftop",
+            prompt="Slow dolly over rooftops",
+            media=DirectorMedia.VIDEO,
+            aspect="16:9",
+            duration_seconds=5,
+            fps=24,
+            model_id="a" * 32,
+            version_id="b" * 32,
+            file_id="c" * 32,
+            model_label="LTX Video",
+        )
+        self.assertIs(shot.media, DirectorMedia.VIDEO)
+        self.assertEqual(shot.duration_seconds, 5)
+        self.assertEqual(shot.fps, 24)
+
+    def test_shot_enforces_bounds(self) -> None:
+        base = {"title": "Shot", "prompt": "A shot", "media": "video"}
+        for overrides in (
+            {"title": ""},
+            {"title": "x" * 121},
+            {"prompt": ""},
+            {"prompt": "x" * 4_001},
+            {"negative_prompt": "x" * 4_001},
+            {"media": "audio"},
+            {"aspect": "21:9"},
+            {"duration_seconds": 0},
+            {"duration_seconds": 31},
+            {"fps": 7},
+            {"fps": 61},
+            {"model_id": "xyz"},
+            {"version_id": "b" * 31},
+            {"file_id": "G" * 32},
+            {"model_label": "x" * 201},
+        ):
+            with self.subTest(overrides=overrides), self.assertRaises(ValidationError):
+                DirectorShot(**{**base, **overrides})
+
+    def test_reply_caps_shots_at_six(self) -> None:
+        shot = {"title": "Shot", "prompt": "A shot", "media": "image"}
+        with self.assertRaises(ValidationError):
+            DirectorReply(provider="local", model="m", answer="ok", shots=[shot] * 7)
 
 
 class ModelModerationSchemaTests(unittest.TestCase):

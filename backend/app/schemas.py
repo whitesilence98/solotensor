@@ -387,6 +387,34 @@ class DirectorMessage(BaseModel):
     content: str = Field(..., min_length=1, max_length=8_000)
 
 
+class DirectorMedia(str, Enum):
+    IMAGE = "image"
+    VIDEO = "video"
+
+
+class DirectorShot(BaseModel):
+    """A concrete shot proposed by the director.
+
+    Parsed from model output, not from a client request, so unknown keys are
+    ignored rather than rejected — an extra field must not cost a usable shot.
+    Request bodies keep the repo-wide extra="forbid" convention.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    title: str = Field(..., min_length=1, max_length=120)
+    prompt: str = Field(..., min_length=1, max_length=4_000)
+    negative_prompt: str = Field("", max_length=4_000)
+    media: DirectorMedia
+    aspect: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
+    duration_seconds: int | None = Field(None, ge=1, le=30)
+    fps: int | None = Field(None, ge=8, le=60)
+    model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
+    model_label: str | None = Field(None, max_length=200)
+
+
 class DirectorRequest(BaseModel):
     """Body for POST /api/v1/director."""
 
@@ -399,7 +427,8 @@ class DirectorRequest(BaseModel):
 class DirectorReply(BaseModel):
     provider: str
     model: str
-    answer: str
+    answer: str = Field(..., max_length=8_000)
+    shots: list[DirectorShot] = Field(default_factory=list, max_length=6)
 
 
 class DirectorProviderStatus(BaseModel):
@@ -1340,6 +1369,7 @@ class PublicModelSummary(BaseModel):
     author_username: Optional[str] = None
     author_display_name: Optional[str] = None
     author_avatar_url: Optional[str] = None
+    author_id: Optional[str] = None
     tags: list[str]
     base_model: str
     published_at: str
@@ -1348,6 +1378,10 @@ class PublicModelSummary(BaseModel):
     version_count: int
     file_count: int
     sample_count: int
+    star_count: int = 0
+    comment_count: int = 0
+    download_count: int = 0
+    run_count: int = 0
     moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
     video_family: str | None = None
 
@@ -1912,6 +1946,89 @@ class UserFollowResponse(BaseModel):
     target_user_id: str
 
 
+class ModelStarResponse(BaseModel):
+    model_id: str
+    starred: bool
+    star_count: int = 0
+
+
+class ModelSocialStatsResponse(BaseModel):
+    model_id: str
+    star_count: int = 0
+    comment_count: int = 0
+    download_count: int = 0
+    run_count: int = 0
+    viewer_starred: bool = False
+
+
+class ModelCommentCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    body: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("body")
+    @classmethod
+    def body_not_blank(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Comment body cannot be blank")
+        return value
+
+
+class ModelCommentResponse(BaseModel):
+    id: str
+    model_id: str
+    user_id: Optional[str] = None
+    author_username: Optional[str] = None
+    author_display_name: Optional[str] = None
+    author_avatar_url: Optional[str] = None
+    author_role: Optional[str] = None
+    body: str
+    like_count: int = 0
+    viewer_liked: bool = False
+    created_at: str
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def serialize_created_at(cls, v: Any) -> str:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return str(v) if v is not None else ""
+
+
+class CommentLikeResponse(BaseModel):
+    comment_id: str
+    liked: bool
+    like_count: int = 0
+
+
+class AssetLikeRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    key: str = Field(..., min_length=1, max_length=1024)
+
+
+class AssetLikeQueryRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    keys: list[str] = Field(default_factory=list, max_length=200)
+
+
+class AssetLikeResponse(BaseModel):
+    key: str
+    liked: bool
+    like_count: int = 0
+
+
+class AssetLikeState(BaseModel):
+    like_count: int = 0
+    viewer_liked: bool = False
+
+
+class AssetLikeQueryResponse(BaseModel):
+    items: dict[str, AssetLikeState] = Field(default_factory=dict)
+
+
 class ApiKeyCreateRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -2215,6 +2332,10 @@ class PaginatedResponse(BaseModel, Generic[T]):
         )
 
 
+class PaginatedCommentsResponse(PaginatedResponse[ModelCommentResponse]):
+    pass
+
+
 class GenerationLoraResponse(BaseModel):
     id: str
     lora_name: str
@@ -2289,6 +2410,8 @@ class NotificationType(str, Enum):
     CREDITS_REFILLED = "credits_refilled"
     SYSTEM_ANNOUNCEMENT = "system_announcement"
     GENERAL = "general"
+    MODEL_STARRED = "model_starred"
+    MODEL_COMMENTED = "model_commented"
 
 
 class NotificationItem(BaseModel):

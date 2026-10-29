@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Cpu, Film, Sparkles, Wand2, Zap } from "lucide-react";
+import { ArrowRight, Sparkles, Wand2 } from "lucide-react";
 import Carousel from "@/components/Carousel";
 
 export interface PromoSlide {
@@ -30,42 +30,6 @@ const PROMO_SLIDES: PromoSlide[] = [
     icon: Wand2,
     gradient: "from-[var(--surface-raised)] via-[#151c14] to-[var(--surface-sunken)]",
     borderHover: "hover:border-[var(--accent)]/60",
-  },
-  {
-    id: "forge-minimax-h3",
-    title: "Forge MINIMAX H3 Video",
-    badge: "Online Training",
-    badgeType: "cyan",
-    subtitle: "Generate cinematic 4K camera trajectories and dynamic human physics.",
-    ctaText: "Explore Video",
-    href: "/tools",
-    icon: Film,
-    gradient: "from-[var(--surface-raised)] via-[#101b24] to-[var(--surface-sunken)]",
-    borderHover: "hover:border-cyan-500/60",
-  },
-  {
-    id: "seedance-speed",
-    title: "SEEDANCE High Speed",
-    badge: "Price Drop / Fast",
-    badgeType: "amber",
-    subtitle: "Instant latent compilation with 2.8x accelerated generation speeds.",
-    ctaText: "Boost Latency",
-    href: "/generate",
-    icon: Zap,
-    gradient: "from-[var(--surface-raised)] via-[#221c10] to-[var(--surface-sunken)]",
-    borderHover: "hover:border-amber-500/60",
-  },
-  {
-    id: "lora-studio",
-    title: "LoRA Training Studio",
-    badge: "Custom Adapters",
-    badgeType: "violet",
-    subtitle: "Fine-tune character consistency, styles, and poses in high density.",
-    ctaText: "Train LoRA",
-    href: "/models",
-    icon: Cpu,
-    gradient: "from-[var(--surface-raised)] via-[#1e1526] to-[var(--surface-sunken)]",
-    borderHover: "hover:border-violet-500/60",
   },
   {
     id: "comfy-pipelines",
@@ -99,7 +63,7 @@ export default function HomePromoCarousel() {
   return (
     <Carousel
       items={PROMO_SLIDES}
-      itemsPerView={{ base: 1, sm: 2, lg: 3 }}
+      itemsPerView={{ base: 1, sm: 2, lg: 2 }}
       gap={16}
       autoplay={true}
       autoplayInterval={5500}

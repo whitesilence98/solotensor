@@ -17,6 +17,8 @@ export interface TensorModelCardData {
   sample_count?: number;
   run_count?: number | string;
   star_count?: number | string;
+  comment_count?: number;
+  download_count?: number;
   exclusive?: boolean;
   early_access?: boolean;
   author_id?: string;
@@ -121,31 +123,34 @@ export function TensorModelCard({
         coverUrl.includes("/video/")),
   );
 
+  // Real counts only. The API supplies these as optional fields; when a count
+  // is absent, unparseable, or zero the chip is omitted rather than estimated.
   const formattedRunCount = useMemo(() => {
-    if ("run_count" in item && item.run_count !== undefined && item.run_count !== null) {
-      const rc = item.run_count;
-      return typeof rc === "number"
-        ? rc >= 1000
-          ? `${(rc / 1000).toFixed(0)}K`
-          : `${rc}`
-        : String(rc);
+    if (!("run_count" in item) || item.run_count === undefined || item.run_count === null) {
+      return null;
     }
-    let hash = 0;
-    const str = item.model_id || item.title || "";
-    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0;
-    const count = 18 + (Math.abs(hash) % 182);
-    return `${count}K`;
+    const rc = item.run_count;
+    if (typeof rc === "string") {
+      const trimmed = rc.trim();
+      return trimmed && trimmed !== "0" ? trimmed : null;
+    }
+    return Number.isFinite(rc) && rc > 0
+      ? rc >= 1000
+        ? `${(rc / 1000).toFixed(0)}K`
+        : `${rc}`
+      : null;
   }, [item]);
 
   const formattedStarCount = useMemo(() => {
-    if ("star_count" in item && item.star_count !== undefined && item.star_count !== null) {
-      return String(item.star_count);
+    if (!("star_count" in item) || item.star_count === undefined || item.star_count === null) {
+      return null;
     }
-    let hash = 0;
-    const str = item.title || item.model_id || "";
-    for (let i = 0; i < str.length; i++) hash = (hash * 37 + str.charCodeAt(i)) | 0;
-    const count = 120 + (Math.abs(hash) % 870);
-    return `${count}`;
+    const sc = item.star_count;
+    if (typeof sc === "string") {
+      const trimmed = sc.trim();
+      return trimmed && trimmed !== "0" ? trimmed : null;
+    }
+    return Number.isFinite(sc) && sc > 0 ? String(sc) : null;
   }, [item]);
 
   const isExclusive = Boolean("exclusive" in item && item.exclusive);
@@ -261,17 +266,23 @@ export function TensorModelCard({
             </span>
           </div>
 
-          {/* Metric readouts: runs + stars */}
-          <div className="flex items-center gap-2.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-white/90 drop-shadow-sm">
-            <span className="inline-flex items-center gap-1" title={`${formattedRunCount} runs`}>
-              <Flame className="h-3.5 w-3.5 text-[var(--accent)]" />
-              <span>{formattedRunCount}</span>
-            </span>
-            <span className="inline-flex items-center gap-1" title={`${formattedStarCount} stars`}>
-              <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
-              <span>{formattedStarCount}</span>
-            </span>
-          </div>
+          {/* Metric readouts: only counts the API actually supplied */}
+          {formattedRunCount !== null || formattedStarCount !== null ? (
+            <div className="flex items-center gap-2.5 shrink-0 font-mono text-[10px] sm:text-[11px] text-white/90 drop-shadow-sm">
+              {formattedRunCount !== null && (
+                <span className="inline-flex items-center gap-1" title={`${formattedRunCount} runs`}>
+                  <Flame className="h-3.5 w-3.5 text-[var(--accent)]" />
+                  <span>{formattedRunCount}</span>
+                </span>
+              )}
+              {formattedStarCount !== null && (
+                <span className="inline-flex items-center gap-1" title={`${formattedStarCount} stars`}>
+                  <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+                  <span>{formattedStarCount}</span>
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </>

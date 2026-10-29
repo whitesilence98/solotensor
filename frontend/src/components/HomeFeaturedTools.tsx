@@ -5,8 +5,8 @@ import Link from "next/link";
 import {
   Activity,
   ArrowRight,
-  Bot,
   Camera,
+  Film,
   Flame,
   Image as ImageIcon,
   PenTool,
@@ -29,6 +29,8 @@ interface FeaturedToolDef {
   iconBg: string;
   queryKey: string;
   defaultHref: string;
+  /** The tile is a fixed product surface, not a backend-tool shortcut. */
+  pinnedHref?: boolean;
 }
 
 const FEATURED_TOOLS_LIST: FeaturedToolDef[] = [
@@ -45,14 +47,17 @@ const FEATURED_TOOLS_LIST: FeaturedToolDef[] = [
   },
   {
     id: "design-agent",
-    name: "Design Agent",
+    name: "Shot Director",
     badge: "New",
-    desc: "Chat to generate, edit, and perfect your vision",
-    icon: Bot,
+    desc: "Plan shots with an AI director, then open them in Generate",
+    icon: Film,
     iconColor: "text-cyan-400",
     iconBg: "bg-cyan-500/10 border-cyan-500/20",
     queryKey: "agent",
-    defaultHref: "/assist",
+    defaultHref: "/flow",
+    // Shot Director is a product surface. A backend tool whose name happens to
+    // match "agent" must not hijack the tile away from /flow.
+    pinnedHref: true,
   },
   {
     id: "anime-lab",
@@ -188,9 +193,10 @@ export default function HomeFeaturedTools({ tools = [] }: HomeFeaturedToolsProps
           const Icon = item.icon;
           // Check if real backend tool matched
           const matched = toolMap.get(item.queryKey) || toolMap.get(item.name.toLowerCase());
-          const targetHref = matched
-            ? `/tools/${encodeURIComponent(matched.tool_id)}`
-            : item.defaultHref;
+          const targetHref =
+            item.pinnedHref || !matched
+              ? item.defaultHref
+              : `/tools/${encodeURIComponent(matched.tool_id)}`;
 
           return (
             <Link

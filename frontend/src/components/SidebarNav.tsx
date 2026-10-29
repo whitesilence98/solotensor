@@ -56,6 +56,9 @@ export default function SidebarNav() {
   const [railMotionReady, setRailMotionReady] = useState(false);
   const [railAnnouncement, setRailAnnouncement] = useState("");
 
+  const isFlow = pathname === "/flow" || pathname.startsWith("/flow/");
+  const effectiveExpanded = expanded && !isFlow;
+
   useEffect(() => {
     try {
       setExpanded(window.localStorage.getItem(SIDEBAR_EXPANDED_KEY) === "true");
@@ -69,6 +72,7 @@ export default function SidebarNav() {
   }, []);
 
   const toggleExpanded = () => {
+    if (isFlow) return;
     const next = !expanded;
     setExpanded(next);
     setRailAnnouncement(
@@ -152,7 +156,7 @@ export default function SidebarNav() {
     const active = isActive(pathname, href);
     const hasPending = id === "moderation" && pendingReviewCount > 0;
     const isGenerate = id === "generate";
-    const showLabel = labelled && expanded;
+    const showLabel = labelled && effectiveExpanded;
 
     return (
       <Link
@@ -316,7 +320,7 @@ export default function SidebarNav() {
     <nav
       id="studio-primary-rail"
       aria-label="Primary navigation"
-      data-expanded={expanded ? "true" : "false"}
+      data-expanded={effectiveExpanded ? "true" : "false"}
       className={`studio-rail ${railMotionReady ? "studio-rail-motion" : ""} fixed bottom-[max(.75rem,env(safe-area-inset-bottom,0px))] left-3 right-3 z-40 h-[4.5rem] workspace-bezel md:workspace-none md:relative md:bottom-auto md:left-auto md:right-auto md:my-0 md:ml-0 md:h-full md:shrink-0 md:rounded-none md:border-y-0 md:border-l-0 md:border-r md:border-white/[0.08] md:bg-[var(--core)] md:backdrop-blur-xl md:shadow-[1px_0_0_0_rgba(255,255,255,0.02)]`}
     >
       {/* SVG Gradient Definitions for AI Magic Wand Icon */}
@@ -356,14 +360,14 @@ export default function SidebarNav() {
               <span
                 aria-hidden="true"
                 className={`studio-rail-label overflow-hidden whitespace-nowrap font-heading text-[15px] font-extrabold uppercase leading-none tracking-[-0.03em] text-[var(--ink)] ${
-                  expanded ? "ml-3 max-w-[7.5rem] opacity-100" : "ml-0 max-w-0 opacity-0"
+                  effectiveExpanded ? "ml-3 max-w-[7.5rem] opacity-100" : "ml-0 max-w-0 opacity-0"
                 }`}
               >
                 Solo Studio<span className="text-[var(--accent)]">.</span>
               </span>
 
               {/* Collapsed-only tooltip */}
-              {!expanded && (
+              {!effectiveExpanded && (
                 <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 font-heading text-xs font-bold tracking-tight text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 md:block z-50">
                   SOLO STUDIO<span className="text-[var(--accent)] font-extrabold">.</span>
                 </span>
@@ -420,7 +424,7 @@ export default function SidebarNav() {
         <div className="hidden md:flex md:w-full md:flex-col md:items-center md:mt-auto">
           {/* Hairline Divider above Settings */}
           <div
-            className={`h-px bg-white/[0.08] mb-2 ${expanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
+            className={`h-px bg-white/[0.08] mb-2 ${effectiveExpanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
             aria-hidden="true"
           />
 
@@ -429,34 +433,51 @@ export default function SidebarNav() {
 
           {/* Hairline Divider below Settings */}
           <div
-            className={`h-px bg-white/[0.08] my-2 ${expanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
+            className={`h-px bg-white/[0.08] my-2 ${effectiveExpanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
             aria-hidden="true"
           />
 
           {/* Expand / Collapse Toggle */}
-          <div className={`flex ${expanded ? "w-full pl-[18px]" : "justify-center"} mb-2.5`}>
+          <div className={`flex ${effectiveExpanded ? "w-full pl-[18px]" : "justify-center"} mb-2.5`}>
             <button
               type="button"
-              aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-              aria-expanded={expanded}
+              disabled={isFlow}
+              aria-label={
+                isFlow
+                  ? "Sidebar expansion disabled on Flow"
+                  : effectiveExpanded
+                  ? "Collapse sidebar"
+                  : "Expand sidebar"
+              }
+              aria-expanded={effectiveExpanded}
               aria-controls="studio-primary-rail"
-              onClick={toggleExpanded}
-              className="group relative flex h-9 w-9 items-center justify-center rounded-xl text-[var(--ink-faint)] transition-all duration-200 hover:bg-white/[0.06] hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--core)]"
+              onClick={isFlow ? undefined : toggleExpanded}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-xl text-[var(--ink-faint)] transition-all duration-200 ${
+                isFlow
+                  ? "cursor-not-allowed opacity-30"
+                  : "hover:bg-white/[0.06] hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--core)]"
+              }`}
             >
               <ChevronRight
-                className={`studio-rail-chevron h-4 w-4 ${expanded ? "rotate-180" : "group-hover:translate-x-0.5"}`}
+                className={`studio-rail-chevron h-4 w-4 ${
+                  effectiveExpanded
+                    ? "rotate-180"
+                    : isFlow
+                    ? ""
+                    : "group-hover:translate-x-0.5"
+                }`}
                 strokeWidth={1.75}
               />
-              {!expanded && (
+              {!effectiveExpanded && (
                 <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 text-xs font-medium text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 z-50 md:block">
-                  Expand
+                  {isFlow ? "Disabled on Flow" : "Expand"}
                 </span>
               )}
             </button>
           </div>
 
           {/* User Profile Avatar with Presence Indicator */}
-          <div className={`flex ${expanded ? "w-full pl-[16px]" : "justify-center"}`}>
+          <div className={`flex ${effectiveExpanded ? "w-full pl-[16px]" : "justify-center"}`}>
             <UserNavProfile />
           </div>
 

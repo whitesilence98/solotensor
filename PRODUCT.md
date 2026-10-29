@@ -24,7 +24,8 @@ SoloTensor is a local, privacy-first generative AI studio connecting directly to
 | `/tools/create` | **Tool Builder** | `Operate` | Author and save custom pipeline presets with dynamic schema interpolation. |
 | `/models` | **Model Manager** | `Operate` | Full catalog supporting 16 standardized model types (Checkpoints, Adapters, VAEs, Guidance, Inversions, Wildcards). Dual `.safetensors` & `.sft` support. |
 | `/assets` | **Asset Library** | `Operate` | Search, filter, and inspect generated assets. Lightbox view, copy metadata/prompt, automated WD14/BLIP tagging, download originals. |
-| `/assist` | **AI Assist** | `Read` & `Operate` | Conversational persona-based assistant to optimize prompts and troubleshoot workflow issues. |
+| `/assist` | **AI Assist** | `Read` | Code-only Q&A for the backend, workflows, and API contracts. Prompt writing and media planning live elsewhere. |
+| `/flow` | **Creative Director** | `Read` & `Operate` | Describe a shot; the director returns shot cards you open in `/generate`. |
 | `/settings` | **Settings** | `Operate` | Engine connectivity (FastAPI :8000, ComfyUI :8188), storage paths, and default generation parameters. |
 
 ---

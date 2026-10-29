@@ -71,6 +71,25 @@ export interface DirectorReply {
   provider: string;
   model: string;
   answer: string;
+  /** Defaulted server-side; optional so a rolling restart still type-checks. */
+  shots?: DirectorShot[];
+}
+
+export type DirectorMedia = "image" | "video";
+export type DirectorAspect = "1:1" | "16:9" | "9:16" | "4:3" | "3:2";
+
+export interface DirectorShot {
+  title: string;
+  prompt: string;
+  negative_prompt: string;
+  media: DirectorMedia;
+  aspect: DirectorAspect;
+  duration_seconds: number | null;
+  fps: number | null;
+  model_id: string | null;
+  version_id: string | null;
+  file_id: string | null;
+  model_label: string | null;
 }
 
 export interface DirectorProviderStatus {
@@ -474,6 +493,8 @@ export type NotificationType =
   | "generation_failed"
   | "credits_refilled"
   | "system_announcement"
+  | "model_starred"
+  | "model_commented"
   | "general";
 
 export interface NotificationItem {
@@ -1131,6 +1152,47 @@ export interface PublicModelSummary {
   author_role?: string;
   moderation_status?: ModelModerationStatus;
   video_family?: VideoFamily | null;
+  star_count?: number;
+  comment_count?: number;
+  download_count?: number;
+  run_count?: number;
+}
+
+export interface ModelSocialStats {
+  model_id: string;
+  star_count: number;
+  comment_count: number;
+  download_count: number;
+  run_count: number;
+  viewer_starred: boolean;
+}
+
+export interface ModelComment {
+  id: string;
+  model_id: string;
+  user_id?: string | null;
+  author_username?: string | null;
+  author_display_name?: string | null;
+  author_avatar_url?: string | null;
+  author_role?: string | null;
+  body: string;
+  like_count: number;
+  viewer_liked: boolean;
+  created_at: string;
+}
+
+export interface PaginatedComments {
+  items: ModelComment[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  has_more: boolean;
+}
+
+export interface AssetLikeState {
+  like_count: number;
+  viewer_liked: boolean;
 }
 
 export type ModerationTargetType = "model" | "post" | "comment" | "user";
@@ -1436,6 +1498,72 @@ export const api = {
 
   async listPublicModels(query = "", userId?: string): Promise<PublicModelListResponse> {
     return this.getPublicModels(query, userId);
+  },
+
+  async getModelSocial(modelId: string): Promise<ModelSocialStats> {
+    return request<ModelSocialStats>(`/api/v1/models/${encodeURIComponent(modelId)}/social`);
+  },
+
+  async toggleModelStar(
+    modelId: string,
+  ): Promise<{ model_id: string; starred: boolean; star_count: number }> {
+    return request<{ model_id: string; starred: boolean; star_count: number }>(
+      `/api/v1/models/${encodeURIComponent(modelId)}/star`,
+      { method: "POST" },
+    );
+  },
+
+  async getModelComments(
+    modelId: string,
+    params?: { sort?: "latest" | "liked"; page?: number; limit?: number },
+  ): Promise<PaginatedComments> {
+    const search = new URLSearchParams();
+    if (params?.sort) search.set("sort", params.sort);
+    if (params?.page) search.set("page", String(params.page));
+    if (params?.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return request<PaginatedComments>(
+      `/api/v1/models/${encodeURIComponent(modelId)}/comments${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  async postModelComment(modelId: string, body: string): Promise<ModelComment> {
+    return request<ModelComment>(`/api/v1/models/${encodeURIComponent(modelId)}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+  },
+
+  async deleteModelComment(commentId: string): Promise<{ deleted: boolean }> {
+    return request<{ deleted: boolean }>(`/api/v1/comments/${encodeURIComponent(commentId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async toggleCommentLike(
+    commentId: string,
+  ): Promise<{ comment_id: string; liked: boolean; like_count: number }> {
+    return request<{ comment_id: string; liked: boolean; like_count: number }>(
+      `/api/v1/comments/${encodeURIComponent(commentId)}/like`,
+      { method: "POST" },
+    );
+  },
+
+  async toggleAssetLike(
+    key: string,
+  ): Promise<{ key: string; liked: boolean; like_count: number }> {
+    return request<{ key: string; liked: boolean; like_count: number }>("/api/v1/assets/likes", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    });
+  },
+
+  async getAssetLikeStates(keys: string[]): Promise<Record<string, AssetLikeState>> {
+    const res = await request<{ items: Record<string, AssetLikeState> }>("/api/v1/assets/likes/query", {
+      method: "POST",
+      body: JSON.stringify({ keys }),
+    });
+    return res?.items ?? {};
   },
 
   async listSelectableModels(): Promise<InstalledGalleryModel[]> {
@@ -2062,146 +2190,63 @@ export const api = {
   },
 
   async claimDailyEnergy(): Promise<CreditStatus> {
-    try {
-      const res = await request<any>("/api/auth/claim-daily", {
-        method: "POST",
-      });
-      return normalizeCredits(res);
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return claimFallbackDailyEnergy();
-      }
-      throw err;
-    }
+    const res = await request<any>("/api/auth/claim-daily", {
+      method: "POST",
+    });
+    return normalizeCredits(res);
   },
 
   async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const res = await request<any>("/api/auth/forgot-password", {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-      return {
-        success: true,
-        message: res?.message ?? "A recovery link and 6-digit code have been dispatched to your email.",
-      };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return {
-          success: true,
-          message: "A recovery link and 6-digit code have been dispatched to your email.",
-        };
-      }
-      throw err;
-    }
+    const res = await request<any>("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    return {
+      success: true,
+      message: res?.message ?? "A recovery link and 6-digit code have been dispatched to your email.",
+    };
   },
 
   async resetPassword(token: string, new_password: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const res = await request<any>("/api/auth/reset-password", {
-        method: "POST",
-        body: JSON.stringify({ token, new_password }),
-      });
-      return {
-        success: true,
-        message: res?.message ?? "Password updated successfully. Full studio credentials synced.",
-      };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return {
-          success: true,
-          message: "Password updated successfully. Full studio credentials synced.",
-        };
-      }
-      throw err;
-    }
+    const res = await request<any>("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    });
+    return {
+      success: true,
+      message: res?.message ?? "Password updated successfully. Full studio credentials synced.",
+    };
   },
 
   async verifyEmail(params: { token?: string; otp_code?: string }): Promise<{ success: boolean; message: string; user?: UserProfile }> {
-    try {
-      const res = await request<any>("/api/auth/verify-email", {
-        method: "POST",
-        body: JSON.stringify(params),
-      });
-      const updatedUser = res?.user ? normalizeAuthResponse(res).user : undefined;
-      if (updatedUser) {
-        try {
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updatedUser));
-        } catch {
-          /* ignore */
-        }
+    const res = await request<any>("/api/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+    const updatedUser = res?.user ? normalizeAuthResponse(res).user : undefined;
+    if (updatedUser) {
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updatedUser));
+      } catch {
+        /* ignore */
       }
-      return {
-        success: true,
-        message: res?.message ?? "Email Verified. Full studio capabilities unlocked.",
-        user: updatedUser,
-      };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        let currentUser: UserProfile | null = null;
-        try {
-          const raw = localStorage.getItem(AUTH_USER_KEY);
-          if (raw) currentUser = JSON.parse(raw);
-        } catch {
-          /* ignore */
-        }
-        if (currentUser) {
-          currentUser.is_verified = true;
-          try {
-            localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
-          } catch {
-            /* ignore */
-          }
-        }
-        return {
-          success: true,
-          message: "Email Verified. Full studio capabilities unlocked.",
-          user: currentUser ?? undefined,
-        };
-      }
-      throw err;
     }
+    return {
+      success: true,
+      message: res?.message ?? "Email Verified. Full studio capabilities unlocked.",
+      user: updatedUser,
+    };
   },
 
   async resendVerification(email?: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const res = await request<any>("/api/auth/resend-verification", {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-      return {
-        success: true,
-        message: res?.message ?? "A new verification code has been dispatched to your email address.",
-      };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return {
-          success: true,
-          message: "A new verification code has been dispatched to your email address.",
-        };
-      }
-      throw err;
-    }
+    const res = await request<any>("/api/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    return {
+      success: true,
+      message: res?.message ?? "A new verification code has been dispatched to your email address.",
+    };
   },
 
   async updateProfile(payload: UpdateProfilePayload): Promise<UserProfile> {
@@ -2297,133 +2342,39 @@ export const api = {
   },
 
   async listApiKeys(): Promise<ApiKeyListItem[]> {
-    try {
-      return await request<ApiKeyListItem[]>("/api/auth/keys");
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        try {
-          const raw = localStorage.getItem("solotensor:api_keys:v1");
-          return raw ? JSON.parse(raw) : [];
-        } catch {
-          return [];
-        }
-      }
-      throw err;
-    }
+    return request<ApiKeyListItem[]>("/api/auth/keys");
   },
 
   async createApiKey(name: string): Promise<ApiKeyResponse> {
-    try {
-      return await request<ApiKeyResponse>("/api/auth/keys", {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      });
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        const secret = `st_live_${Math.random().toString(36).slice(2, 12)}_${Date.now().toString(36)}`;
-        const masked = `st_live_••••${secret.slice(-4)}`;
-        const newKey: ApiKeyResponse = {
-          id: `key_${Date.now()}`,
-          user_id: "usr_local",
-          name,
-          created_at: new Date().toISOString(),
-          api_key: secret,
-        };
-        try {
-          const raw = localStorage.getItem("solotensor:api_keys:v1");
-          const list: ApiKeyListItem[] = raw ? JSON.parse(raw) : [];
-          list.unshift({
-            id: newKey.id,
-            user_id: newKey.user_id,
-            name: newKey.name,
-            created_at: newKey.created_at,
-            masked_key: masked,
-          });
-          localStorage.setItem("solotensor:api_keys:v1", JSON.stringify(list));
-        } catch {
-          /* ignore */
-        }
-        return newKey;
-      }
-      throw err;
-    }
+    // The raw key is returned exactly once by the server; never invent one
+    // client-side, because a locally-minted key can never authenticate.
+    return request<ApiKeyResponse>("/api/auth/keys", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
   },
 
   async deleteApiKey(keyId: string): Promise<{ success: boolean }> {
-    try {
-      await request<any>(`/api/auth/keys/${encodeURIComponent(keyId)}`, {
-        method: "DELETE",
-      });
-      return { success: true };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        try {
-          const raw = localStorage.getItem("solotensor:api_keys:v1");
-          if (raw) {
-            const list: ApiKeyListItem[] = JSON.parse(raw);
-            const filtered = list.filter((k) => k.id !== keyId);
-            localStorage.setItem("solotensor:api_keys:v1", JSON.stringify(filtered));
-          }
-        } catch {
-          /* ignore */
-        }
-        return { success: true };
-      }
-      throw err;
-    }
+    await request<{ deleted: boolean; key_id: string }>(
+      `/api/auth/keys/${encodeURIComponent(keyId)}`,
+      { method: "DELETE" },
+    );
+    return { success: true };
   },
 
   async getUserProfile(username: string): Promise<UserPublicProfile> {
-    try {
-      const res = await request<UserPublicProfile>(`/api/users/${encodeURIComponent(username)}`);
-      const localFollow = getLocalFollowState(username);
-      return {
-        ...res,
-        avatar_url: resolveMediaUrl(res.avatar_url),
-        is_following: localFollow !== null ? localFollow : res.is_following,
-      };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return getFallbackUserProfile(username);
-      }
-      throw err;
-    }
+    const res = await request<UserPublicProfile>(`/api/users/${encodeURIComponent(username)}`);
+    return {
+      ...res,
+      avatar_url: resolveMediaUrl(res.avatar_url),
+    };
   },
 
   async toggleFollowUser(username: string): Promise<{ following: boolean; followers_count: number }> {
-    try {
-      const res = await request<{ following: boolean; followers_count: number }>(
-        `/api/users/${encodeURIComponent(username)}/follow`,
-        { method: "POST" }
-      );
-      setLocalFollowState(username, res.following);
-      return res;
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return toggleFallbackFollowUser(username);
-      }
-      throw err;
-    }
+    return request<{ following: boolean; followers_count: number }>(
+      `/api/users/${encodeURIComponent(username)}/follow`,
+      { method: "POST" }
+    );
   },
 
   async getPendingModelsReviewQueue(): Promise<ModelPendingReviewQueueResponse> {
@@ -2461,27 +2412,16 @@ export const api = {
   },
 
   async getModerationQueue(status?: string): Promise<ModerationQueueItem[]> {
-    try {
-      const res = await request<{ items?: ModerationQueueItem[] } | ModerationQueueItem[]>(
-        `/api/v1/moderation/queue${status ? `?status=${status}` : ""}`
-      );
-      if (res && "items" in res && Array.isArray(res.items)) {
-        return res.items;
-      }
-      if (Array.isArray(res)) {
-        return res;
-      }
-      return [];
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return getFallbackModerationQueue(status);
-      }
-      return getFallbackModerationQueue(status);
+    const res = await request<{ items?: ModerationQueueItem[] } | ModerationQueueItem[]>(
+      `/api/v1/moderation/queue${status ? `?status=${status}` : ""}`
+    );
+    if (res && "items" in res && Array.isArray(res.items)) {
+      return res.items;
     }
+    if (Array.isArray(res)) {
+      return res;
+    }
+    return [];
   },
 
   async takeDownAsset(
@@ -2500,26 +2440,15 @@ export const api = {
   },
 
   async takeModerationAction(payload: ModerationActionPayload): Promise<{ success: boolean; message: string }> {
-    try {
-      const res = await request<{ id: string; status: string }>("/api/v1/moderation/resolve", {
-        method: "POST",
-        body: JSON.stringify({
-          flag_id: payload.target_id,
-          status: payload.action === "approve" ? "resolved" : "dismissed",
-          resolution_notes: payload.notes || payload.reason || "Action taken by moderator",
-        }),
-      });
-      return { success: true, message: `Status updated to ${res.status}` };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return takeFallbackModerationAction(payload);
-      }
-      return takeFallbackModerationAction(payload);
-    }
+    const res = await request<{ id: string; status: string }>("/api/v1/moderation/resolve", {
+      method: "POST",
+      body: JSON.stringify({
+        flag_id: payload.target_id,
+        status: payload.action === "approve" ? "resolved" : "dismissed",
+        resolution_notes: payload.notes || payload.reason || "Action taken by moderator",
+      }),
+    });
+    return { success: true, message: `Status updated to ${res.status}` };
   },
 
   async getSecurityAuditLogs(
@@ -2528,54 +2457,32 @@ export const api = {
     action?: string,
     resourceType?: string
   ): Promise<SecurityAuditLogEntry[]> {
-    try {
-      const search = new URLSearchParams();
-      if (typeof paramsOrLimit === "object" && paramsOrLimit !== null) {
-        if (paramsOrLimit.limit) search.set("limit", String(paramsOrLimit.limit));
-        if (paramsOrLimit.offset) search.set("offset", String(paramsOrLimit.offset));
-        if (paramsOrLimit.action) search.set("action", paramsOrLimit.action);
-        if (paramsOrLimit.resource_type) search.set("resource_type", paramsOrLimit.resource_type);
-      } else {
-        if (typeof paramsOrLimit === "number") search.set("limit", String(paramsOrLimit));
-        if (typeof offset === "number") search.set("offset", String(offset));
-        if (action) search.set("action", action);
-        if (resourceType) search.set("resource_type", resourceType);
-      }
-      const qs = search.toString();
-      const res = await request<SecurityAuditLogEntry[]>(`/api/v1/moderation/audit-logs${qs ? `?${qs}` : ""}`);
-      return res;
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return getFallbackSecurityAuditLogs();
-      }
-      throw err;
+    const search = new URLSearchParams();
+    if (typeof paramsOrLimit === "object" && paramsOrLimit !== null) {
+      if (paramsOrLimit.limit) search.set("limit", String(paramsOrLimit.limit));
+      if (paramsOrLimit.offset) search.set("offset", String(paramsOrLimit.offset));
+      if (paramsOrLimit.action) search.set("action", paramsOrLimit.action);
+      if (paramsOrLimit.resource_type) search.set("resource_type", paramsOrLimit.resource_type);
+    } else {
+      if (typeof paramsOrLimit === "number") search.set("limit", String(paramsOrLimit));
+      if (typeof offset === "number") search.set("offset", String(offset));
+      if (action) search.set("action", action);
+      if (resourceType) search.set("resource_type", resourceType);
     }
+    const qs = search.toString();
+    const res = await request<SecurityAuditLogEntry[]>(`/api/v1/moderation/audit-logs${qs ? `?${qs}` : ""}`);
+    return res;
   },
 
   async flagContent(targetType: string, targetId: string, reason: string, details?: string): Promise<{ success: boolean; message: string; id?: string }> {
-    try {
-      const res = await request<ContentFlagResponse | { success: boolean; message: string }>("/api/v1/moderation/flag", {
-        method: "POST",
-        body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details }),
-      });
-      if (res && "id" in res) {
-        return { success: true, message: "Content report submitted successfully.", id: res.id };
-      }
-      return { success: true, message: (res as any)?.message || "Content report submitted successfully." };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return submitFallbackContentFlag(targetType, targetId, reason, details);
-      }
-      throw err;
+    const res = await request<ContentFlagResponse | { success: boolean; message: string }>("/api/v1/moderation/flag", {
+      method: "POST",
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, reason, details }),
+    });
+    if (res && "id" in res) {
+      return { success: true, message: "Content report submitted successfully.", id: res.id };
     }
+    return { success: true, message: (res as any)?.message || "Content report submitted successfully." };
   },
 
   async getNotifications(params?: {
@@ -2615,114 +2522,6 @@ export const api = {
     });
   },
 };
-
-export function getLocalFollowState(username: string): boolean | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const val = localStorage.getItem(`solotensor_follow_${username.toLowerCase()}`);
-    if (val !== null) return val === "true";
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
-export function setLocalFollowState(username: string, following: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(`solotensor_follow_${username.toLowerCase()}`, String(following));
-  } catch {
-    /* ignore */
-  }
-}
-
-export function getFallbackUserProfile(username: string): UserPublicProfile {
-  const isRiiwa = username.toLowerCase() === "riiwa";
-  const localFollow = getLocalFollowState(username);
-  const isFollowing = localFollow !== null ? localFollow : false;
-
-  let currentUser: UserProfile | null = null;
-  if (typeof window !== "undefined") {
-    try {
-      const raw = localStorage.getItem(AUTH_USER_KEY);
-      if (raw) currentUser = JSON.parse(raw);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const isSelf = currentUser && currentUser.username.toLowerCase() === username.toLowerCase();
-
-  if (isRiiwa) {
-    const baseFollowers = 13300;
-    return {
-      id: "645954010620120176",
-      username: "riiwa",
-      display_name: "riiwa",
-      avatar_url: null,
-      role: "verified_creator",
-      roles: ["verified_creator", "pro_creator"],
-      primary_role: "verified_creator",
-      permissions: getDefaultPermissionsForRole("verified_creator"),
-      bio: "Obsidian darkroom creator & deep generative synthesis researcher specializing in high-fidelity character models, cinematic LoRAs, and autonomous workflow tooling.",
-      created_at: "2023-11-20T12:00:00Z",
-      is_following: isFollowing,
-      followers_count: isFollowing ? baseFollowers + 1 : baseFollowers,
-      following_count: 39,
-      runs_count: 62700000,
-      downloads_count: 3800,
-      likes_count: 121600,
-      stars_count: 121800,
-      tools_count: 120,
-      models_count: 268,
-      posts_count: 11612,
-      workflows_count: 25,
-    };
-  }
-
-  const userRole = normalizeRoleName(currentUser?.primary_role || currentUser?.role || "creator");
-  const userRoles = currentUser?.roles && currentUser.roles.length > 0 ? currentUser.roles.map(normalizeRoleName) : [userRole];
-  const permissions = currentUser?.permissions && currentUser.permissions.length > 0
-    ? currentUser.permissions
-    : getDefaultPermissionsForRole(userRole);
-
-  const displayName = isSelf && currentUser?.displayName ? currentUser.displayName : username;
-  const baseFollowers = 1420;
-  return {
-    id: isSelf && currentUser?.id ? currentUser.id : `usr_${username.toLowerCase().slice(0, 12)}`,
-    username,
-    display_name: displayName,
-    avatar_url: isSelf ? currentUser?.avatarUrl || null : null,
-    role: userRole,
-    roles: userRoles,
-    primary_role: userRole,
-    permissions,
-    bio: "Visual AI practitioner and workflow engineer creating neural pipelines on Solo Studio.",
-    created_at: isSelf && currentUser?.createdAt ? currentUser.createdAt : "2024-02-10T10:00:00Z",
-    is_following: isFollowing,
-    followers_count: isFollowing ? baseFollowers + 1 : baseFollowers,
-    following_count: 48,
-    runs_count: 124000,
-    downloads_count: 940,
-    likes_count: 3420,
-    stars_count: 850,
-    tools_count: 6,
-    models_count: 14,
-    posts_count: 88,
-    workflows_count: 4,
-  };
-}
-
-export function toggleFallbackFollowUser(username: string): { following: boolean; followers_count: number } {
-  const current = getLocalFollowState(username) ?? false;
-  const next = !current;
-  setLocalFollowState(username, next);
-  const profile = getFallbackUserProfile(username);
-  return {
-    following: next,
-    followers_count: profile.followers_count,
-  };
-}
 
 function normalizeAuthResponse(raw: any): AuthResponse {
   const token = raw?.access_token || raw?.token || "";
@@ -2888,219 +2687,6 @@ function getFallbackUserSession(): { user: UserProfile; credits: CreditStatus } 
     credits.nextResetInSeconds = getSecondsUntilMidnight();
   }
   return { user, credits };
-}
-
-export const MODERATION_QUEUE_KEY = "solotensor_moderation_queue";
-export const SECURITY_AUDIT_LOGS_KEY = "solotensor_security_audit_logs";
-
-const INITIAL_MODERATION_QUEUE: ModerationQueueItem[] = [
-  {
-    id: "mod-q-101",
-    target_type: "model",
-    target_id: "mod_tokyo_cyber_v2",
-    title: "Neo-Shinjuku Cyberpunk Architecture LoRA",
-    preview_url: null,
-    author_username: "cyber_artisan",
-    author_role: "creator",
-    reporter_username: "prompt_sentinel",
-    reason: "Suspected unlicensed checkpoint weight merge without attribution",
-    details: "Metadata signatures show 98% parameter overlap with v1 checkpoint without creator license.",
-    flag_count: 3,
-    created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    status: "pending",
-    severity: "medium",
-    tags: ["architecture", "sdxl", "lora"],
-  },
-  {
-    id: "mod-q-102",
-    target_type: "post",
-    target_id: "post_neon_visage_88",
-    title: "Cybernetic Geisha Portrait // Extended Latent",
-    preview_url: null,
-    author_username: "ghost_in_the_latent",
-    author_role: "creator",
-    reporter_username: "safety_guard_bot",
-    reason: "Graphic content unflagged / Mature content filter bypass",
-    details: "Automated DeepDanbooru flagged aesthetic gore at 0.89 confidence without mature tag.",
-    flag_count: 5,
-    created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-    status: "pending",
-    severity: "high",
-    tags: ["portrait", "nsfw_unflagged"],
-  },
-  {
-    id: "mod-q-103",
-    target_type: "model",
-    target_id: "mod_inversion_faces_v1",
-    title: "Deep Embedding Facial Morph Enclave",
-    preview_url: null,
-    author_username: "latent_rebel",
-    author_role: "creator",
-    reporter_username: "community_watch",
-    reason: "Potential Real-Person Impersonation safetensors",
-    details: "Embedding tokens match non-consensual identity tags.",
-    flag_count: 8,
-    created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-    status: "pending",
-    severity: "critical",
-    tags: ["embedding", "impersonation"],
-  },
-  {
-    id: "mod-q-104",
-    target_type: "post",
-    target_id: "post_darkroom_synthesis_909",
-    title: "Infinite Brutalist Monoliths",
-    preview_url: null,
-    author_username: "riiwa",
-    author_role: "verified_creator",
-    reporter_username: "anon_user_44",
-    reason: "Accidental flag / False positive",
-    details: "Reported as spam, but conforms to all architectural synthesis standards.",
-    flag_count: 1,
-    created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
-    status: "resolved",
-    severity: "low",
-    tags: ["architecture", "monolith"],
-  },
-];
-
-const INITIAL_SECURITY_AUDIT_LOGS: SecurityAuditLogEntry[] = [
-  {
-    id: "audit-001",
-    actor_username: "system_admin",
-    actor_role: "admin",
-    action: "role:grant_verified",
-    resource_type: "user",
-    resource_id: "usr_riiwa",
-    details: "Promoted to Verified Creator with partner publishing download controls.",
-    ip_address: "127.0.0.1",
-    created_at: new Date(Date.now() - 3600000 * 36).toISOString(),
-  },
-  {
-    id: "audit-002",
-    actor_username: "mod_kusanagi",
-    actor_role: "moderator",
-    action: "content:toggle_nsfw",
-    resource_type: "post",
-    resource_id: "post_neon_77",
-    details: "Applied mature aesthetic tag after community report review.",
-    ip_address: "127.0.0.1",
-    created_at: new Date(Date.now() - 3600000 * 18).toISOString(),
-  },
-  {
-    id: "audit-003",
-    actor_username: "system_admin",
-    actor_role: "admin",
-    action: "credits:grant_manual",
-    resource_type: "user",
-    resource_id: "usr_solo_local",
-    details: "Manual allocation of +1000 Studio Energy units for compute cluster evaluation.",
-    ip_address: "127.0.0.1",
-    created_at: new Date(Date.now() - 3600000 * 6).toISOString(),
-  },
-];
-
-export function getFallbackModerationQueue(status?: string): ModerationQueueItem[] {
-  if (typeof window === "undefined") return INITIAL_MODERATION_QUEUE;
-  try {
-    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
-    let items: ModerationQueueItem[] = raw ? JSON.parse(raw) : INITIAL_MODERATION_QUEUE;
-    if (!raw) {
-      localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(INITIAL_MODERATION_QUEUE));
-    }
-    if (status && status !== "all") {
-      items = items.filter((i) => i.status === status);
-    }
-    return items;
-  } catch {
-    return INITIAL_MODERATION_QUEUE;
-  }
-}
-
-export function takeFallbackModerationAction(payload: ModerationActionPayload): { success: boolean; message: string } {
-  if (typeof window === "undefined") return { success: true, message: "Action recorded" };
-  try {
-    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
-    const items: ModerationQueueItem[] = raw ? JSON.parse(raw) : [...INITIAL_MODERATION_QUEUE];
-    const index = items.findIndex((i) => i.target_id === payload.target_id || i.id === payload.target_id);
-
-    if (index !== -1) {
-      if (payload.action === "approve") {
-        items[index].status = "resolved";
-      } else if (payload.action === "takedown" || payload.action === "ban_user") {
-        items[index].status = "dismissed";
-      } else {
-        items[index].status = "resolved";
-      }
-      localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(items));
-    }
-
-    const rawLogs = localStorage.getItem(SECURITY_AUDIT_LOGS_KEY);
-    const logs: SecurityAuditLogEntry[] = rawLogs ? JSON.parse(rawLogs) : [...INITIAL_SECURITY_AUDIT_LOGS];
-    const currentUser = getFallbackUserSession().user;
-    logs.unshift({
-      id: `audit-${Date.now()}`,
-      actor_username: currentUser.username,
-      actor_role: currentUser.primary_role || currentUser.role,
-      action: `moderation:${payload.action}`,
-      resource_type: payload.target_type,
-      resource_id: payload.target_id,
-      details: payload.reason || payload.notes || `Moderation action ${payload.action} executed on ${payload.target_type}:${payload.target_id}`,
-      ip_address: "127.0.0.1",
-      created_at: new Date().toISOString(),
-    });
-    localStorage.setItem(SECURITY_AUDIT_LOGS_KEY, JSON.stringify(logs.slice(0, 100)));
-
-    return {
-      success: true,
-      message: `Action '${payload.action}' executed successfully on ${payload.target_type} ${payload.target_id}.`,
-    };
-  } catch {
-    return { success: true, message: `Action '${payload.action}' applied.` };
-  }
-}
-
-export function getFallbackSecurityAuditLogs(): SecurityAuditLogEntry[] {
-  if (typeof window === "undefined") return INITIAL_SECURITY_AUDIT_LOGS;
-  try {
-    const raw = localStorage.getItem(SECURITY_AUDIT_LOGS_KEY);
-    if (!raw) {
-      localStorage.setItem(SECURITY_AUDIT_LOGS_KEY, JSON.stringify(INITIAL_SECURITY_AUDIT_LOGS));
-      return INITIAL_SECURITY_AUDIT_LOGS;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_SECURITY_AUDIT_LOGS;
-  }
-}
-
-export function submitFallbackContentFlag(targetType: string, targetId: string, reason: string, details?: string): { success: boolean; message: string } {
-  if (typeof window === "undefined") return { success: true, message: "Report submitted." };
-  try {
-    const raw = localStorage.getItem(MODERATION_QUEUE_KEY);
-    const items: ModerationQueueItem[] = raw ? JSON.parse(raw) : [...INITIAL_MODERATION_QUEUE];
-    const currentUser = getFallbackUserSession().user;
-    items.unshift({
-      id: `mod-q-${Date.now()}`,
-      target_type: (targetType as ModerationTargetType) || "post",
-      target_id: targetId,
-      title: `${targetType.toUpperCase()} // Flagged Content [${targetId.slice(0, 8)}]`,
-      preview_url: null,
-      author_username: "community_creator",
-      author_role: "creator",
-      reporter_username: currentUser.username,
-      reason,
-      details: details || "Submitted by user via inline report action.",
-      flag_count: 1,
-      created_at: new Date().toISOString(),
-      status: "pending",
-      severity: "medium",
-    });
-    localStorage.setItem(MODERATION_QUEUE_KEY, JSON.stringify(items));
-    return { success: true, message: "Content report dispatched to the Solo Studio Moderation Darkroom." };
-  } catch {
-    return { success: true, message: "Report recorded." };
-  }
 }
 
 export function setLocalUserRole(newRole: UserRole): UserProfile | null {

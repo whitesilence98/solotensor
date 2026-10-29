@@ -494,6 +494,80 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user_date ON notifications(user_id, created_at DESC);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);")
 
+            # --- Genuine Social Layer Schema ------------------------------------
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_stars (
+                    user_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, model_id),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_comments (
+                    id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    user_id TEXT,
+                    body TEXT NOT NULL,
+                    is_deleted INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_comment_likes (
+                    user_id TEXT NOT NULL,
+                    comment_id TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, comment_id),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(comment_id) REFERENCES model_comments(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS asset_likes (
+                    user_id TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, asset_key),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS model_downloads (
+                    id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL,
+                    version_id TEXT,
+                    file_id TEXT,
+                    user_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_stars_model ON model_stars(model_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_stars_user ON model_stars(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comments_model ON model_comments(model_id, created_at DESC);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comments_user ON model_comments(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comment_likes_comment ON model_comment_likes(comment_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_likes_key ON asset_likes(asset_key);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_likes_user ON asset_likes(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_downloads_model ON model_downloads(model_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_model_downloads_user ON model_downloads(user_id);")
+
             # Check if roles and permissions are already seeded
             roles_count_row = conn.execute("SELECT COUNT(*) as count FROM roles;").fetchone()
             already_seeded = bool(roles_count_row and roles_count_row["count"] >= 6)
@@ -719,51 +793,6 @@ class Database:
                 ON CONFLICT(user_id, role_name) DO NOTHING
                 """
             )
-
-            # Seed Baseline Security Audit Logs if table is empty
-            audit_count_row = conn.execute("SELECT COUNT(*) AS count FROM security_audit_logs").fetchone()
-            if not audit_count_row or audit_count_row["count"] == 0:
-                baseline_audits = [
-                    (
-                        "audit-001",
-                        win_uid if u_win else None,
-                        "role:grant_verified",
-                        "user",
-                        "usr_cyber_artisan",
-                        json.dumps({"reason": "Promoted to Verified Creator with partner publishing download controls."}),
-                        "127.0.0.1",
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                    (
-                        "audit-002",
-                        None,
-                        "moderation:approve_model",
-                        "model",
-                        "mod_inversion_faces_v1",
-                        json.dumps({"reason": "Approved public gallery listing following safety check."}),
-                        "127.0.0.1",
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                    (
-                        "audit-003",
-                        win_uid if u_win else None,
-                        "system:vault_mount",
-                        "model_file",
-                        "safetensors-v1-base",
-                        json.dumps({"reason": "Mounted checkpoint weights into ComfyUI vault filesystem."}),
-                        "127.0.0.1",
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                ]
-                for audit_item in baseline_audits:
-                    conn.execute(
-                        """
-                        INSERT INTO security_audit_logs (id, actor_id, action, resource_type, resource_id, details, ip_address, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(id) DO NOTHING
-                        """,
-                        audit_item,
-                    )
 
             if is_pg:
                 logger.info("Initialized SoloTensor PostgreSQL schema from DATABASE_URL")
@@ -1002,6 +1031,429 @@ class Database:
             ).fetchone()
             return row["cnt"] if row else 0
 
+    # --- Model Social Layer ------------------------------------------------
+
+    def toggle_model_star(self, user_id: str, model_id: str) -> tuple[bool, int]:
+        """Toggle a star; return (starred, star_count)."""
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            row = conn.execute(
+                "SELECT 1 FROM model_stars WHERE user_id = ? AND model_id = ?",
+                (user_id, model_id),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "DELETE FROM model_stars WHERE user_id = ? AND model_id = ?",
+                    (user_id, model_id),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM model_stars WHERE model_id = ?",
+                    (model_id,),
+                ).fetchone()
+                star_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return False, star_count
+            else:
+                conn.execute(
+                    "INSERT INTO model_stars (user_id, model_id, created_at) VALUES (?, ?, ?)",
+                    (user_id, model_id, datetime.now(timezone.utc).isoformat()),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM model_stars WHERE model_id = ?",
+                    (model_id,),
+                ).fetchone()
+                star_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return True, star_count
+
+    def toggle_asset_like(self, user_id: str, asset_key: str) -> tuple[bool, int]:
+        """Toggle a like on a gallery asset; return (liked, like_count)."""
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            row = conn.execute(
+                "SELECT 1 FROM asset_likes WHERE user_id = ? AND asset_key = ?",
+                (user_id, asset_key),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "DELETE FROM asset_likes WHERE user_id = ? AND asset_key = ?",
+                    (user_id, asset_key),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM asset_likes WHERE asset_key = ?",
+                    (asset_key,),
+                ).fetchone()
+                like_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return False, like_count
+            else:
+                conn.execute(
+                    "INSERT INTO asset_likes (user_id, asset_key, created_at) VALUES (?, ?, ?)",
+                    (user_id, asset_key, datetime.now(timezone.utc).isoformat()),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM asset_likes WHERE asset_key = ?",
+                    (asset_key,),
+                ).fetchone()
+                like_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return True, like_count
+
+    def toggle_comment_like(self, user_id: str, comment_id: str) -> tuple[bool, int]:
+        """Toggle a like on a model comment; return (liked, like_count)."""
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            row = conn.execute(
+                "SELECT 1 FROM model_comment_likes WHERE user_id = ? AND comment_id = ?",
+                (user_id, comment_id),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "DELETE FROM model_comment_likes WHERE user_id = ? AND comment_id = ?",
+                    (user_id, comment_id),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM model_comment_likes WHERE comment_id = ?",
+                    (comment_id,),
+                ).fetchone()
+                like_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return False, like_count
+            else:
+                conn.execute(
+                    "INSERT INTO model_comment_likes (user_id, comment_id, created_at) VALUES (?, ?, ?)",
+                    (user_id, comment_id, datetime.now(timezone.utc).isoformat()),
+                )
+                count_row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM model_comment_likes WHERE comment_id = ?",
+                    (comment_id,),
+                ).fetchone()
+                like_count = count_row["cnt"] if count_row else 0
+                conn.execute("COMMIT;")
+                return True, like_count
+
+    def get_model_star_count(self, model_id: str) -> int:
+        """Get total number of stars for a model."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_stars WHERE model_id = ?",
+                (model_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+    def get_model_comment_count(self, model_id: str) -> int:
+        """Get total number of non-deleted comments for a model."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_comments WHERE model_id = ? AND is_deleted = 0",
+                (model_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+    def get_model_download_count(self, model_id: str) -> int:
+        """Get total number of recorded downloads for a model."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_downloads WHERE model_id = ?",
+                (model_id,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+    def has_model_star(self, user_id: str, model_id: str) -> bool:
+        """Return True if the user has starred the model."""
+        if not user_id or not model_id:
+            return False
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM model_stars WHERE user_id = ? AND model_id = ?",
+                (user_id, model_id),
+            ).fetchone()
+            return row is not None
+
+    def has_asset_like(self, user_id: str, asset_key: str) -> bool:
+        """Return True if the user has liked the gallery asset."""
+        if not user_id or not asset_key:
+            return False
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM asset_likes WHERE user_id = ? AND asset_key = ?",
+                (user_id, asset_key),
+            ).fetchone()
+            return row is not None
+
+    def get_asset_like_map(
+        self, asset_keys: list[str], viewer_id: Optional[str] = None
+    ) -> dict[str, dict[str, Any]]:
+        """Return {key: {"like_count", "viewer_liked"}} for the given gallery asset keys."""
+        if not asset_keys:
+            return {}
+        result: dict[str, dict[str, Any]] = {
+            key: {"like_count": 0, "viewer_liked": False} for key in asset_keys
+        }
+        unique_keys = list(dict.fromkeys(asset_keys))
+        for start in range(0, len(unique_keys), 500):
+            chunk = unique_keys[start : start + 500]
+            placeholders = ", ".join("?" for _ in chunk)
+            with self.get_connection() as conn:
+                for row in conn.execute(
+                    f"SELECT asset_key, COUNT(*) AS cnt FROM asset_likes "
+                    f"WHERE asset_key IN ({placeholders}) GROUP BY asset_key",
+                    tuple(chunk),
+                ).fetchall():
+                    result[row["asset_key"]]["like_count"] = int(row["cnt"])
+                if viewer_id:
+                    for row in conn.execute(
+                        f"SELECT asset_key FROM asset_likes "
+                        f"WHERE user_id = ? AND asset_key IN ({placeholders})",
+                        (viewer_id, *chunk),
+                    ).fetchall():
+                        result[row["asset_key"]]["viewer_liked"] = True
+        return result
+
+    def get_public_model_owner(self, model_id: str) -> Optional[str]:
+        """Return the owner user_id of a PUBLIC published model, else None."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT user_id FROM models
+                WHERE id = ? AND (visibility = 'Public' OR lower(visibility) = 'public')
+                  AND published_at IS NOT NULL
+                """,
+                (model_id,),
+            ).fetchone()
+            return row["user_id"] if row else None
+
+    def get_model_owner(self, model_id: str) -> Optional[str]:
+        """Owner user_id for any model (public or not), else None."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT user_id FROM models WHERE id = ?",
+                (model_id,),
+            ).fetchone()
+            return row["user_id"] if row else None
+
+    def add_model_comment(self, model_id: str, user_id: str, body: str) -> dict[str, Any]:
+        """Insert and return the comment joined with author fields."""
+        comment_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO model_comments (id, model_id, user_id, body, is_deleted, created_at)
+                VALUES (?, ?, ?, ?, 0, ?)
+                """,
+                (comment_id, model_id, user_id, body, now),
+            )
+            row = conn.execute(
+                """
+                SELECT c.id, c.model_id, c.user_id, c.body, c.created_at,
+                       u.username, u.display_name, u.avatar_url, u.role
+                FROM model_comments c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.id = ?
+                """,
+                (comment_id,),
+            ).fetchone()
+        if row is None:
+            return {
+                "id": comment_id,
+                "model_id": model_id,
+                "user_id": user_id,
+                "body": body,
+                "created_at": now,
+                "author_username": None,
+                "author_display_name": None,
+                "author_avatar_url": None,
+                "author_role": None,
+                "like_count": 0,
+                "viewer_liked": False,
+            }
+        return {
+            "id": row["id"],
+            "model_id": row["model_id"],
+            "user_id": row["user_id"],
+            "body": row["body"],
+            "created_at": str(row["created_at"]) if row["created_at"] is not None else None,
+            "author_username": row["username"],
+            "author_display_name": row["display_name"] or row["username"],
+            "author_avatar_url": row["avatar_url"],
+            "author_role": row["role"],
+            "like_count": 0,
+            "viewer_liked": False,
+        }
+
+    def list_model_comments(
+        self, model_id: str, viewer_id: Optional[str], sort: str, page: int, limit: int
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return (items, total) for a model's comments."""
+        try:
+            limit_val = int(limit)
+        except (TypeError, ValueError):
+            limit_val = 20
+        limit_val = min(max(1, limit_val), 100)
+        try:
+            page_val = int(page)
+        except (TypeError, ValueError):
+            page_val = 1
+        page_val = max(1, page_val)
+        offset = (page_val - 1) * limit_val
+
+        order_by = "c.created_at DESC"
+        if sort == "liked":
+            order_by = "like_count DESC, c.created_at DESC"
+
+        viewer_key = viewer_id or ""
+        with self.get_connection() as conn:
+            total_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_comments WHERE model_id = ? AND is_deleted = 0",
+                (model_id,),
+            ).fetchone()
+            total = total_row["cnt"] if total_row else 0
+            rows = conn.execute(
+                f"""
+                SELECT c.id, c.model_id, c.user_id, c.body, c.created_at,
+                       u.username, u.display_name, u.avatar_url, u.role,
+                       (SELECT COUNT(*) FROM model_comment_likes l WHERE l.comment_id = c.id) AS like_count,
+                       EXISTS(SELECT 1 FROM model_comment_likes v
+                              WHERE v.comment_id = c.id AND v.user_id = ?) AS viewer_liked
+                FROM model_comments c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.model_id = ? AND c.is_deleted = 0
+                ORDER BY {order_by}
+                LIMIT ? OFFSET ?
+                """,
+                (viewer_key, model_id, limit_val, offset),
+            ).fetchall()
+        items = [
+            {
+                "id": r["id"],
+                "model_id": r["model_id"],
+                "user_id": r["user_id"],
+                "body": r["body"],
+                "created_at": str(r["created_at"]) if r["created_at"] is not None else None,
+                "author_username": r["username"],
+                "author_display_name": r["display_name"] or r["username"],
+                "author_avatar_url": r["avatar_url"],
+                "author_role": r["role"],
+                "like_count": int(r["like_count"] or 0),
+                "viewer_liked": bool(r["viewer_liked"]),
+            }
+            for r in rows
+        ]
+        return items, total
+
+    def soft_delete_model_comment(self, comment_id: str) -> bool:
+        """Mark a comment deleted; return True if a live row was updated."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE model_comments SET is_deleted = 1 WHERE id = ? AND is_deleted = 0",
+                (comment_id,),
+            )
+            return cursor.rowcount > 0
+
+    def get_model_comment(self, comment_id: str) -> Optional[dict[str, Any]]:
+        """Return id, model_id, user_id, body, is_deleted for one comment, else None."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, model_id, user_id, body, is_deleted FROM model_comments WHERE id = ?",
+                (comment_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def record_model_download(
+        self, model_id: str, version_id: Optional[str], file_id: Optional[str], user_id: Optional[str]
+    ) -> None:
+        """Record one model download event."""
+        download_id = uuid.uuid4().hex
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            effective_user = user_id
+            if effective_user:
+                u_row = conn.execute("SELECT id FROM users WHERE id = ?", (effective_user,)).fetchone()
+                if not u_row:
+                    effective_user = None
+            conn.execute(
+                """
+                INSERT INTO model_downloads (id, model_id, version_id, file_id, user_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (download_id, model_id, version_id, file_id, effective_user, now),
+            )
+
+    def delete_asset_likes(self, asset_key: str) -> None:
+        """Delete all likes recorded for a gallery asset key."""
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM asset_likes WHERE asset_key = ?", (asset_key,))
+
+    def get_model_social_map(self, model_ids: list[str]) -> dict[str, dict[str, int]]:
+        """Return per-model star/comment/download counts, defaulting to zero."""
+        if not model_ids:
+            return {}
+        unique_ids = list(dict.fromkeys(model_ids))
+        result: dict[str, dict[str, int]] = {
+            mid: {"star_count": 0, "comment_count": 0, "download_count": 0}
+            for mid in unique_ids
+        }
+        with self.get_connection() as conn:
+            for start in range(0, len(unique_ids), 500):
+                chunk = unique_ids[start:start + 500]
+                placeholders = ", ".join("?" for _ in chunk)
+                params = tuple(chunk)
+
+                star_rows = conn.execute(
+                    f"SELECT model_id, COUNT(*) AS c FROM model_stars WHERE model_id IN ({placeholders}) GROUP BY model_id",
+                    params,
+                ).fetchall()
+                for r in star_rows:
+                    if r["model_id"] in result:
+                        result[r["model_id"]]["star_count"] = int(r["c"] or 0)
+
+                comment_rows = conn.execute(
+                    f"SELECT model_id, COUNT(*) AS c FROM model_comments WHERE model_id IN ({placeholders}) AND is_deleted = 0 GROUP BY model_id",
+                    params,
+                ).fetchall()
+                for r in comment_rows:
+                    if r["model_id"] in result:
+                        result[r["model_id"]]["comment_count"] = int(r["c"] or 0)
+
+                download_rows = conn.execute(
+                    f"SELECT model_id, COUNT(*) AS c FROM model_downloads WHERE model_id IN ({placeholders}) GROUP BY model_id",
+                    params,
+                ).fetchall()
+                for r in download_rows:
+                    if r["model_id"] in result:
+                        result[r["model_id"]]["download_count"] = int(r["c"] or 0)
+        return result
+
+    def get_model_run_count_map(self, model_ids: list[str]) -> dict[str, int]:
+        """Count generations touching each model directly or as a LoRA."""
+        if not model_ids:
+            return {}
+        unique_ids = list(dict.fromkeys(model_ids))
+        generation_ids: dict[str, set[str]] = {mid: set() for mid in unique_ids}
+        with self.get_connection() as conn:
+            for start in range(0, len(unique_ids), 500):
+                chunk = unique_ids[start:start + 500]
+                placeholders = ", ".join("?" for _ in chunk)
+                params = tuple(chunk)
+
+                gen_rows = conn.execute(
+                    f"SELECT DISTINCT model_id, id FROM generations WHERE model_id IN ({placeholders})",
+                    params,
+                ).fetchall()
+                for r in gen_rows:
+                    if r["model_id"] in generation_ids:
+                        generation_ids[r["model_id"]].add(r["id"])
+
+                lora_rows = conn.execute(
+                    f"SELECT DISTINCT lora_model_id, generation_id FROM generation_loras WHERE lora_model_id IN ({placeholders})",
+                    params,
+                ).fetchall()
+                for r in lora_rows:
+                    if r["lora_model_id"] in generation_ids:
+                        generation_ids[r["lora_model_id"]].add(r["generation_id"])
+        return {mid: len(ids) for mid, ids in generation_ids.items()}
+
     def get_user_public_profile(
         self, username_or_id: str, viewer_id: Optional[str] = None
     ) -> Optional[dict[str, Any]]:
@@ -1024,7 +1476,9 @@ class Database:
 
             # Aggregate statistics
             models_row = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM models WHERE user_id = ? AND (visibility = 'Public' OR lower(visibility) = 'public')",
+                "SELECT COUNT(*) AS cnt FROM models WHERE user_id = ?"
+                " AND (visibility = 'Public' OR lower(visibility) = 'public')"
+                " AND published_at IS NOT NULL",
                 (user_id,),
             ).fetchone()
             models_count = models_row["cnt"] if models_row else 0
@@ -1046,6 +1500,24 @@ class Database:
                 (user_id,),
             ).fetchone()
             following_count = following_row["cnt"] if following_row else 0
+
+            stars_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_stars s JOIN models m ON s.model_id = m.id WHERE m.user_id = ?",
+                (user_id,),
+            ).fetchone()
+            stars_count = stars_row["cnt"] if stars_row else 0
+
+            downloads_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_downloads d JOIN models m ON d.model_id = m.id WHERE m.user_id = ?",
+                (user_id,),
+            ).fetchone()
+            downloads_count = downloads_row["cnt"] if downloads_row else 0
+
+            likes_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM asset_likes a JOIN generations g ON a.asset_key = g.key WHERE g.user_id = ?",
+                (user_id,),
+            ).fetchone()
+            likes_count = likes_row["cnt"] if likes_row else 0
 
         # Tools count: scan tools definitions authored by this user
         tools_count = 0
@@ -1090,9 +1562,9 @@ class Database:
             "followers_count": followers_count,
             "following_count": following_count,
             "runs_count": posts_count,
-            "downloads_count": 0,
-            "likes_count": 0,
-            "stars_count": 0,
+            "downloads_count": downloads_count,
+            "likes_count": likes_count,
+            "stars_count": stars_count,
             "tools_count": tools_count,
             "models_count": models_count,
             "posts_count": posts_count,

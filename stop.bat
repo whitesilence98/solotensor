@@ -7,14 +7,17 @@ echo                     Stopping Solo Studio Services
 echo =======================================================================
 echo.
 
-echo Stopping services on ports 3000, 8000, 8188...
+echo Stopping services on ports 3000, 8000, 8085, 8188...
 
-for %%P in (3000 8000 8188) do (
+for %%P in (3000 8000 8085 8188) do (
     for /f "tokens=5" %%a in ('netstat -ano -p tcp ^| findstr ":%%P" ^| findstr "LISTENING"') do (
         echo Killing process %%a on port %%P...
         taskkill /F /PID %%a >nul 2>&1
     )
 )
+
+echo Stopping any remaining llama-server.exe instances...
+taskkill /F /IM llama-server.exe >nul 2>&1
 
 echo.
 echo =======================================================================

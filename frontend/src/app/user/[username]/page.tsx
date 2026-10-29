@@ -3,29 +3,22 @@
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Award,
   Box,
   Check,
   ChevronRight,
-  ExternalLink,
   Film,
   Flag,
-  Gift,
   ImageIcon,
   Layers,
-  Medal,
   Package,
   Play,
   Plus,
-  Rocket,
   Search,
   Settings,
   Share2,
   Sparkles,
-  Trophy,
   Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -53,10 +46,9 @@ type ActiveTab =
   | "models"
   | "posts"
   | "workflows"
-  | "articles"
-  | "buffet";
+  | "articles";
 
-// Formatting helper: 13300 -> 13.3K, 62700000 -> 62.7M
+// Formatting helper: 13300 -> 13.3K, 1200000 -> 1.2M
 function formatMetric(n: number): string {
   if (n >= 1_000_000) {
     const formatted = (n / 1_000_000).toFixed(1);
@@ -117,11 +109,14 @@ export default function UserProfilePage({
   );
 
   const [profile, setProfile] = useState<UserPublicProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>("all");
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
+  const [followError, setFollowError] = useState<string | null>(null);
+  const [followPending, setFollowPending] = useState(false);
 
   // Real items fetched for this user
   const [tools, setTools] = useState<ToolSummary[]>([]);
@@ -203,8 +198,12 @@ export default function UserProfilePage({
           if (!cancelled) setContentLoading(false);
         }
       })
-      .catch((err) => {
-        console.error("Failed to load user profile", err);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setProfileError(
+            err instanceof Error ? err.message : "Could not load creator profile",
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -217,17 +216,19 @@ export default function UserProfilePage({
 
   // Handle follow / unfollow toggle
   const handleToggleFollow = async () => {
+    setFollowError(null);
+    setFollowPending(true);
     try {
       const res = await api.toggleFollowUser(username);
       setIsFollowing(res.following);
       setFollowersCount(res.followers_count);
-    } catch {
-      // Optimistic fallback
-      setIsFollowing((prev) => {
-        const next = !prev;
-        setFollowersCount((c) => (next ? c + 1 : Math.max(0, c - 1)));
-        return next;
-      });
+    } catch (err) {
+      // Never invert the state on failure: an error must not look like a follow.
+      setFollowError(
+        err instanceof Error ? err.message : "Could not update follow",
+      );
+    } finally {
+      setFollowPending(false);
     }
   };
 
@@ -361,6 +362,14 @@ export default function UserProfilePage({
 
       {/* Main Container */}
       <div className="mx-auto w-full max-w-[1440px] flex-1 px-4 sm:px-6 lg:px-8 py-6">
+        {profileError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-2 font-mono text-xs text-[var(--danger)]"
+          >
+            {profileError}
+          </p>
+        )}
         {/* ========================================================= */}
         {/* HEADER PROFILE CARD                                       */}
         {/* ========================================================= */}
@@ -374,7 +383,6 @@ export default function UserProfilePage({
               role={primaryRole}
               size="2xl"
               showRoleRing={true}
-              online={true}
               shape="circle"
             />
           </div>
@@ -401,39 +409,6 @@ export default function UserProfilePage({
                 {userId}
               </p>
             )}
-
-            {/* Row 3: Achievement Medals Strip */}
-            <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-              <div
-                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-amber-600/50 bg-amber-950/80 text-amber-300 shadow-sm hover:scale-105 transition"
-                title="Verified Studio Creator"
-              >
-                <Award className="h-3.5 w-3.5" />
-              </div>
-
-              <div
-                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-slate-600/50 bg-slate-900/80 px-1.5 text-slate-200 shadow-sm hover:scale-105 transition"
-                title="Active Node Engineer"
-              >
-                <Medal className="h-3.5 w-3.5 text-slate-300" />
-                <span className="font-mono text-[10px] font-bold">1</span>
-              </div>
-
-              <div
-                className="group relative flex h-6 w-6 items-center justify-center rounded-md border border-orange-600/50 bg-orange-950/80 text-orange-300 shadow-sm hover:scale-105 transition"
-                title="Pipeline Performance Excellence"
-              >
-                <Trophy className="h-3.5 w-3.5" />
-              </div>
-
-              <div
-                className="group relative flex h-6 items-center gap-0.5 rounded-md border border-purple-600/50 bg-purple-950/80 px-1.5 text-purple-200 shadow-sm hover:scale-105 transition"
-                title="Solo Studio Pioneer"
-              >
-                <Gift className="h-3.5 w-3.5 text-purple-300" />
-                <span className="font-mono text-[10px] font-bold">★</span>
-              </div>
-            </div>
 
             {/* Row 4: Telemetry Stats Row with ' · ' separator */}
             <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--ink-faint)] pt-0.5">
@@ -512,8 +487,9 @@ export default function UserProfilePage({
                   {/* Primary Follow Button */}
                   <button
                     type="button"
-                    onClick={handleToggleFollow}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+                    onClick={() => void handleToggleFollow()}
+                    disabled={followPending}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 ${
                       isFollowing
                         ? "border border-[var(--accent)] bg-[var(--surface-raised)] text-[var(--accent)] hover:bg-[var(--surface-soft)]"
                         : "bg-[var(--accent)] text-[var(--accent-ink)] hover:bg-[var(--accent-hover)]"
@@ -532,6 +508,7 @@ export default function UserProfilePage({
                       </>
                     )}
                   </button>
+
 
                   {/* Secondary Icon: Share Profile ➦ */}
                   <button
@@ -568,6 +545,15 @@ export default function UserProfilePage({
                 </>
               )}
             </div>
+
+            {followError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-1.5 font-mono text-[11px] text-[var(--danger)]"
+              >
+                {followError}
+              </p>
+            )}
           </div>
         </header>
 
@@ -677,20 +663,6 @@ export default function UserProfilePage({
               <span className="font-mono text-xs text-[var(--ink-faint)] ml-1.5 font-normal">
                 {articlesCount}
               </span>
-            </button>
-
-            {/* Tab: Buffet */}
-            <button
-              role="tab"
-              aria-selected={activeTab === "buffet"}
-              onClick={() => setActiveTab("buffet")}
-              className={`inline-flex items-center py-3 px-3 text-sm transition-colors whitespace-nowrap -mb-[1px] ${
-                activeTab === "buffet"
-                  ? "border-b-2 border-[var(--accent)] font-bold text-[var(--ink)]"
-                  : "border-b-2 border-transparent font-medium text-[var(--ink-faint)] hover:text-[var(--ink)]"
-              }`}
-            >
-              Buffet
             </button>
           </nav>
         </div>
@@ -1082,30 +1054,6 @@ export default function UserProfilePage({
               <Package className="mx-auto h-8 w-8 text-[var(--ink-faint)] opacity-60 mb-2" />
               <p className="text-sm font-semibold text-[var(--ink-soft)]">No technical articles published</p>
               <p className="text-xs text-[var(--ink-faint)]">Articles and tuning documentation written by {displayName} will be listed here.</p>
-            </div>
-          )}
-
-          {/* ------------------------------------------------------- */}
-          {/* 7. SPECIFIC TAB: BUFFET                                 */}
-          {/* ------------------------------------------------------- */}
-          {activeTab === "buffet" && (
-            <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-12 text-center max-w-2xl mx-auto space-y-4">
-              <Package className="mx-auto h-12 w-12 text-[var(--accent)] opacity-80" />
-              <div>
-                <h3 className="text-lg font-bold text-[var(--ink)]">
-                  {displayName}&apos;s Studio Pass
-                </h3>
-                <p className="mt-1 text-xs text-[var(--ink-soft)] max-w-md mx-auto">
-                  Access tools, custom model checkpoints, and workflows maintained by {displayName} on Solo Studio.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition"
-              >
-                <Zap className="h-4 w-4 fill-current" />
-                <span>Join Creator Studio Access</span>
-              </button>
             </div>
           )}
         </main>

@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import {
   Bookmark,
   Box,
   Download,
+  Heart,
   Play,
   Sparkles,
   Trash2,
@@ -13,10 +20,14 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  api,
+  ApiError,
   resolveMediaUrl,
+  type AssetLikeState,
   type AssetRecord,
   type GalleryItem,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
 /* Deterministic pseudo-aspect from key so unspecified items vary naturally with zero CLS */
@@ -60,6 +71,220 @@ const DANGER_BTN =
   "backdrop-blur-md transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-[var(--danger)] hover:bg-[var(--danger)] hover:text-white active:scale-95 " +
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--danger)]";
 
+/* Same chrome as QUICK_BTN; width is driven by whether a count is shown. */
+const LIKE_BTN =
+  "flex h-7 items-center justify-center gap-1 rounded-lg border border-white/20 bg-black/50 text-white/80 " +
+  "backdrop-blur-md transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-white/40 hover:bg-black/80 hover:text-white active:scale-95 " +
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
+
+/* ------------------------------------------------------------------ *
+ * Shared gallery like state.
+ *
+ * Every gallery mounts many AssetCards at once, so letting each card fetch
+ * its own like state would be one request per card. Instead all cards
+ * subscribe to this module-level store; keys requested during the same
+ * commit are coalesced into a single `getAssetLikeStates` call (chunked to
+ * the API's 200-key ceiling). The store only ever holds server-returned
+ * values — a key with no entry renders as 0 / not-liked until the batch
+ * response lands. The inspection stage reads and writes the same store,
+ * so a like toggled in either surface is immediately consistent.
+ * ------------------------------------------------------------------ */
+
+const LIKE_QUERY_LIMIT = 200;
+
+const likeStore = new Map<string, AssetLikeState>();
+const pendingLikeKeys = new Set<string>();
+// key -> ownership token for the in-flight query that claimed it.
+const inFlightLikeKeys = new Map<string, symbol>();
+// Incremented whenever a toggle lands for a key. A batch query only applies a
+// row whose revision it captured at dispatch, so a slow query can never paint
+// over a like the server confirmed afterwards.
+const likeRevision = new Map<string, number>();
+const likeListeners = new Set<() => void>();
+let likeFlushScheduled = false;
+let likeViewerId: string | null = null;
+
+function notifyLikeListeners() {
+  for (const listener of Array.from(likeListeners)) listener();
+}
+
+function subscribeLikeStore(listener: () => void) {
+  likeListeners.add(listener);
+  return () => {
+    likeListeners.delete(listener);
+  };
+}
+
+function applyLikeState(key: string, state: AssetLikeState) {
+  const prev = likeStore.get(key);
+  if (prev && prev.like_count === state.like_count && prev.viewer_liked === state.viewer_liked) {
+    return;
+  }
+  likeStore.set(key, state);
+  notifyLikeListeners();
+}
+
+/** Apply a server-confirmed toggle result, stamping a fresh revision. */
+function applyToggledLikeState(key: string, state: AssetLikeState) {
+  likeRevision.set(key, (likeRevision.get(key) ?? 0) + 1);
+  applyLikeState(key, state);
+}
+
+function scheduleLikeFlush() {
+  if (likeFlushScheduled) return;
+  likeFlushScheduled = true;
+  const run = () => {
+    likeFlushScheduled = false;
+    void flushLikeQueries();
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(run);
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
+async function flushLikeQueries() {
+  if (pendingLikeKeys.size === 0) return;
+  const viewerAtFlush = likeViewerId;
+  const token = Symbol("like-flush");
+  const keys = Array.from(pendingLikeKeys).slice(0, LIKE_QUERY_LIMIT);
+  const revisionsAtFlush = new Map<string, number>();
+  for (const key of keys) {
+    pendingLikeKeys.delete(key);
+    inFlightLikeKeys.set(key, token);
+    revisionsAtFlush.set(key, likeRevision.get(key) ?? 0);
+  }
+  try {
+    const states = await api.getAssetLikeStates(keys);
+    // A session switch mid-flight invalidates the response; drop it rather
+    // than paint another viewer's like state.
+    if (viewerAtFlush !== likeViewerId) return;
+    for (const key of keys) {
+      const next = states[key];
+      if (!next) continue;
+      // A toggle confirmed while this query was in flight is newer truth.
+      if ((likeRevision.get(key) ?? 0) !== revisionsAtFlush.get(key)) continue;
+      applyLikeState(key, {
+        like_count: Number(next.like_count) || 0,
+        viewer_liked: Boolean(next.viewer_liked),
+      });
+    }
+  } catch {
+    // Leave the keys absent so the cards honestly render 0 / not-liked.
+    // They are re-requested when a card remounts.
+  } finally {
+    for (const key of keys) {
+      if (inFlightLikeKeys.get(key) === token) inFlightLikeKeys.delete(key);
+    }
+    if (pendingLikeKeys.size > 0) scheduleLikeFlush();
+  }
+}
+
+function requestLikeState(key: string, viewerId: string | null) {
+  if (likeViewerId !== viewerId) {
+    // New viewer (sign in / sign out): every cached answer belongs to the old
+    // session. `flushLikeQueries` drops any response that outlives this flip.
+    likeViewerId = viewerId;
+    likeStore.clear();
+    pendingLikeKeys.clear();
+    inFlightLikeKeys.clear();
+    likeRevision.clear();
+    notifyLikeListeners();
+  }
+  if (likeStore.has(key) || pendingLikeKeys.has(key) || inFlightLikeKeys.has(key)) return;
+  pendingLikeKeys.add(key);
+  scheduleLikeFlush();
+}
+
+export interface AssetLikeControl {
+  liked: boolean;
+  likeCount: number;
+  pending: boolean;
+  error: string | null;
+  toggle: () => void;
+}
+
+export function useAssetLike(key: string | undefined): AssetLikeControl {
+  const { user, isAuthenticated, isLoading, openAuthModal } = useAuth();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const viewerId = user?.id ?? null;
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 4000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
+  // Drop a stale failure message when the card is recycled onto another asset.
+  useEffect(() => {
+    setError(null);
+  }, [key]);
+
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeLikeStore(listener),
+    []
+  );
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => (key ? likeStore.get(key) : undefined),
+    () => undefined
+  );
+
+  // Wait for the session to resolve so the first batch already knows who the
+  // viewer is; otherwise every signed-in gallery would issue two queries.
+  useEffect(() => {
+    if (!key || isLoading) return;
+    requestLikeState(key, viewerId);
+  }, [key, viewerId, isLoading]);
+
+  const toggle = useCallback(() => {
+    if (!key || pending) return;
+    if (!isAuthenticated) {
+      openAuthModal();
+      return;
+    }
+    setError(null);
+    setPending(true);
+    void (async () => {
+      try {
+        const res = await api.toggleAssetLike(key);
+        applyToggledLikeState(key, {
+          like_count: Number(res.like_count) || 0,
+          viewer_liked: Boolean(res.liked),
+        });
+      } catch (err) {
+        // Nothing was applied optimistically, so the control already shows
+        // the last server-confirmed state; just tell the viewer it failed.
+        if (err instanceof ApiError && err.status === 401) {
+          // Session expired between page load and click — re-open the modal
+          // instead of showing a raw "Unauthorized".
+          openAuthModal();
+          setError(null);
+          return;
+        }
+        setError(err instanceof Error && err.message ? err.message : "Like failed");
+      } finally {
+        setPending(false);
+      }
+    })();
+  }, [key, pending, isAuthenticated, openAuthModal]);
+
+  return {
+    liked: Boolean(snapshot?.viewer_liked),
+    likeCount: Math.max(0, Number(snapshot?.like_count) || 0),
+    pending,
+    error,
+    toggle,
+  };
+}
+
+export function formatLikeCount(count: number): string {
+  // Render the server's exact figure — no abbreviations, no rounding.
+  return String(Math.max(0, Math.trunc(count)));
+}
+
 export interface AssetCardProps {
   asset: AssetRecord | GalleryItem;
   saved?: boolean;
@@ -94,6 +319,8 @@ export default function AssetCard({
   const isSaved = isControlledBookmark
     ? Boolean(saved)
     : persistedBookmarks.includes(asset.key);
+
+  const like = useAssetLike(asset.key);
 
   const handleBookmarkToggle = useCallback(() => {
     if (isControlledBookmark) {
@@ -155,22 +382,12 @@ export default function AssetCard({
 
   const modelTitle = asset.metadata?.model_title;
 
+  // Local generations are authored by "You"; when the sidecar carries no
+  // author we say so honestly rather than inventing a handle.
   const creatorHandle = useMemo(() => {
     const meta = asset.metadata as unknown as Record<string, unknown> | null;
     const raw = meta?.author_username || meta?.author_display_name;
-    if (typeof raw === "string" && raw.trim().length > 0) return raw;
-    let hash = 0;
-    const k = asset.key || "";
-    for (let i = 0; i < k.length; i++) hash = (hash * 31 + k.charCodeAt(i)) | 0;
-    const handles = [
-      "solo_studio",
-      "latent_flow",
-      "cyber_core",
-      "studio_prime",
-      "comfy_artist",
-      "pixel_craft",
-    ];
-    return handles[Math.abs(hash) % handles.length];
+    return typeof raw === "string" && raw.trim().length > 0 ? raw : "";
   }, [asset]);
 
   const creatorInitials = (creatorHandle[0] || "U").toUpperCase();
@@ -286,6 +503,35 @@ export default function AssetCard({
         <div className="flex items-center gap-1 pointer-events-auto">
           <button
             type="button"
+            aria-label={
+              like.liked
+                ? `Unlike asset${like.likeCount > 0 ? ` (${like.likeCount} likes)` : ""}`
+                : `Like asset${like.likeCount > 0 ? ` (${like.likeCount} likes)` : ""}`
+            }
+            aria-pressed={like.liked}
+            aria-busy={like.pending}
+            disabled={like.pending}
+            title={like.error ?? (like.liked ? "Remove like" : "Like asset")}
+            onClick={(e) => {
+              e.stopPropagation();
+              like.toggle();
+            }}
+            className={`${LIKE_BTN} ${like.likeCount > 0 ? "px-1.5" : "w-7"} ${
+              like.liked ? "text-[var(--accent)] border-[var(--accent)]/40" : ""
+            } ${like.pending ? "opacity-70" : ""}`}
+          >
+            <Heart
+              className="h-3 w-3"
+              fill={like.liked ? "currentColor" : "none"}
+            />
+            {like.likeCount > 0 && (
+              <span className="font-mono text-[9px] font-semibold tabular-nums leading-none">
+                {formatLikeCount(like.likeCount)}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             aria-label={isSaved ? "Remove bookmark" : "Bookmark asset"}
             aria-pressed={isSaved}
             onClick={(e) => {
@@ -323,6 +569,17 @@ export default function AssetCard({
         </div>
       </div>
 
+      {/* Like failure notice: stays visible even after the hover rail collapses,
+          so a rejected click can never look like a successful one. */}
+      {like.error && (
+        <div
+          role="alert"
+          className="pointer-events-none absolute top-11 right-2.5 z-30 max-w-[80%] rounded-md border border-[var(--danger-line)] bg-[var(--overlay)] px-1.5 py-0.5 font-mono text-[9px] font-medium leading-snug text-[var(--danger)] backdrop-blur-md"
+        >
+          {like.error}
+        </div>
+      )}
+
       {/* Floating Bottom Metadata & Remix Bar (Smooth fade and float-up on hover) */}
       <div className="absolute inset-x-0 bottom-0 z-20 p-3 space-y-1.5 opacity-0 translate-y-1.5 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-300 ease-out pointer-events-none">
         {/* Creator Info Row */}
@@ -331,7 +588,7 @@ export default function AssetCard({
             {creatorInitials}
           </div>
           <span className="truncate font-mono text-[10px] font-semibold text-white/95 drop-shadow-sm">
-            @{creatorHandle}
+            {creatorHandle ? `@${creatorHandle}` : "Unknown creator"}
           </span>
         </div>
 

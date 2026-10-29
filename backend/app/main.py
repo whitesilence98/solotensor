@@ -21,6 +21,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -29,6 +30,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .config import get_settings
 from .db import Database, get_db
@@ -42,8 +44,14 @@ from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
     video_family,
+    AssetLikeQueryRequest,
+    AssetLikeQueryResponse,
+    AssetLikeRequest,
+    AssetLikeResponse,
+    AssetLikeState,
     AssistantRequest,
     AssistantResponse,
+    CommentLikeResponse,
     CreateToolRequest,
     DeleteAssetResponse,
     DeleteToolResponse,
@@ -61,6 +69,8 @@ from .schemas import (
     InstalledGalleryModelList,
     LocalModelImportRequest,
     LocalModelListResponse,
+    ModelCommentCreateRequest,
+    ModelCommentResponse,
     ModelCreateRequest,
     ModelFilePatchRequest,
     ModelInstallResponse,
@@ -73,11 +83,14 @@ from .schemas import (
     ModelReviewResponse,
     ModelSampleResponse,
     ModelSamplePatchRequest,
+    ModelSocialStatsResponse,
+    ModelStarResponse,
     ModelSampleReorderRequest,
     ModelUpdateRequest,
     ModelVersionCreateRequest,
     ModelVersionResponse,
     ModelVersionUpdateRequest,
+    PaginatedCommentsResponse,
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
     PublicModelListResponse,
@@ -120,6 +133,13 @@ from .services.model_attribution import attribute_graph, build_index
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
 from .services.rbac_service import RBACService, get_rbac_service
 from .services.redis_service import get_redis_service
+from .services.social_service import (
+    SocialError,
+    SocialForbidden,
+    SocialNotFound,
+    SocialValidationError,
+    get_social_service,
+)
 from .services.storage import StorageError, get_storage
 from .services.tagger import TaggerError, get_tagger_service
 from .services.workflow_router import (
@@ -141,7 +161,7 @@ storage.ensure_root()
 model_storage = get_model_service()
 model_storage.ensure_root()
 code_assistant = get_code_assistant_service(settings)
-director = get_director_service(settings)
+director = get_director_service(settings, catalog_provider=model_storage.selectable_gallery_files)
 redis_service = get_redis_service(settings)
 
 db = get_db()
@@ -234,6 +254,201 @@ async def follow_user(
         followers_count=followers_count,
         target_user_id=target_id,
     )
+
+
+# --- Social Layer -----------------------------------------------------------
+
+
+class CommentDeleteResponse(BaseModel):
+    """Result of a soft-deleting a model comment."""
+
+    deleted: bool = True
+    comment_id: str
+
+
+def _social_http_error(exc: Exception) -> HTTPException:
+    """Map social service exceptions to explicit HTTP responses."""
+    if isinstance(exc, SocialNotFound):
+        return HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, SocialForbidden):
+        return HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc))
+    if isinstance(exc, SocialValidationError):
+        return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@app.get("/api/v1/models/{model_id}/social", response_model=ModelSocialStatsResponse)
+@app.get("/api/models/{model_id}/social", response_model=ModelSocialStatsResponse)
+async def get_model_social(
+    model_id: str,
+    viewer: UserResponse | None = Depends(get_optional_user),
+) -> ModelSocialStatsResponse:
+    """Return public star/comment/download/run counts and the viewer's star state."""
+    service = get_social_service()
+    try:
+        payload = service.get_model_social(
+            model_id, viewer_id=viewer.id if viewer else None
+        )
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+    return ModelSocialStatsResponse(
+        model_id=payload.get("model_id", model_id),
+        star_count=int(payload.get("star_count") or 0),
+        comment_count=int(payload.get("comment_count") or 0),
+        download_count=int(payload.get("download_count") or 0),
+        run_count=int(payload.get("run_count") or 0),
+        viewer_starred=bool(payload.get("viewer_starred")),
+    )
+
+
+@app.post("/api/v1/models/{model_id}/star", response_model=ModelStarResponse)
+@app.post("/api/models/{model_id}/star", response_model=ModelStarResponse)
+async def toggle_model_star(
+    model_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+) -> ModelStarResponse:
+    """Toggle the current user's star on a public model."""
+    try:
+        payload = get_social_service().toggle_star(current_user.id, model_id)
+        return ModelStarResponse(**payload)
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+
+
+@app.get(
+    "/api/v1/models/{model_id}/comments", response_model=PaginatedCommentsResponse
+)
+@app.get("/api/models/{model_id}/comments", response_model=PaginatedCommentsResponse)
+async def list_model_comments(
+    model_id: str,
+    sort: str = "latest",
+    page: int = 1,
+    limit: int = 20,
+    viewer: UserResponse | None = Depends(get_optional_user),
+) -> PaginatedCommentsResponse:
+    """Return a page of comments; an unknown ``sort`` falls back to ``latest``."""
+    sort_key = sort if sort in ("latest", "liked") else "latest"
+    safe_page = max(1, page)
+    safe_limit = min(max(1, limit), 100)
+    try:
+        items, total = get_social_service().list_comments(
+            model_id,
+            viewer.id if viewer else None,
+            sort=sort_key,
+            page=safe_page,
+            limit=safe_limit,
+        )
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+    return PaginatedCommentsResponse.create(
+        items=[ModelCommentResponse(**item) for item in items],
+        total=total,
+        page=safe_page,
+        limit=safe_limit,
+    )
+
+
+@app.post(
+    "/api/v1/models/{model_id}/comments",
+    response_model=ModelCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@app.post(
+    "/api/models/{model_id}/comments",
+    response_model=ModelCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_model_comment(
+    model_id: str,
+    req: ModelCommentCreateRequest,
+    current_user: UserResponse = Depends(get_current_user),
+) -> ModelCommentResponse:
+    """Post a comment on a public model."""
+    try:
+        comment = get_social_service().add_comment(current_user.id, model_id, req.body)
+        return ModelCommentResponse(**comment)
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+
+
+@app.delete("/api/v1/comments/{comment_id}", response_model=CommentDeleteResponse)
+@app.delete("/api/comments/{comment_id}", response_model=CommentDeleteResponse)
+async def delete_model_comment(
+    comment_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+    db: Database = Depends(get_db),
+) -> CommentDeleteResponse:
+    """Soft-delete a comment when the caller authored it or moderates content."""
+    comment = db.get_model_comment(comment_id)
+    if not comment or comment.get("is_deleted"):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail="Comment not found."
+        )
+    await RequireOwnerOrPermission("moderation:review_queue").enforce(
+        comment.get("user_id"), current_user, rbac
+    )
+    try:
+        get_social_service().delete_comment(comment_id, current_user.id)
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+    return CommentDeleteResponse(deleted=True, comment_id=comment_id)
+
+
+@app.post("/api/v1/comments/{comment_id}/like", response_model=CommentLikeResponse)
+@app.post("/api/comments/{comment_id}/like", response_model=CommentLikeResponse)
+async def toggle_model_comment_like(
+    comment_id: str,
+    current_user: UserResponse = Depends(get_current_user),
+) -> CommentLikeResponse:
+    """Toggle the current user's like on a comment."""
+    try:
+        payload = get_social_service().toggle_comment_like(
+            current_user.id, comment_id
+        )
+        return CommentLikeResponse(**payload)
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+
+
+@app.post("/api/v1/assets/likes", response_model=AssetLikeResponse)
+@app.post("/api/assets/likes", response_model=AssetLikeResponse)
+async def toggle_gallery_asset_like(
+    req: AssetLikeRequest,
+    current_user: UserResponse = Depends(get_current_user),
+) -> AssetLikeResponse:
+    """Toggle the current user's like on an existing gallery asset."""
+    try:
+        storage.get_asset(req.key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        payload = get_social_service().toggle_asset_like(current_user.id, req.key)
+        return AssetLikeResponse(**payload)
+    except SocialError as exc:
+        raise _social_http_error(exc) from exc
+
+
+@app.post("/api/v1/assets/likes/query", response_model=AssetLikeQueryResponse)
+@app.post("/api/assets/likes/query", response_model=AssetLikeQueryResponse)
+async def query_gallery_asset_like_states(
+    req: AssetLikeQueryRequest,
+    viewer: UserResponse | None = Depends(get_optional_user),
+    db: Database = Depends(get_db),
+) -> AssetLikeQueryResponse:
+    """Return the viewer's like state for up to 200 gallery asset keys."""
+    viewer_id = viewer.id if viewer else None
+    states = db.get_asset_like_map(req.keys, viewer_id)
+    items = {
+        key: AssetLikeState(
+            like_count=int(state.get("like_count") or 0),
+            viewer_liked=bool(state.get("viewer_liked")),
+        )
+        for key, state in states.items()
+    }
+    return AssetLikeQueryResponse(items=items)
 
 
 @app.on_event("startup")
@@ -354,7 +569,10 @@ async def director_providers() -> list[DirectorProviderStatus]:
 
 
 @app.post("/api/v1/director", response_model=DirectorReply)
-async def director_reply(req: DirectorRequest) -> DirectorReply:
+async def director_reply(
+    req: DirectorRequest,
+    current_user: UserResponse = Depends(get_current_user),
+) -> DirectorReply:
     """Answer a creative-direction turn. Stateless: the client sends the whole transcript."""
     if not settings.DIRECTOR_ENABLED:
         raise HTTPException(
@@ -536,6 +754,7 @@ async def list_public_models(
                 "author_username": getattr(model, "author_username", None),
                 "author_display_name": getattr(model, "author_display_name", None),
                 "author_avatar_url": getattr(model, "author_avatar_url", None),
+                "author_id": getattr(model, "user_id", None),
                 "tags": model.tags,
                 "base_model": model.compatibility.base_model,
                 "published_at": model.published_at,
@@ -547,6 +766,14 @@ async def list_public_models(
                 "video_family": video_family(model.compatibility.base_model),
             }
         )
+    ids = [item["model_id"] for item in items]
+    stats = get_social_service().get_stats_map(ids)
+    for item in items:
+        s = stats.get(item["model_id"], {})
+        item["star_count"] = s.get("star_count", 0)
+        item["comment_count"] = s.get("comment_count", 0)
+        item["download_count"] = s.get("download_count", 0)
+        item["run_count"] = s.get("run_count", 0)
     return PublicModelListResponse(items=items)
 
 
@@ -1028,7 +1255,9 @@ async def download_model_file(
     model_id: str,
     version_id: str,
     file_id: str,
+    request: Request,
     current_user: UserResponse = Depends(RequirePermission("model:download_weights")),
+    db: Database = Depends(get_db),
 ) -> FileResponse:
     try:
         record = model_storage._read(model_id)
@@ -1041,9 +1270,17 @@ async def download_model_file(
                     status_code=403,
                     detail="Direct weight download is disabled by the model creator",
                 )
-        return FileResponse(
-            model_storage.public_file_path(model_id, version_id, file_id)
-        )
+        path = model_storage.public_file_path(model_id, version_id, file_id)
+        if request.method == "GET" and current_user.id != record.get("user_id"):
+            try:
+                get_social_service().record_download(
+                    model_id, version_id, file_id, current_user.id
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to record download for model %s", model_id, exc_info=True
+                )
+        return FileResponse(path)
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
@@ -2983,6 +3220,12 @@ async def delete_gallery_asset(
             asset_user_id, current_user, rbac
         )
         storage.delete_asset(key)
+        try:
+            get_social_service().on_asset_deleted(key)
+        except Exception:
+            logger.warning(
+                "Failed to clear likes for deleted asset %s", key, exc_info=True
+            )
         return DeleteAssetResponse(deleted=True, key=key)
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc

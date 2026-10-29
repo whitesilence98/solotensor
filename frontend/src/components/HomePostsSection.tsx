@@ -28,7 +28,7 @@ import {
   type PostFilters,
 } from "@/lib/postFilters";
 
-export type PostSortMode = "explore" | "trending" | "latest";
+export type PostSortMode = "explore" | "latest";
 
 // Public surface retained for callers importing the taxonomy from this module.
 export { POST_CATEGORY_PILLS };
@@ -41,12 +41,6 @@ interface HomePostsSectionProps {
 
 const SEARCH_DEBOUNCE_MS = 200;
 
-function trendingScore(key: string): number {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  return Math.abs(hash) % 1000;
-}
-
 function sortPosts(assets: AssetRecord[], mode: PostSortMode): AssetRecord[] {
   if (mode === "latest") {
     return [...assets].sort((a, b) => {
@@ -54,13 +48,6 @@ function sortPosts(assets: AssetRecord[], mode: PostSortMode): AssetRecord[] {
       const timeB = new Date(b.last_modified || b.metadata?.created_at || 0).getTime();
       return timeB - timeA;
     });
-  }
-
-  if (mode === "trending") {
-    // Deterministic pseudorandom score based on key hash — no invented engagement.
-    return [...assets].sort(
-      (a, b) => trendingScore(b.key || "") - trendingScore(a.key || "")
-    );
   }
 
   return assets;
@@ -172,7 +159,6 @@ export default function HomePostsSection({
 
   const sortLabels: Record<PostSortMode, string> = {
     explore: "Explore",
-    trending: "Trending",
     latest: "Latest",
   };
 
@@ -211,7 +197,7 @@ export default function HomePostsSection({
                   aria-label="Sort posts"
                   className="absolute left-0 top-full z-30 mt-1.5 w-36 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1.5 shadow-2xl"
                 >
-                  {(["explore", "trending", "latest"] as const).map((mode) => (
+                  {(["explore", "latest"] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"

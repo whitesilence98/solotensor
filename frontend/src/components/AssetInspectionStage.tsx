@@ -15,6 +15,7 @@ import {
   Download,
   ExternalLink,
   Film,
+  Heart,
   Layers,
   Loader2,
   Plus,
@@ -28,7 +29,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import { formatBytes } from "@/components/AssetCard";
+import { formatBytes, formatLikeCount, useAssetLike } from "@/components/AssetCard";
 import UserAvatar from "@/components/UserAvatar";
 import ComparisonSlider from "@/components/ComparisonSlider";
 import { VideoResultPreview } from "@/components/VideoResultPreview";
@@ -220,6 +221,9 @@ export default function AssetInspectionStage({
 
   // Moderation Governance State
   const { user, isMod, isAdmin, hasPermission } = useAuth();
+  // Like state is shared with the gallery cards through the same store, so the
+  // count shown here is whatever the server last confirmed — never fabricated.
+  const like = useAssetLike(asset.key);
   const canModerate = isMod || isAdmin || hasPermission("moderation:review_queue") || hasPermission("generation:delete_any");
   const [modMenuOpen, setModMenuOpen] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
@@ -232,30 +236,32 @@ export default function AssetInspectionStage({
     try {
       if (action === "hide") {
         const next = !isHidden;
-        setIsHidden(next);
         await api.takeModerationAction({
           target_type: "post",
           target_id: asset.key,
           action: "hide",
           notes: next ? "Asset hidden by moderator" : "Asset unhidden by moderator",
         });
+        // Apply local state only once the server has accepted the action, so a
+        // failed request can never leave the menu showing a change that did not happen.
+        setIsHidden(next);
         setModToast(next ? "[Mod] Output hidden from gallery" : "[Mod] Output restored to gallery");
       } else if (action === "toggle_nsfw") {
         const next = !isNsfw;
-        setIsNsfw(next);
         const updatedTags = next
           ? [...tags, "nsfw"]
           : tags.filter((t) => t.toLowerCase() !== "nsfw" && t.toLowerCase() !== "mature");
-        setTags(updatedTags);
-        if (asset.metadata) {
-          asset.metadata.tags = updatedTags;
-        }
         await api.takeModerationAction({
           target_type: "post",
           target_id: asset.key,
           action: "toggle_nsfw",
           notes: next ? "Marked NSFW/Mature" : "Cleared NSFW/Mature flag",
         });
+        setIsNsfw(next);
+        setTags(updatedTags);
+        if (asset.metadata) {
+          asset.metadata.tags = updatedTags;
+        }
         setModToast(next ? "[Mod] Marked as NSFW/Mature" : "[Mod] NSFW tag removed");
       } else if (action === "takedown") {
         await api.takeModerationAction({
@@ -329,13 +335,17 @@ export default function AssetInspectionStage({
   const rawMeta = (meta || {}) as Record<string, any>;
   const rawAsset = asset as Record<string, any>;
 
+  // Local generations are authored by "You", or by whoever the sidecar names.
+  // When there is genuinely no author we say so instead of inventing one, and
+  // the profile links below are suppressed rather than pointing at a
+  // non-existent user page.
   const authorUsername: string =
     rawMeta.author_username ||
     rawAsset.author_username ||
     rawMeta.author ||
     rawAsset.author ||
     user?.username ||
-    "Crea2re";
+    "Unknown creator";
 
   const authorDisplayName: string =
     rawMeta.author_display_name ||
@@ -344,7 +354,9 @@ export default function AssetInspectionStage({
     (rawAsset.author_username ? rawAsset.author_username : null) ||
     user?.displayName ||
     user?.username ||
-    "Crea2re";
+    "Unknown creator";
+
+  const hasAuthorProfile = authorUsername !== "Unknown creator";
 
   const authorAvatarUrl: string | null =
     rawMeta.author_avatar_url ||
@@ -666,6 +678,32 @@ export default function AssetInspectionStage({
 
         {/* Bottom-Right Media Viewport Action Controls */}
         <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20 flex items-center gap-2 drop-shadow-md">
+          {/* Like Control (shared server-backed state with the gallery card) */}
+          <button
+            type="button"
+            onClick={like.toggle}
+            disabled={like.pending}
+            aria-pressed={like.liked}
+            aria-busy={like.pending}
+            aria-label={
+              like.liked
+                ? `Unlike asset${like.likeCount > 0 ? ` (${like.likeCount} likes)` : ""}`
+                : `Like asset${like.likeCount > 0 ? ` (${like.likeCount} likes)` : ""}`
+            }
+            title={like.error ?? (like.liked ? "Remove like" : "Like asset")}
+            className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold backdrop-blur-md transition motion-reduce:transition-none active:scale-95 ${
+              like.liked
+                ? "border-[var(--accent)]/50 bg-[var(--overlay)] text-[var(--accent)]"
+                : "border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
+            } ${like.pending ? "opacity-70" : ""}`}
+          >
+            <Heart className="h-3.5 w-3.5" fill={like.liked ? "currentColor" : "none"} />
+            {like.likeCount > 0 && (
+              <span className="font-mono text-[10px] font-semibold tabular-nums leading-none">
+                {formatLikeCount(like.likeCount)}
+              </span>
+            )}
+          </button>
           {/* Before/After Detailer Compare Toggle */}
           {detailerBeforeUrl && !isVideo && (
             <button
@@ -737,6 +775,16 @@ export default function AssetInspectionStage({
             </button>
           )}
         </div>
+
+        {/* Non-intrusive like failure notice, anchored under the action row */}
+        {like.error && (
+          <div
+            role="alert"
+            className="absolute bottom-14 right-3 sm:right-4 z-30 max-w-[60%] rounded-md border border-[var(--danger-line)] bg-[var(--surface-raised)] px-2 py-1 font-mono text-[10px] font-medium leading-snug text-[var(--danger)] backdrop-blur-md"
+          >
+            {like.error}
+          </div>
+        )}
       </div>
 
       {/* Right Column: Parameter Inspector Panel */}
@@ -747,28 +795,47 @@ export default function AssetInspectionStage({
           <div className="flex items-center justify-between gap-3 min-w-0">
             {/* Author Info */}
             <div className="flex items-center gap-3 min-w-0">
-              <Link
-                href={`/user/${encodeURIComponent(authorUsername)}`}
-                className="shrink-0 transition-transform active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-full"
-                title={`View @${authorUsername}'s profile`}
-              >
-                <UserAvatar
-                  src={authorAvatarUrl}
-                  username={authorUsername}
-                  name={authorDisplayName}
-                  role={authorRole}
-                  size="md"
-                  shape="circle"
-                />
-              </Link>
-              <div className="min-w-0 flex-1">
+              {hasAuthorProfile ? (
                 <Link
                   href={`/user/${encodeURIComponent(authorUsername)}`}
-                  className="font-bold text-sm text-[var(--ink)] hover:text-[var(--accent)] transition-colors truncate block leading-snug focus:outline-none focus-visible:underline"
-                  title={`@${authorUsername}`}
+                  className="shrink-0 transition-transform active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] rounded-full"
+                  title={`View @${authorUsername}'s profile`}
                 >
-                  {authorDisplayName}
+                  <UserAvatar
+                    src={authorAvatarUrl}
+                    username={authorUsername}
+                    name={authorDisplayName}
+                    role={authorRole}
+                    size="md"
+                    shape="circle"
+                  />
                 </Link>
+              ) : (
+                <div className="shrink-0 rounded-full">
+                  <UserAvatar
+                    src={authorAvatarUrl}
+                    username={authorUsername}
+                    name={authorDisplayName}
+                    role={authorRole}
+                    size="md"
+                    shape="circle"
+                  />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                {hasAuthorProfile ? (
+                  <Link
+                    href={`/user/${encodeURIComponent(authorUsername)}`}
+                    className="font-bold text-sm text-[var(--ink)] hover:text-[var(--accent)] transition-colors truncate block leading-snug focus:outline-none focus-visible:underline"
+                    title={`@${authorUsername}`}
+                  >
+                    {authorDisplayName}
+                  </Link>
+                ) : (
+                  <span className="font-bold text-sm text-[var(--ink)] truncate block leading-snug">
+                    {authorDisplayName}
+                  </span>
+                )}
                 <p
                   suppressHydrationWarning
                   className="text-[12px] text-[var(--ink-faint)] font-normal leading-tight mt-0.5 truncate select-none"

@@ -256,6 +256,8 @@ export default function AuthModal() {
                   ? "Model Checkpoint Access"
                   : authModalReason === "flag_content"
                   ? "Community Moderation Report"
+                  : authModalReason === "flow_director"
+                  ? "Shot Director Access"
                   : "Authentication Required"}
               </span>
             </div>
@@ -272,6 +274,8 @@ export default function AuthModal() {
                 ? "Sign in to download safetensors checkpoint files and local workstation weights."
                 : authModalReason === "flag_content"
                 ? "Sign in to submit content flags directly to the Solo Studio Trust & Safety darkroom."
+                : authModalReason === "flow_director"
+                ? "Sign in to plan shots with the creative director."
                 : "Sign in to access privileged studio capabilities and preserve your local workflows."}
             </p>
           </div>

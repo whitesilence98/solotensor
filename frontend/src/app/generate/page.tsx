@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, X } from "lucide-react";
 import ControlPanel, {
   type ActiveEmbedding,
   type ActiveLora,
@@ -34,6 +35,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
 import { ARCHITECTURE_FAMILIES } from "@/lib/baseModelArchitectures";
+import { parseGenerateDeepLink, videoSizeForAspect } from "@/lib/generateDeepLink";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
 
@@ -352,8 +354,7 @@ function createDefaultTabState(
   }
 }
 
-function parseSavedTabState(raw: string, defaults: TabState): TabState {
-  try {
+function parseSavedTabState(raw: string, defaults: TabState): TabState {  try {
     const saved = JSON.parse(raw);
     if (!saved || typeof saved !== "object") return defaults;
     return {
@@ -971,81 +972,168 @@ export default function StudioPage() {
     refreshGallery,
   ]);
 
-  // Handle incoming query params (e.g. from gallery "Install and use")
+  // Handle incoming query params (gallery "Install and use", asset remix, and
+  // `/flow` shot cards). One-shot per distinct link: it patches the *target*
+  // tab, never the tab that happened to be active, and never overwrites a value
+  // the link omitted.
+  const deepLinkAppliedRef = useRef<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!modelOptions.length) return;
-    try {
-      const search = new URLSearchParams(window.location.search);
-      const urlModelId = search.get("model_id");
-      const urlVersionId = search.get("version_id");
-      const urlFileId = search.get("file_id");
-      const urlBaseModelId = search.get("base_model_id");
-      const urlBaseFileId = search.get("base_file_id");
+    if (!hydrated) return;
 
-      if (urlModelId) {
-        const target =
-          modelOptions.find(
-            (m) =>
-              m.model_id === urlModelId &&
-              (!urlFileId || m.file_id === urlFileId) &&
-              (!urlVersionId || m.version_id === urlVersionId)
-          ) || modelOptions.find((m) => m.model_id === urlModelId);
+    const search = typeof window === "undefined" ? "" : window.location.search;
+    // Re-applying the same link on every tab edit would make the studio feel
+    // haunted; a *new* link (flow card, remix, install) still lands.
+    if (deepLinkAppliedRef.current === search) return;
 
-        if (target) {
-          if (isAdapterModel(target.model_type)) {
-            updateActiveTab((prev) => {
-              const alreadyExists = prev.loras.some(
-                (l) =>
-                  l.modelId === target.model_id &&
-                  (!target.file_id || l.fileId === target.file_id)
-              );
-              if (alreadyExists) return prev;
-              const newLora: ActiveLora = {
-                id: `${target.model_id}:${target.file_id}`,
-                title: target.title,
-                baseModel: target.version_name || "SDXL",
-                weight: 0.8,
-                enabled: true,
-                modelId: target.model_id,
-                versionId: target.version_id,
-                fileId: target.file_id,
-                thumbnailUrl: target.cover_url,
-              };
-              return { loras: [...prev.loras, newLora] };
-            });
+    const plan = parseGenerateDeepLink(search);
 
-            if (urlBaseModelId) {
-              const baseMatch =
-                modelOptions.find(
-                  (m) =>
-                    m.model_id === urlBaseModelId &&
-                    (!urlBaseFileId || m.file_id === urlBaseFileId)
-                ) || modelOptions.find((m) => m.model_id === urlBaseModelId);
-              if (baseMatch) {
-                updateActiveTab({
-                  baseSelection: {
-                    modelId: baseMatch.model_id,
-                    versionId: baseMatch.version_id,
-                    fileId: baseMatch.file_id,
-                  },
-                });
-              }
-            }
-          } else {
-            updateActiveTab({
-              selection: {
-                modelId: target.model_id,
-                versionId: target.version_id,
-                fileId: target.file_id,
-              },
-            });
-          }
+    // A linked model can only be resolved once the catalog has loaded. Wait for
+    // that fetch to *finish* — an empty catalog is a real answer, not a reason
+    // to sit on the link forever.
+    if (plan.hasModelParam && modelsLoading) return;
+
+    const targetMode: TensorMode = plan.mode ?? activeTensorMode;
+    const current = tabStates[targetMode];
+    const patch: Partial<TabState> = {};
+
+    if (plan.prompt !== null) patch.prompt = plan.prompt;
+    if (plan.negativePrompt !== null) patch.negativePrompt = plan.negativePrompt;
+    if (plan.seed !== null) patch.seed = plan.seed;
+    if (plan.img2imgSubTab) patch.img2imgSubTab = plan.img2imgSubTab;
+
+    if (targetMode === "Video") {
+      // The Video tab has no aspect-ratio selector; it sizes through LTX-aligned
+      // preset chips. Map the shot's aspect onto that surface so the card and the
+      // highlighted preset agree, rather than writing a `format` the tab ignores.
+      if (plan.format !== null) {
+        const size = videoSizeForAspect(plan.format);
+        patch.format = "custom";
+        patch.customWidth = String(size.width);
+        patch.customHeight = String(size.height);
+      }
+      if (plan.duration !== null) patch.videoDurationSeconds = plan.duration;
+      if (plan.fps !== null) patch.videoFps = plan.fps;
+      if (plan.videoSubMode) {
+        patch.videoSubMode = plan.videoSubMode;
+        if (plan.videoSubMode === "text-to-video") {
+          // A shot card never carries a source frame; drop whatever the draft
+          // was still holding so the run cannot silently become image-to-video.
+          patch.referenceImage = null;
+          patch.lastFrameImage = null;
+          patch.resizeMode = "preset";
         }
       }
-    } catch {
-      /* ignore */
+    } else if (plan.format !== null) {
+      patch.format = plan.format;
     }
-  }, [modelOptions, updateActiveTab]);
+
+    const notes: string[] = [];
+    let applied = plan.mode !== null || Object.keys(patch).length > 0;
+
+    if (plan.modelId) {
+      const target =
+        modelOptions.find(
+          (m) =>
+            m.model_id === plan.modelId &&
+            (!plan.fileId || m.file_id === plan.fileId) &&
+            (!plan.versionId || m.version_id === plan.versionId)
+        ) || modelOptions.find((m) => m.model_id === plan.modelId);
+
+      if (!target) {
+        // Honest: the link is still honoured for everything except the weight
+        // triple, and we say so instead of implying the model was applied.
+        notes.push(
+          modelsError
+            ? "The model library could not be loaded, so the studio kept its own selection."
+            : "The linked model is not installed in this gallery, so the studio kept its own selection."
+        );
+        applied = true;
+      } else if (isAdapterModel(target.model_type)) {
+        const alreadyExists = current.loras.some(
+          (l) => l.modelId === target.model_id && (!target.file_id || l.fileId === target.file_id)
+        );
+        if (!alreadyExists) {
+          const newLora: ActiveLora = {
+            id: `${target.model_id}:${target.file_id}`,
+            title: target.title,
+            baseModel: target.version_name || "SDXL",
+            weight: 0.8,
+            enabled: true,
+            modelId: target.model_id,
+            versionId: target.version_id,
+            fileId: target.file_id,
+            thumbnailUrl: target.cover_url,
+          };
+          patch.loras = [...current.loras, newLora];
+        }
+        applied = true;
+
+        if (plan.baseModelId) {
+          const baseMatch =
+            modelOptions.find(
+              (m) =>
+                m.model_id === plan.baseModelId &&
+                (!plan.baseFileId || m.file_id === plan.baseFileId)
+            ) || modelOptions.find((m) => m.model_id === plan.baseModelId);
+          if (baseMatch) {
+            patch.baseSelection = {
+              modelId: baseMatch.model_id,
+              versionId: baseMatch.version_id,
+              fileId: baseMatch.file_id,
+            };
+          }
+        }
+      } else {
+        patch.selection = {
+          modelId: target.model_id,
+          versionId: target.version_id,
+          fileId: target.file_id,
+        };
+        applied = true;
+      }
+    } else if (plan.baseModelId) {
+      const baseMatch =
+        modelOptions.find(
+          (m) =>
+            m.model_id === plan.baseModelId &&
+            (!plan.baseFileId || m.file_id === plan.baseFileId)
+        ) || modelOptions.find((m) => m.model_id === plan.baseModelId);
+      if (baseMatch) {
+        patch.baseSelection = {
+          modelId: baseMatch.model_id,
+          versionId: baseMatch.version_id,
+          fileId: baseMatch.file_id,
+        };
+        applied = true;
+      }
+    }
+
+    if (!applied) {
+      deepLinkAppliedRef.current = search;
+      return;
+    }
+
+    // The Video tab already states the bundled-LTX caveat when the selection is
+    // not LTX; no extra chrome is added to that frozen surface here.
+
+    if (plan.mode) handleTensorModeChange(targetMode);
+    setTabStates((prev) => ({
+      ...prev,
+      [targetMode]: { ...prev[targetMode], ...patch },
+    }));
+    setDeepLinkNotice(notes.length > 0 ? notes.join(" ") : null);
+    deepLinkAppliedRef.current = search;
+  }, [
+    hydrated,
+    modelsLoading,
+    modelsError,
+    modelOptions,
+    activeTensorMode,
+    tabStates,
+    handleTensorModeChange,
+  ]);
 
   const handleRemix = useCallback(
     (meta: GalleryMetadata) => {
@@ -1302,6 +1390,26 @@ export default function StudioPage() {
           videoFps={activeTab.videoFps}
           />
         </div>
+
+        {/* Deep-link notice, fixed so opening a link never shifts the studio.
+            Sits clear of the mobile bottom navigation. */}
+        {deepLinkNotice && (
+          <div
+            role="status"
+            className="workspace-panel fixed left-1/2 z-50 flex w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 items-start gap-2.5 p-3 text-[11px] leading-5 text-[var(--ink-soft)] bottom-[calc(var(--mobile-nav-height)+1rem)] md:bottom-4"
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--warning)]" />
+            <p className="min-w-0 flex-1">{deepLinkNotice}</p>
+            <button
+              type="button"
+              onClick={() => setDeepLinkNotice(null)}
+              className="workspace-action-quiet -m-1 shrink-0 rounded-md p-1"
+              aria-label="Dismiss notice"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   );
