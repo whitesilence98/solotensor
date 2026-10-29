@@ -32,6 +32,7 @@ from app.services.director import (
     _compact,
     _compose_answer,
     _entry_kind,
+    _resolve_model,
     _snap,
     build_system_prompt,
     compact_catalog,
@@ -210,23 +211,63 @@ class CatalogBoundTests(unittest.TestCase):
         cases = (
             ({"base_model": "LTX-2.3", "video_family": "ltx"}, ("video", "ltx")),
             ({"base_model": "LTX-2.3"}, ("video", "ltx")),
-            ({"base_model": "Wan2.2", "video_family": "wan"}, ("unknown", "wan")),
+            ({"base_model": "Wan2.2", "video_family": "wan"}, ("video", "wan")),
+            ({"base_model": "HunyuanVideo"}, ("video", "hunyuan-video")),
             ({"base_model": "SDXL 1.0"}, ("image", None)),
             ({"base_model": None}, ("unknown", None)),
-            ({"base_model": "SVD", "model_type": "SVD"}, ("unknown", "svd")),
-            ({"base_model": None, "model_type": "SVD"}, ("unknown", "svd")),
+            ({"base_model": "SVD", "model_type": "SVD"}, ("video", "svd")),
+            ({"base_model": None, "model_type": "SVD"}, ("video", "svd")),
         )
         for overrides, expected in cases:
             with self.subTest(overrides=overrides):
                 self.assertEqual(_entry_kind(_entry(**overrides)), expected)
 
     def test_non_ltx_video_row_is_never_marked_renderable(self) -> None:
-        # Only the bundled LTX graph may render video; a Wan row must stay
-        # ``unknown`` so no shot can bind it.
-        rows, _by_alias = compact_catalog(
+        # Modality and renderability are separate axes: a Wan row IS video (the
+        # old "unknown" label was the bug) but the bundled graph cannot render it.
+        rows, by_alias = compact_catalog(
             [_entry(base_model="Wan2.2", video_family="wan")]
         )
-        self.assertEqual(rows[0]["kind"], "unknown")
+        self.assertEqual(rows[0]["kind"], "video")
+        self.assertIs(rows[0]["renderable"], False)
+        # No shot may bind it: not a video shot (not renderable), nor an image
+        # shot (a video row is never an image fallback).
+        for media in ("video", "image"):
+            with self.subTest(media=media):
+                self.assertIsNone(
+                    _resolve_model("m1", media, by_alias)["model_id"]
+                )
+
+    def test_ltx_video_row_is_renderable_and_binds_video_shots(self) -> None:
+        # Positive guarantee: the same gate must still let the supported family
+        # through, so the negative Wan case cannot be satisfied by blocking all.
+        rows, by_alias = compact_catalog(
+            [_entry(base_model="LTX-2.3", video_family="ltx")]
+        )
+        self.assertEqual(rows[0]["kind"], "video")
+        self.assertIs(rows[0]["renderable"], True)
+        self.assertEqual(
+            _resolve_model("m1", "video", by_alias)["model_id"], IDS_A[0]
+        )
+
+
+class PromptLabelTests(unittest.TestCase):
+    def test_video_label_reflects_renderability(self) -> None:
+        # The prompt tells the director which rows it can actually render with;
+        # a non-LTX video row must say so or the model would pick an unusable one.
+        wan_rows, _ = compact_catalog([_entry(base_model="Wan2.2", video_family="wan")])
+        self.assertIn(
+            "— video (not renderable here)",
+            build_system_prompt(wan_rows),
+        )
+        ltx_rows, _ = compact_catalog(
+            [_entry(base_model="LTX-2.3", video_family="ltx")]
+        )
+        self.assertIn("— video", build_system_prompt(ltx_rows))
+        self.assertNotIn(
+            "— video (not renderable here)",
+            build_system_prompt(ltx_rows),
+        )
 
 
 class PromptParityTests(unittest.TestCase):

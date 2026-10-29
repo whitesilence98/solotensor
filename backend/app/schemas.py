@@ -346,6 +346,27 @@ def video_family(architecture: str | None) -> str | None:
     return None
 
 
+MediaType = Literal["image", "video", "unknown"]
+
+
+def media_type(architecture: str | None, model_type: str | None = None) -> MediaType:
+    """Return what a model produces: ``image``, ``video``, or ``unknown``.
+
+    Derived, never persisted. Reuses `video_family` so the engine table stays
+    single-sourced. An ``SVD`` weight is video even when its compatibility block
+    records no base_model. An empty architecture is NOT assumed to be image —
+    that fail-open assumption is exactly what this function replaces.
+    """
+    family = video_family(architecture)
+    if family:
+        return "video"
+    if model_type == "SVD":
+        return "video"
+    if isinstance(architecture, str) and architecture.strip():
+        return "image"
+    return "unknown"
+
+
 class AssistantPersona(str, Enum):
     BACKEND = "backend"
     FRONTEND = "frontend"
@@ -1301,6 +1322,7 @@ class ModelResponse(ModelCreateRequest):
     moderation_notes: Optional[str] = None
     from_vault: bool = False
     in_vault: bool = False
+    media_type: MediaType = "unknown"
 
 
 class ModelListResponse(BaseModel):
@@ -1384,6 +1406,7 @@ class PublicModelSummary(BaseModel):
     run_count: int = 0
     moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
     video_family: str | None = None
+    media_type: MediaType = "unknown"
 
     @field_validator("model_type", mode="before")
     @classmethod
@@ -1543,6 +1566,7 @@ class InstalledGalleryModel(BaseModel):
     base_file_id: str | None = None
     cover_url: str | None = None
     video_family: str | None = None
+    media_type: MediaType = "unknown"
 
 
 class InstalledGalleryModelList(BaseModel):

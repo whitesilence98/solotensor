@@ -43,6 +43,7 @@ from .routers.notifications import router as notifications_router
 from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
+    media_type,
     video_family,
     AssetLikeQueryRequest,
     AssetLikeQueryResponse,
@@ -764,6 +765,7 @@ async def list_public_models(
                 "file_count": public_files,
                 "sample_count": public_samples,
                 "video_family": video_family(model.compatibility.base_model),
+                "media_type": media_type(model.compatibility.base_model, model.model_type),
             }
         )
     ids = [item["model_id"] for item in items]

@@ -327,6 +327,48 @@ class InstalledGalleryModelSchemaTests(unittest.TestCase):
         nulled = InstalledGalleryModel(**base, video_family=None)
         self.assertIsNone(nulled.video_family)
 
+    def test_installed_gallery_model_media_type(self) -> None:
+        from app.schemas import InstalledGalleryModel
+
+        base = dict(
+            model_id="a" * 32,
+            version_id="b" * 32,
+            file_id="c" * 32,
+            title="Title",
+            model_type="Checkpoint",
+            version_name="v1.0",
+            filename="model.safetensors",
+            category="checkpoints",
+            sha256="d" * 64,
+        )
+
+        # Omitted -> "unknown", never "image": absence is not evidence of image.
+        self.assertEqual(InstalledGalleryModel(**base).media_type, "unknown")
+
+        # Explicit value is preserved
+        self.assertEqual(
+            InstalledGalleryModel(**base, media_type="video").media_type, "video"
+        )
+
+        # The default is a value, not a nullable; None is rejected outright.
+        with self.assertRaises(ValidationError):
+            InstalledGalleryModel(**base, media_type=None)
+
+    def test_model_response_round_trips_its_own_dump(self) -> None:
+        """`ModelResponse` inherits extra="forbid", so ``media_type`` must be a
+        declared field — a computed-only field would make every round-trip fail."""
+        from app.schemas import ModelResponse
+
+        response = ModelResponse(
+            model_id="a" * 32,
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+            media_type="video",
+        )
+        dumped = response.model_dump()
+        self.assertIn("media_type", dumped)
+        self.assertEqual(ModelResponse(**dumped).media_type, "video")
+
     def test_model_file_response_category(self) -> None:
         from app.schemas import ModelFileResponse, ModelPrecision
 

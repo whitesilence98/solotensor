@@ -1115,6 +1115,7 @@ export interface CreatorModel {
   moderation_notes?: string | null;
   from_vault?: boolean;
   in_vault?: boolean;
+  media_type?: MediaType;
 }
 
 export interface CreatorModelPayload {
@@ -1152,6 +1153,7 @@ export interface PublicModelSummary {
   author_role?: string;
   moderation_status?: ModelModerationStatus;
   video_family?: VideoFamily | null;
+  media_type?: MediaType;
   star_count?: number;
   comment_count?: number;
   download_count?: number;
@@ -1353,6 +1355,10 @@ export interface ModelPendingReviewQueueResponse {
  *  from the model's base architecture. Mirrors `VIDEO_ENGINES` in schemas.py. */
 export type VideoFamily = "ltx" | "wan" | "hunyuan-video" | "svd" | "cogvideo" | "mochi";
 
+/** Derived, advisory output modality. Not persisted; the backend computes it
+ *  from the model's base architecture. Mirrors `media_type()` in schemas.py. */
+export type MediaType = "image" | "video" | "unknown";
+
 export interface InstalledGalleryModel {
   model_id: string;
   version_id: string;
@@ -1373,6 +1379,7 @@ export interface InstalledGalleryModel {
   base_file_id: string | null;
   cover_url?: string | null;
   video_family?: VideoFamily | null;
+  media_type?: MediaType;
 }
 
 export interface InstalledGalleryModelList { items: InstalledGalleryModel[]; }

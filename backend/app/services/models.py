@@ -38,6 +38,7 @@ from ..schemas import (
     ModelVersionResponse,
     ModelVisibility,
     is_architecture_compatible,
+    media_type,
     video_family,
 )
 from app.services.model_factory import ModelHandlerFactory, ModelTier
@@ -366,6 +367,10 @@ class ModelService:
             moderation_notes=record.get("moderation_notes"),
             from_vault=any(f.from_vault for v in versions for f in v.files),
             in_vault=any(f.in_vault for v in versions for f in v.files),
+            media_type=media_type(
+                (record.get("compatibility") or {}).get("base_model"),
+                record.get("model_type"),
+            ),
         )
 
     def _validate_base_association(
@@ -835,6 +840,7 @@ class ModelService:
             "base_file_id": compatibility.get("base_file_id"),
             "cover_url": cover_url,
             "video_family": video_family(compatibility.get("base_model")),
+            "media_type": media_type(compatibility.get("base_model"), model_type),
         }
 
     def selectable_gallery_files(self) -> list[dict[str, Any]]:

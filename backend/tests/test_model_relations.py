@@ -800,8 +800,13 @@ class PublicModelVideoFamilyApiTests(unittest.TestCase):
         by_id = {item["model_id"]: item for item in items}
         for item in items:
             self.assertIn("video_family", item)
+            self.assertIn("media_type", item)
         self.assertEqual(by_id[ltx_id]["video_family"], "ltx")
         self.assertIsNone(by_id[sdxl_id]["video_family"])
+        # Modality is exposed alongside the advisory family; the image model
+        # must not be reported as unknown or video.
+        self.assertEqual(by_id[ltx_id]["media_type"], "video")
+        self.assertEqual(by_id[sdxl_id]["media_type"], "image")
 
     def test_selectable_listing_includes_video_family(self) -> None:
         ltx_id = self._published_model("LTX Video Model", "LTX-2.3", "ltx_weights.safetensors")

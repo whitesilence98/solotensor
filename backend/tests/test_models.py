@@ -24,6 +24,7 @@ from app.schemas import (
     ModelVersionCreateRequest,
     VIDEO_ENGINES,
     is_architecture_compatible,
+    media_type,
     video_family,
 )
 import app.services.model_storage as model_storage_module
@@ -1321,6 +1322,43 @@ class VideoFamilyTests(unittest.TestCase):
                     self.assertEqual(token, token.lower())
         # Bare "hunyuan" would swallow HunyuanDiT, so it must not be a token.
         self.assertNotIn("hunyuan", VIDEO_ENGINES["hunyuan-video"])
+
+
+class MediaTypeTests(unittest.TestCase):
+    """`media_type()` answers modality, not renderability or compatibility."""
+
+    def test_media_type_truth_table(self) -> None:
+        cases = [
+            ("LTX-2.3", None, "video"),
+            ("LTX-Video 13B", None, "video"),
+            ("Wan2.2", None, "video"),
+            ("HunyuanVideo", None, "video"),
+            ("CogVideoX", None, "video"),
+            ("SDXL 1.0", None, "image"),
+            ("Flux.1 D", None, "image"),
+            (None, None, "unknown"),
+            ("", None, "unknown"),
+            ("   ", None, "unknown"),
+            ("", "SVD", "video"),
+            (None, "SVD", "video"),
+        ]
+        for architecture, model_type_value, expected in cases:
+            with self.subTest(architecture=architecture, model_type=model_type_value):
+                self.assertEqual(
+                    media_type(architecture, model_type_value), expected
+                )
+
+    def test_empty_architecture_is_unknown_not_image(self) -> None:
+        """The removed fail-open assumption: absence means unknown, never image."""
+        for architecture in (None, "", "   "):
+            with self.subTest(architecture=repr(architecture)):
+                self.assertEqual(media_type(architecture), "unknown")
+                self.assertNotEqual(media_type(architecture), "image")
+
+    def test_hunyuan_dit_and_hunyuan_video_land_on_opposite_sides(self) -> None:
+        """The mixed Hunyuan family must not collapse to a single modality."""
+        self.assertEqual(media_type("HunyuanDiT"), "image")
+        self.assertEqual(media_type("HunyuanVideo"), "video")
 
 
 class VideoFamilyResolutionTests(unittest.TestCase):
