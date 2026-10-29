@@ -115,6 +115,12 @@ export default function ToolDetailPage() {
   const [sessionHistory, setSessionHistory] = useState<ToolRunResult[]>([]);
   const socket = useRef<WebSocket | null>(null);
 
+  // Cover picker: replace the tool's showcase thumbnail without leaving the page.
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
+  const coverFileRef = useRef<HTMLInputElement>(null);
+
   // Drag and drop state for starter reference image
   const [isDragOver, setIsDragOver] = useState(false);
   const [naturalDimensions, setNaturalDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -785,6 +791,55 @@ export default function ToolDetailPage() {
     return Math.min(100, Math.max(0, Math.round((val / max) * 100)));
   }, [progress]);
 
+  /**
+   * Replace the showcase thumbnail. `PUT /api/tools/{id}` requires the graph as
+   * a file, so round-trip it through the owner-gated /edit endpoint and send it
+   * back verbatim — the node set is unchanged, which the service enforces.
+   * `controls` must be forwarded too; omitting it re-derives them, which would
+   * discard any custom parameter set authored in the canvas.
+   */
+  const saveCover = useCallback(
+    async (source: File | string) => {
+      if (!tool) return;
+      setCoverBusy(true);
+      setCoverError(null);
+      try {
+        const file =
+          typeof source === "string"
+            ? new File([await (await fetch(source)).blob()], `cover_${Date.now()}.png`, {
+                type: "image/png",
+              })
+            : source;
+        const payload = await api.getToolForEdit(tool.tool_id);
+        const graphFile = new File(
+          [JSON.stringify(payload.workflow_api)],
+          "workflow_api.json",
+          { type: "application/json" },
+        );
+        const updated = await api.updateTool(
+          tool.tool_id,
+          graphFile,
+          payload.name,
+          payload.mode,
+          payload.default_aspect_ratio,
+          file,
+          payload.controls,
+        );
+        setTool((current) =>
+          current ? { ...current, thumbnail_url: updated.thumbnail_url } : current,
+        );
+        setCoverOpen(false);
+      } catch (cause) {
+        setCoverError(
+          cause instanceof Error ? cause.message : "Could not save the cover.",
+        );
+      } finally {
+        setCoverBusy(false);
+      }
+    },
+    [tool],
+  );
+
   const handleDelete = async () => {
     if (!tool) return;
     setDeleting(true);
@@ -1204,7 +1259,18 @@ export default function ToolDetailPage() {
                           alt={tool!.name}
                           className="h-full w-full object-cover opacity-90 transition group-hover:scale-105 duration-500"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent flex items-end p-5">
+                        <Can do="tool:delete" ownerId={tool?.user_id}>
+                          <button
+                            type="button"
+                            onClick={() => setCoverOpen(true)}
+                            className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black/70 px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-white opacity-0 backdrop-blur-md transition hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:opacity-100 group-hover:opacity-100"
+                            title="Replace this tool's cover image"
+                          >
+                            <ImagePlus className="h-3.5 w-3.5" />
+                            <span>Change cover</span>
+                          </button>
+                        </Can>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent flex items-end p-5 pointer-events-none">
                           <div className="text-left">
                             <span className="rounded bg-[var(--accent)] text-[var(--accent-ink)] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider">
                               WORKFLOW PREVIEW
@@ -1258,6 +1324,19 @@ export default function ToolDetailPage() {
                         📐 Aspect: {ratioLabel}
                       </span>
                     </div>
+
+                    {!tool!.thumbnail_url && (
+                      <Can do="tool:delete" ownerId={tool?.user_id}>
+                        <button
+                          type="button"
+                          onClick={() => setCoverOpen(true)}
+                          className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                        >
+                          <ImagePlus className="h-3.5 w-3.5" />
+                          <span>Add cover image</span>
+                        </button>
+                      </Can>
+                    )}
                   </div>
                 )}
               </div>
@@ -1875,6 +1954,95 @@ export default function ToolDetailPage() {
       </div>
 
       {/* Delete Confirmation Modal */}
+      <WorkspaceModal
+        open={coverOpen}
+        onClose={() => {
+          if (coverBusy) return;
+          setCoverOpen(false);
+          setCoverError(null);
+        }}
+        title="Replace Cover Image"
+        description="Choose an image from this session's generations, or upload one. The tool's showcase card updates immediately."
+      >
+        <div className="mt-4 space-y-4">
+          {sessionHistory.length > 0 && (
+            <div className="space-y-2">
+              <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+                From this session
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {sessionHistory.map((hist) => {
+                  const first = hist.images[0];
+                  if (!first) return null;
+                  return (
+                    <button
+                      key={hist.prompt_id}
+                      type="button"
+                      disabled={coverBusy}
+                      onClick={() => void saveCover(first.url)}
+                      className="group relative aspect-video overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] transition hover:border-[var(--accent)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                      title={first.kind === "video" ? "Use this video's still frame" : "Use this image"}
+                    >
+                      {first.kind === "video" ? (
+                        <span className="flex h-full w-full items-center justify-center font-mono text-[9px] text-[var(--ink-faint)]">
+                          VIDEO
+                        </span>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={first.url}
+                          alt="Session output"
+                          className="h-full w-full object-cover transition group-hover:scale-105"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
+              Upload your own
+            </span>
+            <button
+              type="button"
+              disabled={coverBusy}
+              onClick={() => coverFileRef.current?.click()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--line-strong)] bg-[var(--surface-sunken)] py-5 font-mono text-[11px] text-[var(--ink-soft)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50"
+            >
+              {coverBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <UploadCloud className="h-4 w-4" />
+              )}
+              <span>{coverBusy ? "Saving cover…" : "Choose an image file"}</span>
+            </button>
+            <input
+              ref={coverFileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.currentTarget.value = "";
+                if (f) void saveCover(f);
+              }}
+            />
+            <p className="font-mono text-[9px] text-[var(--ink-faint)]">
+              PNG, JPG or WEBP. Displayed 16:9 — portrait images are cropped to fill.
+            </p>
+          </div>
+
+          {coverError && (
+            <p className="text-xs text-[var(--danger)]" role="alert">
+              {coverError}
+            </p>
+          )}
+        </div>
+      </WorkspaceModal>
+
       <WorkspaceModal
         open={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}

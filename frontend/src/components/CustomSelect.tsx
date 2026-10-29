@@ -1,7 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useId } from "react";
+import React, { useCallback, useEffect, useRef, useState, useId } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+
+const PANEL_GAP = 6;
+const VIEWPORT_EDGE = 8;
+const PANEL_MIN_WIDTH = 176; // today's 11rem
 
 export interface CustomSelectOption {
   value: string;
@@ -39,7 +44,14 @@ export default function CustomSelect({
   icon,
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<{
+    top: number;
+    left: number;
+    minWidth: number;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const listboxRef = useRef<HTMLUListElement>(null);
   const generatedId = useId();
   const id = explicitId || generatedId;
@@ -51,17 +63,94 @@ export default function CustomSelect({
 
   const selectedOption = normalizedOptions.find((opt) => opt.value === value);
 
-  // Close when clicking outside
+  // The panel is portalled to <body>, so its coordinates come from the trigger's
+  // viewport rect. Placing it here lets it escape overflow-clipped scroll areas.
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const panel = panelRef.current;
+    if (!trigger || !panel) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Read the natural (content-driven) width with the inline minimum removed.
+    const previousMinWidth = panel.style.minWidth;
+    panel.style.minWidth = "0px";
+    const naturalWidth = panel.offsetWidth;
+
+    const minWidth = Math.min(
+      Math.max(naturalWidth, rect.width, PANEL_MIN_WIDTH),
+      vw - VIEWPORT_EDGE * 2,
+    );
+    panel.style.minWidth = `${minWidth}px`;
+    const height = panel.offsetHeight;
+    panel.style.minWidth = previousMinWidth;
+
+    const spaceBelow = vh - rect.bottom - PANEL_GAP;
+    const spaceAbove = rect.top - PANEL_GAP;
+    const placeAbove = height > spaceBelow && spaceAbove > spaceBelow;
+
+    let top = placeAbove
+      ? rect.top - PANEL_GAP - height
+      : rect.bottom + PANEL_GAP;
+    let left = align === "right" ? rect.right - minWidth : rect.left;
+
+    left = Math.max(
+      VIEWPORT_EDGE,
+      Math.min(left, vw - minWidth - VIEWPORT_EDGE),
+    );
+    top = Math.max(
+      VIEWPORT_EDGE,
+      Math.min(top, vh - height - VIEWPORT_EDGE),
+    );
+
+    setPosition({ top, left, minWidth });
+  }, [align]);
+
+  // Place on open; reset while closed so a reopen never flashes stale coords.
+  useEffect(() => {
+    if (!isOpen) {
+      setPosition(null);
+      return;
+    }
+    updatePosition();
+  }, [isOpen, updatePosition]);
+
+  // Track the trigger while scrolling/resizing. The real scroller is an ancestor
+  // (main.workspace-scroll), and element scroll events do not bubble — capture.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let frame = 0;
+    const schedule = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return; // internal scroll
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updatePosition();
+      });
+    };
+
+    document.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [isOpen, updatePosition]);
+
+  // Close when clicking outside either the trigger or the portalled panel.
   useEffect(() => {
     if (!isOpen) return;
 
     const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -116,6 +205,7 @@ export default function CustomSelect({
       onKeyDown={handleKeyDown}
     >
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         onClick={() => !disabled && setIsOpen((prev) => !prev)}
@@ -142,50 +232,58 @@ export default function CustomSelect({
         />
       </button>
 
-      {isOpen && (
-        <div
-          className={`absolute ${
-            align === "right" ? "right-0" : "left-0"
-          } top-full z-50 mt-1.5 min-w-[11rem] max-h-64 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 no-scrollbar ${popoverClassName}`}
-        >
-          <ul
-            ref={listboxRef}
-            role="listbox"
-            aria-activedescendant={value}
-            tabIndex={-1}
-            className="space-y-0.5"
+      {isOpen &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              top: position?.top,
+              left: position?.left,
+              minWidth: position?.minWidth,
+              maxWidth: "calc(100vw - 1rem)",
+              visibility: position ? undefined : "hidden",
+            }}
+            className={`fixed z-[60] max-h-64 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-1 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 no-scrollbar ${popoverClassName}`}
           >
-            {normalizedOptions.map((opt) => {
-              const isSelected = opt.value === value;
-              return (
-                <li
-                  key={opt.value}
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => handleSelect(opt.value)}
-                  className={`flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer select-none ${
-                    isSelected
-                      ? "bg-[var(--accent)]/10 font-semibold text-[var(--accent)]"
-                      : "text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
-                  }`}
-                >
-                  <span className="truncate">{opt.label}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {opt.badge && (
-                      <span className="rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 py-0.5 text-[9px] text-[var(--ink-faint)]">
-                        {opt.badge}
-                      </span>
-                    )}
-                    {isSelected && (
-                      <Check className="h-3 w-3 text-[var(--accent)]" />
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+            <ul
+              ref={listboxRef}
+              role="listbox"
+              aria-activedescendant={value}
+              tabIndex={-1}
+              className="space-y-0.5"
+            >
+              {normalizedOptions.map((opt) => {
+                const isSelected = opt.value === value;
+                return (
+                  <li
+                    key={opt.value}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => handleSelect(opt.value)}
+                    className={`flex items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer select-none ${
+                      isSelected
+                        ? "bg-[var(--accent)]/10 font-semibold text-[var(--accent)]"
+                        : "text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <span className="truncate">{opt.label}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {opt.badge && (
+                        <span className="rounded border border-[var(--line)] bg-[var(--surface-sunken)] px-1.5 py-0.5 text-[9px] text-[var(--ink-faint)]">
+                          {opt.badge}
+                        </span>
+                      )}
+                      {isSelected && (
+                        <Check className="h-3 w-3 text-[var(--accent)]" />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
