@@ -51,18 +51,22 @@ export function AssetCardSkeleton({
       <div className="absolute inset-0 shimmer opacity-60" />
 
       {/* Floating Top Badge Placeholder */}
-      <div className="absolute inset-x-2.5 top-2.5 z-10 flex items-center justify-between pointer-events-none">
+      <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 pointer-events-none">
         <div className="h-4.5 w-12 rounded bg-white/10 shimmer backdrop-blur-md" />
-        <div className="h-7 w-7 rounded-lg bg-white/10 shimmer backdrop-blur-md" />
       </div>
 
-      {/* Atmospheric Bottom Gradient Scrim */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 via-50% to-transparent" />
-
-      {/* Bottom Typography Overlay Mirror */}
+      {/* Bottom Typography & Action Area Mirror (Zero-CLS) */}
       <div className="absolute inset-x-0 bottom-0 z-10 p-3 space-y-1.5 pointer-events-none">
-        <div className="h-3.5 w-3/4 rounded bg-white/20 shimmer" />
-        <div className="h-2.5 w-1/2 rounded bg-white/10 shimmer" />
+        <div className="flex items-center gap-1.5">
+          <div className="h-5 w-5 rounded-full bg-white/20 shimmer" />
+          <div className="h-3 w-20 rounded bg-white/20 shimmer" />
+        </div>
+        <div className="h-2.5 w-16 rounded bg-white/10 shimmer" />
+        <div className="flex items-center gap-2 pt-1 w-full">
+          <div className="h-8 w-14 rounded-xl bg-white/10 shimmer" />
+          <div className="h-8 flex-1 rounded-xl bg-white/15 shimmer" />
+          <div className="h-8 w-8 rounded-xl bg-white/10 shimmer" />
+        </div>
       </div>
     </div>
   );

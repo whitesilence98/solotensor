@@ -355,7 +355,7 @@ export default function AssetsPage() {
       <main id="main-content" className="assets-root workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
         <div className="flex-1 flex flex-col">
       {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
-      <div className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
+      <div className="mx-auto w-full max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">
         {/* Command Bar Toolbar: Type Switcher + Search + Source Selector + New Render */}
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)]/70 backdrop-blur-md p-2.5 shadow-sm mb-3">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
@@ -553,7 +553,7 @@ export default function AssetsPage() {
       </div>
 
       {/* ---------------- Grid ---------------- */}
-      <section className="workspace-bezel mx-auto mt-4 max-w-[1600px] px-5 pb-8 pt-6 sm:px-6" aria-label="Asset results">
+      <section className="workspace-bezel mx-auto mt-4 w-full max-w-[1600px] px-5 pb-8 pt-6 sm:px-6" aria-label="Asset results">
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
           <div className="flex items-center gap-2 flex-wrap">
             <p aria-live="polite">

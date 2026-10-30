@@ -26,7 +26,7 @@ from ..schemas import (
 )
 
 Workflow = dict[str, dict[str, Any]]
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm", ".mov", ".m4v"}
 TOOL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 MAX_NODES = 2_000
 MAX_INPUTS_PER_NODE = 100

@@ -6,6 +6,7 @@ import { Box, Clock, Flame, Layers, Star } from "lucide-react";
 import { resolveMediaUrl, type PublicModelSummary } from "@/lib/api";
 import RoleBadge from "@/components/RoleBadge";
 import UserAvatar from "@/components/UserAvatar";
+import HoverVideoMedia, { isVideoMediaUrl } from "@/components/HoverVideoMedia";
 
 export interface TensorModelCardData {
   model_id?: string;
@@ -74,6 +75,7 @@ export function TensorModelCard({
   isLink = true,
   className = "",
 }: TensorModelCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const coverUrl = resolveMediaUrl(item.cover_url);
@@ -116,12 +118,10 @@ export function TensorModelCard({
     return raw.split(" ")[0] || "Custom";
   }, [item.base_model]);
 
-  const isVideo = Boolean(
-    coverUrl &&
-      (coverUrl.endsWith(".mp4") ||
-        coverUrl.endsWith(".webm") ||
-        coverUrl.includes("/video/")),
-  );
+  const isVideo = isVideoMediaUrl(coverUrl, {
+    mediaType: "media_type" in item ? item.media_type : undefined,
+    videoFamily: "video_family" in item ? item.video_family : undefined,
+  });
 
   // Real counts only. The API supplies these as optional fields; when a count
   // is absent, unparseable, or zero the chip is omitted rather than estimated.
@@ -158,58 +158,31 @@ export function TensorModelCard({
 
   const cardContent = (
     <>
-      {/* Background Shimmer Placeholder while media decodes */}
-      {coverUrl && !imgError && (
-        <div
-          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-          }`}
-        />
-      )}
-
-      {/* Full-Bleed Media with smooth progressive hydration */}
-      {coverUrl && !imgError ? (
-        isVideo ? (
-          <video
-            src={coverUrl}
-            muted
-            autoPlay
-            loop
-            playsInline
-            onLoadedData={() => setIsLoaded(true)}
-            onError={() => setImgError(true)}
-            className={`asset-zoom-media absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        ) : (
-          <img
-            src={coverUrl}
-            alt={item.title}
-            loading="lazy"
-            onLoad={() => setIsLoaded(true)}
-            onError={() => setImgError(true)}
-            className={`asset-zoom-media absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-out ${
-              isLoaded ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        )
-      ) : (
-        <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
-          <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
-              {["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(item.model_type) ? (
-                <Layers className="h-6 w-6 opacity-80" />
-              ) : (
-                <Box className="h-6 w-6 opacity-80" />
-              )}
+      {/* Full-Bleed Media with Synchronized Hover Video & Zoom */}
+      <HoverVideoMedia
+        src={coverUrl}
+        alt={item.title}
+        isVideo={isVideo}
+        isHovered={isHovered}
+        onLoaded={() => setIsLoaded(true)}
+        onError={() => setImgError(true)}
+        fallback={
+          <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-4 text-center">
+            <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+                {["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(item.model_type) ? (
+                  <Layers className="h-6 w-6 opacity-80" />
+                ) : (
+                  <Box className="h-6 w-6 opacity-80" />
+                )}
+              </div>
+              <span className="line-clamp-2 text-xs font-semibold text-[var(--ink-faint)]">
+                {item.title}
+              </span>
             </div>
-            <span className="line-clamp-2 text-xs font-semibold text-[var(--ink-faint)]">
-              {item.title}
-            </span>
           </div>
-        </div>
-      )}
+        }
+      />
 
       {/* Atmospheric Bottom Gradient Scrim */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0" />
@@ -288,12 +261,14 @@ export function TensorModelCard({
     </>
   );
 
-  const containerClasses = `group relative flex aspect-[3/4] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out ${className}`;
+  const containerClasses = `group relative flex aspect-[3/4] w-full flex-col overflow-hidden rounded-[20px] border border-[var(--line)] bg-[var(--surface-soft)] transition-all duration-300 ease-out hover:border-[var(--line-strong)] hover:shadow-[0_12px_36px_rgba(0,0,0,0.5)] ${className}`;
 
   if (isLink && item.model_id) {
     return (
       <Link
         href={`/models/${item.model_id}`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         style={{ animationDelay: `${index * 30}ms` }}
         className={containerClasses}
       >
@@ -304,6 +279,8 @@ export function TensorModelCard({
 
   return (
     <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{ animationDelay: `${index * 30}ms` }}
       className={containerClasses}
     >

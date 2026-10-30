@@ -25,6 +25,7 @@ import {
 import { api, resolveMediaUrl, type ToolMode, type ToolSummary, type ToolAspectRatio } from "@/lib/api";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import WorkspaceModal from "@/components/WorkspaceModal";
+import HoverVideoMedia, { isVideoMediaUrl } from "@/components/HoverVideoMedia";
 
 const MODE_LABELS: Record<ToolMode, string> = {
   "text-to-image": "Text to Image",
@@ -130,48 +131,41 @@ function TensorToolCard({
   onDelete: (tool: ToolSummary) => void;
   index?: number;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const isVideo = tool.mode.includes("video");
   const thumbUrl = resolveMediaUrl(tool.thumbnail_url);
+  const isVideo = isVideoMediaUrl(thumbUrl, {
+    mode: tool.mode,
+  });
 
   return (
     <Link
       href={`/tools/${tool.tool_id}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{ animationDelay: `${index * 30}ms` }}
-      className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)] transition-all duration-300 ease-out hover:border-[var(--line-strong)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)]"
+      className="group relative flex aspect-[16/10] w-full flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)] transition-all duration-300 ease-out hover:border-[var(--line-strong)] hover:shadow-[0_12px_36px_rgba(0,0,0,0.5)]"
     >
-      {/* Background Shimmer Placeholder while media decodes */}
-      {thumbUrl && !imgError && (
-        <div
-          className={`absolute inset-0 shimmer transition-opacity duration-300 ${
-            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
-          }`}
-        />
-      )}
-
-      {/* Full-Bleed Media with smooth progressive hydration */}
-      {thumbUrl && !imgError ? (
-        <img
-          src={thumbUrl}
-          alt={tool.name}
-          loading="lazy"
-          onLoad={() => setIsLoaded(true)}
-          onError={() => setImgError(true)}
-          className={`asset-zoom-media absolute inset-0 h-full w-full object-cover transition-all duration-500 ease-out group-hover:scale-105 ${
-            isLoaded ? "opacity-100" : "opacity-0"
-          }`}
-        />
-      ) : (
-        <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-6 text-center">
-          <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
-              {isVideo ? <Film className="h-6 w-6 opacity-80" /> : <Sparkles className="h-6 w-6 opacity-80" />}
+      {/* Full-Bleed Media with Synchronized Hover Video & Zoom */}
+      <HoverVideoMedia
+        src={thumbUrl}
+        alt={tool.name}
+        isVideo={isVideo}
+        isHovered={isHovered}
+        onLoaded={() => setIsLoaded(true)}
+        onError={() => setImgError(true)}
+        fallback={
+          <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] p-6 text-center">
+            <div className="flex flex-col items-center gap-2 text-[var(--accent)]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+                {isVideo ? <Film className="h-6 w-6 opacity-80" /> : <Sparkles className="h-6 w-6 opacity-80" />}
+              </div>
+              <span className="line-clamp-2 font-mono text-xs font-semibold text-[var(--ink-faint)]">{tool.name}</span>
             </div>
-            <span className="line-clamp-2 font-mono text-xs font-semibold text-[var(--ink-faint)]">{tool.name}</span>
           </div>
-        </div>
-      )}
+        }
+      />
 
       {/* Top Scrim */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/70 via-black/25 to-transparent z-[5]" />

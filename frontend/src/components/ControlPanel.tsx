@@ -47,6 +47,7 @@ import {
   type VideoSubMode,
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
+import HoverVideoMedia, { isVideoMediaUrl } from "@/components/HoverVideoMedia";
 import { isArchitectureCompatible } from "@/lib/baseModelArchitectures";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import { useAuth } from "@/lib/auth-context";
@@ -3680,6 +3681,10 @@ export default function ControlPanel(props: Props) {
                     const cover = resolveMediaUrl(
                       m.cover_url || pub?.cover_url,
                     );
+                    const isVideo = isVideoMediaUrl(cover, {
+                      mediaType: m.media_type,
+                      videoFamily: m.video_family || pub?.video_family,
+                    });
 
                     return (
                       <button
@@ -3689,32 +3694,23 @@ export default function ControlPanel(props: Props) {
                           onModelChange(key);
                           setModelPickerOpen(false);
                         }}
-                        className={`group relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-[18px] border text-left transition-all duration-300 ease-out hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                        className={`group relative flex aspect-[16/10] w-full flex-col justify-end overflow-hidden rounded-[18px] border text-left transition-all duration-300 ease-out hover:shadow-[0_12px_36px_rgba(0,0,0,0.5)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                           isCurrent
                             ? "border-[var(--accent)] ring-2 ring-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--surface))]"
                             : "border-[var(--line)] bg-[var(--surface-soft)] hover:border-[var(--line-strong)]"
                         }`}
                       >
-                        {/* Full-Bleed Cover Image with shimmer */}
-                        {cover && (
-                          <div className="absolute inset-0 shimmer opacity-50" />
-                        )}
-                        {cover ? (
-                          <img
-                            src={cover}
-                            alt={m.title}
-                            loading="lazy"
-                            className="asset-zoom-media absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
-                            <Box className="h-8 w-8 opacity-60" />
-                          </div>
-                        )}
+                        {/* Full-Bleed Media with Synchronized Hover Video & Zoom */}
+                        <HoverVideoMedia
+                          src={cover}
+                          alt={m.title}
+                          isVideo={isVideo}
+                          fallback={
+                            <div className="absolute inset-0 grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
+                              <Box className="h-8 w-8 opacity-60" />
+                            </div>
+                          }
+                        />
 
                         {/* Atmospheric Bottom Gradient Scrim */}
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--overlay)] via-[var(--media-scrim-strong)] via-50% to-transparent transition-opacity duration-300 ease-out group-hover:opacity-0 motion-reduce:transition-none" />
