@@ -752,6 +752,14 @@ export default function StudioPage() {
     let targetModel = selectedModel;
     let effectiveBase = baseModel;
 
+    if (activeTensorMode === "Video") {
+      const ltxCandidate = modelOptions.find((m) => isLtxSelection(m));
+      if (ltxCandidate) {
+        targetModel = ltxCandidate;
+        effectiveBase = ltxCandidate;
+      }
+    }
+
     const isPrimaryLora = isAdapterModel(targetModel?.model_type);
 
     if (!targetModel) {

@@ -23,7 +23,6 @@ import {
   Minus,
   Plus,
   RefreshCw,
-  RotateCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -1989,21 +1988,6 @@ export default function ControlPanel(props: Props) {
             </button>
           </div>
 
-          {/* Model capability warning: the video graph does not consume the picker */}
-          {!videoModelIsLtx && (
-            <div
-              role="status"
-              className="flex items-start gap-2 rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-2.5 text-[11px] leading-relaxed text-[var(--danger)]"
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>
-                The video pipeline always runs the bundled LTX-Video 2.3 weights and
-                ignores the selected checkpoint. Pick an LTX-family model for the
-                gallery to reflect what actually renders.
-              </span>
-            </div>
-          )}
-
           {/* Mode Pill Notice */}
           <div className={`flex items-center gap-2 rounded-xl p-2.5 border text-xs font-mono transition ${
             videoSubMode === "image-to-video"
@@ -2018,13 +2002,15 @@ export default function ControlPanel(props: Props) {
             </span>
           </div>
 
-          {/* 1. Generation Model Card (labelling only: the graph keeps its bundled LTX weights) */}
+          {/* 1. Generation Model Card (Disabled for Video: locked to bundled workflow) */}
           <GenerationModelCard
-            selectedModel={selectedModel}
-            coverUrl={currentModelCover}
-            baseModelTag={baseModelTag}
-            onOpenPicker={() => setModelPickerOpen(true)}
-            fallbackTitle="No model selected"
+            selectedModel={videoModelIsLtx ? selectedModel : null}
+            coverUrl={videoModelIsLtx ? currentModelCover : null}
+            baseModelTag="LTX-2.3"
+            onOpenPicker={() => {}}
+            fallbackTitle="LTX-Video 2.3 (Bundled Workflow)"
+            disabled={true}
+            disabledBadge="Workflow Default"
           />
 
           {/* 2. LoRA Stack */}
@@ -3122,31 +3108,6 @@ export default function ControlPanel(props: Props) {
         </div>
       ) : (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Section Title: Models */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-[14px] font-bold text-[var(--ink)] tracking-tight">
-              Models
-            </h2>
-            <div className="flex items-center gap-2">
-              {modelsLoading && (
-                <span className="text-[11px] text-[var(--ink-faint)]">
-                  Loading models…
-                </span>
-              )}
-              {onResetDefaults && (
-                <button
-                  type="button"
-                  onClick={onResetDefaults}
-                  title="Reset studio parameters to defaults"
-                  className="flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] transition hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
-                >
-                  <RotateCcw className="h-2.5 w-2.5" />
-                  <span>Reset defaults</span>
-                </button>
-              )}
-            </div>
-          </div>
-
           {modelsError && (
             <div className="flex items-start gap-2 rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-2.5 text-xs text-[var(--danger)]">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
