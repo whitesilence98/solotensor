@@ -148,6 +148,7 @@ from .services.workflow_router import (
     patch_seedvr_upscaler_workflow,
     patch_detailer_workflow,
     patch_video_it2v_workflow,
+    patch_edit_workflow,
 )
 
 logging.basicConfig(
@@ -772,6 +773,17 @@ def _ensure_generation_mode_compatibility(
         if "video" in target_modes or target.get("media_type") == "video":
             raise ModelConflict(
                 f"Model '{target_title}' is a video generation model and cannot be used for {req.mode}."
+            )
+
+    # 5. Edit mode
+    elif req.mode == "edit":
+        if "video" in target_modes or target.get("media_type") == "video":
+            raise ModelConflict(
+                f"Model '{target_title}' is a video generation model. In Edit mode, only image editing models can be used."
+            )
+        if is_lora and ("video" in lora_modes or selected_model.get("media_type") == "video"):
+            raise ModelConflict(
+                f"LoRA '{lora_title}' is a video adapter and cannot be used in Edit mode."
             )
 
 
@@ -1657,7 +1669,7 @@ async def generate(
     user: UserResponse = Depends(get_current_user),
 ) -> GenerationResult:
     """Queue a workflow on ComfyUI, wait for completion, save images to disk."""
-    if req.mode not in ("text-to-image", "image-to-image", "detailer", "upscale", "video"):
+    if req.mode not in ("text-to-image", "image-to-image", "detailer", "upscale", "video", "edit"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported generation mode: {req.mode}",
@@ -1805,6 +1817,11 @@ async def generate(
                         raise ModelConflict(
                             f"LoRA '{adapter_model.get('title')}' is a video adapter and cannot be used in Text-to-Image."
                         )
+                elif req.mode == "edit":
+                    if "video" in adapter_modes or adapter_model.get("media_type") == "video":
+                        raise ModelConflict(
+                            f"LoRA '{adapter_model.get('title')}' is a video adapter and cannot be used in Edit mode."
+                        )
                 raw_filename = adapter_model["filename"]
                 adapter_title = adapter_model.get("title", "")
             elif adapter.lora:
@@ -1891,39 +1908,52 @@ async def generate(
             )
 
         source_image_filename = None
-        if req.mode in ("image-to-image", "detailer", "upscale") or (req.mode == "video" and req.reference_images):
-            if req.mode in ("image-to-image", "detailer", "upscale") and not req.reference_images:
+        raw_source = (
+            getattr(req, "image", None)
+            or getattr(req, "source_image", None)
+            or (req.reference_images[0] if req.reference_images else None)
+        )
+        if req.mode in ("image-to-image", "detailer", "upscale", "edit") or (
+            req.mode == "video" and raw_source
+        ):
+            if req.mode in ("image-to-image", "detailer", "upscale") and not raw_source:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     detail=f"{req.mode} mode requires at least one reference image",
                 )
-            raw_ref = req.reference_images[0]
-            try:
-                if raw_ref.startswith("data:image/"):
-                    _, b64_data = raw_ref.split(",", 1)
-                    source_bytes = base64.b64decode(b64_data)
-                elif "/files/" in raw_ref:
-                    rel_key = raw_ref.split("/files/")[-1].split("?")[0]
-                    source_bytes = await storage.get_image_bytes(rel_key)
-                elif raw_ref.startswith("http://") or raw_ref.startswith("https://"):
-                    rel_key = raw_ref.split("/")[-1].split("?")[0]
-                    source_bytes = await storage.get_image_bytes(rel_key)
-                else:
-                    try:
-                        source_bytes = base64.b64decode(raw_ref)
-                    except Exception:
-                        source_bytes = await storage.get_image_bytes(raw_ref)
+            if raw_source:
+                try:
+                    source_bytes = await _resolve_upload_bytes(storage, raw_source, binary=True)
+                    source_image_filename = await comfy.upload_image(
+                        source_bytes, f"input_{req.mode}_{client_id or uuid.uuid4().hex[:8]}.png"
+                    )
+                except HTTPException:
+                    raise
+                except Exception as exc:
+                    logger.error("Failed to process reference image for %s: %s", req.mode, exc)
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to process reference image: {exc}",
+                    ) from exc
 
-                source_image_filename = await comfy.upload_image(
-                    source_bytes, f"input_{req.mode}_{client_id or uuid.uuid4().hex[:8]}.png"
+        reference_image_filename = None
+        raw_reference = (
+            getattr(req, "reference_image", None)
+            or (req.reference_images[1] if len(req.reference_images) > 1 else None)
+        )
+        if raw_reference:
+            try:
+                reference_bytes = await _resolve_upload_bytes(storage, raw_reference, binary=True)
+                reference_image_filename = await comfy.upload_image(
+                    reference_bytes, f"input_ref_{client_id or uuid.uuid4().hex[:8]}.png"
                 )
             except HTTPException:
                 raise
             except Exception as exc:
-                logger.error("Failed to process reference image for %s: %s", req.mode, exc)
+                logger.error("Failed to process secondary reference image: %s", exc)
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    detail=f"Failed to process reference image: {exc}",
+                    detail=f"Failed to process secondary reference image: {exc}",
                 ) from exc
 
         # Video-only inputs: a closing frame and (optionally) a reference voice.
@@ -2037,6 +2067,32 @@ async def generate(
                 match_color=req.match_color,
                 tiled_vae_decode=req.tiled_vae_decode,
             )
+        elif req.mode == "edit":
+            if not source_image_filename:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Edit mode requires at least one source image to modify",
+                )
+            edit_template = comfy.load_edit_template()
+            if not edit_template:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Edit workflow template not found",
+                )
+            graph = patch_edit_workflow(
+                edit_template,
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                seed=resolved_seed,
+                steps=req.steps if req.steps and req.steps > 0 else 8,
+                image1_filename=source_image_filename,
+                image2_filename=reference_image_filename or source_image_filename,
+                unet_name=resolved_base,
+                clip_name=resolved_clip,
+                clip_type=resolved_clip_type,
+                vae_name=resolved_vae,
+                loras=active_loras,
+            )
         elif is_lora:
             graph = comfy.build_lora_workflow(
                 base_model_type=base_model["model_type"],
@@ -2115,6 +2171,16 @@ async def generate(
             )
         logger.error("ComfyUI error: %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except HTTPException:
+        if credits_deducted:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
+            )
+        raise
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     if final_status != "completed":

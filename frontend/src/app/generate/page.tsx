@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, Layers, X } from "lucide-react";
 import ControlPanel, {
   type ActiveEmbedding,
   type ActiveLora,
@@ -35,7 +35,7 @@ import { STORAGE_KEYS } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
-import { ARCHITECTURE_FAMILIES, videoFamilyOf } from "@/lib/baseModelArchitectures";
+import { ARCHITECTURE_FAMILIES, reconcileLorasForModel, videoFamilyOf } from "@/lib/baseModelArchitectures";
 import { parseGenerateDeepLink, videoSizeForAspect } from "@/lib/generateDeepLink";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
@@ -505,6 +505,12 @@ export default function StudioPage() {
     [activeTensorMode]
   );
 
+  // Phase 3 Dual-Image Studio UI for Edit Mode (secondary reference asset Image 2)
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const clearReferenceImage = useCallback(() => {
+    setReferenceImage(null);
+  }, []);
+
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
@@ -616,6 +622,31 @@ export default function StudioPage() {
   }, [activeTensorMode, modelOptions]);
   const [interrogating, setInterrogating] = useState(false);
   const [interrogateToast, setInterrogateToast] = useState<string | null>(null);
+
+  interface LoraPruneNotice {
+    message: string;
+    onUndo?: () => void;
+  }
+  const [loraPruneNotice, setLoraPruneNotice] = useState<LoraPruneNotice | null>(null);
+  const loraPruneTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showLoraPruneNotice = useCallback((notice: LoraPruneNotice) => {
+    if (loraPruneTimerRef.current) {
+      clearTimeout(loraPruneTimerRef.current);
+    }
+    setLoraPruneNotice(notice);
+    loraPruneTimerRef.current = setTimeout(() => {
+      setLoraPruneNotice(null);
+    }, 6000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (loraPruneTimerRef.current) {
+        clearTimeout(loraPruneTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleInterrogateFile = useCallback(
     async (file: File) => {
@@ -781,6 +812,7 @@ export default function StudioPage() {
       ...prev,
       [activeTensorMode]: defaultState,
     }));
+    clearReferenceImage();
     try {
       localStorage.removeItem(getTabStorageKey(activeTensorMode));
       if (activeTensorMode === "Text2Img") {
@@ -1090,6 +1122,9 @@ export default function StudioPage() {
         !(effectiveMode === "video" && videoSubMode === "text-to-video")
           ? { reference_images: [activeTab.referenceImage] }
           : {}),
+        ...(activeTensorMode === "Edit"
+          ? { reference_image: referenceImage || undefined }
+          : {}),
         ...(effectiveMode === "video"
           ? {
               video_fps: activeTab.videoFps,
@@ -1188,6 +1223,7 @@ export default function StudioPage() {
     modelOptions,
     busy,
     refreshGallery,
+    referenceImage,
   ]);
 
   // Handle incoming query params (gallery "Install and use", asset remix, and
@@ -1439,17 +1475,46 @@ export default function StudioPage() {
           <ControlPanel
             activeMode={activeTensorMode}
             onActiveModeChange={handleTensorModeChange}
-            referenceImage={activeTab.referenceImage}
-            onReferenceImageChange={(img) => updateActiveTab({ referenceImage: img })}
+            targetImage={activeTab.referenceImage}
+            onTargetImageChange={(img) => updateActiveTab({ referenceImage: img })}
+            referenceImage={activeTensorMode === "Edit" ? referenceImage : activeTab.referenceImage}
+            setReferenceImage={setReferenceImage}
+            onReferenceImageChange={(img) => {
+              if (activeTensorMode === "Edit") {
+                setReferenceImage(img);
+              } else {
+                updateActiveTab({ referenceImage: img });
+              }
+            }}
             prompt={activeTab.prompt}
             onPromptChange={(p) => updateActiveTab({ prompt: p })}
             selectedModel={selectedModel}
             modelOptions={modelOptions}
             onModelChange={(key) => {
-              const model = modelOptions.find((item) => galleryModelKey(item) === key) ?? null;
+              const model = modelOptions.find((item) => galleryModelKey(item) === key || item.model_id === key) ?? null;
               const next = model
                 ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
                 : null;
+
+              if (model && selectedModel && activeTab.loras.length > 0) {
+                const reconciliation = reconcileLorasForModel(activeTab.loras, model, selectedModel);
+                if (reconciliation.hasChanged) {
+                  const removedCount = reconciliation.incompatible.length;
+                  const prevLoras = activeTab.loras;
+                  updateActiveTab({
+                    selection: next,
+                    baseSelection: next,
+                    loras: reconciliation.compatible,
+                  });
+                  showLoraPruneNotice({
+                    message: `Removed ${removedCount} incompatible LoRA${removedCount > 1 ? "s" : ""} for ${model.title || model.filename}`,
+                    onUndo: () => updateActiveTab({ loras: prevLoras }),
+                  });
+                  setModelsError(null);
+                  return;
+                }
+              }
+
               updateActiveTab({
                 selection: next,
                 baseSelection: next,
@@ -1459,11 +1524,30 @@ export default function StudioPage() {
             baseModel={baseModel}
             baseModelOptions={baseModelOptions}
             onBaseModelChange={(key) => {
-              const model = baseModelOptions.find((item) => galleryModelKey(item) === key) ?? null;
+              const model = baseModelOptions.find((item) => galleryModelKey(item) === key || item.model_id === key) ?? null;
+              const next = model
+                ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
+                : null;
+
+              if (model && baseModel && activeTab.loras.length > 0) {
+                const reconciliation = reconcileLorasForModel(activeTab.loras, model, baseModel);
+                if (reconciliation.hasChanged) {
+                  const removedCount = reconciliation.incompatible.length;
+                  const prevLoras = activeTab.loras;
+                  updateActiveTab({
+                    baseSelection: next,
+                    loras: reconciliation.compatible,
+                  });
+                  showLoraPruneNotice({
+                    message: `Removed ${removedCount} incompatible LoRA${removedCount > 1 ? "s" : ""} for ${model.title || model.filename}`,
+                    onUndo: () => updateActiveTab({ loras: prevLoras }),
+                  });
+                  return;
+                }
+              }
+
               updateActiveTab({
-                baseSelection: model
-                  ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
-                  : null,
+                baseSelection: next,
               });
             }}
             loras={activeTab.loras}
@@ -1582,6 +1666,11 @@ export default function StudioPage() {
             img2imgSubTab={activeTab.img2imgSubTab}
             stage2Upscale={activeTab.stage2Upscale}
             videoSubMode={activeTab.videoSubMode ?? "text-to-video"}
+            positivePlaceholder={
+              activeTensorMode === "Edit"
+                ? "Describe your edit (e.g. Change the outfit in Image 1 to match the dress in Image 2...)"
+                : undefined
+            }
           />
           <CanvasPreview
           prompt={activeTab.prompt}
@@ -1611,6 +1700,45 @@ export default function StudioPage() {
           videoFps={activeTab.videoFps}
           />
         </div>
+
+        {/* LoRA Architecture Compatibility Notice */}
+        {loraPruneNotice && (
+          <div
+            role="status"
+            className="fixed bottom-[calc(var(--mobile-nav-height)+1rem)] md:bottom-6 right-6 z-50 flex max-w-md items-center justify-between gap-3 rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] px-4 py-3 text-xs shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-400">
+                <Layers className="h-3.5 w-3.5" />
+              </span>
+              <p className="text-[var(--ink)] truncate leading-tight font-medium">
+                {loraPruneNotice.message}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {loraPruneNotice.onUndo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    loraPruneNotice.onUndo?.();
+                    setLoraPruneNotice(null);
+                  }}
+                  className="rounded-lg bg-[var(--accent)] px-2.5 py-1 font-mono text-[11px] font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition-colors active:scale-95"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setLoraPruneNotice(null)}
+                className="text-[var(--ink-faint)] hover:text-[var(--ink)] transition-colors p-1"
+                aria-label="Dismiss notice"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Deep-link notice, fixed so opening a link never shifts the studio.
             Sits clear of the mobile bottom navigation. */}

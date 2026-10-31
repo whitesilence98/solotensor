@@ -15,6 +15,8 @@ const VIDEO_POSITIVE_PLACEHOLDER =
   "Describe scene motion, camera movement, actions, and lighting… (e.g. A slow continuous tracking shot through a market, 35mm film)";
 const VIDEO_NEGATIVE_PLACEHOLDER =
   "worst quality, low quality, jerky camera, jittery frames, blurred subjects…";
+const EDIT_POSITIVE_PLACEHOLDER =
+  "Describe your edit (e.g. Change the outfit in Image 1 to match the dress in Image 2...)";
 
 export interface StudioPromptBarProps {
   idPrefix?: string;
@@ -169,7 +171,7 @@ export default function StudioPromptBar({
           onChange={(e) => onPromptChange(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={2}
-          placeholder={positivePlaceholder ?? (isVideoMode ? VIDEO_POSITIVE_PLACEHOLDER : DEFAULT_POSITIVE_PLACEHOLDER)}
+          placeholder={positivePlaceholder ?? (isVideoMode ? VIDEO_POSITIVE_PLACEHOLDER : activeMode === "Edit" ? EDIT_POSITIVE_PLACEHOLDER : DEFAULT_POSITIVE_PLACEHOLDER)}
           disabled={busy}
           className="workspace-field w-full resize-none rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 sm:p-3 text-xs leading-relaxed text-[var(--ink)] placeholder-[var(--ink-faint)] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50 min-h-[58px]"
         />

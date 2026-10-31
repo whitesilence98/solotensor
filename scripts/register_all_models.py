@@ -38,6 +38,10 @@ DEFS_ROOT_BACKEND.mkdir(parents=True, exist_ok=True)
 
 NOW = datetime.now(timezone.utc).isoformat()
 
+def normalize_rel_filename(fn: str) -> str:
+    """Normalize path with forward slashes and stripped leading/trailing slashes."""
+    return fn.replace("\\", "/").strip().lstrip("/")
+
 # Existing IDs mapping to preserve existing references
 EXISTING_DEFS_BY_FILENAME = {}
 for folder in (DEFS_ROOT_WORKSPACE, DEFS_ROOT_BACKEND):
@@ -49,9 +53,12 @@ for folder in (DEFS_ROOT_WORKSPACE, DEFS_ROOT_BACKEND):
                     for fl in v.get("files", []):
                         fn = fl.get("filename")
                         if fn:
-                            clean_fn = fn.replace("\\", "/")
+                            clean_fn = normalize_rel_filename(fn)
+                            base_name = Path(clean_fn).name
                             EXISTING_DEFS_BY_FILENAME[clean_fn] = data
-                            EXISTING_DEFS_BY_FILENAME[Path(fn).name] = data
+                            EXISTING_DEFS_BY_FILENAME[clean_fn.lower()] = data
+                            EXISTING_DEFS_BY_FILENAME[base_name] = data
+                            EXISTING_DEFS_BY_FILENAME[base_name.lower()] = data
             except Exception:
                 pass
 
@@ -140,7 +147,8 @@ def build_model_record(
     tags: list[str] | None = None,
     supported_modes: list[str] | None = None,
 ) -> dict:
-    norm_fn = rel_filename.replace('\\', '/')
+    norm_fn = normalize_rel_filename(rel_filename)
+    base_name = Path(norm_fn).name
     lookup_key = f"{file_category}/{norm_fn}"
     existing_model_id = KNOWN_MODEL_IDS.get(lookup_key)
 
@@ -155,7 +163,12 @@ def build_model_record(
             except Exception:
                 pass
     if not existing_record:
-        existing_record = EXISTING_DEFS_BY_FILENAME.get(norm_fn) or EXISTING_DEFS_BY_FILENAME.get(Path(norm_fn).name)
+        existing_record = (
+            EXISTING_DEFS_BY_FILENAME.get(norm_fn)
+            or EXISTING_DEFS_BY_FILENAME.get(norm_fn.lower())
+            or EXISTING_DEFS_BY_FILENAME.get(base_name)
+            or EXISTING_DEFS_BY_FILENAME.get(base_name.lower())
+        )
 
     if existing_record:
         model_id = existing_record["model_id"]
@@ -269,7 +282,7 @@ def build_model_record(
                 "files": [
                     {
                         "file_id": file_id,
-                        "filename": rel_filename.replace("\\", "/"),
+                        "filename": norm_fn,
                         "size": file_size,
                         "sha256": sha256,
                         "precision": precision,
@@ -287,6 +300,12 @@ def build_model_record(
     content = json.dumps(record, ensure_ascii=False, indent=2)
     (DEFS_ROOT_WORKSPACE / f"{model_id}.json").write_text(content, encoding="utf-8")
     (DEFS_ROOT_BACKEND / f"{model_id}.json").write_text(content, encoding="utf-8")
+
+    # Update in-memory lookup cache to prevent duplicate UUID creation in same run
+    EXISTING_DEFS_BY_FILENAME[norm_fn] = record
+    EXISTING_DEFS_BY_FILENAME[norm_fn.lower()] = record
+    EXISTING_DEFS_BY_FILENAME[base_name] = record
+    EXISTING_DEFS_BY_FILENAME[base_name.lower()] = record
 
     # Sync to DB
     try:

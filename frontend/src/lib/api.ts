@@ -217,7 +217,7 @@ export interface DetailerConfigPayload {
   items: DetailerItemPayload[];
 }
 
-export interface GeneratePayload {
+export interface GenerationRequest {
   model_id: string;
   version_id: string;
   file_id: string;
@@ -240,6 +240,8 @@ export interface GeneratePayload {
   scheduler?: string;
   client_id?: string;
   reference_images?: string[];
+  reference_image?: string;
+  save_comparison_reel?: boolean;
   lora_adapters?: LoraAdapterPayload[];
   is_private?: boolean;
   enable_detailer?: boolean;
@@ -262,6 +264,8 @@ export interface GeneratePayload {
   match_color?: boolean;
   tiled_vae_decode?: boolean;
 }
+
+export type GeneratePayload = GenerationRequest;
 
 export interface ClipOptions {
   encoders: string[];

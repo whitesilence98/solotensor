@@ -1,4 +1,4 @@
-from .workflow_router import patch_full_t2i_workflow, patch_base_i2i_workflow
+from .workflow_router import patch_full_t2i_workflow, patch_base_i2i_workflow, patch_edit_workflow
 """Async HTTP + WebSocket client for a headless ComfyUI instance.
 
 Queues API-format workflows, streams execution progress, and fetches the
@@ -221,6 +221,18 @@ class ComfyClient:
         """Load workflow_generate_it2v.json template from workflows or test fixtures."""
         for base in [Path(__file__).resolve().parents[2] / "workflows", Path(__file__).resolve().parents[2] / "tests" / "fixtures"]:
             path = base / "workflow_generate_it2v.json"
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data:
+                    return data
+            except (OSError, json.JSONDecodeError):
+                continue
+        return None
+
+    def load_edit_template(self) -> Optional[dict[str, Any]]:
+        """Load workflow_generate_edit.json template from workflows or test fixtures."""
+        for base in [Path(__file__).resolve().parents[2] / "workflows", Path(__file__).resolve().parents[2] / "tests" / "fixtures"]:
+            path = base / "workflow_generate_edit.json"
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if isinstance(data, dict) and data:

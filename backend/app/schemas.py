@@ -668,7 +668,7 @@ class GenerateRequest(BaseModel):
     base_model_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_version_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
     base_file_id: str | None = Field(None, pattern=r"^[0-9a-f]{32}$")
-    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale", "video"] = "text-to-image"
+    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale", "video", "edit"] = "text-to-image"
     video_mode: Literal["text-to-video", "image-to-video"] | None = Field(
         None,
         description=(
@@ -691,7 +691,17 @@ class GenerateRequest(BaseModel):
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
     client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
+    image: Optional[str] = Field(None, description="Primary source image (data-URI, /files/ URL, or base64) for image-to-image or edit")
+    source_image: Optional[str] = Field(None, description="Primary source image alias (data-URI, /files/ URL, or base64)")
     reference_images: list[str] = Field(default_factory=list)
+    reference_image: Optional[str] = Field(
+        default=None,
+        description="Optional secondary reference image for style, outfit, or object transfer in edit mode",
+    )
+    save_comparison_reel: bool = Field(
+        default=True,
+        description="Whether to generate and save a 3-panel comparison reel in edit mode",
+    )
     lora_adapters: list[LoraAdapterSelection] = Field(default_factory=list)
     is_private: bool = Field(False, description="If true, image is confidential and excluded from public auto-tagging/feeds")
     enable_detailer: bool = Field(False, description="Enable secondary face & image detailer pass")
@@ -821,6 +831,9 @@ class GenerateRequest(BaseModel):
         if len(value) > 5:
             raise ValueError("At most 5 reference images are allowed")
         return value
+
+
+GenerationRequest = GenerateRequest
 
 
 class GalleryItem(BaseModel):

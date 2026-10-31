@@ -525,6 +525,93 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertIn("save_detailer_output", ckpt_lora)
         self.assertEqual(ckpt_lora["679:665"]["inputs"]["seed"], 56789)
 
+    def test_load_edit_template(self) -> None:
+        template = self.client.load_edit_template()
+        self.assertIsNotNone(template)
+        self.assertIsInstance(template, dict)
+        self.assertIn("134", template)
+        self.assertIn("181", template)
+        self.assertIn("206", template)
+        self.assertIn("585", template)
+        self.assertIn("205", template)
+        # Verify hardcoded local temp paths in Node 205 are cleaned
+        comparer_images = template["205"]["inputs"]["rgthree_comparer"].get("images", [])
+        self.assertEqual(comparer_images, [])
+        self.assertEqual(template["134"]["inputs"]["image"], "input1.png")
+        self.assertEqual(template["181"]["inputs"]["image"], "input2.png")
+        self.assertEqual(template["139"]["inputs"]["value"], 0)
+        self.assertEqual(template["589"]["inputs"]["text"], "")
+        self.assertEqual(template["589"]["inputs"]["loras"]["__value__"], [])
+
+    def test_patch_edit_workflow(self) -> None:
+        from app.services.workflow_router import patch_edit_workflow
+
+        template = self.client.load_edit_template()
+        self.assertIsNotNone(template)
+        original = json.loads(json.dumps(template))
+
+        patched = patch_edit_workflow(
+            template,
+            prompt="change the dress to red velvet",
+            negative_prompt="blurry, artifacts, lowres",
+            seed=4242,
+            steps=12,
+            image1_filename="model_pose.png",
+            image2_filename="reference_dress.png",
+            unet_name="custom\\qwen_edit_fp8.safetensors",
+            clip_name="custom_clip_vl.safetensors",
+            clip_type="qwen_image",
+            vae_name="custom_vae.safetensors",
+            loras=[
+                {"lora": "detail_booster.safetensors", "strength": 0.8, "on": True},
+                {"lora": "inactive_style.safetensors", "strength": 0.5, "on": False},
+            ],
+        )
+
+        self.assertEqual(patched["134"]["inputs"]["image"], "model_pose.png")
+        self.assertEqual(patched["181"]["inputs"]["image"], "reference_dress.png")
+        self.assertEqual(patched["206"]["inputs"]["prompt"], "change the dress to red velvet")
+        self.assertEqual(patched["585"]["inputs"]["prompt"], "blurry, artifacts, lowres")
+        self.assertEqual(patched["139"]["inputs"]["value"], 4242)
+        self.assertEqual(patched["140"]["inputs"]["value"], 12)
+        self.assertEqual(patched["611:593"]["inputs"]["unet_name"], "custom\\qwen_edit_fp8.safetensors")
+        self.assertEqual(patched["611:592"]["inputs"]["clip_name"], "custom_clip_vl.safetensors")
+        self.assertEqual(patched["611:592"]["inputs"]["type"], "qwen_image")
+        self.assertEqual(patched["611:591"]["inputs"]["vae_name"], "custom_vae.safetensors")
+        self.assertIn("<lora:detail_booster.safetensors:0.8>", patched["589"]["inputs"]["text"])
+        self.assertNotIn("inactive_style.safetensors", patched["589"]["inputs"]["text"])
+        self.assertEqual(len(patched["589"]["inputs"]["loras"]["__value__"]), 2)
+        self.assertTrue(patched["589"]["inputs"]["loras"]["__value__"][0]["active"])
+        self.assertFalse(patched["589"]["inputs"]["loras"]["__value__"][1]["active"])
+        self.assertEqual(template, original)
+
+    def test_patch_edit_workflow_image2_fallback_and_defaults(self) -> None:
+        from app.services.workflow_router import patch_edit_workflow
+
+        template = self.client.load_edit_template()
+        self.assertIsNotNone(template)
+
+        # image2_filename is None, so Node 181 should fall back to image1_filename
+        patched = patch_edit_workflow(
+            template,
+            prompt="make it anime",
+            image1_filename="input_single.png",
+            image2_filename=None,
+        )
+
+        self.assertEqual(patched["134"]["inputs"]["image"], "input_single.png")
+        self.assertEqual(patched["181"]["inputs"]["image"], "input_single.png")
+        self.assertEqual(patched["206"]["inputs"]["prompt"], "make it anime")
+        self.assertEqual(patched["585"]["inputs"]["prompt"], "")
+        self.assertEqual(patched["139"]["inputs"]["value"], 0)
+        self.assertEqual(patched["140"]["inputs"]["value"], 8)
+        # Unspecified model loaders remain as template defaults
+        self.assertEqual(patched["611:593"]["inputs"]["unet_name"], template["611:593"]["inputs"]["unet_name"])
+        self.assertEqual(patched["611:592"]["inputs"]["clip_name"], template["611:592"]["inputs"]["clip_name"])
+        self.assertEqual(patched["611:591"]["inputs"]["vae_name"], template["611:591"]["inputs"]["vae_name"])
+        # Node 589 untouched when loras is None
+        self.assertEqual(patched["589"]["inputs"]["text"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

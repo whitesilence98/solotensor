@@ -812,3 +812,97 @@ def patch_video_it2v_workflow(
         graph = {key: value for key, value in graph.items() if key in visited}
 
     return graph
+
+
+def patch_edit_workflow(
+    template: dict[str, Any],
+    *,
+    prompt: str,
+    negative_prompt: str = "",
+    seed: Optional[int] = None,
+    steps: int = 8,
+    image1_filename: str,
+    image2_filename: Optional[str] = None,
+    unet_name: Optional[str] = None,
+    clip_name: Optional[str] = None,
+    clip_type: Optional[str] = None,
+    vae_name: Optional[str] = None,
+    loras: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Patch the Qwen Image Edit workflow (workflow_generate_edit.json)."""
+    graph = json.loads(json.dumps(template))
+
+    # 1. Image 1 (node 134)
+    if "134" in graph:
+        graph["134"].setdefault("inputs", {})["image"] = str(image1_filename)
+
+    # 2. Image 2 (node 181: if image2_filename is provided use it, otherwise fallback to image1_filename)
+    if "181" in graph:
+        eff_image2 = str(image2_filename if image2_filename else image1_filename)
+        graph["181"].setdefault("inputs", {})["image"] = eff_image2
+
+    # 3. Positive prompt (node 206)
+    if "206" in graph:
+        graph["206"].setdefault("inputs", {})["prompt"] = str(prompt)
+
+    # 4. Negative prompt (node 585)
+    if "585" in graph:
+        graph["585"].setdefault("inputs", {})["prompt"] = str(negative_prompt)
+
+    # 5. Seed (node 139)
+    final_seed = int(seed if seed is not None and seed >= 0 else 0)
+    if "139" in graph:
+        graph["139"].setdefault("inputs", {})["value"] = final_seed
+
+    # 6. Steps (node 140)
+    if "140" in graph:
+        graph["140"].setdefault("inputs", {})["value"] = int(steps)
+
+    # 7. UNet model (node 611:593 if provided)
+    if unet_name and "611:593" in graph:
+        graph["611:593"].setdefault("inputs", {})["unet_name"] = str(unet_name)
+
+    # 8. CLIP model & type (node 611:592 if provided)
+    if "611:592" in graph:
+        inputs = graph["611:592"].setdefault("inputs", {})
+        if clip_name:
+            inputs["clip_name"] = str(clip_name)
+        if clip_type:
+            inputs["type"] = str(clip_type)
+
+    # 9. VAE model (node 611:591 if provided)
+    if vae_name and "611:591" in graph:
+        graph["611:591"].setdefault("inputs", {})["vae_name"] = str(vae_name)
+
+    # 10. LoRA loader (node 589 if loras provided)
+    if loras is not None and "589" in graph:
+        inputs = graph["589"].setdefault("inputs", {})
+        inputs.pop("__lm_autocomplete_meta_text", None)
+        lora_entries: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        for item in loras:
+            is_active = bool(item.get("on", True) and item.get("active", True))
+            lora_name = str(item.get("lora") or item.get("name") or "")
+            if not lora_name:
+                continue
+            strength = float(item.get("strength_model", item.get("strength", 1.0)))
+            clip_strength = float(item.get("strength_clip", item.get("strength", 1.0)))
+            lora_entries.append({
+                "name": lora_name,
+                "strength": strength,
+                "clipStrength": clip_strength,
+                "active": is_active,
+                "expanded": False,
+                "selected": False,
+                "locked": False,
+            })
+            if is_active:
+                if strength == clip_strength:
+                    text_parts.append(f"<lora:{lora_name}:{strength}>")
+                else:
+                    text_parts.append(f"<lora:{lora_name}:{strength}:{clip_strength}>")
+        inputs["text"] = ", ".join(text_parts)
+        inputs["loras"] = {"__value__": lora_entries}
+
+    return graph
+

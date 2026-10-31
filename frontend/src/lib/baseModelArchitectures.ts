@@ -434,11 +434,59 @@ export function isArchitectureCompatible(baseArch?: string | null, adapterArch?:
   const a = adapterArch.trim().toLowerCase();
   if (!b || !a) return true;
   if (b === a) return true;
+  if (b === "universal" || a === "universal") return true;
   for (const members of Object.values(ARCHITECTURE_FAMILIES)) {
     const bMatch = members.some((m) => b === m || (b.length >= 3 && m.includes(b)) || (m.length >= 3 && b.includes(m)));
     const aMatch = members.some((m) => a === m || (a.length >= 3 && m.includes(a)) || (m.length >= 3 && a.includes(m)));
     if (bMatch && aMatch) return true;
   }
   return false;
+}
+
+export interface LoraArchitectureCheck {
+  id?: string;
+  baseModel?: string | null;
+}
+
+export interface LoraReconciliationResult<T extends LoraArchitectureCheck = LoraArchitectureCheck> {
+  compatible: T[];
+  incompatible: T[];
+  hasChanged: boolean;
+  fromFamily?: string;
+  toFamily?: string;
+}
+
+/**
+ * Reconciles an active LoRA stack against a target base model, partitioning
+ * adapters into compatible vs incompatible based on architecture families.
+ */
+export function reconcileLorasForModel<T extends LoraArchitectureCheck>(
+  loras: T[],
+  newModel: { base_model?: string | null; title?: string | null } | null,
+  currentModel?: { base_model?: string | null; title?: string | null } | null
+): LoraReconciliationResult<T> {
+  if (!newModel || loras.length === 0) {
+    return { compatible: loras, incompatible: [], hasChanged: false };
+  }
+
+  const newModelArch = newModel.base_model || newModel.title || "";
+  const compatible: T[] = [];
+  const incompatible: T[] = [];
+
+  for (const lora of loras) {
+    if (isArchitectureCompatible(newModelArch, lora.baseModel)) {
+      compatible.push(lora);
+    } else {
+      incompatible.push(lora);
+    }
+  }
+
+  return {
+    compatible,
+    incompatible,
+    hasChanged: incompatible.length > 0,
+    fromFamily: currentModel?.base_model || currentModel?.title || undefined,
+    toFamily: newModel.base_model || newModel.title || undefined,
+  };
 }
 

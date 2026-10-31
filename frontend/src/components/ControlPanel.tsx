@@ -251,7 +251,10 @@ interface Props {
   activeMode?: TensorMode;
   onActiveModeChange?: (mode: TensorMode) => void;
   referenceImage?: string | null;
+  setReferenceImage?: (val: string | null) => void;
   onReferenceImageChange?: (image: string | null) => void;
+  targetImage?: string | null;
+  onTargetImageChange?: (image: string | null) => void;
   maskImage?: string | null;
   onMaskImageChange?: (mask: string | null) => void;
   maskBlur?: number;
@@ -497,8 +500,131 @@ export default function ControlPanel(props: Props) {
   const [isDragOver, setIsDragOver] = useState(false);
   const img2imgFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Dual-Image Studio UI for Edit Mode:
+  // Target Canvas is Image 1 (targetImage or fallback), Reference Asset is Image 2 (referenceImage)
+  const targetCanvasImage = activeMode === "Edit"
+    ? (props.targetImage !== undefined ? props.targetImage : (props.setReferenceImage ? null : props.referenceImage ?? null))
+    : (props.targetImage ?? props.referenceImage ?? null);
+
+  const secondaryReferenceAsset = activeMode === "Edit"
+    ? (props.referenceImage ?? null)
+    : null;
+
+  const [targetImageFile, setTargetImageFile] = useState<File | null>(null);
+  const [refAssetImageFile, setRefAssetImageFile] = useState<File | null>(null);
+  const editTargetFileInputRef = useRef<HTMLInputElement>(null);
+  const editRefAssetFileInputRef = useRef<HTMLInputElement>(null);
+  const [isTargetDragOver, setIsTargetDragOver] = useState(false);
+  const [isRefAssetDragOver, setIsRefAssetDragOver] = useState(false);
+
+  const handleTargetFileUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setTargetImageFile(file);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      if (props.onTargetImageChange) {
+        props.onTargetImageChange(dataUrl);
+      } else if (props.onReferenceImageChange) {
+        props.onReferenceImageChange(dataUrl);
+      }
+    } catch (err) {
+      console.error("Failed to read target canvas file:", err);
+    }
+  };
+
+  const handleTargetDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsTargetDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      void handleTargetFileUpload(files[0]);
+    }
+  };
+
+  const handleTargetPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleTargetFileUpload(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleClearTargetImage = () => {
+    setTargetImageFile(null);
+    if (editTargetFileInputRef.current) {
+      editTargetFileInputRef.current.value = "";
+    }
+    if (props.onTargetImageChange) {
+      props.onTargetImageChange(null);
+    } else if (props.onReferenceImageChange) {
+      props.onReferenceImageChange(null);
+    }
+  };
+
+  const handleRefAssetFileUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setRefAssetImageFile(file);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      if (props.setReferenceImage) {
+        props.setReferenceImage(dataUrl);
+      } else if (props.onReferenceImageChange) {
+        props.onReferenceImageChange(dataUrl);
+      }
+    } catch (err) {
+      console.error("Failed to read reference asset file:", err);
+    }
+  };
+
+  const handleRefAssetDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsRefAssetDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      void handleRefAssetFileUpload(files[0]);
+    }
+  };
+
+  const handleRefAssetPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleRefAssetFileUpload(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleClearRefAsset = () => {
+    setRefAssetImageFile(null);
+    if (editRefAssetFileInputRef.current) {
+      editRefAssetFileInputRef.current.value = "";
+    }
+    props.setReferenceImage?.(null);
+  };
+
   useEffect(() => {
-    if (!props.referenceImage) {
+    const activeMeasureImage = activeMode === "Edit"
+      ? targetCanvasImage
+      : (props.targetImage ?? props.referenceImage ?? null);
+
+    if (!activeMeasureImage) {
       setNaturalDimensions(null);
       return;
     }
@@ -509,8 +635,8 @@ export default function ControlPanel(props: Props) {
         height: img.naturalHeight,
       });
     };
-    img.src = props.referenceImage;
-  }, [props.referenceImage]);
+    img.src = activeMeasureImage;
+  }, [targetCanvasImage, props.referenceImage, props.targetImage, activeMode]);
 
   const handleMatchDimensions = () => {
     if (!naturalDimensions) return;
@@ -686,11 +812,20 @@ export default function ControlPanel(props: Props) {
   };
 
   const handleAutoPromptFromReference = async () => {
-    if (sourceImageFile) {
-      await executeInterrogation(sourceImageFile, sourceImageFile.name);
-    } else if (props.referenceImage) {
-      const blob = dataUrlToBlob(props.referenceImage);
-      await executeInterrogation(blob, "reference_image.png");
+    if (activeMode === "Edit") {
+      if (targetImageFile) {
+        await executeInterrogation(targetImageFile, targetImageFile.name);
+      } else if (targetCanvasImage) {
+        const blob = dataUrlToBlob(targetCanvasImage);
+        await executeInterrogation(blob, "target_canvas.png");
+      }
+    } else {
+      if (sourceImageFile) {
+        await executeInterrogation(sourceImageFile, sourceImageFile.name);
+      } else if (props.referenceImage) {
+        const blob = dataUrlToBlob(props.referenceImage);
+        await executeInterrogation(blob, "reference_image.png");
+      }
     }
   };
   const isValidDimension = (value: string) => {
@@ -1054,6 +1189,29 @@ export default function ControlPanel(props: Props) {
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleLastFrameFileUpload(file);
+          e.target.value = "";
+        }}
+      />
+      {/* Edit-mode dual-image inputs */}
+      <input
+        ref={editTargetFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleTargetFileUpload(file);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={editRefAssetFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleRefAssetFileUpload(file);
           e.target.value = "";
         }}
       />
@@ -1475,6 +1633,7 @@ export default function ControlPanel(props: Props) {
                 loras={loras}
                 onLorasChange={onLorasChange}
                 onOpenPicker={() => setLoraPickerOpen(true)}
+                selectedModel={selectedModel}
                 modelOptions={modelOptions}
                 publicModels={publicModels}
                 publicModelMap={publicModelMap}
@@ -1590,14 +1749,14 @@ export default function ControlPanel(props: Props) {
             </span>
           </div>
 
-          {/* 1. Source Image Input & Preview Card */}
+          {/* 1. Primary Dropzone: Target Canvas (Image 1) - Image to modify */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                  SOURCE IMAGE
+                  Target Canvas (Image 1) - Image to modify
                 </span>
-                {props.referenceImage ? (
+                {targetCanvasImage ? (
                   <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
                     LOADED
                   </span>
@@ -1607,15 +1766,12 @@ export default function ControlPanel(props: Props) {
                   </span>
                 )}
               </div>
-              {props.referenceImage && (
+              {targetCanvasImage && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSourceImageFile(null);
-                    props.onReferenceImageChange?.(null);
-                  }}
+                  onClick={handleClearTargetImage}
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
-                  title="Remove source image"
+                  title="Remove target canvas"
                 >
                   <Trash2 className="h-3 w-3" />
                   <span>Clear</span>
@@ -1623,17 +1779,30 @@ export default function ControlPanel(props: Props) {
               )}
             </div>
 
-            {!props.referenceImage ? (
+            {!targetCanvasImage ? (
               <div
+                tabIndex={0}
                 onDragOver={(e) => {
                   e.preventDefault();
-                  setIsDragOver(true);
+                  e.stopPropagation();
+                  setIsTargetDragOver(true);
                 }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleImg2ImgDrop}
-                onClick={() => img2imgFileInputRef.current?.click()}
-                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
-                  isDragOver
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsTargetDragOver(false);
+                }}
+                onDrop={handleTargetDrop}
+                onPaste={handleTargetPaste}
+                onClick={() => editTargetFileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    editTargetFileInputRef.current?.click();
+                  }
+                }}
+                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                  isTargetDragOver
                     ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
                     : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
                 }`}
@@ -1642,21 +1811,25 @@ export default function ControlPanel(props: Props) {
                   <UploadCloud className="h-5 w-5" />
                 </div>
                 <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop image to inpaint or{" "}
+                  Drop image to modify or{" "}
                   <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
                     browse
                   </span>
                 </p>
                 <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
-                  PNG, JPG, WEBP · UP TO 25MB
+                  Target Canvas (Image 1) · PNG, JPG, WEBP · Paste or Drop
                 </p>
               </div>
             ) : (
-              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5">
+              <div
+                tabIndex={0}
+                onPaste={handleTargetPaste}
+                className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+              >
                 <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-48 w-full items-center justify-center group">
                   <img
-                    src={props.referenceImage}
-                    alt="Inpaint Source"
+                    src={targetCanvasImage}
+                    alt="Target Canvas (Image 1)"
                     className="h-full w-full object-contain rounded-lg"
                   />
                   {naturalDimensions && (
@@ -1686,7 +1859,7 @@ export default function ControlPanel(props: Props) {
                     type="button"
                     onClick={handleAutoPromptFromReference}
                     disabled={interrogating || busy}
-                    title="Extract generation prompt, seed, cfg, steps & size from reference image metadata, or auto-tag with WD14"
+                    title="Extract generation prompt, seed, cfg, steps & size from target canvas metadata, or auto-tag with WD14"
                     className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--accent)]/30 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-[var(--accent)]/60 text-[11px] font-bold text-[var(--accent)] transition disabled:opacity-50"
                   >
                     {interrogating ? (
@@ -1708,12 +1881,123 @@ export default function ControlPanel(props: Props) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => img2imgFileInputRef.current?.click()}
+                    onClick={() => editTargetFileInputRef.current?.click()}
                     className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
-                    title="Replace image"
+                    title="Replace target canvas"
                   >
                     <RefreshCw className="h-3 w-3" />
                     <span>Replace</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Secondary Dropzone: Reference Asset (Image 2 - Optional) - Style, outfit, or object reference */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+                  Reference Asset (Image 2 - Optional) - Style, outfit, or object reference
+                </span>
+                {secondaryReferenceAsset ? (
+                  <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+                    LOADED
+                  </span>
+                ) : (
+                  <span className="rounded-xl bg-[var(--surface-soft)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--ink-faint)] border border-[var(--line)]">
+                    OPTIONAL
+                  </span>
+                )}
+              </div>
+              {secondaryReferenceAsset && (
+                <button
+                  type="button"
+                  onClick={handleClearRefAsset}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
+                  title="Remove reference asset"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
+
+            {!secondaryReferenceAsset ? (
+              <div
+                tabIndex={0}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsRefAssetDragOver(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsRefAssetDragOver(false);
+                }}
+                onDrop={handleRefAssetDrop}
+                onPaste={handleRefAssetPaste}
+                onClick={() => editRefAssetFileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    editRefAssetFileInputRef.current?.click();
+                  }
+                }}
+                className={`group relative flex h-36 flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                  isRefAssetDragOver
+                    ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
+                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
+                }`}
+              >
+                <div className="grid h-8 w-8 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2 transition-transform duration-200 group-hover:scale-110">
+                  <UploadCloud className="h-4 w-4" />
+                </div>
+                <p className="text-xs font-semibold text-[var(--ink)]">
+                  Drop reference image here or{" "}
+                  <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
+                    browse
+                  </span>
+                </p>
+                <p className="mt-1 font-mono text-[9px] text-[var(--ink-faint)] uppercase tracking-wider">
+                  Style, outfit, or object reference · Paste or Drop
+                </p>
+              </div>
+            ) : (
+              <div
+                tabIndex={0}
+                onPaste={handleRefAssetPaste}
+                className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+              >
+                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-36 w-full items-center justify-center group">
+                  <img
+                    src={secondaryReferenceAsset}
+                    alt="Reference Asset (Image 2)"
+                    className="h-full w-full object-contain rounded-lg"
+                  />
+                  <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[9px] text-[var(--ink)] border border-[var(--line)]">
+                    IMAGE 2 · REFERENCE
+                  </span>
+                </div>
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => editRefAssetFileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
+                    title="Replace reference image"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Replace</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearRefAsset}
+                    className="flex items-center justify-center gap-1 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--danger)]/10 hover:border-[var(--danger)]/40 text-[11px] font-medium text-[var(--danger)] transition"
+                    title="Remove reference image"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    <span>Clear</span>
                   </button>
                 </div>
               </div>
@@ -1939,6 +2223,7 @@ export default function ControlPanel(props: Props) {
             loras={loras}
             onLorasChange={onLorasChange}
             onOpenPicker={() => setLoraPickerOpen(true)}
+            selectedModel={selectedModel}
             modelOptions={modelOptions}
             publicModels={publicModels}
             publicModelMap={publicModelMap}
@@ -2034,6 +2319,7 @@ export default function ControlPanel(props: Props) {
             loras={loras}
             onLorasChange={onLorasChange}
             onOpenPicker={() => setLoraPickerOpen(true)}
+            selectedModel={selectedModel}
             modelOptions={modelOptions}
             publicModels={publicModels}
             publicModelMap={publicModelMap}
@@ -3280,6 +3566,7 @@ export default function ControlPanel(props: Props) {
             loras={loras}
             onLorasChange={onLorasChange}
             onOpenPicker={() => setLoraPickerOpen(true)}
+            selectedModel={selectedModel}
             modelOptions={modelOptions}
             publicModels={publicModels}
             publicModelMap={publicModelMap}

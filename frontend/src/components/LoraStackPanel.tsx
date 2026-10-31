@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   Layers,
   ExternalLink,
@@ -16,6 +16,7 @@ import {
   type PublicModelSummary,
 } from "@/lib/api";
 import { resolveModelGalleryUrl } from "@/lib/models";
+import { isArchitectureCompatible } from "@/lib/baseModelArchitectures";
 
 export interface ActiveLora {
   id: string;
@@ -35,6 +36,7 @@ export interface LoraStackPanelProps {
   loras: ActiveLora[];
   onLorasChange: (loras: ActiveLora[]) => void;
   onOpenPicker: () => void;
+  selectedModel?: InstalledGalleryModel | null;
   modelOptions?: InstalledGalleryModel[];
   publicModels?: PublicModelSummary[];
   publicModelMap?: Map<string, PublicModelSummary>;
@@ -49,6 +51,7 @@ export default function LoraStackPanel({
   loras,
   onLorasChange,
   onOpenPicker,
+  selectedModel,
   modelOptions = [],
   publicModels = [],
   publicModelMap,
@@ -138,6 +141,25 @@ export default function LoraStackPanel({
     [prompt, onPromptChange]
   );
 
+  // Check compatibility of each LoRA with current selectedModel
+  const checkLoraCompatible = useCallback(
+    (lora: ActiveLora) => {
+      if (!selectedModel) return true;
+      const modelArch = selectedModel.base_model || selectedModel.title || "";
+      return isArchitectureCompatible(modelArch, lora.baseModel);
+    },
+    [selectedModel]
+  );
+
+  const incompatibleLoras = useMemo(
+    () => loras.filter((l) => !checkLoraCompatible(l)),
+    [loras, checkLoraCompatible]
+  );
+
+  const handleRemoveIncompatible = useCallback(() => {
+    onLorasChange(loras.filter((l) => checkLoraCompatible(l)));
+  }, [loras, checkLoraCompatible, onLorasChange]);
+
   const isLimitReached = loras.length >= maxLoras;
 
   return (
@@ -152,16 +174,29 @@ export default function LoraStackPanel({
             {loras.length}/{maxLoras}
           </span>
         </div>
-        {loras.length > 0 && (
-          <button
-            type="button"
-            onClick={handleClearAll}
-            disabled={disabled}
-            className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition disabled:opacity-50"
-          >
-            Clear all
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {incompatibleLoras.length > 0 && (
+            <button
+              type="button"
+              onClick={handleRemoveIncompatible}
+              disabled={disabled}
+              className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition disabled:opacity-50"
+              title="Remove LoRAs that do not match the current model architecture"
+            >
+              Remove incompatible ({incompatibleLoras.length})
+            </button>
+          )}
+          {loras.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={disabled}
+              className="text-[10px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] focus-visible:text-[var(--danger)] transition disabled:opacity-50"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stacked Active LoRA Cards */}
@@ -169,6 +204,7 @@ export default function LoraStackPanel({
         <div className="space-y-2.5">
           {loras.map((lora) => {
             const isMuted = lora.enabled === false;
+            const isCompatible = checkLoraCompatible(lora);
 
             // Resolve thumbnail cover
             const loraCover = resolveMediaUrl(
@@ -210,9 +246,11 @@ export default function LoraStackPanel({
             return (
               <div
                 key={lora.id}
-                className={`relative rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 transition hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] ${
-                  isMuted ? "opacity-60 bg-[var(--surface-raised)]" : ""
-                }`}
+                className={`relative rounded-xl border p-3 transition hover:border-[var(--line-strong)] focus-visible:border-[var(--line-strong)] ${
+                  !isCompatible
+                    ? "border-rose-500/40 bg-rose-950/20"
+                    : "border-[var(--line)] bg-[var(--surface)]"
+                } ${isMuted ? "opacity-60 bg-[var(--surface-raised)]" : ""}`}
               >
                 {/* Top Row: Badge, Title & Power/Delete Actions */}
                 <div className="flex items-start gap-3">
@@ -253,6 +291,14 @@ export default function LoraStackPanel({
                             title={lora.baseModel}
                           >
                             {lora.baseModel}
+                          </span>
+                        )}
+                        {!isCompatible && (
+                          <span
+                            className="shrink-0 rounded-md bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 text-[9px] font-mono font-bold text-rose-400"
+                            title={`Incompatible with ${selectedModel?.title || selectedModel?.base_model || "active model"}`}
+                          >
+                            Incompatible
                           </span>
                         )}
                       </div>

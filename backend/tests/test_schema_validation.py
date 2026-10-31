@@ -8,6 +8,7 @@ from app.schemas import (
     DirectorReply,
     DirectorShot,
     GenerateRequest,
+    GenerationRequest,
     GeneratedAsset,
     LoraAdapterSelection,
     ModelCompatibility,
@@ -42,6 +43,28 @@ class PromptValidationTests(unittest.TestCase):
         self.assertTrue(req_enabled.enable_detailer)
         req_disabled = GenerateRequest(prompt="test", enable_detailer=False, **IDS)
         self.assertFalse(req_disabled.enable_detailer)
+
+    def test_accepts_qwen_image_edit_fields(self) -> None:
+        req_default = GenerateRequest(prompt="test", **IDS)
+        self.assertIsNone(req_default.reference_image)
+        self.assertTrue(req_default.save_comparison_reel)
+
+        req_custom = GenerateRequest(
+            prompt="test",
+            reference_image="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            save_comparison_reel=False,
+            **IDS,
+        )
+        self.assertEqual(
+            req_custom.reference_image,
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        )
+        self.assertFalse(req_custom.save_comparison_reel)
+
+    def test_generation_request_alias(self) -> None:
+        self.assertIs(GenerationRequest, GenerateRequest)
+        req = GenerationRequest(prompt="test", **IDS)
+        self.assertIsInstance(req, GenerateRequest)
 
     def test_rejects_more_than_one_thousand_words(self) -> None:
         with self.assertRaises(ValidationError):

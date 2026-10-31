@@ -501,6 +501,8 @@ class ModelTabAffinityEndpointTests(unittest.TestCase):
         comfy.resolve_clip_type = AsyncMock(return_value="")
         comfy.build_gallery_workflow = MagicMock(return_value={})
         comfy.build_lora_workflow = MagicMock(return_value={})
+        comfy.upload_image = AsyncMock(side_effect=lambda b, name: f"mock_{name}")
+        comfy.load_edit_template = MagicMock(return_value={"134": {"inputs": {}}})
         comfy.queue_prompt = AsyncMock(return_value="test-prompt-id")
         comfy.wait_until_done = AsyncMock(return_value="completed")
         comfy.list_images = AsyncMock(return_value=[])
@@ -784,6 +786,147 @@ class ModelTabAffinityEndpointTests(unittest.TestCase):
         self.assertEqual(r3.status_code, 200)
         self.assertEqual(r3.json()["status"], "completed")
         self.assertEqual(self.credits.get_user_credits(self.user.id).balance, 98)
+
+    def test_generate_edit_mode_requires_source_image(self) -> None:
+        payload = {
+            "model_id": self.qwen_edit_checkpoint["model_id"],
+            "version_id": self.qwen_edit_checkpoint["version_id"],
+            "file_id": self.qwen_edit_checkpoint["file_id"],
+            "mode": "edit",
+            "prompt": "Change shirt to green",
+        }
+        mock_comfy = self._mock_comfy()
+        with (
+            patch("app.main.model_storage.resolve_installed_gallery_file", side_effect=self._mock_resolve),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Edit mode requires at least one source image to modify", resp.json()["detail"])
+        # Credit refund guarantee
+        self.assertEqual(self.credits.get_user_credits(self.user.id).balance, 100)
+
+    def test_generate_edit_mode_missing_template_raises_500(self) -> None:
+        payload = {
+            "model_id": self.qwen_edit_checkpoint["model_id"],
+            "version_id": self.qwen_edit_checkpoint["version_id"],
+            "file_id": self.qwen_edit_checkpoint["file_id"],
+            "mode": "edit",
+            "prompt": "Change shirt to green",
+            "reference_images": ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="],
+        }
+        mock_comfy = self._mock_comfy()
+        mock_comfy.load_edit_template = MagicMock(return_value=None)
+        with (
+            patch("app.main.model_storage.resolve_installed_gallery_file", side_effect=self._mock_resolve),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("Edit workflow template not found", resp.json()["detail"])
+        # Credit refund guarantee
+        self.assertEqual(self.credits.get_user_credits(self.user.id).balance, 100)
+
+    def test_generate_edit_mode_dispatches_with_single_source_image(self) -> None:
+        payload = {
+            "model_id": self.qwen_edit_checkpoint["model_id"],
+            "version_id": self.qwen_edit_checkpoint["version_id"],
+            "file_id": self.qwen_edit_checkpoint["file_id"],
+            "mode": "edit",
+            "prompt": "Change background to cyberpunk city",
+            "steps": 12,
+            "reference_images": ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="],
+        }
+        mock_comfy = self._mock_comfy()
+        with (
+            patch("app.main.model_storage.resolve_installed_gallery_file", side_effect=self._mock_resolve),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+            patch("app.main.patch_edit_workflow", return_value={"patched": True}) as mock_patch,
+        ):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "completed")
+        self.assertEqual(self.credits.get_user_credits(self.user.id).balance, 98)
+
+        mock_patch.assert_called_once()
+        call_kwargs = mock_patch.call_args.kwargs
+        self.assertEqual(call_kwargs["prompt"], "Change background to cyberpunk city")
+        self.assertEqual(call_kwargs["steps"], 12)
+        self.assertTrue(call_kwargs["image1_filename"].startswith("mock_input_edit_"))
+        # Fallback to image1_filename when secondary image is absent
+        self.assertEqual(call_kwargs["image2_filename"], call_kwargs["image1_filename"])
+
+    def test_generate_edit_mode_dispatches_with_secondary_reference_image(self) -> None:
+        payload = {
+            "model_id": self.qwen_edit_checkpoint["model_id"],
+            "version_id": self.qwen_edit_checkpoint["version_id"],
+            "file_id": self.qwen_edit_checkpoint["file_id"],
+            "mode": "edit",
+            "prompt": "Apply style transfer from reference",
+            "reference_images": ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="],
+            "reference_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        }
+        mock_comfy = self._mock_comfy()
+        with (
+            patch("app.main.model_storage.resolve_installed_gallery_file", side_effect=self._mock_resolve),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+            patch("app.main.patch_edit_workflow", return_value={"patched": True}) as mock_patch,
+        ):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "completed")
+
+        mock_patch.assert_called_once()
+        call_kwargs = mock_patch.call_args.kwargs
+        self.assertTrue(call_kwargs["image1_filename"].startswith("mock_input_edit_"))
+        self.assertTrue(call_kwargs["image2_filename"].startswith("mock_input_ref_"))
+        self.assertNotEqual(call_kwargs["image1_filename"], call_kwargs["image2_filename"])
+
+    def test_generate_edit_mode_secondary_video_lora_rejected(self) -> None:
+        qwen_video_lora = {
+            "model_id": "c0" + "4" * 30,
+            "version_id": "d0" + "5" * 30,
+            "file_id": "e0" + "6" * 30,
+            "title": "Qwen Video Motion LoRA",
+            "model_type": "LoRA",
+            "version_name": "v1.0",
+            "category": "loras",
+            "filename": "qwen_video_motion.safetensors",
+            "base_model": "Qwen-Image",
+            "supported_modes": ["video"],
+        }
+        self.model_registry[(qwen_video_lora["model_id"], qwen_video_lora["version_id"], qwen_video_lora["file_id"])] = qwen_video_lora
+        payload = {
+            "model_id": self.qwen_edit_checkpoint["model_id"],
+            "version_id": self.qwen_edit_checkpoint["version_id"],
+            "file_id": self.qwen_edit_checkpoint["file_id"],
+            "mode": "edit",
+            "prompt": "Edit with video LoRA",
+            "reference_images": ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="],
+            "lora_adapters": [
+                {
+                    "model_id": qwen_video_lora["model_id"],
+                    "version_id": qwen_video_lora["version_id"],
+                    "file_id": qwen_video_lora["file_id"],
+                    "on": True,
+                    "strength": 0.8,
+                }
+            ],
+        }
+        mock_comfy = self._mock_comfy()
+        with (
+            patch("app.main.model_storage.resolve_installed_gallery_file", side_effect=self._mock_resolve),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post("/api/v1/generate", json=payload, headers=self.headers)
+
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("video adapter and cannot be used in Edit mode", resp.json()["detail"])
+        self.assertEqual(self.credits.get_user_credits(self.user.id).balance, 100)
 
 
 if __name__ == "__main__":
