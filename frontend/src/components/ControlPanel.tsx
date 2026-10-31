@@ -68,6 +68,50 @@ import GenerationModelCard from "@/components/GenerationModelCard";
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
 
+export type ModelModality = "VIDEO" | "EDIT" | "IMAGE";
+
+/**
+ * Filter models by active generation tab capability.
+ */
+export const isModelCompatibleWithMode = (
+  m: InstalledGalleryModel,
+  mode: TensorMode,
+): boolean => {
+  const modeKey =
+    mode === "Text2Img"
+      ? "text-to-image"
+      : mode === "Img2Img"
+        ? "image-to-image"
+        : mode === "Edit"
+          ? "edit"
+          : mode === "Video"
+            ? "video"
+            : "prime";
+
+  if (m.supported_modes && m.supported_modes.length > 0) {
+    return m.supported_modes.includes(modeKey);
+  }
+  // Fallback for models without explicit supported_modes:
+  if (mode === "Video") {
+    return m.media_type === "video" || Boolean(m.video_family);
+  }
+  const lower = `${m.title} ${m.filename}`.toLowerCase();
+  const isEditCandidate = lower.includes("edit") || lower.includes("instruct");
+  if (mode === "Edit") {
+    return isEditCandidate;
+  }
+  return m.media_type !== "video" && !m.video_family && !isEditCandidate;
+};
+
+/**
+ * Derives visual modality badge for model cards.
+ */
+export const getModelModality = (m: InstalledGalleryModel): ModelModality => {
+  if (isModelCompatibleWithMode(m, "Video")) return "VIDEO";
+  if (isModelCompatibleWithMode(m, "Edit")) return "EDIT";
+  return "IMAGE";
+};
+
 /** Selectable video frame rates. Keep in sync with DEFAULT_VIDEO_FIELDS in /generate. */
 export const VIDEO_FPS_OPTIONS = [16, 24, 30, 49] as const;
 /** Selectable video durations, in seconds. */
@@ -685,13 +729,15 @@ export default function ControlPanel(props: Props) {
     return map;
   }, [publicModels]);
 
-  // Available base models (Checkpoint or SVD) from backend
+  // Available base models (Checkpoint or SVD) from backend filtered by active tab mode
   const baseModels = useMemo(
     () =>
-      modelOptions.filter(
-        (m) => m.model_type === "Checkpoint" || m.model_type === "SVD",
-      ),
-    [modelOptions],
+      modelOptions
+        .filter(
+          (m) => m.model_type === "Checkpoint" || m.model_type === "SVD",
+        )
+        .filter((m) => isModelCompatibleWithMode(m, activeMode)),
+    [modelOptions, activeMode],
   );
 
   // Available adapter models from backend
@@ -1937,21 +1983,6 @@ export default function ControlPanel(props: Props) {
         </div>
       ) : activeMode === "Video" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          {/* LTX-Video 2.3 Studio Header */}
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]">
-                <Film className="h-3 w-3" />
-              </span>
-              <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[var(--ink)]">
-                LTX-Video 2.3 Studio
-              </span>
-            </div>
-            <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)]">
-              {videoSubMode === "image-to-video" ? "I2V GUIDED" : "T2V TEXT-DRIVEN"}
-            </span>
-          </div>
-
           {/* Video Sub-mode Segmented Navigation */}
           <div
             role="group"
@@ -1988,29 +2019,14 @@ export default function ControlPanel(props: Props) {
             </button>
           </div>
 
-          {/* Mode Pill Notice */}
-          <div className={`flex items-center gap-2 rounded-xl p-2.5 border text-xs font-mono transition ${
-            videoSubMode === "image-to-video"
-              ? "bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--ink)]"
-              : "bg-[var(--surface-sunken)] border-[var(--line)] text-[var(--ink-faint)]"
-          }`}>
-            <Sparkles className="h-4 w-4 text-[var(--accent)] shrink-0" />
-            <span>
-              {videoSubMode === "image-to-video"
-                ? "Image-to-Video: Motion seeded by Initial Frame"
-                : "Text-to-Video: Generating motion purely from prompt"}
-            </span>
-          </div>
-
-          {/* 1. Generation Model Card (Disabled for Video: locked to bundled workflow) */}
+          {/* 1. Generation Model Card */}
           <GenerationModelCard
-            selectedModel={videoModelIsLtx ? selectedModel : null}
-            coverUrl={videoModelIsLtx ? currentModelCover : null}
-            baseModelTag="LTX-2.3"
-            onOpenPicker={() => {}}
-            fallbackTitle="LTX-Video 2.3 (Bundled Workflow)"
-            disabled={true}
-            disabledBadge="Workflow Default"
+            selectedModel={selectedModel}
+            coverUrl={currentModelCover}
+            baseModelTag={baseModelTag || "LTX-2.3"}
+            onOpenPicker={() => setModelPickerOpen(true)}
+            fallbackTitle="LTX-Video 2.3"
+            disabled={false}
           />
 
           {/* 2. LoRA Stack */}
@@ -3555,6 +3571,9 @@ export default function ControlPanel(props: Props) {
                 <span className="rounded-xl bg-[var(--surface-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--ink-faint)]">
                   {baseModels.length} models
                 </span>
+                <span className="rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">
+                  {activeMode}
+                </span>
               </div>
               <button
                 type="button"
@@ -3678,6 +3697,28 @@ export default function ControlPanel(props: Props) {
 
                         {/* Top Tag Overlays */}
                         <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
+                          {(() => {
+                            const modality = getModelModality(m);
+                            if (modality === "VIDEO") {
+                              return (
+                                <span className="rounded-md border border-purple-500/50 bg-purple-950/80 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider text-purple-300 backdrop-blur-md uppercase">
+                                  VIDEO
+                                </span>
+                              );
+                            }
+                            if (modality === "EDIT") {
+                              return (
+                                <span className="rounded-md border border-amber-500/50 bg-amber-950/80 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider text-amber-300 backdrop-blur-md uppercase">
+                                  EDIT
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="rounded-md border border-zinc-700 bg-zinc-900/80 px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider text-zinc-300 backdrop-blur-md uppercase">
+                                IMAGE
+                              </span>
+                            );
+                          })()}
                           <span className="rounded-md border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-2 py-0.5 text-[9px] font-bold text-[var(--ink)] backdrop-blur-md uppercase tracking-wider">
                             {m.model_type === "Checkpoint"
                               ? "CKPT"
@@ -3725,7 +3766,7 @@ export default function ControlPanel(props: Props) {
 
               {baseModels.length === 0 && (
                 <div className="py-12 text-center text-xs text-[var(--ink-faint)]">
-                  <p>No installed basic models found in local gallery.</p>
+                  <p>No installed basic models found for {activeMode} mode in local gallery.</p>
                   <Link
                     href="/models"
                     className="mt-2 inline-block font-semibold text-[var(--accent)] hover:underline focus-visible:underline"

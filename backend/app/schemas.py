@@ -367,6 +367,66 @@ def media_type(architecture: str | None, model_type: str | None = None) -> Media
     return "unknown"
 
 
+def derive_supported_modes(
+    architecture: str | None,
+    model_type: str | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+    tags: list[str] | None = None,
+) -> list[str]:
+    """Derive list of supported generation modes based on model metadata and family.
+
+    Returns a list subset of: ['text-to-image', 'image-to-image', 'edit', 'video', 'prime'].
+    """
+    if video_family(architecture) or model_type == "SVD":
+        return ["video"]
+
+    norm_arch = (architecture or "").lower()
+    norm_type = (model_type or "").lower()
+    norm_title = (title or "").lower()
+    norm_fn = (filename or "").lower()
+    norm_tags = [t.lower() for t in (tags or [])]
+    haystack = " ".join([norm_arch, norm_type, norm_title, norm_fn] + norm_tags)
+
+    if "audio" in haystack or "roformer" in haystack:
+        return []
+    is_sam = (
+        norm_arch == "sam"
+        or norm_title.startswith("sam ")
+        or norm_title.startswith("sam-")
+        or norm_title.startswith("sam_")
+        or "sam3" in norm_title
+        or "sam 3" in norm_title
+        or "sam2" in norm_title
+        or "sam 2" in norm_title
+        or "segmentation" in haystack
+    )
+    if is_sam:
+        return []
+
+    is_edit = False
+    if "image_edit" in norm_fn or "image-edit" in norm_fn:
+        is_edit = True
+    elif "image edit" in norm_title or "image-edit" in norm_title or "instruct" in norm_title:
+        is_edit = True
+    elif "edit" in norm_title.split() or "edit" in norm_tags:
+        is_edit = True
+
+    if is_edit:
+        return ["edit"]
+
+    if norm_arch in ("sd 1.5", "stable diffusion 1.5 (sd 1.5)"):
+        return ["text-to-image", "image-to-image"]
+
+    m_type = media_type(architecture, model_type)
+    if m_type == "image":
+        return ["text-to-image", "image-to-image", "prime"]
+    elif m_type == "video":
+        return ["video"]
+
+    return []
+
+
 class AssistantPersona(str, Enum):
     BACKEND = "backend"
     FRONTEND = "frontend"
@@ -1112,6 +1172,7 @@ class ModelCompatibility(BaseModel):
     text_encoder_2: str | None = Field(None, min_length=1, max_length=255)
     clip_type: str | None = Field(None, min_length=1, max_length=64)
     parent_model: str | None = Field(None, max_length=255)
+    supported_modes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -1323,6 +1384,7 @@ class ModelResponse(ModelCreateRequest):
     from_vault: bool = False
     in_vault: bool = False
     media_type: MediaType = "unknown"
+    supported_modes: list[str] = Field(default_factory=list)
 
 
 class ModelListResponse(BaseModel):
@@ -1407,6 +1469,7 @@ class PublicModelSummary(BaseModel):
     moderation_status: ModelModerationStatus = ModelModerationStatus.APPROVED
     video_family: str | None = None
     media_type: MediaType = "unknown"
+    supported_modes: list[str] = Field(default_factory=list)
 
     @field_validator("model_type", mode="before")
     @classmethod
@@ -1567,6 +1630,7 @@ class InstalledGalleryModel(BaseModel):
     cover_url: str | None = None
     video_family: str | None = None
     media_type: MediaType = "unknown"
+    supported_modes: list[str] = Field(default_factory=list)
 
 
 class InstalledGalleryModelList(BaseModel):

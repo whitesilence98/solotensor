@@ -470,7 +470,7 @@ export default function AssetCard({
               muted
               loop
               playsInline
-              preload="metadata"
+              preload="auto"
               onLoadedMetadata={(e) => {
                 setIsLoaded(true);
                 const vid = e.currentTarget;
@@ -479,6 +479,7 @@ export default function AssetCard({
                 }
               }}
               onLoadedData={() => setIsLoaded(true)}
+              onCanPlay={() => setIsLoaded(true)}
               className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
                 }`}
             />

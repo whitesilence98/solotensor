@@ -73,8 +73,10 @@ class CreatorProfilesAndOwnershipTests(unittest.TestCase):
         # Set up ModelService and AIToolService with test settings
         self.orig_models_root = model_storage.root
         self.orig_models_definitions = model_storage.definitions
+        self.orig_models_settings_dir = model_storage.settings.MODELS_DIR
         model_storage.root = self.models_dir
         model_storage.definitions = self.models_dir / "definitions"
+        model_storage.settings.MODELS_DIR = str(self.models_dir)
         model_storage.ensure_root()
         self.models_service = model_storage
 
@@ -87,6 +89,7 @@ class CreatorProfilesAndOwnershipTests(unittest.TestCase):
     def tearDown(self) -> None:
         model_storage.root = self.orig_models_root
         model_storage.definitions = self.orig_models_definitions
+        model_storage.settings.MODELS_DIR = self.orig_models_settings_dir
 
         set_ai_tool_service(None)
 

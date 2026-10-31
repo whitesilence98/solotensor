@@ -300,7 +300,8 @@ export default function CanvasPreview(props: Props) {
 
  const latest = filteredGallery[0];
  const detailerBeforeUrl = (latest as any)?.before_detailer_url || latest?.metadata?.before_detailer_url || null;
- const canCompare = Boolean((referenceImage || detailerBeforeUrl) && latest && !busy);
+ // Before / After Comparison disabled for now per user request
+ const canCompare = false;
  const comparisonBefore = detailerBeforeUrl
   ? (resolveMediaUrl(detailerBeforeUrl) || detailerBeforeUrl)
   : (referenceImage || "");

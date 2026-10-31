@@ -65,7 +65,7 @@ export function VideoResultPreview({ url, filename, ratio, bounded = false }: Vi
     autoPlay={!reduceMotion}
     loop={loop}
     playsInline
-    preload="metadata"
+    preload="auto"
     className="h-full w-full object-contain"
     onLoadedMetadata={(event) => {
      const node = event.currentTarget;

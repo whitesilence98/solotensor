@@ -43,6 +43,7 @@ from .routers.notifications import router as notifications_router
 from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
+    derive_supported_modes,
     media_type,
     video_family,
     AssetLikeQueryRequest,
@@ -696,6 +697,84 @@ def _ensure_video_capable(selected_model: dict, base_model: dict, is_lora: bool)
     )
 
 
+def _ensure_generation_mode_compatibility(
+    req: GenerateRequest,
+    selected_model: dict[str, Any],
+    base_model: dict[str, Any],
+    is_lora: bool,
+) -> None:
+    target = base_model if is_lora else selected_model
+    target_title = target.get("title") or "the selected model"
+    target_modes = target.get("supported_modes")
+    if not target_modes:
+        target_modes = derive_supported_modes(
+            architecture=target.get("base_model"),
+            model_type=target.get("model_type"),
+            title=target_title,
+            filename=target.get("filename"),
+        )
+
+    lora_title = selected_model.get("title") or "the selected LoRA"
+    lora_modes = selected_model.get("supported_modes")
+    if is_lora and not lora_modes:
+        lora_modes = derive_supported_modes(
+            architecture=selected_model.get("base_model"),
+            model_type=selected_model.get("model_type"),
+            title=lora_title,
+            filename=selected_model.get("filename"),
+        )
+
+    # 1. Video mode
+    if req.mode == "video":
+        _ensure_video_capable(selected_model, base_model, is_lora)
+        if target_modes and "video" not in target_modes:
+            raise ModelConflict(
+                f"Model '{target_title}' is not a video generation model. Please select a video-capable model."
+            )
+        if is_lora and lora_modes and "video" not in lora_modes:
+            raise ModelConflict(
+                f"LoRA '{lora_title}' is not a video adapter. Please select a video-compatible LoRA."
+            )
+
+    # 2. Text-to-Image mode
+    elif req.mode == "text-to-image":
+        if "video" in target_modes or target.get("media_type") == "video":
+            raise ModelConflict(
+                f"Model '{target_title}' is a video generation model. Please use the Video tab to generate video."
+            )
+        if target_modes == ["edit"]:
+            raise ModelConflict(
+                f"Model '{target_title}' is an instruction edit model. Please use the Edit tab to transform images."
+            )
+        if is_lora:
+            if "video" in lora_modes or selected_model.get("media_type") == "video":
+                raise ModelConflict(
+                    f"LoRA '{lora_title}' is a video adapter and cannot generate text-to-image."
+                )
+            if lora_modes == ["edit"]:
+                raise ModelConflict(
+                    f"LoRA '{lora_title}' is an instruction edit adapter. Please use the Edit tab to transform images."
+                )
+
+    # 3. Image-to-Image mode
+    elif req.mode == "image-to-image":
+        if "video" in target_modes or target.get("media_type") == "video":
+            raise ModelConflict(
+                f"Model '{target_title}' is a video generation model. Please use the Video tab to generate video."
+            )
+        if is_lora and ("video" in lora_modes or selected_model.get("media_type") == "video"):
+            raise ModelConflict(
+                f"LoRA '{lora_title}' is a video adapter and cannot generate image-to-image."
+            )
+
+    # 4. Standalone feature modes
+    elif req.mode in ("detailer", "upscale"):
+        if "video" in target_modes or target.get("media_type") == "video":
+            raise ModelConflict(
+                f"Model '{target_title}' is a video generation model and cannot be used for {req.mode}."
+            )
+
+
 @app.get("/api/v1/models/local", response_model=LocalModelListResponse)
 async def list_local_models(
     q: str | None = None, category: str | None = None, limit: int = 50
@@ -766,6 +845,16 @@ async def list_public_models(
                 "sample_count": public_samples,
                 "video_family": video_family(model.compatibility.base_model),
                 "media_type": media_type(model.compatibility.base_model, model.model_type),
+                "supported_modes": (
+                    model.compatibility.supported_modes
+                    or derive_supported_modes(
+                        architecture=model.compatibility.base_model,
+                        model_type=model.model_type,
+                        title=model.title,
+                        filename=(model.versions[0].files[0].filename if model.versions and model.versions[0].files else None),
+                        tags=model.tags,
+                    )
+                ),
             }
         )
     ids = [item["model_id"] for item in items]
@@ -1625,7 +1714,17 @@ async def generate(
                     "Base model identity is only valid for LoRA generation"
                 )
             base_model = selected_model
+
+        _ensure_generation_mode_compatibility(req, selected_model, base_model, is_lora)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
+        if credits_deducted:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
+            )
         raise _model_http_error(exc) from exc
 
     clip_name = base_model.get("text_encoder")
@@ -1637,7 +1736,7 @@ async def generate(
         or base_model.get("model_type") == "Diffusion Model"
     )
 
-    if is_modular and (not clip_name or not vae_name):
+    if req.mode != "video" and is_modular and (not clip_name or not vae_name):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="Modular UNET/DiT checkpoints require external VAE and text encoder",
@@ -1685,6 +1784,27 @@ async def generate(
                     raise ModelConflict(
                         f"Architecture mismatch: Secondary LoRA '{adapter_title or adapter_model.get('title')}' ({adapter_arch}) is incompatible with Checkpoint '{base_model.get('title')}' ({base_arch})"
                     )
+
+                adapter_modes = adapter_model.get("supported_modes") or derive_supported_modes(
+                    architecture=adapter_model.get("base_model"),
+                    model_type=adapter_model.get("model_type"),
+                    title=adapter_model.get("title"),
+                    filename=adapter_model.get("filename"),
+                )
+                if req.mode == "video":
+                    if adapter_modes and "video" not in adapter_modes:
+                        raise ModelConflict(
+                            f"LoRA '{adapter_model.get('title')}' is not a video adapter. In Video mode, only video LoRAs can be used."
+                        )
+                elif req.mode == "text-to-image":
+                    if adapter_modes == ["edit"]:
+                        raise ModelConflict(
+                            f"LoRA '{adapter_model.get('title')}' is an instruction edit adapter and cannot be used in Text-to-Image."
+                        )
+                    if "video" in adapter_modes or adapter_model.get("media_type") == "video":
+                        raise ModelConflict(
+                            f"LoRA '{adapter_model.get('title')}' is a video adapter and cannot be used in Text-to-Image."
+                        )
                 raw_filename = adapter_model["filename"]
                 adapter_title = adapter_model.get("title", "")
             elif adapter.lora:

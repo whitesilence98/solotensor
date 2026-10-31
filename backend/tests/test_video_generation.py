@@ -521,6 +521,33 @@ class TestVideoGeneration(unittest.TestCase):
                 else:
                     self.assertEqual(resp.json()["status"], "completed")
 
+    def test_video_generation_with_diffusion_model_without_external_vae(self):
+        """A Diffusion Model category without external VAE/clip passes for video generation."""
+        self.mock_model_storage.resolve_installed_gallery_file.return_value = {
+            **self.mock_model_storage.resolve_installed_gallery_file.return_value,
+            "title": "LTX-Video 2.3 DiT",
+            "base_model": "LTX-Video 2.3",
+            "model_type": "Diffusion Model",
+            "category": "diffusion_models",
+            "text_encoder": None,
+            "vae": None,
+        }
+        mock_comfy = self._mock_comfy_success("diffusion-model-ltx")
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate",
+                json=self._video_payload(),
+                headers=self.headers,
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        self.assertEqual(resp.json()["status"], "completed")
+
     # ------------------------------------------------------------------
     # workflow_template_info(mode=...) selects the graph source.
     # ------------------------------------------------------------------

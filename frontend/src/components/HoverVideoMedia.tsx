@@ -49,7 +49,7 @@ export interface HoverVideoMediaProps {
  * HoverVideoMedia
  * 
  * Synchronized media component for Model & Tool cards.
- * - Displays static initial poster frame at rest (preload="metadata").
+ * - Displays static initial poster frame at rest (preload="auto").
  * - Autoplays smoothly when hovered (play().catch() safely handled).
  * - Pauses and rewinds (currentTime = 0) on unhover.
  * - Applies smooth luxury cubic-bezier zoom (.asset-zoom-media).
@@ -83,6 +83,7 @@ export default function HoverVideoMedia({
   useEffect(() => {
     const vid = videoRef.current;
     if (!vid || !isVideo || reduceMotion) return;
+    vid.muted = true;
 
     if (effectiveHover) {
       const playPromise = vid.play();
@@ -137,10 +138,12 @@ export default function HoverVideoMedia({
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="auto"
           onMouseEnter={() => setInternalHover(true)}
           onMouseLeave={() => setInternalHover(false)}
+          onLoadedMetadata={handleLoaded}
           onLoadedData={handleLoaded}
+          onCanPlay={handleLoaded}
           onError={handleError}
           className={baseMediaClasses}
           aria-label={alt}

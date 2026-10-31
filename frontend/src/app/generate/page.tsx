@@ -9,6 +9,7 @@ import ControlPanel, {
   type TensorMode,
   VIDEO_DURATION_OPTIONS,
   VIDEO_FPS_OPTIONS,
+  isModelCompatibleWithMode,
 } from "@/components/ControlPanel";
 import CanvasPreview from "@/components/CanvasPreview";
 import StudioPromptBar from "@/components/StudioPromptBar";
@@ -34,7 +35,7 @@ import { STORAGE_KEYS } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
-import { ARCHITECTURE_FAMILIES } from "@/lib/baseModelArchitectures";
+import { ARCHITECTURE_FAMILIES, videoFamilyOf } from "@/lib/baseModelArchitectures";
 import { parseGenerateDeepLink, videoSizeForAspect } from "@/lib/generateDeepLink";
 
 const SAVED_INPUTS_KEY = STORAGE_KEYS.STUDIO_DRAFT;
@@ -55,31 +56,6 @@ const DEFAULT_SAMPLE_PROMPT =
 const isBaseModel = (type?: string) => (type ? ["Checkpoint", "SVD"].includes(type) : false);
 const isAdapterModel = (type?: string) => (type ? ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(type) : false);
 
-/**
- * The video graph hardcodes the bundled LTX-2.3 transformer, VAE, and CLIP, so
- * the studio model picker does not drive the video render. Detect LTX selections
- * from metadata the models API already returns; no new API calls.
- */
-const LTX_ALIASES = ARCHITECTURE_FAMILIES.ltx;
-
-function isLtxSelection(model: InstalledGalleryModel | null): boolean {
-  if (!model) return false;
-  // Mirror the backend gate's fail-open rule: `_ensure_video_capable` returns
-  // early when the architecture is unrecorded, so an unlabelled model must not
-  // warn red here either. `video_family` is null for both an empty architecture
-  // and a known image architecture, so it cannot tell them apart on its own.
-  if (!model.base_model?.trim()) return true;
-  // For a recorded architecture the API-derived family is authority: it uses
-  // the same table the backend does, so the two cannot drift.
-  if (model.video_family) {
-    return model.video_family === "ltx";
-  }
-  const candidates = [model.base_model, model.version_name, model.title, model.filename]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .map((value) => value.trim().toLowerCase());
-  return candidates.some((value) => LTX_ALIASES.some((alias) => value.includes(alias)));
-}
-
 interface ModelIdentity {
   modelId: string;
   versionId: string;
@@ -96,6 +72,53 @@ function galleryModelKey(model: InstalledGalleryModel): string {
     versionId: model.version_id,
     fileId: model.file_id,
   });
+}
+
+/**
+ * The bundled LTX-Video 2.3 model registered in the gallery.
+ * Model ID: 5ec5c81c38c447faa3d9001c0f10e26a
+ * File: ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors
+ */
+const BUNDLED_LTX_MODEL: ModelIdentity = {
+  modelId: "5ec5c81c38c447faa3d9001c0f10e26a",
+  versionId: "bb3359ea3e9d4b7eb529d7a4f7b2c80a",
+  fileId: "d60e683f26d84686b8e521926d7d4fbf",
+};
+
+/**
+ * The video graph hardcodes the bundled LTX-2.3 transformer, VAE, and CLIP, so
+ * the studio model picker does not drive the video render. Detect LTX selections
+ * from metadata the models API already returns; no new API calls.
+ */
+const LTX_ALIASES = ARCHITECTURE_FAMILIES.ltx;
+
+function isExplicitLtxModel(model: InstalledGalleryModel | null): boolean {
+  if (!model) return false;
+  if (model.model_id === BUNDLED_LTX_MODEL.modelId) return true;
+  if (model.video_family === "ltx") return true;
+  if (videoFamilyOf(model.base_model) === "ltx") return true;
+  const candidates = [model.base_model, model.version_name, model.title, model.filename]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
+  return candidates.some((value) => LTX_ALIASES.some((alias) => value.includes(alias)));
+}
+
+function isLtxSelection(model: InstalledGalleryModel | null): boolean {
+  if (!model) return false;
+  if (isExplicitLtxModel(model)) return true;
+  // Mirror the backend gate's fail-open rule: `_ensure_video_capable` returns
+  // early when the architecture is unrecorded, so an unlabelled model must not
+  // warn red here either.
+  if (!model.base_model?.trim()) return true;
+  return false;
+}
+
+function findLtxModel(options: InstalledGalleryModel[]): InstalledGalleryModel | null {
+  const bundled = options.find((m) => m.model_id === BUNDLED_LTX_MODEL.modelId);
+  if (bundled) return bundled;
+  const explicit = options.find((m) => isExplicitLtxModel(m));
+  if (explicit) return explicit;
+  return null;
 }
 
 interface TabState {
@@ -292,8 +315,8 @@ function createDefaultTabState(
       return {
         prompt: "",
         negativePrompt: "",
-        selection: null,
-        baseSelection: null,
+        selection: BUNDLED_LTX_MODEL,
+        baseSelection: BUNDLED_LTX_MODEL,
         loras: [],
         embeddings: [],
         seed: "-1",
@@ -371,10 +394,17 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {  try {
       customHeight: typeof saved.customHeight === "string" ? saved.customHeight : defaults.customHeight,
       referenceImage: typeof saved.referenceImage === "string" ? saved.referenceImage : defaults.referenceImage,
       selection:
-        saved.modelId && saved.versionId && saved.fileId
-          ? { modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId }
-          : saved.selection || defaults.selection,
-      baseSelection: saved.baseSelection || defaults.baseSelection,
+        defaults.selection?.modelId === BUNDLED_LTX_MODEL.modelId
+          ? (saved.modelId && saved.versionId && saved.fileId && saved.modelId === BUNDLED_LTX_MODEL.modelId
+              ? { modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId }
+              : defaults.selection)
+          : (saved.modelId && saved.versionId && saved.fileId
+              ? { modelId: saved.modelId, versionId: saved.versionId, fileId: saved.fileId }
+              : saved.selection || defaults.selection),
+      baseSelection:
+        defaults.baseSelection?.modelId === BUNDLED_LTX_MODEL.modelId
+          ? defaults.baseSelection
+          : saved.baseSelection || defaults.baseSelection,
       loras: Array.isArray(saved.loras)
         ? saved.loras.map((l: ActiveLora) => ({
             ...l,
@@ -475,17 +505,115 @@ export default function StudioPage() {
     [activeTensorMode]
   );
 
-  const handleTensorModeChange = useCallback((newMode: TensorMode) => {
-    setActiveTensorMode(newMode);
-    if (newMode === "Img2Img" || newMode === "Edit") {
-      setMode("image-to-image");
-    } else {
-      setMode("text-to-image");
-    }
-  }, []);
-
   const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+
+  const handleTensorModeChange = useCallback(
+    (newMode: TensorMode) => {
+      setActiveTensorMode(newMode);
+      if (newMode === "Img2Img" || newMode === "Edit") {
+        setMode("image-to-image");
+      } else {
+        setMode("text-to-image");
+      }
+
+      setTabStates((prev) => {
+        const targetTab = prev[newMode];
+        const currentSel = targetTab.selection;
+        const currentModel = currentSel
+          ? modelOptions.find((m) => galleryModelKey(m) === modelKey(currentSel))
+          : null;
+
+        const isCurrentCompatible = currentModel
+          ? isModelCompatibleWithMode(currentModel, newMode)
+          : false;
+
+        if (!isCurrentCompatible) {
+          const firstCompatible =
+            modelOptions.find(
+              (m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, newMode),
+            ) ?? modelOptions.find((m) => isModelCompatibleWithMode(m, newMode));
+
+          if (firstCompatible) {
+            const newIdentity: ModelIdentity = {
+              modelId: firstCompatible.model_id,
+              versionId: firstCompatible.version_id,
+              fileId: firstCompatible.file_id,
+            };
+            return {
+              ...prev,
+              [newMode]: {
+                ...targetTab,
+                selection: newIdentity,
+                baseSelection: newIdentity,
+              },
+            };
+          } else if (newMode === "Video") {
+            return {
+              ...prev,
+              Video: {
+                ...prev.Video,
+                selection: BUNDLED_LTX_MODEL,
+                baseSelection: BUNDLED_LTX_MODEL,
+              },
+            };
+          }
+        }
+        return prev;
+      });
+    },
+    [modelOptions]
+  );
+
+  // Auto-selection: ensure active tab's selected model is compatible with active mode when models load/change
+  useEffect(() => {
+    if (modelOptions.length === 0) return;
+
+    setTabStates((prev) => {
+      const currentTab = prev[activeTensorMode];
+      const currentSel = currentTab.selection;
+      const currentModel = currentSel
+        ? modelOptions.find((m) => galleryModelKey(m) === modelKey(currentSel))
+        : null;
+
+      const isCurrentCompatible = currentModel
+        ? isModelCompatibleWithMode(currentModel, activeTensorMode)
+        : false;
+
+      if (!isCurrentCompatible) {
+        const firstCompatible =
+          modelOptions.find(
+            (m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, activeTensorMode),
+          ) ?? modelOptions.find((m) => isModelCompatibleWithMode(m, activeTensorMode));
+
+        if (firstCompatible) {
+          const newIdentity: ModelIdentity = {
+            modelId: firstCompatible.model_id,
+            versionId: firstCompatible.version_id,
+            fileId: firstCompatible.file_id,
+          };
+          return {
+            ...prev,
+            [activeTensorMode]: {
+              ...currentTab,
+              selection: newIdentity,
+              baseSelection: newIdentity,
+            },
+          };
+        } else if (activeTensorMode === "Video") {
+          return {
+            ...prev,
+            Video: {
+              ...prev.Video,
+              selection: BUNDLED_LTX_MODEL,
+              baseSelection: BUNDLED_LTX_MODEL,
+            },
+          };
+        }
+      }
+      return prev;
+    });
+  }, [activeTensorMode, modelOptions]);
   const [interrogating, setInterrogating] = useState(false);
   const [interrogateToast, setInterrogateToast] = useState<string | null>(null);
 
@@ -545,28 +673,60 @@ export default function StudioPage() {
 
   // Find currently selected Basic Model for the active tab
   const selectedModel = useMemo(() => {
-    if (activeTab.selection) {
+    if (activeTensorMode === "Video") {
+      if (activeTab.selection) {
+        const found = modelOptions.find(
+          (item) => galleryModelKey(item) === modelKey(activeTab.selection!)
+        );
+        if (found && (isExplicitLtxModel(found) || isModelCompatibleWithMode(found, "Video"))) {
+          return found;
+        }
+      }
       return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(activeTab.selection!)) ??
-        null
+        modelOptions.find((m) => isModelCompatibleWithMode(m, "Video")) ??
+        findLtxModel(modelOptions)
       );
     }
-    const baseFirst = modelOptions.find((item) => isBaseModel(item.model_type));
-    return baseFirst ?? null;
-  }, [modelOptions, activeTab.selection]);
+
+    if (activeTab.selection) {
+      const found = modelOptions.find(
+        (item) => galleryModelKey(item) === modelKey(activeTab.selection!)
+      );
+      if (found && isModelCompatibleWithMode(found, activeTensorMode)) {
+        return found;
+      }
+    }
+    const compatibleFirst = modelOptions.find(
+      (item) => isBaseModel(item.model_type) && isModelCompatibleWithMode(item, activeTensorMode)
+    );
+    return compatibleFirst ?? modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
+  }, [modelOptions, activeTab.selection, activeTensorMode]);
 
   const baseModel = useMemo(() => {
-    if (activeTab.baseSelection) {
-      return (
-        modelOptions.find((item) => galleryModelKey(item) === modelKey(activeTab.baseSelection!)) ??
-        null
-      );
-    }
-    if (selectedModel && isBaseModel(selectedModel.model_type)) {
+    if (activeTensorMode === "Video") {
       return selectedModel;
     }
-    return modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
-  }, [modelOptions, activeTab.baseSelection, selectedModel]);
+    if (activeTab.baseSelection) {
+      const found = modelOptions.find(
+        (item) => galleryModelKey(item) === modelKey(activeTab.baseSelection!)
+      );
+      if (found && isModelCompatibleWithMode(found, activeTensorMode)) {
+        return found;
+      }
+    }
+    if (
+      selectedModel &&
+      isBaseModel(selectedModel.model_type) &&
+      isModelCompatibleWithMode(selectedModel, activeTensorMode)
+    ) {
+      return selectedModel;
+    }
+    return (
+      modelOptions.find(
+        (item) => isBaseModel(item.model_type) && isModelCompatibleWithMode(item, activeTensorMode)
+      ) ?? null
+    );
+  }, [modelOptions, activeTab.baseSelection, selectedModel, activeTensorMode]);
 
   const baseModelOptions = useMemo(() => {
     return modelOptions.filter((item) => isBaseModel(item.model_type));
@@ -674,6 +834,38 @@ export default function StudioPage() {
     };
   }, []);
 
+  // Ensure the Video tab is firmly bound to an LTX model once models load
+  useEffect(() => {
+    if (modelOptions.length === 0) return;
+    setTabStates((prev) => {
+      const videoTab = prev.Video;
+      const currentVideoModel = videoTab.selection
+        ? modelOptions.find((m) => galleryModelKey(m) === modelKey(videoTab.selection!))
+        : null;
+
+      if (!currentVideoModel || !isExplicitLtxModel(currentVideoModel)) {
+        const ltxCandidate = findLtxModel(modelOptions);
+        const ltxIdentity: ModelIdentity = ltxCandidate
+          ? {
+              modelId: ltxCandidate.model_id,
+              versionId: ltxCandidate.version_id,
+              fileId: ltxCandidate.file_id,
+            }
+          : BUNDLED_LTX_MODEL;
+
+        return {
+          ...prev,
+          Video: {
+            ...videoTab,
+            selection: ltxIdentity,
+            baseSelection: ltxIdentity,
+          },
+        };
+      }
+      return prev;
+    });
+  }, [modelOptions]);
+
   useEffect(() => {
     void refreshGallery();
   }, [refreshGallery, user?.id]);
@@ -753,10 +945,25 @@ export default function StudioPage() {
     let effectiveBase = baseModel;
 
     if (activeTensorMode === "Video") {
-      const ltxCandidate = modelOptions.find((m) => isLtxSelection(m));
-      if (ltxCandidate) {
-        targetModel = ltxCandidate;
-        effectiveBase = ltxCandidate;
+      if (!targetModel || (!isExplicitLtxModel(targetModel) && !isModelCompatibleWithMode(targetModel, "Video"))) {
+        const ltxCandidate = findLtxModel(modelOptions);
+        if (ltxCandidate) {
+          targetModel = ltxCandidate;
+          effectiveBase = ltxCandidate;
+        } else {
+          targetModel = {
+            model_id: BUNDLED_LTX_MODEL.modelId,
+            version_id: BUNDLED_LTX_MODEL.versionId,
+            file_id: BUNDLED_LTX_MODEL.fileId,
+            title: "LTX-Video 2.3",
+            filename: "ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors",
+            base_model: "LTX-Video 2.3",
+            model_type: "Checkpoint",
+          } as InstalledGalleryModel;
+          effectiveBase = targetModel;
+        }
+      } else {
+        effectiveBase = targetModel;
       }
     }
 
@@ -764,7 +971,10 @@ export default function StudioPage() {
 
     if (!targetModel) {
       targetModel =
-        modelOptions.find((m) => isBaseModel(m.model_type)) ?? modelOptions[0] ?? null;
+        modelOptions.find((m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, activeTensorMode)) ??
+        modelOptions.find((m) => isBaseModel(m.model_type)) ??
+        modelOptions[0] ??
+        null;
     }
 
     if (!targetModel) {
@@ -1240,7 +1450,10 @@ export default function StudioPage() {
               const next = model
                 ? { modelId: model.model_id, versionId: model.version_id, fileId: model.file_id }
                 : null;
-              updateActiveTab({ selection: next });
+              updateActiveTab({
+                selection: next,
+                baseSelection: next,
+              });
               setModelsError(null);
             }}
             baseModel={baseModel}

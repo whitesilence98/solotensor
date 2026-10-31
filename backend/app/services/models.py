@@ -38,6 +38,7 @@ from ..schemas import (
     ModelVersionResponse,
     ModelVisibility,
     is_architecture_compatible,
+    derive_supported_modes,
     media_type,
     video_family,
 )
@@ -120,10 +121,42 @@ class ModelService:
     def ensure_root(self) -> None:
         self.definitions.mkdir(parents=True, exist_ok=True)
 
+    def _is_default_models_dir(self) -> bool:
+        return self.settings.MODELS_DIR in ("models", "./models")
+
+    def _all_definition_paths(self) -> list[Path]:
+        seen: dict[str, Path] = {}
+        folders = [self.definitions]
+        if self._is_default_models_dir():
+            backend_dir = Path(__file__).resolve().parent.parent.parent
+            root_dir = backend_dir.parent
+            folders.extend([
+                root_dir / "models" / "definitions",
+                backend_dir / "models" / "definitions",
+            ])
+        for folder in folders:
+            if folder.is_dir():
+                for p in folder.glob("*.json"):
+                    if p.name not in seen and p.is_file():
+                        seen[p.name] = p
+        return list(seen.values())
+
     def _path(self, model_id: str) -> Path:
         if not MODEL_ID_RE.fullmatch(model_id):
             raise ModelNotFound("Invalid model id")
-        return self.definitions / f"{model_id}.json"
+        primary = self.definitions / f"{model_id}.json"
+        if primary.is_file() or not self._is_default_models_dir():
+            return primary
+        backend_dir = Path(__file__).resolve().parent.parent.parent
+        root_dir = backend_dir.parent
+        for alt_root in (
+            root_dir / "models" / "definitions",
+            backend_dir / "models" / "definitions",
+        ):
+            alt_path = alt_root / f"{model_id}.json"
+            if alt_path.is_file():
+                return alt_path
+        return primary
 
     @staticmethod
     def _now() -> str:
@@ -371,6 +404,20 @@ class ModelService:
                 (record.get("compatibility") or {}).get("base_model"),
                 record.get("model_type"),
             ),
+            supported_modes=(
+                (record.get("compatibility") or {}).get("supported_modes")
+                or derive_supported_modes(
+                    architecture=(record.get("compatibility") or {}).get("base_model"),
+                    model_type=record.get("model_type"),
+                    title=record.get("title"),
+                    filename=(
+                        record.get("versions", [{}])[0].get("files", [{}])[0].get("filename")
+                        if record.get("versions") and record.get("versions", [{}])[0].get("files")
+                        else None
+                    ),
+                    tags=record.get("tags"),
+                )
+            ),
         )
 
     def _validate_base_association(
@@ -483,7 +530,7 @@ class ModelService:
     ) -> list[ModelResponse]:
         items: list[ModelResponse] = []
         author_cache: dict[str, Any] = {}
-        for path in self.definitions.glob("*.json"):
+        for path in self._all_definition_paths():
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(record, dict):
@@ -554,7 +601,7 @@ class ModelService:
     def list_pending_review(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         author_cache: dict[str, Any] = {}
-        for path in self.definitions.glob("*.json"):
+        for path in self._all_definition_paths():
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(record, dict):
@@ -841,6 +888,16 @@ class ModelService:
             "cover_url": cover_url,
             "video_family": video_family(compatibility.get("base_model")),
             "media_type": media_type(compatibility.get("base_model"), model_type),
+            "supported_modes": (
+                compatibility.get("supported_modes")
+                or derive_supported_modes(
+                    architecture=compatibility.get("base_model"),
+                    model_type=model_type,
+                    title=record.get("title"),
+                    filename=filename,
+                    tags=record.get("tags"),
+                )
+            ),
         }
 
     def selectable_gallery_files(self) -> list[dict[str, Any]]:

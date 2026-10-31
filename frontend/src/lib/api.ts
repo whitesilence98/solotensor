@@ -1038,6 +1038,7 @@ export interface CreatorModelCompatibility {
   text_encoder_2?: string | null;
   clip_type: string | null;
   parent_model: string | null;
+  supported_modes?: string[];
 }
 
 export interface CreatorModelGeneration {
@@ -1116,6 +1117,7 @@ export interface CreatorModel {
   from_vault?: boolean;
   in_vault?: boolean;
   media_type?: MediaType;
+  supported_modes?: string[];
 }
 
 export interface CreatorModelPayload {
@@ -1154,6 +1156,7 @@ export interface PublicModelSummary {
   moderation_status?: ModelModerationStatus;
   video_family?: VideoFamily | null;
   media_type?: MediaType;
+  supported_modes?: string[];
   star_count?: number;
   comment_count?: number;
   download_count?: number;
@@ -1380,6 +1383,7 @@ export interface InstalledGalleryModel {
   cover_url?: string | null;
   video_family?: VideoFamily | null;
   media_type?: MediaType;
+  supported_modes?: string[];
 }
 
 export interface InstalledGalleryModelList { items: InstalledGalleryModel[]; }
