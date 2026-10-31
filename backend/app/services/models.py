@@ -59,6 +59,7 @@ SAMPLE_EXTENSIONS = {
 LOCAL_MODEL_CATEGORIES = (
     "checkpoints",
     "diffusion_models",
+    "unet",
     "loras",
     "vae",
     "text_encoders",

@@ -864,12 +864,15 @@ export default function ControlPanel(props: Props) {
     return map;
   }, [publicModels]);
 
-  // Available base models (Checkpoint or SVD) from backend filtered by active tab mode
+  // Available base models (Checkpoint, SVD, GGUF) from backend filtered by active tab mode
   const baseModels = useMemo(
     () =>
       modelOptions
         .filter(
-          (m) => m.model_type === "Checkpoint" || m.model_type === "SVD",
+          (m) =>
+            m.model_type === "Checkpoint" ||
+            m.model_type === "SVD" ||
+            m.filename?.toLowerCase().endsWith(".gguf"),
         )
         .filter((m) => isModelCompatibleWithMode(m, activeMode)),
     [modelOptions, activeMode],
@@ -3932,8 +3935,15 @@ export default function ControlPanel(props: Props) {
                     }
                     if (modelSearchQuery.trim()) {
                       const q = modelSearchQuery.toLowerCase();
-                      const matchTitle = m.title.toLowerCase().includes(q);
-                      const matchFile = m.filename.toLowerCase().includes(q);
+                      const qNorm = q.replace(/[-_]+/g, " ");
+                      const titleNorm = m.title.toLowerCase().replace(/[-_]+/g, " ");
+                      const fileNorm = m.filename.toLowerCase().replace(/[-_]+/g, " ");
+                      const matchTitle =
+                        m.title.toLowerCase().includes(q) ||
+                        titleNorm.includes(qNorm);
+                      const matchFile =
+                        m.filename.toLowerCase().includes(q) ||
+                        fileNorm.includes(qNorm);
                       if (!matchTitle && !matchFile) return false;
                     }
                     return true;

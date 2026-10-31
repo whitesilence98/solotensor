@@ -895,6 +895,7 @@ class ComfyClient:
                     clip_type=clip_type,
                     sampler_name=sampler_name,
                     scheduler=scheduler,
+                    source_image_filename=source_image_filename,
                 )
                 if enable_detailer:
                     graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -916,6 +917,7 @@ class ComfyClient:
             vae_name=vae_name,
             sampler_name=sampler_name,
             scheduler=scheduler,
+            source_image_filename=source_image_filename,
         )
         if enable_detailer:
             graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -1065,6 +1067,7 @@ class ComfyClient:
             clip_type=clip_type,
             sampler_name=sampler_name,
             scheduler=scheduler,
+            source_image_filename=source_image_filename,
         )
         if enable_detailer:
             graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -1090,6 +1093,7 @@ class ComfyClient:
         clip_type: str = "",
         sampler_name: Optional[str] = None,
         scheduler: Optional[str] = None,
+        source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
         active_loras = [item for item in (loras or []) if item.get("on", True)]
@@ -1150,10 +1154,23 @@ class ComfyClient:
         else:
             vae_ref = ["1", 2]
 
+        if source_image_filename:
+            graph["5"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": str(source_image_filename)},
+            }
+            graph["5_encode"] = {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": ["5", 0], "vae": vae_ref},
+            }
+            latent_ref = ["5_encode", 0]
+        else:
+            graph["5"] = {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}}
+            latent_ref = ["5", 0]
+
         graph.update({
             "3": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": last_clip_ref}},
             "4": {"class_type": "CLIPTextEncode", "inputs": {"text": negative_prompt or "worst quality, low quality, blurry", "clip": last_clip_ref}},
-            "5": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}},
             "6": {
                 "class_type": "KSampler",
                 "inputs": {
@@ -1166,7 +1183,7 @@ class ComfyClient:
                     "model": last_model_ref,
                     "positive": ["3", 0],
                     "negative": ["4", 0],
-                    "latent_image": ["5", 0],
+                    "latent_image": latent_ref,
                 },
             },
             "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": vae_ref}},
@@ -1195,6 +1212,7 @@ class ComfyClient:
         vae_name: str = "",
         sampler_name: Optional[str] = None,
         scheduler: Optional[str] = None,
+        source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         preset = MODEL_PRESETS.get(model, MODEL_PRESETS["sdxl"])
         checkpoint = checkpoint_name or preset["checkpoint"]
@@ -1218,6 +1236,29 @@ class ComfyClient:
         else:
             clip_ref = ["1", 1]
 
+        if vae_name:
+            graph["vae_loader"] = {
+                "class_type": "VAELoader",
+                "inputs": {"vae_name": vae_name},
+            }
+            vae_ref = ["vae_loader", 0]
+        else:
+            vae_ref = ["1", 2]
+
+        if source_image_filename:
+            graph["4"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": str(source_image_filename)},
+            }
+            graph["4_encode"] = {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": ["4", 0], "vae": vae_ref},
+            }
+            latent_ref = ["4_encode", 0]
+        else:
+            graph["4"] = {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}}
+            latent_ref = ["4", 0]
+
         graph.update({
             "2": {
                 "class_type": "CLIPTextEncode",
@@ -1227,7 +1268,6 @@ class ComfyClient:
                 "class_type": "CLIPTextEncode",
                 "inputs": {"text": negative_prompt or "worst quality, low quality, blurry", "clip": clip_ref},
             },
-            "4": {"class_type": "EmptyLatentImage", "inputs": {"width": width, "height": height, "batch_size": image_count}},
             "5": {
                 "class_type": "KSampler",
                 "inputs": {
@@ -1240,19 +1280,12 @@ class ComfyClient:
                     "model": ["1", 0],
                     "positive": ["2", 0],
                     "negative": ["3", 0],
-                    "latent_image": ["4", 0],
+                    "latent_image": latent_ref,
                 },
             },
         })
 
-        if vae_name:
-            graph["vae_loader"] = {
-                "class_type": "VAELoader",
-                "inputs": {"vae_name": vae_name},
-            }
-            vae_ref = ["vae_loader", 0]
-        else:
-            vae_ref = ["1", 2]
+        
 
         graph["6"] = {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": vae_ref}}
         graph["7"] = {

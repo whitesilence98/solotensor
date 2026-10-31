@@ -1743,9 +1743,11 @@ async def generate(
     clip_type = base_model.get("clip_type")
     vae_name = base_model.get("vae")
     base_category = base_model.get("category")
+    is_gguf = base_model.get("filename", "").lower().endswith(".gguf")
     is_modular = (
-        base_category == "diffusion_models"
+        base_category in ("diffusion_models", "unet")
         or base_model.get("model_type") == "Diffusion Model"
+        or is_gguf
     )
 
     if req.mode != "video" and is_modular and (not clip_name or not vae_name):
@@ -1877,8 +1879,9 @@ async def generate(
         resolved_clip_type = ""
         resolved_vae = ""
         if is_modular:
+            folder = "unet" if (is_gguf or base_category == "unet") else "diffusion_models"
             resolved_base = await comfy.resolve_model_name(
-                "diffusion_models", base_model["filename"]
+                folder, base_model["filename"]
             )
             resolved_clip = (
                 await comfy.resolve_model_name("text_encoders", clip_name)
@@ -2092,6 +2095,7 @@ async def generate(
                 clip_type=resolved_clip_type,
                 vae_name=resolved_vae,
                 loras=active_loras,
+                is_checkpoint=(not is_modular),
             )
         elif is_lora:
             graph = comfy.build_lora_workflow(

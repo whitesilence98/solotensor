@@ -171,6 +171,8 @@ def patch_base_t2i_workflow(
 
     # 5. Model Loaders
     if "1060:615" in graph:
+        if str(unet_name).lower().endswith(".gguf"):
+            graph["1060:615"]["class_type"] = "UnetLoaderGGUF"
         graph["1060:615"].setdefault("inputs", {})["unet_name"] = unet_name
     if "1060:616" in graph:
         inputs = graph["1060:616"].setdefault("inputs", {})
@@ -241,6 +243,8 @@ def patch_base_i2i_workflow(
 
     # 4. Model Loaders (nodes 593:590, 593:589, 593:588)
     if "593:590" in graph and unet_name:
+        if str(unet_name).lower().endswith(".gguf"):
+            graph["593:590"]["class_type"] = "UnetLoaderGGUF"
         graph["593:590"].setdefault("inputs", {})["unet_name"] = unet_name
     if "593:589" in graph and clip_name:
         inputs = graph["593:589"].setdefault("inputs", {})
@@ -828,6 +832,7 @@ def patch_edit_workflow(
     clip_type: Optional[str] = None,
     vae_name: Optional[str] = None,
     loras: Optional[list[dict[str, Any]]] = None,
+    is_checkpoint: bool = False,
 ) -> dict[str, Any]:
     """Patch the Qwen Image Edit workflow (workflow_generate_edit.json)."""
     graph = json.loads(json.dumps(template))
@@ -858,9 +863,26 @@ def patch_edit_workflow(
     if "140" in graph:
         graph["140"].setdefault("inputs", {})["value"] = int(steps)
 
-    # 7. UNet model (node 611:593 if provided)
-    if unet_name and "611:593" in graph:
+    # 6b. VAE Encode (node 138)
+    if "138" in graph and "vae" not in graph["138"].get("inputs", {}):
+        graph["138"].setdefault("inputs", {})["vae"] = ["611:612", 3]
+
+    # 7. Model Loader (Checkpoint vs UNET)
+    eff_is_checkpoint = is_checkpoint or (
+        bool(unet_name) and (
+            "aio" in str(unet_name).lower()
+            or "checkpoint" in str(unet_name).lower()
+            or str(unet_name).replace("\\", "/").startswith("qwen/Qwen-Rapid")
+        )
+    )
+    if eff_is_checkpoint and unet_name and "611:587" in graph:
+        graph["611:587"].setdefault("inputs", {})["ckpt_name"] = str(unet_name)
+        if "611:612" in graph:
+            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:615", 0]
+    elif unet_name and "611:593" in graph:
         graph["611:593"].setdefault("inputs", {})["unet_name"] = str(unet_name)
+        if "611:612" in graph:
+            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:614", 0]
 
     # 8. CLIP model & type (node 611:592 if provided)
     if "611:592" in graph:
