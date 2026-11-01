@@ -59,6 +59,16 @@ class ComfyClientError(RuntimeError):
     """Raised when ComfyUI is unreachable or a workflow fails."""
 
 
+CLIP_TYPE_ALIASES: dict[str, str] = {
+    "qwen2_5_vl": "qwen_image",
+    "qwen2.5_vl": "qwen_image",
+    "qwen_2_5_vl": "qwen_image",
+    "qwen2_vl": "qwen_image",
+    "qwen_vl": "qwen_image",
+    "qwen": "qwen_image",
+}
+
+
 class ComfyClient:
     """Talks to ComfyUI over its native HTTP + WebSocket API."""
 
@@ -132,10 +142,19 @@ class ComfyClient:
 
     async def resolve_clip_type(self, clip_type: str) -> str:
         """Validate a CLIPLoader type against ComfyUI's node metadata."""
+        if not clip_type:
+            return ""
         types = await self.clip_types()
-        if clip_type not in types:
-            raise ComfyClientError(f"CLIP type {clip_type} is not supported by ComfyUI")
-        return clip_type
+        clean = clip_type.strip()
+        if clean in types:
+            return clean
+        lower = clean.lower()
+        if lower in types:
+            return lower
+        aliased = CLIP_TYPE_ALIASES.get(lower)
+        if aliased and aliased in types:
+            return aliased
+        raise ComfyClientError(f"CLIP type {clip_type} is not supported by ComfyUI")
 
     # ------------------------------------------------------------------ #
     # Workflow graph
