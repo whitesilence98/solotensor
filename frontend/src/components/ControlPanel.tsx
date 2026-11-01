@@ -23,6 +23,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  ScanText,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -64,6 +65,7 @@ import DetailerPanel, {
 import AdvancedSamplingPanel from "@/components/AdvancedSamplingPanel";
 import LoraStackPanel from "@/components/LoraStackPanel";
 import GenerationModelCard from "@/components/GenerationModelCard";
+import ModelLoraStack from "@/components/ModelLoraStack";
 
 export type FormatKey = "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | "custom";
 export type TensorMode = "Text2Img" | "Img2Img" | "Edit" | "Video" | "Prime";
@@ -1324,16 +1326,16 @@ export default function ControlPanel(props: Props) {
                     type="button"
                     onClick={handleAutoPromptFromReference}
                     disabled={interrogating || busy}
-                    title="Extract generation prompt, seed, cfg, steps & size from reference image metadata, or auto-tag with WD14"
+                    title="Extract prompt, seed, sampler & tags directly from this reference image"
                     className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--accent)]/30 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-[var(--accent)]/60 text-[11px] font-bold text-[var(--accent)] transition disabled:opacity-50"
                   >
                     {interrogating ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <Tag className="h-3 w-3" />
+                      <ScanText className="h-3 w-3 text-[var(--accent)] shrink-0" />
                     )}
                     <span>
-                      {interrogating ? "Reading…" : "Auto-Prompt"}
+                      {interrogating ? "Reading…" : "Read Image"}
                     </span>
                   </button>
                   <button
@@ -1576,67 +1578,17 @@ export default function ControlPanel(props: Props) {
                 );
               })()}
 
-              {/* 3. Active Generation Model Card */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                    GENERATION MODEL
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setModelPickerOpen(true)}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Change</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setModelPickerOpen(true)}
-                  className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
-                >
-                  <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
-                    {currentModelCover ? (
-                      <img
-                        src={currentModelCover}
-                        alt={selectedModel?.title ?? "Model preview"}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="grid h-full w-full place-items-center text-[var(--accent)]">
-                        <Box className="h-5 w-5 opacity-75" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-xs font-bold text-[var(--ink)]">
-                        {selectedModel?.title || "Krea 2 Turbo"}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
-                      {baseModelTag && (
-                        <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
-                          {baseModelTag}
-                        </span>
-                      )}
-                      <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
-                        {selectedModel?.model_type || "Diffusion Model"}
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
-                </button>
-              </div>
-
-              {/* 4. LoRA Adapters Stack (Under Model, matching Text2Img layout) */}
-              <LoraStackPanel
+              {/* 3. Model & LoRA Stack */}
+              <ModelLoraStack
+                selectedModel={selectedModel}
+                coverUrl={currentModelCover}
+                baseModelTag={baseModelTag}
+                onOpenModelPicker={() => setModelPickerOpen(true)}
+                fallbackTitle="Krea 2 Turbo"
+                sectionTitle="Generation Model"
                 loras={loras}
                 onLorasChange={onLorasChange}
-                onOpenPicker={() => setLoraPickerOpen(true)}
-                selectedModel={selectedModel}
+                onOpenLoraPicker={() => setLoraPickerOpen(true)}
                 modelOptions={modelOptions}
                 publicModels={publicModels}
                 publicModelMap={publicModelMap}
@@ -1740,32 +1692,33 @@ export default function ControlPanel(props: Props) {
           {/* Edit Mode Header */}
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-              <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]">
-                <Brush className="h-3 w-3" />
-              </span>
-              <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-[var(--ink)]">
+              <div className="h-6 w-6 rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] flex items-center justify-center">
+                <Brush className="h-3.5 w-3.5 text-[var(--accent)]" />
+              </div>
+              <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">
                 Inpaint & Regional Edit
               </span>
             </div>
-            <span className="rounded-md bg-[var(--surface-sunken)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] text-[var(--accent)]">
-              MASK STAGE
+            <span className="rounded-md bg-[var(--surface-soft)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-medium text-[var(--ink-soft)]">
+              Mask Stage
             </span>
           </div>
 
-          {/* 1. Primary Dropzone: Target Canvas (Image 1) - Image to modify */}
+          {/* 1. Primary Dropzone: Target Canvas */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                  Target Canvas (Image 1) - Image to modify
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[var(--ink)]">
+                  Target Canvas
                 </span>
                 {targetCanvasImage ? (
-                  <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
-                    LOADED
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--accent)] border border-[var(--line)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                    Loaded
                   </span>
                 ) : (
-                  <span className="rounded-xl bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
-                    REQUIRED
+                  <span className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--ink-faint)] border border-[var(--line)]">
+                    Required
                   </span>
                 )}
               </div>
@@ -1773,7 +1726,7 @@ export default function ControlPanel(props: Props) {
                 <button
                   type="button"
                   onClick={handleClearTargetImage}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors px-1 py-0.5 rounded hover:bg-[var(--danger-surface)]"
                   title="Remove target canvas"
                 >
                   <Trash2 className="h-3 w-3" />
@@ -1804,23 +1757,23 @@ export default function ControlPanel(props: Props) {
                     editTargetFileInputRef.current?.click();
                   }
                 }}
-                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                className={`group relative flex h-44 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)]/60 p-4 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
                   isTargetDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
-                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
+                    ? "border-[var(--accent)] bg-[var(--accent-ambient)] scale-[1.01]"
+                    : ""
                 }`}
               >
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2.5 transition-transform duration-200 group-hover:scale-110">
-                  <UploadCloud className="h-5 w-5" />
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-[var(--accent)] mb-2 transition-transform duration-200 group-hover:scale-105">
+                  <UploadCloud className="h-4.5 w-4.5" />
                 </div>
                 <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop image to modify or{" "}
+                  Drop base image to inpaint or{" "}
                   <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
                     browse
                   </span>
                 </p>
-                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
-                  Target Canvas (Image 1) · PNG, JPG, WEBP · Paste or Drop
+                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
+                  Target Canvas · PNG, JPG, WEBP · Paste or drop
                 </p>
               </div>
             ) : (
@@ -1829,14 +1782,14 @@ export default function ControlPanel(props: Props) {
                 onPaste={handleTargetPaste}
                 className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
               >
-                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-48 w-full items-center justify-center group">
+                <div className="relative rounded-xl overflow-hidden border border-[var(--line-strong)] bg-[var(--surface-sunken)] flex h-52 w-full items-center justify-center group">
                   <img
                     src={targetCanvasImage}
-                    alt="Target Canvas (Image 1)"
+                    alt="Target Canvas"
                     className="h-full w-full object-contain rounded-lg"
                   />
                   {naturalDimensions && (
-                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] border border-[var(--line)]">
+                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--surface-sunken)]/80 backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)] border border-[var(--line)]">
                       {naturalDimensions.width} × {naturalDimensions.height} PX
                     </span>
                   )}
@@ -1851,44 +1804,44 @@ export default function ControlPanel(props: Props) {
                         64,
                         Math.min(2048, Math.round(naturalDimensions.height / 8) * 8),
                       ) && (
-                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] uppercase">
+                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent-ambient)] backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)] border border-[var(--line)] uppercase tracking-wider">
                         CANVAS MATCHED
                       </span>
                     )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                   <button
                     type="button"
                     onClick={handleAutoPromptFromReference}
                     disabled={interrogating || busy}
-                    title="Extract generation prompt, seed, cfg, steps & size from target canvas metadata, or auto-tag with WD14"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--accent)]/30 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-[var(--accent)]/60 text-[11px] font-bold text-[var(--accent)] transition disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors disabled:opacity-50 active:scale-[0.98]"
+                    title="Extract prompt and generation parameters from this canvas image"
                   >
                     {interrogating ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)] shrink-0" />
                     ) : (
-                      <Tag className="h-3 w-3" />
+                      <ScanText className="h-3 w-3 text-[var(--accent)] shrink-0" />
                     )}
-                    <span>{interrogating ? "Reading…" : "Auto-Prompt"}</span>
+                    <span>{interrogating ? "Reading…" : "Read Image"}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleMatchDimensions}
                     disabled={!naturalDimensions}
-                    title="Adjust canvas width & height to match this image natural aspect ratio"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition disabled:opacity-50"
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors disabled:opacity-50 active:scale-[0.98]"
+                    title="Adjust canvas dimensions to match image aspect ratio"
                   >
-                    <Sparkles className="h-3 w-3 text-[var(--accent)]" />
+                    <Sparkles className="h-3 w-3 text-[var(--accent)] shrink-0" />
                     <span>Match Size</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => editTargetFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
-                    title="Replace target canvas"
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors active:scale-[0.98]"
+                    title="Replace target image"
                   >
-                    <RefreshCw className="h-3 w-3" />
+                    <RefreshCw className="h-3 w-3 text-[var(--ink-faint)] shrink-0" />
                     <span>Replace</span>
                   </button>
                 </div>
@@ -1896,20 +1849,21 @@ export default function ControlPanel(props: Props) {
             )}
           </div>
 
-          {/* 2. Secondary Dropzone: Reference Asset (Image 2 - Optional) - Style, outfit, or object reference */}
+          {/* 2. Secondary Dropzone: Reference Asset (Image 2 - Optional) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                  Reference Asset (Image 2 - Optional) - Style, outfit, or object reference
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[var(--ink)]">
+                  Reference Asset
                 </span>
                 {secondaryReferenceAsset ? (
-                  <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
-                    LOADED
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--accent)] border border-[var(--line)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                    Loaded
                   </span>
                 ) : (
-                  <span className="rounded-xl bg-[var(--surface-soft)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--ink-faint)] border border-[var(--line)]">
-                    OPTIONAL
+                  <span className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--ink-faint)] border border-[var(--line)]">
+                    Optional
                   </span>
                 )}
               </div>
@@ -1917,7 +1871,7 @@ export default function ControlPanel(props: Props) {
                 <button
                   type="button"
                   onClick={handleClearRefAsset}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors px-1 py-0.5 rounded hover:bg-[var(--danger-surface)]"
                   title="Remove reference asset"
                 >
                   <Trash2 className="h-3 w-3" />
@@ -1948,23 +1902,23 @@ export default function ControlPanel(props: Props) {
                     editRefAssetFileInputRef.current?.click();
                   }
                 }}
-                className={`group relative flex h-36 flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
+                className={`group relative flex h-28 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)]/60 p-3 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
                   isRefAssetDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
-                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
+                    ? "border-[var(--accent)] bg-[var(--accent-ambient)] scale-[1.01]"
+                    : ""
                 }`}
               >
-                <div className="grid h-8 w-8 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2 transition-transform duration-200 group-hover:scale-110">
-                  <UploadCloud className="h-4 w-4" />
+                <div className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] text-[var(--accent)] mb-1.5 group-hover:scale-105 transition-transform">
+                  <UploadCloud className="h-3.5 w-3.5" />
                 </div>
                 <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop reference image here or{" "}
+                  Drop reference image or{" "}
                   <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
                     browse
                   </span>
                 </p>
-                <p className="mt-1 font-mono text-[9px] text-[var(--ink-faint)] uppercase tracking-wider">
-                  Style, outfit, or object reference · Paste or Drop
+                <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
+                  Style, outfit, or object guide · Paste or drop
                 </p>
               </div>
             ) : (
@@ -1973,30 +1927,30 @@ export default function ControlPanel(props: Props) {
                 onPaste={handleRefAssetPaste}
                 className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
               >
-                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-36 w-full items-center justify-center group">
+                <div className="relative rounded-lg overflow-hidden border border-[var(--line-strong)] bg-[var(--surface-sunken)] flex h-36 w-full items-center justify-center group">
                   <img
                     src={secondaryReferenceAsset}
-                    alt="Reference Asset (Image 2)"
+                    alt="Reference Asset"
                     className="h-full w-full object-contain rounded-lg"
                   />
-                  <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[9px] text-[var(--ink)] border border-[var(--line)]">
-                    IMAGE 2 · REFERENCE
+                  <span className="absolute bottom-2 left-2 rounded-md bg-[var(--surface-sunken)]/80 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] text-[var(--ink-soft)] border border-[var(--line)]">
+                    Reference Asset
                   </span>
                 </div>
                 <div className="flex items-center justify-end gap-1.5">
                   <button
                     type="button"
                     onClick={() => editRefAssetFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
+                    className="flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors active:scale-[0.98]"
                     title="Replace reference image"
                   >
-                    <RefreshCw className="h-3 w-3" />
+                    <RefreshCw className="h-3 w-3 text-[var(--ink-faint)]" />
                     <span>Replace</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleClearRefAsset}
-                    className="flex items-center justify-center gap-1 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--danger)]/10 hover:border-[var(--danger)]/40 text-[11px] font-medium text-[var(--danger)] transition"
+                    className="flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--danger-surface)] hover:border-[var(--danger-line)] text-[11px] font-medium text-[var(--danger)] transition-colors active:scale-[0.98]"
                     title="Remove reference image"
                   >
                     <Trash2 className="h-3 w-3" />
@@ -2111,62 +2065,26 @@ export default function ControlPanel(props: Props) {
             </div>
           </div>
 
-          {/* 3. Generation Model Card */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                GENERATION MODEL
-              </span>
-              <button
-                type="button"
-                onClick={() => setModelPickerOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Change</span>
-              </button>
-            </div>
+          {/* 3. Model & LoRA Stack */}
+          <ModelLoraStack
+            selectedModel={selectedModel}
+            coverUrl={currentModelCover}
+            baseModelTag={baseModelTag}
+            onOpenModelPicker={() => setModelPickerOpen(true)}
+            fallbackTitle="Krea 2 Turbo"
+            sectionTitle="Generation Model"
+            loras={loras}
+            onLorasChange={onLorasChange}
+            onOpenLoraPicker={() => setLoraPickerOpen(true)}
+            modelOptions={modelOptions}
+            publicModels={publicModels}
+            publicModelMap={publicModelMap}
+            prompt={prompt}
+            onPromptChange={onPromptChange}
+            disabled={busy}
+          />
 
-            <button
-              type="button"
-              onClick={() => setModelPickerOpen(true)}
-              className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
-            >
-              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
-                {currentModelCover ? (
-                  <img
-                    src={currentModelCover}
-                    alt={selectedModel?.title ?? "Model preview"}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-[var(--accent)]">
-                    <Box className="h-5 w-5 opacity-75" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-xs font-bold text-[var(--ink)]">
-                    {selectedModel?.title || "Krea 2 Turbo"}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  {baseModelTag && (
-                    <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
-                      {baseModelTag}
-                    </span>
-                  )}
-                  <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
-                    {selectedModel?.model_type || "Diffusion Model"}
-                  </span>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
-            </button>
-          </div>
-
-          {/* 5. Aspect Ratio Selector */}
+          {/* 4. Aspect Ratio Selector */}
           <AspectRatioSelector
             value={format}
             onChange={onFormatChange}
@@ -2220,20 +2138,6 @@ export default function ControlPanel(props: Props) {
               </div>
             </div>
           )}
-
-          {/* 6. LoRA Adapters (shared stack with thumbnails, mute & trigger words) */}
-          <LoraStackPanel
-            loras={loras}
-            onLorasChange={onLorasChange}
-            onOpenPicker={() => setLoraPickerOpen(true)}
-            selectedModel={selectedModel}
-            modelOptions={modelOptions}
-            publicModels={publicModels}
-            publicModelMap={publicModelMap}
-            prompt={prompt}
-            onPromptChange={onPromptChange}
-            disabled={busy}
-          />
 
           {/* 7. Sampling Parameters (Seed, Steps, CFG, Sampler, Scheduler) */}
           <AdvancedSamplingPanel
@@ -2307,22 +2211,19 @@ export default function ControlPanel(props: Props) {
             </button>
           </div>
 
-          {/* 1. Generation Model Card */}
-          <GenerationModelCard
+          {/* 1. Model & LoRA Stack */}
+          <ModelLoraStack
             selectedModel={selectedModel}
             coverUrl={currentModelCover}
             baseModelTag={baseModelTag || "LTX-2.3"}
-            onOpenPicker={() => setModelPickerOpen(true)}
+            onOpenModelPicker={() => setModelPickerOpen(true)}
             fallbackTitle="LTX-Video 2.3"
-            disabled={false}
-          />
-
-          {/* 2. LoRA Stack */}
-          <LoraStackPanel
+            isLocked={!videoModelIsLtx}
+            lockedBadge="Workflow Default"
+            sectionTitle="Generation Model"
             loras={loras}
             onLorasChange={onLorasChange}
-            onOpenPicker={() => setLoraPickerOpen(true)}
-            selectedModel={selectedModel}
+            onOpenLoraPicker={() => setLoraPickerOpen(true)}
             modelOptions={modelOptions}
             publicModels={publicModels}
             publicModelMap={publicModelMap}
@@ -3254,62 +3155,26 @@ export default function ControlPanel(props: Props) {
             </div>
           </div>
 
-          {/* 3. Generation Model Card */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                GENERATION MODEL
-              </span>
-              <button
-                type="button"
-                onClick={() => setModelPickerOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition"
-              >
-                <RefreshCw className="h-3 w-3" />
-                <span>Change</span>
-              </button>
-            </div>
+          {/* 3. Model & LoRA Stack */}
+          <ModelLoraStack
+            selectedModel={selectedModel}
+            coverUrl={currentModelCover}
+            baseModelTag={baseModelTag}
+            onOpenModelPicker={() => setModelPickerOpen(true)}
+            fallbackTitle="Krea 2 Turbo"
+            sectionTitle="Generation Model"
+            loras={loras}
+            onLorasChange={onLorasChange}
+            onOpenLoraPicker={() => setLoraPickerOpen(true)}
+            modelOptions={modelOptions}
+            publicModels={publicModels}
+            publicModelMap={publicModelMap}
+            prompt={prompt}
+            onPromptChange={onPromptChange}
+            disabled={busy}
+          />
 
-            <button
-              type="button"
-              onClick={() => setModelPickerOpen(true)}
-              className="group flex w-full items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-raised)]"
-            >
-              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
-                {currentModelCover ? (
-                  <img
-                    src={currentModelCover}
-                    alt={selectedModel?.title ?? "Model preview"}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-[var(--accent)]">
-                    <Box className="h-5 w-5 opacity-75" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-xs font-bold text-[var(--ink)]">
-                    {selectedModel?.title || "Krea 2 Turbo"}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  {baseModelTag && (
-                    <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)]">
-                      {baseModelTag}
-                    </span>
-                  )}
-                  <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--ink-faint)]">
-                    {selectedModel?.model_type || "Diffusion Model"}
-                  </span>
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-[var(--ink-faint)] group-hover:text-[var(--accent)] transition-transform group-hover:translate-x-0.5" />
-            </button>
-          </div>
-
-          {/* 5. Aspect Ratio Selector */}
+          {/* 4. Aspect Ratio Selector */}
           <AspectRatioSelector
             value={format}
             onChange={onFormatChange}
@@ -3318,56 +3183,6 @@ export default function ControlPanel(props: Props) {
             label="Aspect Ratio"
             columns={3}
           />
-
-          {/* 6. Active LoRAs */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                ACTIVE LORAS ({loras.length}/5)
-              </span>
-              <button
-                type="button"
-                disabled={loras.length >= 5}
-                onClick={() => setLoraPickerOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] transition disabled:opacity-40"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Add LoRA</span>
-              </button>
-            </div>
-            {loras.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-center">
-                <p className="text-[11px] text-[var(--ink-faint)]">
-                  No active LoRA modifiers attached
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {loras.map((l) => (
-                  <div
-                    key={l.id}
-                    className="flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-semibold text-[var(--ink)]">
-                        {l.title}
-                      </p>
-                      <span className="text-[10px] font-mono text-[var(--accent)]">
-                        {l.weight.toFixed(2)}x
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeLora(l.id)}
-                      className="text-[var(--danger)] hover:opacity-80 p-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* 7. Sampling Parameters */}
           <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3">
@@ -3420,162 +3235,24 @@ export default function ControlPanel(props: Props) {
             </div>
           )}
 
-          {/* 1. Basic Model Card (Tensor.art layout & controls) */}
-          {modelsLoading && !selectedModel ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                  Basic Model
-                </span>
-                <div className="h-4 w-14 rounded-xl bg-[var(--surface-soft)] shimmer" />
-              </div>
-              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 min-w-0">
-                <div className="h-12 w-12 shrink-0 rounded-xl bg-[var(--surface-soft)] shimmer border border-[var(--line)]" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="h-3.5 w-3/4 rounded bg-[var(--surface-soft)] shimmer" />
-                  <div className="h-2.5 w-1/2 rounded bg-[var(--surface-soft)] shimmer mt-1.5" />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                    Basic Model
-                  </span>
-                  {baseModelTag && (
-                    <span
-                      className="shrink-0 max-w-[120px] truncate rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]"
-                      title={baseModelTag}
-                    >
-                      {baseModelTag}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setModelPickerOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:text-[var(--accent-hover)] focus-visible:text-[var(--accent-hover)] transition shrink-0"
-                  title="Replace Basic Model"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  <span>Replace</span>
-                </button>
-              </div>
-
-              <div className="flex items-stretch gap-1.5 min-w-0">
-                <button
-                  type="button"
-                  aria-label="Choose basic model"
-                  onClick={() => setModelPickerOpen(true)}
-                  className="workspace-command group flex flex-1 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2.5 text-left transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:border-[var(--accent)] focus-visible:border-[var(--accent)] hover:bg-[var(--surface-raised)] focus-visible:bg-[var(--surface-raised)] min-w-0"
-                >
-                  <div className="flex items-center gap-2.5 w-full min-w-0">
-                    {/* Model Thumbnail */}
-                    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]">
-                      {currentModelCover ? (
-                        <>
-                          <img
-                            src={currentModelCover}
-                            alt={selectedModel?.title ?? "Model preview"}
-                            className="asset-zoom-media relative z-10 h-full w-full object-cover"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLElement).style.display =
-                                "none";
-                            }}
-                          />
-                          <div className="absolute inset-0 grid place-items-center text-[var(--accent)] opacity-60">
-                            <Box className="h-5 w-5" />
-                          </div>
-                        </>
-                      ) : (
-                        <div className="grid h-full w-full place-items-center bg-[var(--surface-soft)] text-[var(--accent)]">
-                          <Box className="h-5 w-5 opacity-75" />
-                        </div>
-                      )}
-                      {selectedModel && (
-                        <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[var(--media-scrim-strong)] via-[var(--media-scrim)] to-transparent pb-0.5 pt-2.5 px-1 pointer-events-none">
-                          <span className="block truncate font-mono text-[8px] font-bold text-[var(--ink)] drop-shadow-[0_1px_2px_var(--overlay)]">
-                            {selectedModel.version_name || "v1.0"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Title, Category & Specs */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span
-                          className="truncate min-w-0 block text-xs font-semibold text-[var(--ink)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition"
-                          title={selectedModel?.title ?? "Select Basic Model"}
-                        >
-                          {selectedModel?.title ?? "Select Basic Model"}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
-                        {selectedModel ? (
-                          <span className="shrink-0 inline-flex items-center rounded-md bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--ink-faint)]">
-                            {selectedModel.model_type}
-                          </span>
-                        ) : (
-                          <p className="truncate min-w-0 text-[10px] text-[var(--ink-faint)]">
-                            Click to choose a model from gallery
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action Chevron */}
-                    <div className="flex items-center shrink-0">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--surface-raised)] text-[var(--ink-faint)] group-hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-focus-within:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] group-hover:text-[var(--accent)] group-focus-within:text-[var(--accent)] transition">
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
-                  </div>
-                </button>
-                {selectedModel &&
-                  (() => {
-                    const modelUrl = resolveModelGalleryUrl(
-                      {
-                        modelId: selectedModel.model_id,
-                        title: selectedModel.title,
-                        filename: selectedModel.filename,
-                        fileId: selectedModel.file_id,
-                      },
-                      modelOptions,
-                      publicModels,
-                    );
-                    if (!modelUrl) return null;
-                    return (
-                      <a
-                        href={modelUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label="View model in gallery"
-                        title="View in Model Gallery"
-                        className="flex items-center justify-center rounded-xl border border-[var(--line)] px-2.5 text-[var(--ink-faint)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:border-[var(--accent)] focus-visible:text-[var(--accent)] transition shrink-0"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    );
-                  })()}
-              </div>
-            </div>
-          )}
-
-          {/* 2. LoRA Cards Section (Tensor.art layout & controls) */}
-          <LoraStackPanel
+          {/* 1. Basic Model & LoRA Stack */}
+          <ModelLoraStack
+            selectedModel={selectedModel}
+            coverUrl={currentModelCover}
+            baseModelTag={baseModelTag}
+            onOpenModelPicker={() => setModelPickerOpen(true)}
+            fallbackTitle="Select Basic Model"
+            sectionTitle="Basic Model"
             loras={loras}
             onLorasChange={onLorasChange}
-            onOpenPicker={() => setLoraPickerOpen(true)}
-            selectedModel={selectedModel}
+            onOpenLoraPicker={() => setLoraPickerOpen(true)}
             modelOptions={modelOptions}
             publicModels={publicModels}
             publicModelMap={publicModelMap}
             prompt={prompt}
             onPromptChange={onPromptChange}
             disabled={busy}
+            loading={modelsLoading}
           />
 
           {/* 3. Embedding Cards Section */}

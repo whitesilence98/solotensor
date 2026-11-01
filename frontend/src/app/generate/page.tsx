@@ -1705,6 +1705,8 @@ export default function StudioPage() {
           stage2Upscale={activeTab.stage2Upscale}
           videoDurationSeconds={activeTab.videoDurationSeconds}
           videoFps={activeTab.videoFps}
+          activeMode={activeTensorMode}
+          selectedModelCover={selectedModel?.cover_url ?? null}
           />
         </div>
 

@@ -75,6 +75,8 @@ export function AssetCardSkeleton({
 export interface AssetCardListProps {
   /** Array of AssetRecord or GalleryItem objects */
   items: (AssetRecord | GalleryItem)[];
+  /** Optional lead slot rendered at the very beginning of the masonry (e.g. live generating placeholder) */
+  leadSlot?: React.ReactNode;
   /** Whether loading state is active */
   loading?: boolean;
   /** Number of skeleton cards to render when loading */
@@ -127,6 +129,7 @@ function AssetCardListComponent({
   remixModelId,
   className = "",
   emptyState,
+  leadSlot,
 }: AssetCardListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(() => {
@@ -169,22 +172,25 @@ function AssetCardListComponent({
   // Distribute items round-robin across columns so Row 1 is [1, 2, 3], Row 2 is [4, 5, 6]
   const columnBuckets = useMemo(() => {
     const safeCols = Math.max(1, columns);
-    const buckets: Array<
-      Array<{
-        item: AssetRecord | GalleryItem;
-        index: number;
-        key: string;
-      }>
-    > = Array.from({ length: safeCols }, () => []);
+    type BucketEntry =
+      | { isLeadSlot: true; index: number; key: string }
+      | { isLeadSlot?: false; item: AssetRecord | GalleryItem; index: number; key: string };
+
+    const buckets: Array<Array<BucketEntry>> = Array.from({ length: safeCols }, () => []);
+
+    const offset = leadSlot ? 1 : 0;
+    if (leadSlot) {
+      buckets[0].push({ isLeadSlot: true, index: -1, key: "__generating_lead_slot__" });
+    }
 
     items.forEach((item, index) => {
       const key =
         item.key || ("id" in item ? String((item as any).id) : String(index));
-      buckets[index % safeCols].push({ item, index, key });
+      buckets[(index + offset) % safeCols].push({ isLeadSlot: false, item, index, key });
     });
 
     return buckets;
-  }, [items, columns]);
+  }, [items, columns, leadSlot]);
 
   // Distribute skeletons round-robin during loading state
   const skeletonBuckets = useMemo(() => {
@@ -215,7 +221,7 @@ function AssetCardListComponent({
     );
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && !leadSlot) {
     return emptyState ? <>{emptyState}</> : null;
   }
 
@@ -226,7 +232,15 @@ function AssetCardListComponent({
     >
       {columnBuckets.map((bucket, colIdx) => (
         <div key={colIdx} className="flex flex-1 flex-col gap-3.5 min-w-0">
-          {bucket.map(({ item, index, key }) => {
+          {bucket.map((entry) => {
+            if (entry.isLeadSlot) {
+              return (
+                <div key={entry.key} className="w-full">
+                  {leadSlot}
+                </div>
+              );
+            }
+            const { item, index, key } = entry;
             const isSaved = savedSet ? savedSet.has(key) : undefined;
 
             return (

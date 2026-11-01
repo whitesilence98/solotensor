@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Sparkles, Zap, Loader2, Tag, ChevronDown, ChevronUp, X, Check, UploadCloud, Eye, EyeOff } from "lucide-react";
+import { Sparkles, Zap, Loader2, ImageUp, ChevronDown, ChevronUp, X, Check, UploadCloud, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import type { VideoSubMode } from "@/lib/api";
 
@@ -238,15 +238,19 @@ export default function StudioPromptBar({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={interrogating || busy}
-                title="Upload an image to auto-detect prompt tags and metadata"
-                className="inline-flex h-7 sm:h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-2.5 text-[11px] font-semibold text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-soft)] transition disabled:opacity-50"
+                title={
+                  interrogating
+                    ? "Detecting prompt tags…"
+                    : "Image to Prompt: Upload an image to auto-detect prompt tags and metadata"
+                }
+                aria-label="Image to Prompt"
+                className="inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--accent)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-soft)] transition disabled:opacity-50"
               >
                 {interrogating ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Tag className="h-3.5 w-3.5" />
+                  <ImageUp className="h-3.5 w-3.5" />
                 )}
-                <span>{interrogating ? "Detecting…" : "Auto Prompt"}</span>
               </button>
             </>
           )}
