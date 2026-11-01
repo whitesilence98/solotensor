@@ -602,7 +602,7 @@ export default function AssetInspectionStage({
 
         {/* Detailer Badge on Stage */}
         {isDetailer && (
-          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 rounded-md bg-[var(--overlay)] backdrop-blur-md border border-[var(--accent)]/40 px-2.5 py-1 font-mono text-[10px] font-semibold text-[var(--accent)] shadow-md pointer-events-none">
+          <div className="absolute top-4 left-4 z-20 flex items-center gap-1.5 rounded-md bg-[var(--overlay)] backdrop-blur-md border border-[var(--accent-ambient)] px-2.5 py-1 font-mono text-[10px] font-semibold text-[var(--accent)] shadow-md pointer-events-none">
             <Sparkles className="h-3 w-3 fill-current" />
             <span>2-Pass Face Detailer</span>
           </div>
@@ -693,7 +693,7 @@ export default function AssetInspectionStage({
             title={like.error ?? (like.liked ? "Remove like" : "Like asset")}
             className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold backdrop-blur-md transition motion-reduce:transition-none active:scale-95 ${
               like.liked
-                ? "border-[var(--accent)]/50 bg-[var(--overlay)] text-[var(--accent)]"
+                ? "border-[var(--accent-ambient)] bg-[var(--overlay)] text-[var(--accent)]"
                 : "border-[var(--line)] bg-[var(--overlay)] text-[var(--ink-soft)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]"
             } ${like.pending ? "opacity-70" : ""}`}
           >
@@ -976,7 +976,7 @@ export default function AssetInspectionStage({
                           {baseModelVersion}
                         </span>
                       )}
-                      <span className="rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--accent)]/20">
+                      <span className="rounded bg-[var(--accent-ambient)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] border border-[var(--line)]">
                         Checkpoint
                       </span>
                     </div>

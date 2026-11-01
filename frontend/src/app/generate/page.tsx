@@ -53,7 +53,11 @@ const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"]
 const DEFAULT_SAMPLE_PROMPT =
   "Authentic, dynamic medium close-up cinematic action still, shot on a medium format camera with 85mm lens, atmospheric haze, volumetric rim lighting, fine textures";
 
-const isBaseModel = (type?: string) => (type ? ["Checkpoint", "SVD"].includes(type) : false);
+const isBaseModel = (type?: string, filename?: string) =>
+  Boolean(
+    (type && ["Checkpoint", "SVD"].includes(type)) ||
+      filename?.toLowerCase().endsWith(".gguf"),
+  );
 const isAdapterModel = (type?: string) => (type ? ["LoRA", "LoKr", "LoCon", "LyCORIS", "DoRA", "Motion LoRA"].includes(type) : false);
 
 interface ModelIdentity {
@@ -537,7 +541,7 @@ export default function StudioPage() {
         if (!isCurrentCompatible) {
           const firstCompatible =
             modelOptions.find(
-              (m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, newMode),
+              (m) => isBaseModel(m.model_type, m.filename) && isModelCompatibleWithMode(m, newMode),
             ) ?? modelOptions.find((m) => isModelCompatibleWithMode(m, newMode));
 
           if (firstCompatible) {
@@ -589,7 +593,7 @@ export default function StudioPage() {
       if (!isCurrentCompatible) {
         const firstCompatible =
           modelOptions.find(
-            (m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, activeTensorMode),
+            (m) => isBaseModel(m.model_type, m.filename) && isModelCompatibleWithMode(m, activeTensorMode),
           ) ?? modelOptions.find((m) => isModelCompatibleWithMode(m, activeTensorMode));
 
         if (firstCompatible) {
@@ -728,9 +732,9 @@ export default function StudioPage() {
       }
     }
     const compatibleFirst = modelOptions.find(
-      (item) => isBaseModel(item.model_type) && isModelCompatibleWithMode(item, activeTensorMode)
+      (item) => isBaseModel(item.model_type, item.filename) && isModelCompatibleWithMode(item, activeTensorMode)
     );
-    return compatibleFirst ?? modelOptions.find((item) => isBaseModel(item.model_type)) ?? null;
+    return compatibleFirst ?? modelOptions.find((item) => isBaseModel(item.model_type, item.filename)) ?? null;
   }, [modelOptions, activeTab.selection, activeTensorMode]);
 
   const baseModel = useMemo(() => {
@@ -747,20 +751,20 @@ export default function StudioPage() {
     }
     if (
       selectedModel &&
-      isBaseModel(selectedModel.model_type) &&
+      isBaseModel(selectedModel.model_type, selectedModel.filename) &&
       isModelCompatibleWithMode(selectedModel, activeTensorMode)
     ) {
       return selectedModel;
     }
     return (
       modelOptions.find(
-        (item) => isBaseModel(item.model_type) && isModelCompatibleWithMode(item, activeTensorMode)
+        (item) => isBaseModel(item.model_type, item.filename) && isModelCompatibleWithMode(item, activeTensorMode)
       ) ?? null
     );
   }, [modelOptions, activeTab.baseSelection, selectedModel, activeTensorMode]);
 
   const baseModelOptions = useMemo(() => {
-    return modelOptions.filter((item) => isBaseModel(item.model_type));
+    return modelOptions.filter((item) => isBaseModel(item.model_type, item.filename));
   }, [modelOptions]);
 
   // The video graph always runs the bundled LTX-2.3 weights. Surface that honestly
@@ -1003,8 +1007,8 @@ export default function StudioPage() {
 
     if (!targetModel) {
       targetModel =
-        modelOptions.find((m) => isBaseModel(m.model_type) && isModelCompatibleWithMode(m, activeTensorMode)) ??
-        modelOptions.find((m) => isBaseModel(m.model_type)) ??
+        modelOptions.find((m) => isBaseModel(m.model_type, m.filename) && isModelCompatibleWithMode(m, activeTensorMode)) ??
+        modelOptions.find((m) => isBaseModel(m.model_type, m.filename)) ??
         modelOptions[0] ??
         null;
     }

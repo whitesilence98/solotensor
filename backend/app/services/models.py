@@ -138,25 +138,28 @@ class ModelService:
         for folder in folders:
             if folder.is_dir():
                 for p in folder.glob("*.json"):
-                    if p.name not in seen and p.is_file():
-                        seen[p.name] = p
+                    if p.is_file():
+                        if p.name not in seen or p.stat().st_mtime > seen[p.name].stat().st_mtime:
+                            seen[p.name] = p
         return list(seen.values())
 
     def _path(self, model_id: str) -> Path:
         if not MODEL_ID_RE.fullmatch(model_id):
             raise ModelNotFound("Invalid model id")
         primary = self.definitions / f"{model_id}.json"
-        if primary.is_file() or not self._is_default_models_dir():
+        if not self._is_default_models_dir():
             return primary
         backend_dir = Path(__file__).resolve().parent.parent.parent
         root_dir = backend_dir.parent
+        candidates: list[Path] = [primary]
         for alt_root in (
             root_dir / "models" / "definitions",
             backend_dir / "models" / "definitions",
         ):
-            alt_path = alt_root / f"{model_id}.json"
-            if alt_path.is_file():
-                return alt_path
+            candidates.append(alt_root / f"{model_id}.json")
+        existing = [c for c in candidates if c.is_file()]
+        if existing:
+            return max(existing, key=lambda c: c.stat().st_mtime)
         return primary
 
     @staticmethod
