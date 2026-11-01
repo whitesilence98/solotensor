@@ -867,15 +867,20 @@ def patch_edit_workflow(
     if "138" in graph and "vae" not in graph["138"].get("inputs", {}):
         graph["138"].setdefault("inputs", {})["vae"] = ["611:612", 3]
 
-    # 7. Model Loader (Checkpoint vs UNET)
-    eff_is_checkpoint = is_checkpoint or (
+    # 7. Model Loader (Checkpoint vs UNET vs GGUF)
+    is_gguf = bool(unet_name) and str(unet_name).lower().endswith(".gguf")
+    eff_is_checkpoint = (not is_gguf) and (is_checkpoint or (
         bool(unet_name) and (
             "aio" in str(unet_name).lower()
             or "checkpoint" in str(unet_name).lower()
             or str(unet_name).replace("\\", "/").startswith("qwen/Qwen-Rapid")
         )
-    )
-    if eff_is_checkpoint and unet_name and "611:587" in graph:
+    ))
+    if is_gguf and "611:610" in graph:
+        graph["611:610"].setdefault("inputs", {})["unet_name"] = str(unet_name)
+        if "611:612" in graph:
+            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:616", 0]
+    elif eff_is_checkpoint and unet_name and "611:587" in graph:
         graph["611:587"].setdefault("inputs", {})["ckpt_name"] = str(unet_name)
         if "611:612" in graph:
             graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:615", 0]

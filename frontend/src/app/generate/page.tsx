@@ -521,7 +521,9 @@ export default function StudioPage() {
   const handleTensorModeChange = useCallback(
     (newMode: TensorMode) => {
       setActiveTensorMode(newMode);
-      if (newMode === "Img2Img" || newMode === "Edit") {
+      if (newMode === "Edit") {
+        setMode("edit");
+      } else if (newMode === "Img2Img") {
         setMode("image-to-image");
       } else {
         setMode("text-to-image");
@@ -1098,7 +1100,7 @@ export default function StudioPage() {
         effectiveMode = "image-to-image";
       }
     } else if (activeTensorMode === "Edit") {
-      effectiveMode = "image-to-image";
+      effectiveMode = "edit";
     } else if (activeTensorMode === "Video") {
       effectiveMode = "video";
     }
@@ -1121,7 +1123,8 @@ export default function StudioPage() {
         ...((effectiveMode === "image-to-image" ||
           effectiveMode === "detailer" ||
           effectiveMode === "upscale" ||
-          effectiveMode === "video") &&
+          effectiveMode === "video" ||
+          effectiveMode === "edit") &&
         activeTab.referenceImage &&
         !(effectiveMode === "video" && videoSubMode === "text-to-video")
           ? { reference_images: [activeTab.referenceImage] }

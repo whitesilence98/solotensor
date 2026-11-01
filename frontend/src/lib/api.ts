@@ -148,7 +148,8 @@ export type GenerationMode =
   | "image-to-image"
   | "detailer"
   | "upscale"
-  | "video";
+  | "video"
+  | "edit";
 
 /** Video audio track: `silent` and native audio share a graph state; `voice_clone` needs `reference_audio`. */
 export type VideoAudioMode = "silent" | "voice_clone";
