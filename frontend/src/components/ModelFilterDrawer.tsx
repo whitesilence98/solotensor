@@ -188,7 +188,7 @@ export default function ModelFilterDrawer({
           {/* Section 1: Local Vault & Readiness */}
           <div className="space-y-3">
             <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink-faint)]">
-              Vault & Local Storage
+              Studio Vault & Storage
             </span>
             <div
               onClick={() => onToggleOnlyVault(!onlyVault)}
@@ -226,7 +226,7 @@ export default function ModelFilterDrawer({
                     </span>
                   </div>
                   <p className="mt-0.5 text-[11px] text-[var(--ink-soft)]">
-                    Only show weights mounted into your ComfyUI workspace
+                    Only show weights mounted into your Studio Vault
                   </p>
                 </div>
               </div>

@@ -141,7 +141,7 @@ export function ProtectedRoute({
 
           <div className="space-y-1.5">
             <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--accent)] font-semibold">
-              PROTECTED WORKSPACE // CREATOR ACCESS
+              CREATOR ACCESS REQUIRED
             </span>
             <h2 className="text-xl font-bold tracking-tight text-[var(--ink)]">
               {title || "Authentication Required"}
@@ -199,7 +199,7 @@ export function ProtectedRoute({
 
         <div className="space-y-1.5">
           <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--danger)] font-bold">
-            RESTRICTED ENCLAVE // ELEVATED CLEARANCE
+            ACCESS RESTRICTED
           </span>
           <h2 className="text-xl font-bold tracking-tight text-[var(--ink)]">
             {title || "Elevated Privileges Required"}
@@ -245,7 +245,7 @@ export function ProtectedRoute({
         <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-3.5 text-left space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-bold">
-              SOLO STUDIO // RBAC EMULATION
+              STUDIO ROLE EMULATION
             </span>
             <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
               LOCAL DEMO MODE

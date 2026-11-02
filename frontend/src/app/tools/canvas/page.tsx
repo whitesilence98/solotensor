@@ -164,7 +164,7 @@ export default function ToolCanvasPage() {
   // Ingest workflow file
   const processWorkflowFile = async (targetFile: File) => {
     if (!targetFile.name.toLowerCase().endsWith(".json")) {
-      setError("Please upload a valid ComfyUI JSON file.");
+      setError("Please upload a valid Workflow Blueprint (.json) file.");
       return;
     }
     setError(null);
@@ -186,7 +186,7 @@ export default function ToolCanvasPage() {
       if (res.detected_mode) setMode(res.detected_mode);
       setControls(res.controls.map((c) => ({ ...c, exposed: c.exposed !== false })));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to parse ComfyUI graph.");
+      setError(e instanceof Error ? e.message : "Failed to parse pipeline graph.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -526,7 +526,7 @@ export default function ToolCanvasPage() {
                     Load Graph into Visual Node Canvas
                   </h2>
                   <p className="mt-1 font-mono text-xs text-[var(--ink-faint)]">
-                    Upload any ComfyUI API workflow JSON to inspect nodes, links, and controllers
+                    Upload any Workflow Blueprint (.json) to inspect nodes, links, and controllers
                   </p>
                 </div>
 
@@ -545,7 +545,7 @@ export default function ToolCanvasPage() {
                     }}
                   />
                   <Upload className="h-6 w-6 text-[var(--accent)] mx-auto mb-2" />
-                  <p className="font-bold text-[var(--ink)]">Click to Browse or Drop ComfyUI JSON</p>
+                  <p className="font-bold text-[var(--ink)]">Click to Browse or Drop Workflow JSON</p>
                   <p className="text-[10px] text-[var(--ink-faint)] mt-0.5">Supports any *.json workflow</p>
                 </div>
               </div>

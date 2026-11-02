@@ -12,7 +12,7 @@ import random
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import (
     BackgroundTasks,
@@ -21,6 +21,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     WebSocket,
@@ -93,6 +94,7 @@ from .schemas import (
     ModelVersionResponse,
     ModelVersionUpdateRequest,
     PaginatedCommentsResponse,
+    PaginatedGalleryResponse,
     PaginatedGenerationsResponse,
     PaginatedSamplesResponse,
     PublicModelListResponse,
@@ -2759,8 +2761,27 @@ async def create_tool_json(
 
 
 @app.get("/api/tools", response_model=ToolCatalogResponse)
-async def list_tools(user_id: str | None = None) -> ToolCatalogResponse:
-    return ToolCatalogResponse(items=get_ai_tool_service().list_public(user_id=user_id))
+async def list_tools(
+    user_id: str | None = None,
+    page: int | None = None,
+    limit: int | None = None,
+) -> ToolCatalogResponse:
+    all_items = get_ai_tool_service().list_public(user_id=user_id)
+    total = len(all_items)
+    if limit is not None and limit > 0:
+        p = page if (page is not None and page >= 1) else 1
+        start = (p - 1) * limit
+        end = start + limit
+        paginated = all_items[start:end]
+        has_more = end < total
+        return ToolCatalogResponse(
+            items=paginated,
+            total=total,
+            page=p,
+            limit=limit,
+            has_more=has_more,
+        )
+    return ToolCatalogResponse(items=all_items, total=total)
 
 
 @app.get("/api/tools/{tool_id}", response_model=ToolDetail)
@@ -3290,6 +3311,64 @@ async def paginated_gallery(
     )
     return PaginatedGenerationsResponse.create(
         items=[GenerationRecordResponse(**item) for item in items],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
+@app.get("/api/v1/gallery/related", response_model=PaginatedGalleryResponse)
+async def related_gallery(
+    key: str = Query(..., min_length=1, max_length=1024),
+    page: int = Query(1, ge=1),
+    limit: int = Query(12, ge=1, le=100),
+    mode: Literal["all", "model", "tags"] = Query("all"),
+    scope: Literal["own", "public"] = Query("own"),
+    current_user: UserResponse = Depends(get_current_user),
+) -> PaginatedGalleryResponse:
+    """Return assets related to ``key`` by model or shared tags.
+
+    ``scope="own"`` (default) requires the caller to own the anchor and returns
+    only the caller's own assets. ``scope="public"`` also accepts any
+    gallery-visible public anchor and returns gallery-visible relations with the
+    caller's own matches ranked first. Matching runs over the local sidecar scan,
+    so it is dispatched off the event loop.
+    """
+    import asyncio
+
+    try:
+        items, total = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: storage.list_related(
+                key,
+                user_id=current_user.id,
+                page=page,
+                limit=limit,
+                mode=mode,
+                scope=scope,
+            ),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except PermissionError as exc:
+        detail = (
+            "Asset is not publicly viewable"
+            if scope == "public"
+            else "Asset is not owned by the current user"
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail) from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.error(
+            "Related gallery scan failed (%s)", type(exc).__name__
+        )
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Gallery storage is temporarily unavailable",
+        ) from exc
+    return PaginatedGalleryResponse.create(
+        items=items,
         total=total,
         page=page,
         limit=limit,

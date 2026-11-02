@@ -15,8 +15,7 @@ import HomePromoCarousel from "@/components/HomePromoCarousel";
 import HomeFeaturedTools from "@/components/HomeFeaturedTools";
 import HomeModelsSection from "@/components/HomeModelsSection";
 import HomePostsSection from "@/components/HomePostsSection";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
-import WorkspaceModal from "@/components/WorkspaceModal";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 
 export default function HomePage() {
@@ -183,24 +182,14 @@ export default function HomePage() {
       </div>
 
       {/* Asset Inspection Modal Dialog with Deep-Linking */}
-      <WorkspaceModal
-        open={Boolean(inspectedAsset)}
-        onClose={closeAssetInspection}
+      <AssetDetailOverlay
+        asset={inspectedAsset}
+        items={assets}
         title={inspectedAsset?.metadata?.prompt || inspectedAsset?.key || "Asset Details"}
-        size="media"
-        headless
-      >
-        {inspectedAsset && (
-          <AssetInspectionStage
-            asset={inspectedAsset}
-            items={assets}
-            modelOptions={modelOptions}
-            mode="modal"
-            onSelectAsset={selectAssetInModal}
-            onClose={closeAssetInspection}
-          />
-        )}
-      </WorkspaceModal>
+        modelOptions={modelOptions}
+        onSelectAsset={selectAssetInModal}
+        onClose={closeAssetInspection}
+      />
       {/* Footer */}
       <WorkspaceFooter containerClassName="max-w-[1720px]" />
     </main>

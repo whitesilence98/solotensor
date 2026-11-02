@@ -588,7 +588,7 @@ export default function CreateModelPage() {
         if (!cancelled) {
           setLocalFiles([]);
           setLocalError(
-            err instanceof Error ? err.message : "Could not scan ComfyUI files",
+            err instanceof Error ? err.message : "Could not scan model vault files",
           );
         }
       })
@@ -624,7 +624,7 @@ export default function CreateModelPage() {
         setVaeFiles(Array.from(found));
       })
       .catch((err) =>
-        setVaeError(err instanceof Error ? err.message : "Could not scan ComfyUI VAE directory"),
+        setVaeError(err instanceof Error ? err.message : "Could not scan VAE directory"),
       )
       .finally(() => setVaeLoading(false));
 
@@ -651,7 +651,7 @@ export default function CreateModelPage() {
       })
       .catch((err) =>
         setEncoderError(
-          err instanceof Error ? err.message : "Could not scan ComfyUI text encoders directory",
+          err instanceof Error ? err.message : "Could not scan text encoders directory",
         ),
       )
       .finally(() => setEncoderLoading(false));
@@ -1395,7 +1395,7 @@ export default function CreateModelPage() {
                           type="button"
                           onClick={refreshComfyEnclave}
                           disabled={vaeLoading || encoderLoading}
-                          title="Re-scan local ComfyUI models folder"
+                          title="Re-scan model vault folders"
                           className="inline-flex items-center gap-1.5 rounded-[5px] border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1 font-mono text-[10px] font-bold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-40"
                         >
                           <RefreshCw className={`h-3 w-3 ${vaeLoading || encoderLoading ? "animate-spin" : ""}`} />
@@ -2247,7 +2247,7 @@ export default function CreateModelPage() {
                         <div className="flex items-center gap-1.5 mb-1">
                           <FolderDown className="h-3.5 w-3.5 text-[var(--accent)]" />
                           <p className="font-mono text-[11px] font-bold text-[var(--ink)]">
-                            ComfyUI Local Vault
+                            Studio Model Vault
                           </p>
                         </div>
                         <p className="font-mono text-[9px] text-[var(--ink-faint)]">
@@ -2352,7 +2352,7 @@ export default function CreateModelPage() {
                             : localFiles;
                         return localLoading ? (
                           <div className="p-4 text-center font-mono text-[11px] text-[var(--ink-faint)] animate-pulse">
-                            Scanning ComfyUI model enclave…
+                            Scanning studio model vault…
                           </div>
                         ) : localError ? (
                           <div className="p-3 rounded-[5px] border border-[var(--danger-line)] bg-[var(--danger-surface)] font-mono text-[10px] text-[var(--danger)]">
@@ -2448,7 +2448,7 @@ export default function CreateModelPage() {
                           No binaries attached to release {activeVersion.name}
                         </p>
                         <p className="font-mono text-[10px] text-[var(--ink-faint)] mt-1">
-                          Upload weights above or link directly from your ComfyUI local vault.
+                          Upload weights above or link directly from your studio model vault.
                         </p>
                       </div>
                     ) : (
@@ -2497,7 +2497,7 @@ export default function CreateModelPage() {
                                         : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-soft)]"
                                     }`}
                                   >
-                                    {file.kind === "local" ? "ComfyUI Vault" : "Direct Upload"}
+                                    {file.kind === "local" ? "Studio Vault" : "Direct Upload"}
                                   </span>
                                 </td>
                                 <td className="px-2.5 py-2.5 text-[var(--ink-soft)] whitespace-nowrap">
@@ -2820,7 +2820,7 @@ export default function CreateModelPage() {
                           Direct Weights Download
                         </span>
                         <span className="text-[9px] text-[var(--ink-faint)]">
-                          Allow visitors to download raw model weight files to their local machine
+                          Allow visitors to download raw model weight files to their workstation
                         </span>
                       </div>
                       <input

@@ -24,7 +24,7 @@ const PROMO_SLIDES: PromoSlide[] = [
     title: "FLUX 3 Image Klein",
     badge: "New Architecture",
     badgeType: "accent",
-    subtitle: "Local sub-second photorealism & prompt-aligned typography conditioning.",
+    subtitle: "Sub-second photorealism & prompt-aligned typography conditioning.",
     ctaText: "Try Now",
     href: "/generate",
     icon: Wand2,
@@ -33,7 +33,7 @@ const PROMO_SLIDES: PromoSlide[] = [
   },
   {
     id: "comfy-pipelines",
-    title: "ComfyUI Visual Nodes",
+    title: "Studio Visual Nodes",
     badge: "Workflow Hub",
     badgeType: "accent",
     subtitle: "Turn multi-stage generation graphs into reproducible 1-click tools.",
@@ -110,7 +110,7 @@ export default function HomePromoCarousel() {
             {/* Bottom: Action CTA */}
             <div className="relative z-10 flex items-center justify-between pt-1 border-t border-white/[0.06]">
               <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--ink-faint)]">
-                Local GPU Accelerated
+                Studio GPU Accelerated
               </span>
               <Link
                 href={slide.href}

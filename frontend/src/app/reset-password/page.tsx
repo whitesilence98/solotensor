@@ -70,7 +70,7 @@ function ResetPasswordContent() {
         <div className="workspace-core rounded-[var(--radius-panel)] p-6 md:p-8">
           {/* Header */}
           <div className="mb-6 flex items-center justify-between border-b border-[var(--line)] pb-4">
-            <BrandLogo size="md" subtitle="SECURITY CREDENTIALS // UPDATE" href="/" />
+            <BrandLogo size="md" subtitle="UPDATE PASSWORD" href="/" />
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--accent)]">
               <KeyRound className="h-5 w-5" />
             </div>
@@ -221,7 +221,7 @@ function ResetPasswordContent() {
           {/* Footer Note */}
           <div className="mt-6 border-t border-[var(--line)] pt-3 text-center">
             <span className="font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
-              LOCAL-FIRST CIPHER // TOKENS ARE NEVER SHARED WITH THIRD PARTIES
+              SECURE ENCRYPTION • CREDENTIALS ARE NEVER SHARED
             </span>
           </div>
         </div>

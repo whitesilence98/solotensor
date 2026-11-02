@@ -18,8 +18,7 @@ import {
 import AssetCardList from "@/components/AssetCardList";
 import EmptyState from "@/components/EmptyState";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
-import WorkspaceModal from "@/components/WorkspaceModal";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import {
   api,
   withTypes,
@@ -410,8 +409,8 @@ export default function AssetsPage() {
                     if (e.key === "Enter") commitSearch();
                   }}
                   onBlur={commitSearch}
-                  placeholder="Search local filenames…"
-                  aria-label="Search local filenames"
+                  placeholder="Search asset filenames…"
+                  aria-label="Search asset filenames"
                   className="h-9 w-full rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] pl-9 pr-12 text-xs text-[var(--ink)] placeholder:text-[var(--ink-soft)]/60 outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 focus:bg-[var(--surface)]"
                 />
                 {searchDraft ? (
@@ -595,7 +594,7 @@ export default function AssetsPage() {
         ) : error ? (
           <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 text-center" role="alert">
             <p className="text-sm font-medium text-[var(--danger)]">{error}</p>
-            <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check that the local API is running, then retry.</p>
+            <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check your studio connection, then retry.</p>
             <button type="button" onClick={() => { setLoading(true); setError(null); setRetryKey((key) => key + 1); }} className="workspace-action-secondary mt-4 px-3 py-2 text-xs">Try again</button>
           </div>
         ) : assets.length === 0 ? (
@@ -642,27 +641,17 @@ export default function AssetsPage() {
       </section>
 
       {/* Shallow History Inspection Modal */}
-      <WorkspaceModal
-        open={Boolean(selectedAsset)}
+      <AssetDetailOverlay
+        asset={selectedAsset}
+        items={filtered}
+        modelOptions={modelOptions}
+        onSelectAsset={selectAssetInCarousel}
         onClose={closeAsset}
-        headless
-        size="media"
-      >
-        {selectedAsset && (
-          <AssetInspectionStage
-            mode="modal"
-            asset={selectedAsset}
-            items={filtered}
-            modelOptions={modelOptions}
-            onSelectAsset={selectAssetInCarousel}
-            onClose={closeAsset}
-            onDeleteOutput={(key) => {
-              setAssets((prev) => prev.filter((a) => a.key !== key));
-              closeAsset();
-            }}
-          />
-        )}
-      </WorkspaceModal>
+        onDeleteOutput={(key) => {
+          setAssets((prev) => prev.filter((a) => a.key !== key));
+          closeAsset();
+        }}
+      />
 
       {deleteTarget && (
         <div

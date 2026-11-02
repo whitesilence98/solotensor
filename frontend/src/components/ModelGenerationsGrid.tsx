@@ -12,8 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, type GalleryItem, type GenerationRecord } from "@/lib/api";
-import WorkspaceModal from "@/components/WorkspaceModal";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import AssetCardList from "@/components/AssetCardList";
 
 export interface ModelGenerationsGridProps {
@@ -158,7 +157,7 @@ export default function ModelGenerationsGrid({
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block mb-1">
-            CREATIONS // GALLERY
+            COMMUNITY SHOWCASE
           </span>
           <div className="flex items-center gap-2.5">
             <h2 className="text-lg font-bold tracking-tight text-[var(--ink)]">
@@ -332,22 +331,12 @@ export default function ModelGenerationsGrid({
       )}
 
       {/* Lightbox Inspector Modal */}
-      <WorkspaceModal
-        open={Boolean(selectedAsset)}
+      <AssetDetailOverlay
+        asset={selectedAsset}
+        items={galleryItems}
+        onSelectAsset={selectAssetInCarousel}
         onClose={closeAsset}
-        headless
-        size="media"
-      >
-        {selectedAsset && (
-          <AssetInspectionStage
-            mode="modal"
-            asset={selectedAsset}
-            items={galleryItems}
-            onSelectAsset={selectAssetInCarousel}
-            onClose={closeAsset}
-          />
-        )}
-      </WorkspaceModal>
+      />
     </section>
   );
 }

@@ -121,7 +121,7 @@ export default function CreditPill({
           {/* Popover Header */}
           <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
             <div>
-              <div className="workspace-kicker mb-0.5">ENERGY POOL // STATUS</div>
+              <div className="workspace-kicker mb-0.5">STUDIO CREDITS</div>
               <h3 className="font-mono text-xs font-bold text-[var(--ink)]">
                 Daily Studio Energy
               </h3>

@@ -27,8 +27,7 @@ import {
  X,
  Zap,
 } from "lucide-react";
-import WorkspaceModal from "@/components/WorkspaceModal";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import CreditPill from "@/components/CreditPill";
 import AssetCardList from "@/components/AssetCardList";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
@@ -157,7 +156,7 @@ function CanvasListCard({
       )}
      </div>
      <p className="mt-1 truncate font-mono text-[11px] text-[var(--ink-faint)]">
-      {meta?.model_title ?? "ComfyUI"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
+      {meta?.model_title ?? "SoloTensor Engine"} · {meta?.format_name ?? "Aspect"} · Seed {meta?.seed ?? "N/A"}
      </p>
     </div>
    </div>
@@ -419,10 +418,6 @@ export default function CanvasPreview(props: Props) {
  const comparisonLabel = detailerBeforeUrl
   ? "Face & Image Detailer Comparison (Before vs After)"
   : "Before / After Comparison";
-
- const selectedIndex = selectedAsset
-  ? filteredGallery.findIndex((item) => item.key === selectedAsset.key)
-  : -1;
 
  const openAsset = useCallback((item: GalleryItem) => {
   setSelectedAsset(item);
@@ -694,7 +689,7 @@ export default function CanvasPreview(props: Props) {
             <span>·</span>
             <span>{aspectRatio || "16:9"}</span>
             <span>·</span>
-            <span>LOCAL ENGINE</span>
+            <span>STUDIO ENGINE</span>
           </div>
         </div>
       </section>
@@ -738,27 +733,16 @@ export default function CanvasPreview(props: Props) {
    </div>
 
    {/* Asset Detail Lightbox Modal */}
-   <WorkspaceModal
-    open={Boolean(selectedAsset)}
+   <AssetDetailOverlay
+    asset={selectedAsset}
+    items={filteredGallery}
+    onSelectAsset={selectAssetInCarousel}
     onClose={closeAsset}
-    headless
-    size="media"
-   >
-    {selectedAsset && (
-     <AssetInspectionStage
-      mode="modal"
-      asset={selectedAsset}
-      items={filteredGallery}
-      currentIndex={selectedIndex}
-      onSelectAsset={selectAssetInCarousel}
-      onClose={closeAsset}
-      modelOptions={props.modelOptions}
-      onRemix={onRemix}
-      onSetReferenceImage={onSetReferenceImage}
-      onDeleteOutput={onDeleteOutput}
-     />
-    )}
-   </WorkspaceModal>
+    modelOptions={props.modelOptions}
+    onRemix={onRemix}
+    onSetReferenceImage={onSetReferenceImage}
+    onDeleteOutput={onDeleteOutput}
+   />
   </main>
  );
 }

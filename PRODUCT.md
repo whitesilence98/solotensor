@@ -1,17 +1,18 @@
 # SoloTensor Product Context
 
 ## 1. Product Vision
-SoloTensor is a local, privacy-first generative AI studio connecting directly to ComfyUI. It replaces complex, fragile node graphs with an elegant, pro-grade studio interface designed for solo artists, designers, and AI creators.
+SoloTensor is a pro-grade, consumer-ready generative AI creation platform designed for everyone—digital artists, designers, content creators, and AI workflow engineers. Inspired by the best of Civitai and Tensor.Art, it provides a tactile, Obsidian Brutalist studio interface that completely abstracts away complex node spaghetti, backend execution plumbing, and developer jargon into intuitive, 1-click creative apps.
 
 ---
 
 ## 2. Target Audience & Core Personas
-- **The Solo Creator**: Independent designers and digital artists who generate high-fidelity imagery and video assets on their local GPU.
-- **The Workflow Engineer**: Creators who train custom LoRAs, fine-tune prompts, and integrate specialized workflows (Face Restore, Upscaling, Background Removal).
+- **The Digital Creator & Artist**: Visual artists, concept designers, and storytellers who want instant, high-fidelity image and video synthesis without dealing with ComfyUI node graphs or technical setup.
+- **The Designer & Product Creative**: Teams and solo designers needing rapid style-transfer, precision upscaling, inpainting, and branded asset generation.
+- **The AI Workflow Engineer**: Technical creators who author and share specialized pipeline presets, custom LoRAs, and parametric tools that non-technical creators can run with one click.
 - **Core Value Proposition**: 
-  - Complete data privacy (100% local inference).
-  - Frictionless ComfyUI integration without visual spaghetti nodes.
-  - Studio-grade curation, tagging, and asset management.
+  - **Frictionless Consumer Experience**: Consumer-friendly studio interface that hides all internal node plumbing, local port numbers, and daemon execution details.
+  - **Pro-Grade Speed & Privacy**: High-throughput neural acceleration with complete ownership of your models, workflows, and generated media.
+  - **Civitai & Tensor.Art Workflow Parity**: Model vault, trigger-word injection, parametric tools, prompt composition, and deep asset metadata interrogation.
 
 ---
 
@@ -72,3 +73,29 @@ The generation architecture is cleanly decoupled into specialized ComfyUI workfl
 
 ### Unified Prompt Composer
 - A reusable Prompt Composer component is integrated across both `Text2Img` and `Img2Img` studio tabs, offering tag-based prompt generation, style presets, and negative prompt management with identical UX.
+
+
+---
+
+## 6. Universal UI Terminology & Consumer Standards
+
+To ensure SoloTensor remains approachable and intuitive for all creators (rather than just ComfyUI developers), user-facing interfaces follow strict consumer-friendly terminology standards:
+
+| Technical / Internal Engine Jargon | User-Facing Studio Term | User Impact |
+| :--- | :--- | :--- |
+| `ComfyUI Local Engine` / `COMFYUI LOCAL` | **SoloTensor Engine** / **Studio Engine** | Shields users from internal backend server names. |
+| `Executing ComfyUI Graph...` | **Rendering Pipeline...** / **Generating...** | Friendly, standard generative studio feedback. |
+| `Streaming through local ComfyUI graph` | **Synthesizing neural latents...** | Clear creative progress without mentioning graphs. |
+| `ComfyUI Workflow JSON` / `workflow_api.json` | **Workflow Blueprint (.json)** / **Workflow JSON** | Clean, understandable asset naming. |
+| `ComfyUI Local Vault` / `ComfyUI Vault` | **Studio Model Vault** / **Installed Vault** | Focuses on user-owned assets rather than software paths. |
+| `Install to ComfyUI` | **Install Model** / **Mount to Vault** | Actionable, standard app store language. |
+| `Local Instance` / `not found in local memory` | **SoloTensor Studio** / **Artifact not found** | Polished, professional 404 & error messaging. |
+
+### Clean Typographic & Eyebrow Standards (No Cyberpunk `//` Slashes)
+To maintain a modern, pro-grade aesthetic matching Civitai and Tensor.Art, user-facing section titles, eyebrows, and kickers avoid developer/cyberpunk double-slash delimiters (`//`) in favor of clean title casing or subtle middle dots (`•`):
+- `RELATED // POSTS` → **`RELATED POSTS`**
+- `CREATIONS // GALLERY` → **`COMMUNITY SHOWCASE`**
+- `ENERGY POOL // STATUS` → **`STUDIO CREDITS`**
+- `PRESET STARTER KITS // ONE-CLICK INITIALIZE` → **`PRESET STARTER KITS • 1-CLICK INITIALIZE`**
+- `STUDIO AUTH // SEC-NODE` → **`CREATOR SIGN IN`**
+- `404 // COORDINATES_UNRESOLVED` → **`404 • PAGE NOT FOUND`**

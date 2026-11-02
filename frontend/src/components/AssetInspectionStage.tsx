@@ -14,7 +14,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  Film,
   Heart,
   Layers,
   Loader2,
@@ -140,7 +139,7 @@ export function saveRemixToStorage(meta: GalleryMetadata, modelOptions?: Install
 }
 
 export interface AssetInspectionStageProps {
-  mode: "modal" | "standalone";
+  mode: "modal" | "standalone" | "overlay";
   asset: GalleryItem;
   items?: GalleryItem[];
   currentIndex?: number;
@@ -413,27 +412,8 @@ export default function AssetInspectionStage({
     asset.url.endsWith(".webm") ||
     asset.url.endsWith(".mov");
 
-  // Video pipeline facts. The sidecar may carry these; older assets may not, so
-  // every read is defensive and the summary only renders when values exist.
+  // Video aspect ratio resolution from raw metadata
   const videoMeta = rawMeta as Record<string, unknown>;
-  const videoStage2Active = videoMeta.stage2_upscale === true;
-  const videoFpsValue =
-    typeof videoMeta.video_fps === "number" ? videoMeta.video_fps : null;
-  const videoDurationValue =
-    typeof videoMeta.video_duration_seconds === "number"
-      ? videoMeta.video_duration_seconds
-      : null;
-  const videoSpecSummary = isVideo
-    ? [
-        videoFpsValue !== null ? `${videoFpsValue} fps` : null,
-        videoDurationValue !== null ? `${videoDurationValue}s` : null,
-        videoFpsValue !== null && videoDurationValue !== null
-          ? `${videoDurationValue * videoFpsValue + 1} frames`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
 
   const videoRatio: ToolAspectRatio = (() => {
     const width = typeof videoMeta.width === "number" ? videoMeta.width : null;
@@ -491,7 +471,7 @@ export default function AssetInspectionStage({
         if (isZoomed) {
           e.preventDefault();
           setIsZoomed(false);
-        } else if (mode === "modal" && onClose) {
+        } else if (mode !== "standalone" && onClose) {
           e.preventDefault();
           onClose();
         }
@@ -561,10 +541,13 @@ export default function AssetInspectionStage({
   const hasBaseModel = Boolean(baseModelTitle);
   const totalModelsCount = (hasBaseModel ? 1 : 0) + activeLoras.length;
 
+  const isOverlay = mode === "overlay";
   const containerClasses =
     mode === "modal"
-      ? "relative grid max-h-[88vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] shadow-2xl"
-      : "relative grid min-h-[580px] overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] shadow-2xl";
+      ? "relative grid max-h-[88vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl"
+      : isOverlay
+      ? "relative grid min-h-[calc(100vh_-_4rem)] supports-[height:100svh]:min-h-[calc(100svh_-_4rem)] overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl"
+      : "relative grid min-h-[580px] overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl";
 
   return (
     <div className={containerClasses}>
@@ -587,8 +570,13 @@ export default function AssetInspectionStage({
 
       {/* Left Column: Atmospheric Media Stage */}
       <div
-        className={`relative flex flex-col items-center justify-center overflow-hidden bg-[var(--surface-sunken)] p-4 sm:p-6 select-none ${mode === "modal" ? "min-h-[380px] lg:min-h-[580px]" : "min-h-[460px] lg:min-h-[640px]"
-          }`}
+        className={`relative flex flex-col items-center justify-center overflow-hidden bg-[var(--surface-sunken)] p-4 sm:p-6 select-none ${
+          mode === "modal"
+            ? "min-h-[380px] lg:min-h-[580px]"
+            : isOverlay
+            ? "min-h-[460px] lg:min-h-0 lg:h-full"
+            : "min-h-[460px] lg:min-h-[640px]"
+        }`}
       >
         {/* Ambient blurred backdrop scrim mirroring artwork palette */}
         <div
@@ -651,10 +639,10 @@ export default function AssetInspectionStage({
               after={mediaUrl}
               beforeLabel="Original Base"
               afterLabel="Detailed"
-              className="w-full max-h-[78vh]"
+              className={`w-full max-h-[78vh]`}
             />
           ) : isVideo ? (
-            <div className="flex h-full max-h-[78vh] w-full flex-col">
+            <div className={`flex h-full max-h-[78vh] w-full flex-col`}>
               <VideoResultPreview
                 url={mediaUrl}
                 filename={asset.key.split("/").pop() || "video.mp4"}
@@ -668,10 +656,13 @@ export default function AssetInspectionStage({
               src={mediaUrl}
               alt={meta?.prompt ?? "Generated artwork"}
               onClick={() => setIsZoomed((z) => !z)}
-              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${isZoomed
+              className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${
+                isZoomed
                   ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
-                  : "max-h-[78vh] max-w-full object-contain cursor-zoom-in"
-                }`}
+                  : isOverlay
+                  ? "max-h-[82vh] max-w-full object-contain cursor-zoom-in"
+                  : "max-h-[82vh] max-w-full object-contain cursor-zoom-in"
+              }`}
             />
           )}
         </div>
@@ -788,11 +779,23 @@ export default function AssetInspectionStage({
       </div>
 
       {/* Right Column: Parameter Inspector Panel */}
-      <div className="w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll relative">
+      <div
+        className={
+          mode === "modal"
+            ? "w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll relative"
+            : "w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] relative"
+        }
+      >
         {/* Header: Author Profile & Inspection Meta */}
-        <div className="sticky top-0 z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md">
+        <div
+          className={
+            isOverlay
+              ? "relative z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
+              : "sticky top-0 z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
+          }
+        >
           {/* Top Row: Author Profile Card + Close / Mod Controls */}
-          <div className="flex items-center justify-between gap-3 min-w-0">
+          <div className={isOverlay ? "flex items-center justify-between gap-3 min-w-0 pr-12" : "flex items-center justify-between gap-3 min-w-0"}>
             {/* Author Info */}
             <div className="flex items-center gap-3 min-w-0">
               {hasAuthorProfile ? (
@@ -940,7 +943,13 @@ export default function AssetInspectionStage({
         </div>
 
         {/* Body Content */}
-        <div className="p-5 space-y-4 flex-1 pb-6">
+        <div
+          className={
+            mode === "modal"
+              ? "workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 pb-6 space-y-4"
+              : "p-5 space-y-4 flex-1 pb-6"
+          }
+        >
           {/* Models & LoRAs Stack */}
           {totalModelsCount > 0 && (
             <div>
@@ -1181,7 +1190,9 @@ export default function AssetInspectionStage({
                 ref={promptTextRef}
                 className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words transition-[max-height] duration-200 ${isPromptExpanded
                     ? "max-h-none"
-                    : "max-h-[130px] overflow-y-auto workspace-scroll"
+                    : isPromptOverflowing
+                    ? "max-h-[130px] overflow-y-auto workspace-scroll"
+                    : ""
                   }`}
               >
                 {meta.prompt}
@@ -1240,7 +1251,9 @@ export default function AssetInspectionStage({
                 ref={negTextRef}
                 className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words transition-[max-height] duration-200 ${isNegExpanded
                     ? "max-h-none"
-                    : "max-h-[130px] overflow-y-auto workspace-scroll"
+                    : isNegOverflowing
+                    ? "max-h-[130px] overflow-y-auto workspace-scroll"
+                    : ""
                   }`}
               >
                 {meta.negative_prompt}
@@ -1254,52 +1267,6 @@ export default function AssetInspectionStage({
               INFERENCE SPECS
             </span>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 col-span-2">
-                <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
-                  PIPELINE
-                </span>
-                <div className="mt-0.5 flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    {isVideo ? (
-                      <>
-                        <Film className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
-                        <span className="truncate font-mono text-xs font-semibold text-[var(--accent)]">
-                          {videoStage2Active
-                            ? "LTX-Video 2.3 · Stage 1 + Stage 2 (2x + RIFE)"
-                            : "LTX-Video 2.3 · Stage 1"}
-                        </span>
-                      </>
-                    ) : isDetailer ? (
-                      <>
-                        <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
-                        <span className="font-mono text-xs font-semibold text-[var(--accent)]">
-                          Base + Face Detailer (2-Pass)
-                        </span>
-                      </>
-                    ) : (
-                      <span className="font-mono text-xs font-semibold text-[var(--ink)]">
-                        Standard Single-Pass
-                      </span>
-                    )}
-                  </div>
-                  {isVideo && videoSpecSummary && (
-                    <span className="shrink-0 font-mono text-[10px] text-[var(--ink-faint)]">
-                      {videoSpecSummary}
-                    </span>
-                  )}
-                  {isDetailer && detailerBeforeUrl && !isVideo && (
-                    <button
-                      type="button"
-                      onClick={() => setShowComparison((s) => !s)}
-                      className="font-mono text-[10px] text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Toggle comparison slider"
-                    >
-                      <span>{showComparison ? "View Detailed" : "Compare Before/After"}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
               <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
                 <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase block">
                   SEED
@@ -1376,7 +1343,13 @@ export default function AssetInspectionStage({
         </div>
 
         {/* Action CTAs Footer */}
-        <div className="sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+        <div
+          className={
+            isOverlay
+              ? "z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
+              : "sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
+          }
+        >
           {/* Dominant Primary Remix CTA */}
           <button
             type="button"

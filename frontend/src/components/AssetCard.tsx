@@ -32,6 +32,7 @@ import {
   type GalleryItem,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { toRemixCount } from "@/lib/assetCardCounts";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
 /* Deterministic pseudo-aspect from key so unspecified items vary naturally with zero CLS */
@@ -411,24 +412,18 @@ export default function AssetCard({
 
   const creatorInitials = (creatorHandle[0] || "U").toUpperCase();
 
-  // Derive remix / usage count
-  const remixCount = useMemo(() => {
-    const meta = asset.metadata as Record<string, unknown> | null;
-    const raw =
-      meta?.remix_count ??
-      meta?.run_count ??
-      (asset as unknown as Record<string, unknown>).remix_count ??
-      (asset as unknown as Record<string, unknown>).run_count;
-    if (typeof raw === "number" && raw > 0) return Math.trunc(raw);
-    if (typeof raw === "string" && !isNaN(Number(raw)) && Number(raw) > 0) {
-      return Math.trunc(Number(raw));
-    }
-    // Deterministic pseudo-count from key so every card displays realistic remix activity
-    const hash = Math.abs(
-      (asset.key || "").split("").reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) | 0, 0)
-    );
-    return (hash % 45) + 1;
-  }, [asset]);
+  // Real remix / usage count only. A card with no server count shows no count
+  // rather than a fabricated one.
+  const remixCount = useMemo<number | null>(
+    () =>
+      toRemixCount(
+        (asset.metadata as Record<string, unknown> | null)?.remix_count,
+        (asset.metadata as Record<string, unknown> | null)?.run_count,
+        (asset as unknown as Record<string, unknown>).remix_count,
+        (asset as unknown as Record<string, unknown>).run_count
+      ),
+    [asset]
+  );
 
   // Build Remix Studio link
   const effectiveModelId = remixModelId || asset.metadata?.model_id;
@@ -547,9 +542,10 @@ export default function AssetCard({
         </div>
       )}
 
-      {/* Floating Bottom Metadata & Action Bar (Smooth fade and float-up on hover) */}
+      {/* Floating Bottom Metadata & Action Bar (Smooth fade and float-up on hover;
+          revealed at rest on touch devices, where hover never fires) */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 p-3 space-y-1.5 transition-all duration-300 ease-out ${
+        className={`absolute inset-x-0 bottom-0 z-20 p-3 space-y-1.5 transition-all duration-300 ease-out [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto ${
           menuOpen
             ? "opacity-100 translate-y-0 pointer-events-auto"
             : "opacity-0 translate-y-1.5 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0"
@@ -565,14 +561,16 @@ export default function AssetCard({
           </span>
         </div>
 
-        {/* 2. Secondary Text: Single line, smaller & slightly faded */}
-        <div className="pointer-events-auto select-none">
-          <span className="font-mono text-[10px] text-white/60 truncate drop-shadow-sm leading-none block">
-            Remix {remixCount} lần
-          </span>
-        </div>
+        {/* 2. Secondary Text: only real server counts, never a fabricated one */}
+        {remixCount !== null && (
+          <div className="pointer-events-auto select-none">
+            <span className="font-mono text-[10px] text-white/60 truncate drop-shadow-sm leading-none block">
+              {remixCount} {remixCount === 1 ? "remix" : "remixes"}
+            </span>
+          </div>
+        )}
 
-        {/* 3. Action Bar: Left Like | Center Gradient Remix | Right 3-Dot Menu */}
+        {/* 3. Action Bar: Left Like | Center Remix | Right 3-Dot Menu */}
         <div className="flex items-center gap-2 pt-1 w-full pointer-events-auto">
           {/* Left: Dark, semi-transparent button with heart icon and number count */}
           <button
@@ -592,13 +590,13 @@ export default function AssetCard({
             }}
             className={`flex h-8 items-center gap-1.5 rounded-xl border px-2.5 font-mono text-[11px] font-semibold backdrop-blur-md transition-all active:scale-95 shrink-0 ${
               like.liked
-                ? "border-rose-500/40 bg-black/75 text-rose-400"
+                ? "border-[var(--accent)]/40 bg-black/75 text-[var(--accent)]"
                 : "border-white/15 bg-black/60 text-white/85 hover:border-white/30 hover:bg-black/80 hover:text-white"
             } ${like.pending ? "opacity-70" : ""}`}
           >
             <Heart
               className={`h-3.5 w-3.5 transition-transform ${
-                like.liked ? "fill-rose-400 text-rose-400 scale-105" : "text-white/80"
+                like.liked ? "fill-[var(--accent)] text-[var(--accent)] scale-105" : "text-white/80"
               }`}
             />
             <span className="tabular-nums leading-none">
@@ -606,19 +604,21 @@ export default function AssetCard({
             </span>
           </button>
 
-          {/* Center: Large, expanding Remix button with vibrant blue-to-light-green linear gradient */}
-          <Link
-            href={remixHref}
-            onClick={(e) => e.stopPropagation()}
-            className="flex flex-1 h-8 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-400 px-3 text-xs font-bold text-white shadow-md transition-all duration-200 hover:brightness-110 active:scale-[0.98] select-none min-w-0"
-            title="Remix artwork"
-          >
-            <Shuffle className="h-3.5 w-3.5 text-white shrink-0" />
-            <span className="truncate">Remix</span>
-          </Link>
+          {/* Center: Remix CTA, only when a remix is actually possible */}
+          {canRemix && (
+            <Link
+              href={remixHref}
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-1 h-8 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 text-xs font-bold text-[var(--accent-ink)] shadow-md transition-all duration-200 hover:bg-[var(--accent-hover)] active:scale-[0.98] select-none min-w-0"
+              title="Remix artwork"
+            >
+              <Shuffle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Remix</span>
+            </Link>
+          )}
 
           {/* Right: Dark, semi-transparent square button with vertical 3-dot menu icon */}
-          <div className="relative shrink-0">
+          <div className={`relative shrink-0${canRemix ? "" : " ml-auto"}`}>
             <button
               type="button"
               aria-label="More options"

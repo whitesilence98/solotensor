@@ -151,7 +151,7 @@ function VerifyEmailContent() {
         <div className="workspace-core rounded-[var(--radius-panel)] p-6 md:p-8">
           {/* Header Badge */}
           <div className="mb-6 flex items-center justify-between border-b border-[var(--line)] pb-4">
-            <BrandLogo size="md" subtitle="NODE VERIFICATION // SEC-NODE" href="/" />
+            <BrandLogo size="md" subtitle="EMAIL VERIFICATION" href="/" />
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--accent)]">
               <ShieldCheck className="h-5 w-5" />
             </div>
@@ -169,7 +169,7 @@ function VerifyEmailContent() {
 
               <div>
                 <span className="font-mono text-[11px] font-bold uppercase tracking-widest text-[var(--accent)]">
-                  VALIDATING SIGNATURE // SEC-NODE
+                  VERIFYING EMAIL ADDRESS
                 </span>
                 <p className="mt-2 font-mono text-xs text-[var(--ink-soft)]">
                   Cryptographic verification in progress. Synchronizing account state…
@@ -291,7 +291,7 @@ function VerifyEmailContent() {
           {/* Footer Note */}
           <div className="mt-6 border-t border-[var(--line)] pt-3 text-center">
             <span className="font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
-              ENCLAVE ENCRYPTION ACTIVE // LOCAL ZERO-TRUST VERIFIER
+              SECURE ENCRYPTION • ZERO-TRUST VERIFICATION
             </span>
           </div>
         </div>
@@ -307,7 +307,7 @@ export default function VerifyEmailPage() {
         <div className="flex min-h-[calc(100vh-2rem)] items-center justify-center p-4">
           <div className="font-mono text-xs text-[var(--ink-faint)] flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" />
-            <span>LOADING VERIFIER // SEC-NODE…</span>
+            <span>VERIFYING ACCOUNT…</span>
           </div>
         </div>
       }

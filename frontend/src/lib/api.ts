@@ -390,6 +390,14 @@ export interface ToolSummary {
   author_username?: string | null;
 }
 
+export interface ToolCatalogResponse {
+  items: ToolSummary[];
+  total?: number | null;
+  page?: number | null;
+  limit?: number | null;
+  has_more?: boolean | null;
+}
+
 export interface ToolDetail extends ToolSummary {
   supported_aspect_ratios: ToolAspectRatio[];
   output_kind: "image" | "video";
@@ -1451,6 +1459,16 @@ export interface PaginatedGenerations {
   has_more: boolean;
 }
 
+/** Paginated gallery envelope for related-asset matching (`GET /api/v1/gallery/related`). */
+export interface PaginatedGallery {
+  items: GalleryItem[];
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+  has_more: boolean;
+}
+
 export const api = {
   async askAssistant(persona: AssistantPersona, message: string): Promise<AssistantResponse> {
     return request<AssistantResponse>("/api/v1/assist", {
@@ -1901,19 +1919,54 @@ export const api = {
     };
   },
 
-  async listTools(userId?: string): Promise<ToolSummary[]> {
+  async getRelatedGallery(params: {
+    key: string;
+    page?: number;
+    limit?: number;
+    mode?: "all" | "model" | "tags";
+    /** `own` (server default) or `public`; the UI opts in explicitly. */
+    scope?: "own" | "public";
+  }): Promise<PaginatedGallery> {
+    const query = new URLSearchParams({ key: params.key });
+    query.set("page", String(params.page ?? 1));
+    query.set("limit", String(params.limit ?? 12));
+    query.set("mode", params.mode ?? "all");
+    query.set("scope", params.scope ?? "own");
+    const data = await request<PaginatedGallery>(
+      `/api/v1/gallery/related?${query.toString()}`,
+    );
+    return {
+      ...data,
+      items: (data.items || []).map((item) => ({
+        ...item,
+        url: resolveMediaUrl(item.url) || item.url,
+        thumbnail_url: resolveMediaUrl(item.thumbnail_url) ?? undefined,
+        before_detailer_url: resolveMediaUrl(item.before_detailer_url) ?? null,
+      })),
+    };
+  },
+
+  async listTools(
+    userId?: string,
+    options?: { page?: number; limit?: number }
+  ): Promise<ToolSummary[]> {
     const params = new URLSearchParams();
     if (userId) params.set("user_id", userId);
+    if (options?.page) params.set("page", String(options.page));
+    if (options?.limit) params.set("limit", String(options.limit));
     const queryString = params.toString() ? `?${params.toString()}` : "";
-    const resp = await request<{ items: ToolSummary[] }>(`/api/tools${queryString}`);
+    const resp = await request<ToolCatalogResponse>(`/api/tools${queryString}`);
     return (resp.items || []).map((tool) => ({
       ...tool,
       thumbnail_url: resolveMediaUrl(tool.thumbnail_url),
     }));
   },
 
-  async getTools(userId?: string): Promise<ToolSummary[]> {
-    return this.listTools(userId);
+  async getTools(
+    userId?: string,
+    options?: { page?: number; limit?: number }
+  ): Promise<ToolSummary[]> {
+    return this.listTools(userId, options);
   },
 
   async getTool(toolId: string): Promise<ToolDetail> {

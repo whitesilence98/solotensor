@@ -96,6 +96,8 @@ const STARTER_KITS: StarterKit[] = [
   },
 ];
 
+const PAGE_SIZE = 12;
+
 /**
  * 1:1 Mirroring Skeleton for Tool Studio Card (Zero-CLS)
  */
@@ -223,6 +225,12 @@ export default function ToolStudioPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Infinite scroll pagination state (12 cards per batch, aligning with 1/2/3/4 column breakpoints)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLElement>(null);
+
   // Drag & Drop state on the page
   const [isDraggingOverDropzone, setIsDraggingOverDropzone] = useState(false);
   const hiddenFileInputRef = useRef<HTMLInputElement>(null);
@@ -290,10 +298,58 @@ export default function ToolStudioPage() {
     );
   }, [mode, query, tools]);
 
+  const visibleTools = useMemo(() => {
+    return filteredTools.slice(0, visibleCount);
+  }, [filteredTools, visibleCount]);
+
+  const hasMore = visibleCount < filteredTools.length;
+
+  // Reset pagination window whenever user searches or switches workflow mode filters
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [query, mode]);
+
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || isLoadingMore) return;
+    setIsLoadingMore(true);
+    setTimeout(() => {
+      setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredTools.length));
+      setIsLoadingMore(false);
+    }, 180);
+  }, [hasMore, isLoadingMore, filteredTools.length]);
+
+  // Infinite Scroll IntersectionObserver attaching to the bottom sentinel
+  useEffect(() => {
+    if (!hasMore || loading) return;
+    const sentinel = sentinelRef.current;
+    const root = scrollContainerRef.current;
+    if (!sentinel) return;
+
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      {
+        root: root ?? null,
+        rootMargin: "350px 0px", // Preload buffer so next chunk loads before reaching bottom
+        threshold: 0,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, handleLoadMore]);
+
   const hasActiveFilters = query.trim() !== "" || mode !== "all";
   const clearFilters = () => {
     setQuery("");
     setMode("all");
+    setVisibleCount(PAGE_SIZE);
   };
 
   const handleOpenStandardCreate = () => {
@@ -339,6 +395,7 @@ export default function ToolStudioPage() {
   return (
     <main
       id="main-content"
+      ref={scrollContainerRef}
       className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
     >
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-6 sm:px-6 sm:pt-6 sm:pb-8 lg:px-8">
@@ -438,9 +495,13 @@ export default function ToolStudioPage() {
               <span>TELEMETRY</span>
             </span>
             <span className="font-mono text-[11px] text-[var(--ink-faint)]">
-              [<span className="text-[var(--ink)] font-bold">{filteredTools.length.toString().padStart(2, "0")}</span> /{" "}
+              [<span className="text-[var(--ink)] font-bold">{visibleTools.length.toString().padStart(2, "0")}</span>
+              {visibleTools.length < filteredTools.length && (
+                <span className="text-[var(--ink-soft)] font-medium"> of {filteredTools.length.toString().padStart(2, "0")}</span>
+              )}
+              {" / "}
               <span className="text-[var(--ink)]">{tools.length.toString().padStart(2, "0")}</span>] WORKFLOW NODES ACTIVE
-              {tools.length === 0 && " // VACANT SHELF"}
+              {tools.length === 0 && " • VACANT SHELF"}
             </span>
           </div>
 
@@ -543,10 +604,10 @@ export default function ToolStudioPage() {
 
                 <div className="space-y-1.5">
                   <h3 className="font-sans text-lg sm:text-xl font-bold tracking-tight text-[var(--ink)]">
-                    {isDraggingOverDropzone ? "Drop ComfyUI Workflow JSON" : "Your Workflow Shelf is Ready"}
+                    {isDraggingOverDropzone ? "Drop Workflow Blueprint (.json)" : "Your Workflow Shelf is Ready"}
                   </h3>
                   <p className="font-mono text-xs text-[var(--ink-soft)] leading-relaxed max-w-md mx-auto">
-                    Drag & drop any ComfyUI <code className="text-[var(--accent)] font-bold">workflow_api.json</code> to instantly parse inputs, bound parameters, and generate a studio tool.
+                    Drag & drop any <code className="text-[var(--accent)] font-bold">Workflow Blueprint (.json)</code> to instantly parse inputs, bound parameters, and generate a studio tool.
                   </p>
                 </div>
 
@@ -557,7 +618,7 @@ export default function ToolStudioPage() {
                     className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-2.5 font-mono text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_16px_var(--accent-ambient)]"
                   >
                     <UploadCloud className="h-4 w-4" />
-                    <span>Import workflow_api.json</span>
+                    <span>Import Workflow Blueprint (.json)</span>
                   </button>
 
                   <button
@@ -576,7 +637,7 @@ export default function ToolStudioPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--ink-faint)] font-bold">
-                  PRESET STARTER KITS // ONE-CLICK INITIALIZE
+                  PRESET STARTER KITS • 1-CLICK INITIALIZE
                 </span>
                 <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
                   Curated Studio Pipelines
@@ -627,12 +688,55 @@ export default function ToolStudioPage() {
           </div>
         )}
 
-        {/* 5. Populated Tool Cards Grid */}
+        {/* 5. Populated Tool Cards Grid with Progressive Infinite Scroll */}
         {!loading && !error && filteredTools.length > 0 && (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in duration-300 ease-out">
-            {filteredTools.map((tool, idx) => (
-              <TensorToolCard key={tool.tool_id} tool={tool} onDelete={setToolToDelete} index={idx} />
-            ))}
+          <div className="space-y-6">
+            <div
+              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in duration-300 ease-out"
+              aria-label="Workflow tools library"
+              aria-live="polite"
+            >
+              {visibleTools.map((tool, idx) => (
+                <TensorToolCard key={tool.tool_id} tool={tool} onDelete={setToolToDelete} index={idx} />
+              ))}
+            </div>
+
+            {/* Infinite Scroll Sentinel & Progressive Skeleton Loader */}
+            {hasMore && (
+              <div ref={sentinelRef} className="py-4 space-y-4">
+                {isLoadingMore ? (
+                  <div
+                    className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in duration-200"
+                    aria-label="Loading more workflows"
+                  >
+                    {Array.from({ length: Math.min(PAGE_SIZE, filteredTools.length - visibleCount) }).map((_, i) => (
+                      <ToolCardSkeleton key={`skeleton-load-more-${i}`} index={i} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadMore}
+                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-2 font-mono text-xs font-semibold text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
+                      <span>Scroll or click to load more ({filteredTools.length - visibleCount} remaining)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* End-of-Catalog Badge */}
+            {!hasMore && filteredTools.length > PAGE_SIZE && (
+              <div className="flex flex-col items-center justify-center pt-4 pb-2 text-center">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-1.5 font-mono text-[10px] uppercase tracking-wider text-[var(--ink-faint)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                  <span>All {filteredTools.length} workflows loaded</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

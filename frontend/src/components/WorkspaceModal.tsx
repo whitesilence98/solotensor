@@ -57,7 +57,7 @@ export default function WorkspaceModal({
       aria-describedby={!headless && description ? descriptionId : undefined}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
-      className={`workspace-modal ${size === "wide" ? "!max-w-4xl" : size === "media" ? "!max-w-6xl" : ""} ${destructive ? "workspace-modal-danger" : ""}`}
+      className={`workspace-modal ${size === "wide" ? "!max-w-4xl" : size === "media" ? "!max-w-[1600px] 2xl:!max-w-[1720px] !w-[95vw]" : ""} ${destructive ? "workspace-modal-danger" : ""}`}
     >
       <div className={`workspace-modal-card ${headless ? "!p-0 !border-0 bg-transparent overflow-hidden relative shadow-[0_32px_96px_rgba(0,0,0,0.9)]" : ""}`}>
         {!headless && (

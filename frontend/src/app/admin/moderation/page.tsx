@@ -382,7 +382,7 @@ export default function ModerationDashboardPage() {
 
           <div>
             <h1 className="text-lg font-bold tracking-tight text-[var(--ink)]">
-              Access Restricted // Moderator Clearance Required
+              Access Restricted: Moderator Clearance Required
             </h1>
             <p className="mt-1 font-mono text-xs text-[var(--ink-faint)]">
               The Moderation Darkroom requires role <code className="text-sky-400">moderator</code> or <code className="text-rose-400">admin</code>.
@@ -485,7 +485,7 @@ export default function ModerationDashboardPage() {
               <div className="flex items-center gap-2">
                 <span className="flex h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
                 <h1 className="text-base font-bold tracking-tight text-[var(--ink)]">
-                  MODERATION DARKROOM // GOVERNANCE CONSOLE
+                  MODERATION CONSOLE
                 </h1>
               </div>
               <p className="font-mono text-[10px] tracking-wider text-[var(--ink-faint)] uppercase mt-0.5">
@@ -837,7 +837,7 @@ export default function ModerationDashboardPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[10px] font-bold tracking-widest text-amber-400 uppercase">
-                          SUBMISSION REVIEW // {selectedPendingModel.model_type.toUpperCase()}
+                          SUBMISSION REVIEW • {selectedPendingModel.model_type.toUpperCase()}
                         </span>
                         <span className="rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider bg-amber-950/60 text-amber-300 border border-amber-800/60">
                           {selectedPendingModel.moderation_status}
@@ -1236,7 +1236,7 @@ export default function ModerationDashboardPage() {
                   <div className="border-b border-[var(--line)] p-5 bg-[var(--surface-sunken)] space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-[10px] font-bold tracking-widest text-sky-400 uppercase">
-                        TARGET INSPECTION // {selectedItem.target_type.toUpperCase()}
+                        TARGET INSPECTION • {selectedItem.target_type.toUpperCase()}
                       </span>
                       <span className="font-mono text-[10px] text-[var(--ink-faint)]">
                         ID: {selectedItem.target_id}

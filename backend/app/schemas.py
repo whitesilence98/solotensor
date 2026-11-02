@@ -1081,6 +1081,10 @@ class ToolEditorPayload(ToolSummary):
 
 class ToolCatalogResponse(BaseModel):
     items: list[ToolSummary]
+    total: int | None = None
+    page: int | None = None
+    limit: int | None = None
+    has_more: bool | None = None
 
 
 class ToolExecuteRequest(BaseModel):
@@ -2483,6 +2487,10 @@ class GenerationRecordResponse(BaseModel):
 
 
 class PaginatedGenerationsResponse(PaginatedResponse[GenerationRecordResponse]):
+    pass
+
+
+class PaginatedGalleryResponse(PaginatedResponse[GalleryItem]):
     pass
 
 

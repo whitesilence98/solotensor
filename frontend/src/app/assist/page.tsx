@@ -41,7 +41,7 @@ const PERSONAS: Array<{
   {
     id: "backend",
     title: "Backend",
-    description: "FastAPI, contracts, ComfyUI, tests",
+    description: "FastAPI, contracts, pipeline graphs, tests",
     icon: Server,
   },
   {
@@ -115,10 +115,10 @@ export default function AssistPage() {
   return (
     <main id="main-content" className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
       <WorkspaceNavbar
-        subtitle="CODE ASSIST // LOCAL GUIDANCE"
+        subtitle="AI CREATIVE DIRECTOR • STUDIO COPILOT"
         href="/assist"
         maxWidth="max-w-4xl"
-        statusText="LOCAL LLM ENGINE"
+        statusText="STUDIO LLM ENGINE"
         actions={
           Boolean(message || answer) ? (
             <button
@@ -141,7 +141,7 @@ export default function AssistPage() {
         <WorkspacePageHeader
           eyebrow={
             <>
-              <Sparkles className="inline h-3.5 w-3.5" /> Local code guidance
+              <Sparkles className="inline h-3.5 w-3.5" /> Studio code guidance
             </>
           }
           title="Code Assist"
@@ -212,7 +212,7 @@ export default function AssistPage() {
             }}
             maxLength={12000}
             rows={8}
-            placeholder="Example: Where should a new ComfyUI endpoint live, and how should I test it?"
+            placeholder="Example: Where should a new pipeline endpoint live, and how should I test it?"
             className="workspace-field w-full resize-y p-4 text-sm leading-6 outline-none"
           />
           <span className="text-right text-[10px] text-[var(--ink-faint)]">

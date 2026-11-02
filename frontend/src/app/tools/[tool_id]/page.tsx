@@ -1014,7 +1014,7 @@ export default function ToolDetailPage() {
                       day: "numeric",
                       year: "numeric",
                     })
-                  : "Local Archive"}
+                  : "Studio Archive"}
               </span>
             </div>
 
@@ -1022,7 +1022,7 @@ export default function ToolDetailPage() {
 
             <div className="flex items-center gap-1.5 font-mono text-[11px] text-[var(--accent)] font-semibold">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-              <span>COMFYUI LOCAL ENGINE</span>
+              <span>SOLOTENSOR NEURAL ENGINE</span>
             </div>
           </div>
 
@@ -1073,7 +1073,7 @@ export default function ToolDetailPage() {
                     {busy
                       ? progress?.type === "progress"
                         ? `Rendering Step ${progress.value ?? 0}/${progress.max ?? 20}`
-                        : "Executing ComfyUI Graph…"
+                        : "Rendering Pipeline…"
                       : result?.images.length
                       ? "Generation Output"
                       : "Canvas Stage"}
@@ -1155,7 +1155,7 @@ export default function ToolDetailPage() {
                           : "Synthesizing Pipeline Parameters…"}
                       </h3>
                       <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
-                        {progress?.message || "Streaming through local ComfyUI graph"}
+                        {progress?.message || "Synthesizing neural latents..."}
                       </p>
                     </div>
 
@@ -1175,7 +1175,7 @@ export default function ToolDetailPage() {
                     <div className="mt-5 grid grid-cols-2 gap-2 pt-3 border-t border-[var(--line)] font-mono text-[9px] text-[var(--ink-faint)]">
                       <div className="flex items-center gap-1.5">
                         <Cpu className="h-3 w-3 text-[var(--ink-soft)]" />
-                        <span>COMFYUI LOCAL</span>
+                        <span>ACTIVE WORKSPACE</span>
                       </div>
                       <div className="text-right">
                         <span>ASPECT: {ratioLabel}</span>
@@ -1279,7 +1279,7 @@ export default function ToolDetailPage() {
                               {tool!.name}
                             </h3>
                             <p className="text-xs text-white/70 font-mono">
-                              Press &ldquo;Generate Output&rdquo; or ⌘↵ to execute locally.
+                              Press &ldquo;Generate Output&rdquo; or ⌘↵ to launch pipeline.
                             </p>
                           </div>
                         </div>
@@ -1310,12 +1310,12 @@ export default function ToolDetailPage() {
                       <kbd className="rounded bg-[var(--surface-sunken)] border border-[var(--line)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--accent)]">
                         ⌘ Enter
                       </kbd>{" "}
-                      to launch local synthesis.
+                      to launch studio synthesis.
                     </p>
 
                     <div className="mt-6 flex flex-wrap items-center justify-center gap-2 font-mono text-[10px] text-[var(--ink-faint)]">
                       <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
-                        ⚡ ComfyUI Graph Engine
+                        ⚡ SoloTensor Neural Engine
                       </span>
                       <span className="rounded-md border border-[var(--line)] bg-[var(--surface-sunken)] px-2.5 py-1">
                         🖼️ {MODE_LABELS[tool!.mode] ?? tool!.mode}
@@ -1466,7 +1466,7 @@ export default function ToolDetailPage() {
               {/* Documentation Text */}
               <div className="space-y-2 text-xs font-mono text-[var(--ink-soft)] leading-relaxed">
                 <p>
-                  This tool exposes a streamlined parameter interface dynamically mapped to its internal ComfyUI execution graph.
+                  This tool exposes a streamlined parameter interface dynamically mapped to its internal execution graph.
                   All graph inputs are validated on the backend and dispatched through the asynchronous WebSocket streaming bridge.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
@@ -1484,7 +1484,7 @@ export default function ToolDetailPage() {
                   </div>
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
                     <span className="text-[10px] text-[var(--ink-faint)] block">Execution Target</span>
-                    <span className="font-bold text-[var(--ink)]">Local ComfyUI</span>
+                    <span className="font-bold text-[var(--ink)]">Studio Engine</span>
                   </div>
                 </div>
               </div>
@@ -1549,7 +1549,7 @@ export default function ToolDetailPage() {
                 <span className="font-mono text-[10px] opacity-80 flex items-center gap-1">
                   <span>⌘↵</span>
                   <span>·</span>
-                  <span>LOCAL</span>
+                  <span>STUDIO</span>
                 </span>
               </button>
 
@@ -1866,14 +1866,14 @@ export default function ToolDetailPage() {
                   Pipeline Compatibility
                 </h4>
                 <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
-                  COMFYUI
+                  STUDIO ENGINE
                 </span>
               </div>
 
               <div className="space-y-2 border-t border-[var(--line)] pt-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--ink-faint)] font-mono text-[11px]">Engine</span>
-                  <span className="font-mono text-[var(--ink)]">Local ComfyUI</span>
+                  <span className="font-mono text-[var(--ink)]">Studio Engine</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[var(--ink-faint)] font-mono text-[11px]">Workflow Mode</span>
@@ -1913,7 +1913,7 @@ export default function ToolDetailPage() {
                   Tool Permissions
                 </h4>
                 <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
-                  LOCAL ONLY
+                  STUDIO ONLY
                 </span>
               </div>
 

@@ -206,7 +206,7 @@ export default function AdminSettingsPage() {
       className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased"
     >
       <WorkspaceNavbar
-        subtitle="CONTROL // AI RUNTIME"
+        subtitle="SYSTEM SETTINGS • AI RUNTIME"
         href="/admin/settings"
         maxWidth="max-w-5xl"
         statusText="ADMIN"

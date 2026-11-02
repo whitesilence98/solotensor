@@ -1814,6 +1814,36 @@ class ToolApiEndpointTests(unittest.TestCase):
                 )
                 self.assertEqual(resp.status_code, 404)
 
+    def test_list_tools_pagination(self) -> None:
+        for i in range(3):
+            self.client.post(
+                "/api/tools",
+                json={
+                    "workflow_api": self.workflow,
+                    "name": f"Paged Tool {i}",
+                    "mode": "text-to-image",
+                    "aspect_ratio": "1:1",
+                },
+            )
+        resp_all = self.client.get("/api/tools")
+        self.assertEqual(resp_all.status_code, 200)
+        total = resp_all.json()["total"]
+        self.assertGreaterEqual(total, 3)
+
+        resp_p1 = self.client.get("/api/tools?page=1&limit=2")
+        self.assertEqual(resp_p1.status_code, 200)
+        data_p1 = resp_p1.json()
+        self.assertEqual(len(data_p1["items"]), 2)
+        self.assertEqual(data_p1["page"], 1)
+        self.assertEqual(data_p1["limit"], 2)
+        self.assertTrue(data_p1["has_more"])
+
+        resp_p2 = self.client.get("/api/tools?page=2&limit=2")
+        self.assertEqual(resp_p2.status_code, 200)
+        data_p2 = resp_p2.json()
+        self.assertLessEqual(len(data_p2["items"]), 2)
+        self.assertEqual(data_p2["page"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

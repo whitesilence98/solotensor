@@ -46,6 +46,7 @@ export const DEEP_LINK_MODE: Record<string, DeepLinkTensorMode> = {
   "image-to-image": "Img2Img",
   img2img: "Img2Img",
   reference: "Img2Img",
+  inpaint: "Img2Img",
   detailer: "Img2Img",
   upscale: "Img2Img",
   edit: "Edit",

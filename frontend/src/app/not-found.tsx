@@ -27,20 +27,20 @@ export default function NotFound() {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
             </span>
             <Scan className="h-4 w-4" aria-hidden="true" />
-            <span>404 // COORDINATES_UNRESOLVED</span>
+            <span>404 • PAGE NOT FOUND</span>
           </div>
           <span className="font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
-            LOCAL INSTANCE
+            SOLOTENSOR STUDIO
           </span>
         </div>
 
         {/* Confident, Anti-Apologetic Typography */}
         <div className="relative z-10 mt-6">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">
-            This artifact was not found in local memory.
+            This artifact was not found in studio memory.
           </h1>
           <p className="mt-3 text-xs sm:text-sm leading-relaxed text-[var(--ink-soft)]">
-            The requested workflow, model checkpoint, or asset may have been relocated, deleted, or was never generated in this local storage.
+            The requested workflow, model checkpoint, or asset may have been relocated, deleted, or was never generated in this studio storage.
           </p>
         </div>
 

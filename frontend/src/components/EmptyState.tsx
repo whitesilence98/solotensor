@@ -7,7 +7,7 @@ const STATES = {
   video: {
     icon: Film,
     title: "No videos yet",
-    body: "Video outputs will appear here once a workflow in your ComfyUI pipeline saves video files (mp4, webm). The gallery picks them up automatically.",
+    body: "Video outputs will appear here once a workflow in your studio pipeline saves video files (mp4, webm). The gallery picks them up automatically.",
     hint: "Generate images",
     tabHint: "Until then, everything you have generated lives in Images.",
   },

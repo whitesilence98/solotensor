@@ -224,8 +224,8 @@ export default function AuthModal() {
             size="md"
             subtitle={
               tab === "forgot"
-                ? "ACCESS RECOVERY // NODE RESET"
-                : "STUDIO AUTH // SEC-NODE"
+                ? "ACCOUNT RECOVERY"
+                : "CREATOR SIGN IN"
             }
           />
           <button
@@ -265,18 +265,18 @@ export default function AuthModal() {
               {authModalReason === "generation"
                 ? "Sign in with a free Creator account to claim your 100 daily energy pool and launch generative pipelines."
                 : authModalReason === "tool_execution"
-                ? "Sign in to dispatch remote ComfyUI tool workflows and sync results to your private studio library."
+                ? "Sign in to dispatch studio tool workflows and sync results to your private studio library."
                 : authModalReason === "create_model"
                 ? "Sign in to publish creator models, upload safetensors weights, and share workflow recipes."
                 : authModalReason === "create_tool"
-                ? "Sign in to author parametric studio tools and deploy ComfyUI pipelines."
+                ? "Sign in to author parametric studio tools and deploy studio pipelines."
                 : authModalReason === "download_weights"
-                ? "Sign in to download safetensors checkpoint files and local workstation weights."
+                ? "Sign in to download safetensors checkpoint files and workstation weights."
                 : authModalReason === "flag_content"
                 ? "Sign in to submit content flags directly to the Solo Studio Trust & Safety darkroom."
                 : authModalReason === "flow_director"
                 ? "Sign in to plan shots with the creative director."
-                : "Sign in to access privileged studio capabilities and preserve your local workflows."}
+                : "Sign in to access privileged studio capabilities and preserve your studio workflows."}
             </p>
           </div>
         )}
@@ -430,7 +430,7 @@ export default function AuthModal() {
                   type="text"
                   value={signinIdentifier}
                   onChange={(e) => setSigninIdentifier(e.target.value)}
-                  placeholder="creator@solotensor.local"
+                  placeholder="creator@solotensor.studio"
                   disabled={busy}
                   autoComplete="username"
                   required
@@ -670,7 +670,7 @@ export default function AuthModal() {
                       type="email"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
-                      placeholder="creator@solotensor.local"
+                      placeholder="creator@solotensor.studio"
                       disabled={busy}
                       autoComplete="email"
                       required
@@ -702,7 +702,7 @@ export default function AuthModal() {
         {/* Footer Technical Microcopy */}
         <div className="mt-5 border-t border-[var(--line)] pt-3 text-center">
           <p className="font-mono text-[9px] tracking-wider text-[var(--ink-faint)] uppercase">
-            LOCAL-FIRST ENCLAVE // JWT TOKENS CACHED IN LOCAL STORAGE
+            SECURE ENCRYPTED SESSION
           </p>
         </div>
       </div>

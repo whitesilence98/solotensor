@@ -283,10 +283,22 @@ interface Props {
   onChange: (cfg: DetailerConfig) => void;
   selectedModel?: InstalledGalleryModel | null;
   defaultExpanded?: boolean;
+  alwaysExpanded?: boolean;
+  hideToggle?: boolean;
+  variant?: "accordion" | "standalone";
 }
 
-export default function DetailerPanel({ config, onChange, selectedModel, defaultExpanded = false }: Props) {
+export default function DetailerPanel({
+  config,
+  onChange,
+  selectedModel,
+  defaultExpanded = false,
+  alwaysExpanded = false,
+  hideToggle = false,
+  variant = "accordion",
+}: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const isExpanded = alwaysExpanded || expanded;
   const [activeTab, setActiveTab] = useState<DetailerType>("face");
 
   const setConfig = (patch: Partial<DetailerConfig>) =>
@@ -324,21 +336,157 @@ export default function DetailerPanel({ config, onChange, selectedModel, default
   const currentPreset = DETAILER_PRESETS.find((p) => p.type === activeTab)!;
   const currentItem = getItem(activeTab);
 
+  if (variant === "standalone") {
+    return (
+      <div className="space-y-4">
+        {/* 1. Stage Header Banner */}
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/10 border border-[var(--accent)]/30 flex items-center justify-center shrink-0">
+                <ScanFace className="w-4.5 h-4.5 text-[var(--accent)]" strokeWidth={1.5} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold text-[var(--ink)] tracking-tight">ADetailer Engine</h3>
+                  <span className="text-[9px] font-mono font-bold text-[var(--accent)] bg-[var(--accent-ambient)] px-1.5 py-0.5 rounded border border-[var(--accent)]/30">
+                    STAGE 3
+                  </span>
+                </div>
+                <p className="text-[10px] text-[var(--ink-faint)] leading-snug">
+                  Sequential anatomical face, hand, and micro-geometry restoration passes.
+                </p>
+              </div>
+            </div>
+
+            <span className="text-[10px] font-mono text-[var(--accent)] bg-[var(--accent-ambient)] px-2 py-0.5 rounded-full font-semibold border border-[var(--accent)]/30 shrink-0">
+              {activeCount} {activeCount === 1 ? "pass" : "passes"} active
+            </span>
+          </div>
+
+          {/* Pipeline Link Strip */}
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[var(--surface-sunken)] border border-[var(--line)] text-xs font-mono">
+            <span className="text-[10px] uppercase text-[var(--ink-faint)]">Pipeline Source</span>
+            <span className="text-[11px] text-[var(--accent)] truncate max-w-[210px] font-semibold">
+              {selectedModel?.title ?? selectedModel?.filename ?? "Base Checkpoint + UNet"}
+            </span>
+          </div>
+        </div>
+
+        {/* 2. Cascade Passes Status Bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--ink-faint)]">
+              CASCADE PASSES
+            </span>
+            <span className="text-[9px] font-mono text-[var(--ink-faint)]">
+              Select chip to edit targets
+            </span>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1.5">
+            {DETAILER_PRESETS.map((p) => {
+              const item = getItem(p.type);
+              const isSelected = activeTab === p.type;
+              const isItemActive = item.enabled;
+
+              return (
+                <button
+                  key={p.type}
+                  type="button"
+                  onClick={() => setActiveTab(p.type)}
+                  className={`relative py-2 px-1 text-xs font-mono rounded-xl border transition-all text-center flex flex-col items-center justify-center gap-1 ${
+                    isSelected
+                      ? "border-[var(--accent)] bg-[var(--accent-ambient)] text-[var(--ink)] shadow-sm"
+                      : "border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)] text-[var(--ink-soft)]"
+                  }`}
+                >
+                  <span className="font-semibold text-[11px]">{p.label}</span>
+                  <span
+                    className={`text-[8px] font-mono px-1 py-0.2 rounded-full font-bold ${
+                      isItemActive
+                        ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                        : "bg-[var(--surface)] text-[var(--ink-faint)] border border-[var(--line)]"
+                    }`}
+                  >
+                    {isItemActive ? "ON" : "OFF"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 3. Selected Target Workstation */}
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3.5 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-[var(--line)]">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold font-mono text-[var(--ink)]">
+                {currentPreset.label} Detailer Pass
+              </span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-sunken)] text-[var(--ink-faint)] border border-[var(--line)]">
+                {currentPreset.defaultDetector.split("/").pop()}
+              </span>
+            </div>
+
+            {/* Direct Pass Toggle Button */}
+            <button
+              type="button"
+              onClick={(e) => toggleItemEnabled(activeTab, e)}
+              className={`text-[10px] font-mono px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                currentItem.enabled
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
+                  : "border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+              }`}
+            >
+              {currentItem.enabled ? (
+                <>
+                  <Check className="w-3 h-3" strokeWidth={2.5} />
+                  <span>Pass Active</span>
+                </>
+              ) : (
+                <span>Bypassed</span>
+              )}
+            </button>
+          </div>
+
+          <p className="text-[10px] text-[var(--ink-faint)] font-mono leading-relaxed">
+            {currentPreset.description}
+          </p>
+
+          <ItemEditor
+            item={currentItem}
+            onChange={(patch) => updateItem(activeTab, patch)}
+            detectorOptions={currentPreset.detectorOptions}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden transition-all duration-200">
       {/* Header */}
       <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        className="flex items-center justify-between px-3.5 py-2.5 cursor-pointer select-none bg-[var(--surface)] hover:bg-[var(--surface-raised)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
-        onClick={() => setExpanded((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded((v) => !v);
-          }
-        }}
+        {...(!alwaysExpanded
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-expanded": isExpanded,
+              onClick: () => setExpanded((v) => !v),
+              onKeyDown: (e: React.KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setExpanded((v) => !v);
+                }
+              },
+            }
+          : {})}
+        className={`flex items-center justify-between px-3.5 py-2.5 select-none bg-[var(--surface)] transition-colors ${
+          !alwaysExpanded
+            ? "cursor-pointer hover:bg-[var(--surface-raised)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+            : ""
+        }`}
       >
         <div className="flex items-center gap-2">
           <ScanFace
@@ -349,7 +497,7 @@ export default function DetailerPanel({ config, onChange, selectedModel, default
           <span className="text-[10px] font-mono text-[var(--ink-faint)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-[var(--surface-sunken)]">
             5 Passes
           </span>
-          {config.enabled && (
+          {(config.enabled || hideToggle) && (
             <span className="text-[10px] font-mono text-[var(--accent)] bg-[var(--accent-ambient)] px-1.5 py-0.5 rounded font-semibold">
               {activeCount} {activeCount === 1 ? "pass" : "passes"} active
             </span>
@@ -358,115 +506,128 @@ export default function DetailerPanel({ config, onChange, selectedModel, default
 
         <div className="flex items-center gap-2.5">
           {/* Master Toggle Pill */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const nextEnabled = !config.enabled;
-              if (nextEnabled) setExpanded(true);
-              // If enabling for first time and items empty, seed default items
-              let nextItems = config.items;
-              if (nextEnabled && nextItems.length === 0) {
-                nextItems = [
-                  defaultItem("face", "bbox/yolov11l-face.pt", 0.35),
-                  defaultItem("hand", "bbox/hand_yolov9c.pt", 0.32),
-                ];
-              }
-              setConfig({ enabled: nextEnabled, items: nextItems });
-            }}
-            className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] active:scale-[0.96] ${
-              config.enabled ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
-            }`}
-            aria-pressed={config.enabled}
-            aria-label="Toggle Detailer"
-          >
-            <span
-              className={`inline-block h-3 w-3 transform rounded-full bg-[var(--surface-sunken)] shadow-sm transition-transform ${
-                config.enabled ? "translate-x-4.5" : "translate-x-0.5"
+          {!hideToggle && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextEnabled = !config.enabled;
+                if (nextEnabled) setExpanded(true);
+                // If enabling for first time and items empty, seed default items
+                let nextItems = config.items;
+                if (nextEnabled && nextItems.length === 0) {
+                  nextItems = [
+                    defaultItem("face", "bbox/yolov11l-face.pt", 0.35),
+                    defaultItem("hand", "bbox/hand_yolov9c.pt", 0.32),
+                  ];
+                }
+                setConfig({ enabled: nextEnabled, items: nextItems });
+              }}
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] active:scale-[0.96] ${
+                config.enabled ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"
+              }`}
+              aria-pressed={config.enabled}
+              aria-label="Toggle Detailer"
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-[var(--surface-sunken)] shadow-sm transition-transform ${
+                  config.enabled ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          )}
+
+          {!alwaysExpanded && (
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
+                isExpanded ? "rotate-180" : ""
               }`}
             />
-          </button>
-
-          <ChevronDown
-            className={`w-3.5 h-3.5 text-[var(--ink-faint)] transition-transform duration-200 ${
-              expanded ? "rotate-180" : ""
-            }`}
-          />
+          )}
         </div>
       </div>
 
       {/* Body */}
-      {expanded && (
-        <div className="px-3.5 pb-3.5 pt-2 space-y-3.5 border-t border-[var(--line)]">
-          {/* Basic Model Link Info */}
-          <div className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface-sunken)] border border-[var(--line)] text-xs font-mono">
-            <span className="text-[var(--ink-faint)] uppercase text-[10px]">Pipeline Source</span>
-            <span className="text-[var(--accent)] truncate max-w-[200px]">
-              {selectedModel?.title ?? selectedModel?.filename ?? "Base Model + UNet"}
+      {isExpanded && (
+        <div className="px-3.5 pb-3.5 pt-2.5 space-y-3.5 border-t border-[var(--line)]">
+          {/* 1. Pipeline Link Strip */}
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[var(--surface-sunken)] border border-[var(--line)] text-xs font-mono">
+            <span className="text-[10px] uppercase text-[var(--ink-faint)]">Pipeline Source</span>
+            <span className="text-[11px] text-[var(--accent)] truncate max-w-[210px] font-semibold">
+              {selectedModel?.title ?? selectedModel?.filename ?? "Base Checkpoint + UNet"}
             </span>
           </div>
 
-          {/* Quick Target Chips Row */}
+          {/* 2. Cascade Passes Status Bar */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono uppercase tracking-wider text-[var(--ink-faint)] flex items-center justify-between">
-              <span>Cascade Passes</span>
-              <span className="text-[9px] text-[var(--ink-faint)]">Click chip to toggle on/off</span>
-            </label>
-            <div className="grid grid-cols-5 gap-1">
+            <div className="flex items-center justify-between px-0.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--ink-faint)]">
+                CASCADE PASSES
+              </span>
+              <span className="text-[9px] font-mono text-[var(--ink-faint)]">
+                Select chip to edit targets
+              </span>
+            </div>
+
+            <div className="grid grid-cols-5 gap-1.5">
               {DETAILER_PRESETS.map((p) => {
                 const item = getItem(p.type);
                 const isSelected = activeTab === p.type;
-                const isItemActive = config.enabled && item.enabled;
+                const isItemActive = item.enabled;
 
                 return (
                   <button
                     key={p.type}
                     type="button"
                     onClick={() => setActiveTab(p.type)}
-                    className={`relative py-1.5 px-1 text-xs font-mono rounded-lg border transition-all text-center flex flex-col items-center justify-center gap-0.5 ${
+                    className={`relative py-2 px-1 text-xs font-mono rounded-xl border transition-all text-center flex flex-col items-center justify-center gap-1 ${
                       isSelected
-                        ? "border-[var(--accent)] bg-[var(--accent-ambient)] text-[var(--ink)] font-semibold"
+                        ? "border-[var(--accent)] bg-[var(--accent-ambient)] text-[var(--ink)] shadow-sm"
                         : "border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)] text-[var(--ink-soft)]"
                     }`}
                   >
-                    <div className="flex items-center gap-1">
-                      <span>{p.label}</span>
-                      {isItemActive && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                      )}
-                    </div>
+                    <span className="font-semibold text-[11px]">{p.label}</span>
+                    <span
+                      className={`text-[8px] font-mono px-1 py-0.2 rounded-full font-bold ${
+                        isItemActive
+                          ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                          : "bg-[var(--surface)] text-[var(--ink-faint)] border border-[var(--line)]"
+                      }`}
+                    >
+                      {isItemActive ? "ON" : "OFF"}
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Active Target Card */}
-          <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-3 space-y-2">
-            <div className="flex items-center justify-between">
+          {/* 3. Selected Target Workstation */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-raised)] p-3.5 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--line)]">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[var(--ink)] font-mono">
+                <span className="text-xs font-bold font-mono text-[var(--ink)]">
                   {currentPreset.label} Detailer Pass
                 </span>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[var(--surface-sunken)] text-[var(--ink-faint)] border border-[var(--line)]">
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-sunken)] text-[var(--ink-faint)] border border-[var(--line)]">
                   {currentPreset.defaultDetector.split("/").pop()}
                 </span>
               </div>
 
-              {/* Pass Toggle Button */}
+              {/* Direct Pass Toggle Button */}
               <button
                 type="button"
                 onClick={(e) => toggleItemEnabled(activeTab, e)}
-                className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors flex items-center gap-1 ${
+                className={`text-[10px] font-mono px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
                   currentItem.enabled
-                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-semibold"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] font-bold shadow-sm"
                     : "border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
                 }`}
               >
                 {currentItem.enabled ? (
                   <>
-                    <Check className="w-2.5 h-2.5" strokeWidth={2.5} />
-                    <span>Enabled</span>
+                    <Check className="w-3 h-3" strokeWidth={2.5} />
+                    <span>Pass Active</span>
                   </>
                 ) : (
                   <span>Bypassed</span>
@@ -474,11 +635,10 @@ export default function DetailerPanel({ config, onChange, selectedModel, default
               </button>
             </div>
 
-            <p className="text-[10px] text-[var(--ink-faint)] font-mono">
+            <p className="text-[10px] text-[var(--ink-faint)] font-mono leading-relaxed">
               {currentPreset.description}
             </p>
 
-            {/* Inpaint Editor */}
             <ItemEditor
               item={currentItem}
               onChange={(patch) => updateItem(activeTab, patch)}
@@ -486,7 +646,7 @@ export default function DetailerPanel({ config, onChange, selectedModel, default
             />
           </div>
         </div>
-      )}
+            )}
     </div>
   );
 }

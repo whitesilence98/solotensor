@@ -186,7 +186,7 @@ export default function CreateToolDrawer({
 
   const processJsonFile = async (next: File) => {
     if (!next.name.toLowerCase().endsWith(".json")) {
-      setError("Please select a valid ComfyUI workflow JSON file (.json).");
+      setError("Please select a valid Workflow Blueprint (.json) file.");
       return;
     }
     setError(null);
@@ -266,7 +266,7 @@ export default function CreateToolDrawer({
     }
 
     if (!file) {
-      setError("ComfyUI workflow JSON file is required.");
+      setError("Workflow Blueprint (.json) file is required.");
       setStep(1);
       return;
     }
@@ -308,7 +308,7 @@ export default function CreateToolDrawer({
       label: "Parameters & Identity",
       icon: Sparkles,
       disabled: !file || isAnalyzing,
-      tooltip: !file ? "Upload a ComfyUI workflow JSON in Step 1 to proceed" : undefined,
+      tooltip: !file ? "Upload a Workflow Blueprint in Step 1 to proceed" : undefined,
     },
     {
       id: 3,
@@ -316,7 +316,7 @@ export default function CreateToolDrawer({
       label: "Media & Deploy",
       icon: ImageIcon,
       disabled: !file || isAnalyzing,
-      tooltip: !file ? "Upload a ComfyUI workflow JSON in Step 1 to proceed" : undefined,
+      tooltip: !file ? "Upload a Workflow Blueprint in Step 1 to proceed" : undefined,
     },
   ];
 
@@ -503,10 +503,10 @@ export default function CreateToolDrawer({
                       </div>
                       <div>
                         <span className="font-mono text-xs font-bold uppercase tracking-wider text-[var(--ink)] block">
-                          ComfyUI Workflow JSON
+                          Workflow Blueprint (.json)
                         </span>
                         <span className="font-mono text-[10px] text-[var(--ink-faint)]">
-                          Upload exported ComfyUI API graph (workflow_api.json or any .json)
+                          Upload exported Workflow Blueprint (.json)
                         </span>
                       </div>
                     </div>
@@ -560,10 +560,10 @@ export default function CreateToolDrawer({
                     ) : (
                       <div className="space-y-1">
                         <p className="font-mono text-xs font-bold text-[var(--ink)]">
-                          Drop ComfyUI workflow JSON here
+                          Drop Workflow Blueprint (.json) here
                         </p>
                         <p className="font-mono text-[11px] text-[var(--ink-faint)]">
-                          Click to browse or drag file from ComfyUI (Save API format)
+                          Click to browse or drag Workflow Blueprint file
                         </p>
                       </div>
                     )}
@@ -574,7 +574,7 @@ export default function CreateToolDrawer({
                     <div className="flex items-center gap-3 rounded-[5px] border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3.5 font-mono text-xs text-[var(--accent)] animate-pulse">
                       <Cpu className="h-4 w-4 animate-spin" />
                       <div>
-                        <span className="font-bold">Analyzing ComfyUI Execution Graph…</span>
+                        <span className="font-bold">Analyzing Pipeline Execution Graph…</span>
                         <p className="text-[10px] text-[var(--ink-soft)]">
                           Inspecting latent samplers, inputs, diffusion conditions, and video nodes.
                         </p>
@@ -606,7 +606,7 @@ export default function CreateToolDrawer({
                             </span>
                             <h3 className="font-sans text-sm font-bold text-[var(--ink)] flex items-center gap-1.5">
                               <Zap className="h-4 w-4 text-[var(--accent)]" />
-                              <span>{parsedData.archetype || "Custom ComfyUI Pipeline"}</span>
+                              <span>{parsedData.archetype || "Custom Studio Pipeline"}</span>
                             </h3>
                           </div>
                           <div className="text-right">
@@ -668,7 +668,7 @@ export default function CreateToolDrawer({
                       )}
 
                       <p className="font-mono text-[10px] text-[var(--ink-faint)] pt-1">
-                        Modality was automatically recognized from your ComfyUI nodes. Proceed to Step 2 to customize user-facing parameters and form labels.
+                        Modality was automatically recognized from your workflow nodes. Proceed to Step 2 to customize user-facing parameters and form labels.
                       </p>
                     </div>
                   )}
@@ -1036,7 +1036,7 @@ export default function CreateToolDrawer({
                     <div className="flex justify-between items-center text-[10px]">
                       <span className="text-[var(--ink-faint)]">Archetype:</span>
                       <span className="font-bold text-[var(--accent)]">
-                        {parsedData?.archetype || "ComfyUI Pipeline"}
+                        {parsedData?.archetype || "Studio Pipeline"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-[10px]">
@@ -1122,7 +1122,7 @@ export default function CreateToolDrawer({
                           {mode.toUpperCase()}
                         </span>
                         <span className="rounded border border-[var(--line)] bg-[var(--surface)] px-1.5 py-0.2 font-mono text-[8px] text-[var(--ink-faint)]">
-                          LOCAL COMFIUI
+                          STUDIO ENGINE
                         </span>
                       </div>
                       <h4 className="font-mono text-xs font-bold text-[var(--ink)] truncate mt-0.5">
@@ -1293,7 +1293,7 @@ export default function CreateToolDrawer({
                         {currentDisplayName}
                       </p>
                       <p className="mt-0.5 font-mono text-[9px] text-white/70 uppercase">
-                        {mode} · ComfyUI Pipeline
+                        {mode} · Studio Pipeline
                       </p>
                     </div>
                   </div>
@@ -1309,7 +1309,7 @@ export default function CreateToolDrawer({
                     <div className="flex justify-between items-center text-[10px]">
                       <span className="text-[var(--ink-faint)]">Archetype:</span>
                       <span className="font-bold text-[var(--accent)] truncate max-w-[150px]">
-                        {parsedData?.archetype || "ComfyUI Pipeline"}
+                        {parsedData?.archetype || "Studio Pipeline"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-[10px]">

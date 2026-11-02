@@ -20,6 +20,10 @@ ASSET_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 # video conditioning but must never surface as a gallery item.
 READABLE_EXTENSIONS = ASSET_EXTENSIONS | AUDIO_EXTENSIONS
 
+RELATED_MODES = frozenset({"all", "model", "tags"})
+RELATED_SCOPES = frozenset({"own", "public"})
+MAX_RELATED_PAGE_SIZE = 100
+
 
 class StorageError(RuntimeError):
     """Raised when the storage directory is unusable or an IO operation fails."""
@@ -163,6 +167,15 @@ class StorageService:
         """Compatibility wrapper for existing image-generation callers."""
         return await self.upload_asset(data, prompt_id, filename, content_type, metadata, namespace)
 
+    def _asset_files(self) -> list[Path]:
+        """Every gallery media file under ``root``, in filesystem order."""
+        self.ensure_root()
+        return [
+            p
+            for p in self.root.rglob("*")
+            if p.suffix.lower() in ASSET_EXTENSIONS and p.is_file()
+        ]
+
     def list_recent(
         self,
         limit: int = 60,
@@ -175,8 +188,7 @@ class StorageService:
         tag_mode: str = "all",
         user_id: str | None = None,
     ) -> list[GalleryItem]:
-        self.ensure_root()
-        files = [p for p in self.root.rglob("*") if p.suffix.lower() in ASSET_EXTENSIONS and p.is_file()]
+        files = self._asset_files()
         files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         items: list[GalleryItem] = []
         for path in files:
@@ -222,6 +234,203 @@ class StorageService:
 
     def get_image(self, key: str) -> GalleryItem:
         return self.get_asset(key)
+
+    @staticmethod
+    def _related_model_ids(metadata: dict[str, Any]) -> set[str]:
+        """Normalized model ids referenced by an asset's sidecar.
+
+        Covers the base checkpoint (``model_id``), an adapter's linked base
+        (``base_model_id``), and every LoRA entry (``model_id`` or the legacy
+        ``lora_model_id``). Anything that is not a non-empty string is ignored.
+        """
+        ids: set[str] = set()
+        for field in ("model_id", "base_model_id"):
+            value = metadata.get(field)
+            if isinstance(value, str) and value.strip():
+                ids.add(value.strip().casefold())
+        loras = metadata.get("loras")
+        if isinstance(loras, list):
+            for entry in loras:
+                if not isinstance(entry, dict):
+                    continue
+                for field in ("model_id", "lora_model_id"):
+                    value = entry.get(field)
+                    if isinstance(value, str) and value.strip():
+                        ids.add(value.strip().casefold())
+        return ids
+
+    @staticmethod
+    def _related_tag_set(metadata: dict[str, Any]) -> set[str]:
+        """Normalized tags from a sidecar; non-string entries are ignored."""
+        tags = metadata.get("tags")
+        if not isinstance(tags, (list, tuple, set)):
+            return set()
+        return {
+            tag.strip().casefold()
+            for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        }
+
+    def _sidecar_escapes_root(self, asset_path: Path) -> bool:
+        try:
+            self._metadata_path(asset_path).resolve().relative_to(self.root)
+        except (OSError, RuntimeError, ValueError):
+            return True
+        return False
+
+    def _related_anchor(self, key: str) -> tuple[GalleryItem, dict[str, Any]]:
+        """Resolve the anchor with strict key checks plus ``get_asset`` containment."""
+        if not isinstance(key, str) or not key.strip() or "\x00" in key:
+            raise StorageError("Invalid asset key")
+        if "\\" in key:
+            raise StorageError("Invalid asset key")
+        segments = key.split("/")
+        if key.startswith("/") or ".." in segments:
+            raise StorageError("Invalid asset key")
+        if len(key) > 1 and key[1] == ":":
+            raise StorageError("Invalid asset key")
+        try:
+            path = (self.root / key).resolve()
+            path.relative_to(self.root)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise StorageError("Invalid asset key") from exc
+        if self._sidecar_escapes_root(path):
+            raise StorageError("Invalid asset key")
+        item = self.get_asset(key)
+        metadata = item.metadata if isinstance(item.metadata, dict) else None
+        if metadata is None:
+            raise PermissionError("Asset has no owner")
+        return item, metadata
+
+    def list_related(
+        self,
+        key: str,
+        *,
+        user_id: str,
+        page: int = 1,
+        limit: int = 12,
+        mode: str = "all",
+        scope: str = "own",
+    ) -> tuple[list[GalleryItem], int]:
+        """Assets related to ``key`` by model usage or shared tags.
+
+        Relations are derived from live sidecars (never the relational DB, whose
+        ``metadata_json`` goes stale after tagging). ``scope="own"`` (the default)
+        keeps the original contract: the anchor must belong to ``user_id`` and only
+        that viewer's gallery-visible assets are candidates, ranked model matches
+        first, then shared-tag count, then newest, then key.
+
+        ``scope="public"`` lets a gallery-visible anchor (the viewer's, or one with
+        ``gallery_saved`` not ``False`` and no ``is_private``) serve relations from
+        every gallery-visible, non-private asset; the viewer's own matches rank
+        ahead of foreign ones. Ownerless legacy sidecars count as gallery-visible,
+        matching ``list_recent``. ``public`` returns the same ``GalleryItem`` shape
+        the unauthenticated ``GET /api/v1/assets/{key}`` already exposes; only the
+        relation list is new. Unknown scopes fall back to ``own``.
+
+        ``ponytail``: this rescans ``STORAGE_DIR`` on every call. That is
+        acceptable for the local single-user library; if the tree grows past a
+        few thousand assets, back it with an mtime-keyed index or a cached scan.
+        """
+        if scope not in RELATED_SCOPES:
+            scope = "own"
+        anchor, anchor_meta = self._related_anchor(key)
+
+        anchor_owner = anchor_meta.get("user_id")
+        own_anchor = (
+            isinstance(user_id, str)
+            and bool(user_id.strip())
+            and isinstance(anchor_owner, str)
+            and anchor_owner == user_id
+        )
+        if not own_anchor:
+            if scope != "public":
+                raise PermissionError("Asset does not belong to this user")
+            public_anchor = (
+                anchor_meta.get("gallery_saved", True) is not False
+                and not anchor_meta.get("is_private")
+            )
+            if not public_anchor:
+                raise PermissionError("Asset is not publicly viewable")
+
+        anchor_models = self._related_model_ids(anchor_meta)
+        anchor_tags = self._related_tag_set(anchor_meta)
+
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 12
+        limit = min(max(1, limit), MAX_RELATED_PAGE_SIZE)
+        if mode not in RELATED_MODES:
+            mode = "all"
+
+        candidates: list[tuple[bool, bool, int, float, str, GalleryItem]] = []
+        if anchor_models or anchor_tags:
+            for path in self._asset_files():
+                try:
+                    resolved = path.resolve()
+                    resolved.relative_to(self.root)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+                if self._sidecar_escapes_root(resolved):
+                    continue
+                try:
+                    item = self._gallery_item(resolved)
+                except (OSError, ValueError) as exc:
+                    # One vanished/unreadable file must not fail the whole scan.
+                    logger.debug(
+                        "Skipping unreadable gallery asset during related scan (%s)",
+                        type(exc).__name__,
+                    )
+                    continue
+                metadata = item.metadata if isinstance(item.metadata, dict) else None
+                if metadata is None:
+                    continue
+                if item.key == anchor.key:
+                    continue
+                if metadata.get("gallery_saved", True) is False:
+                    continue
+                if metadata.get("is_private"):
+                    continue
+                owner = metadata.get("user_id")
+                is_own = isinstance(owner, str) and owner == user_id
+                if scope == "own" and not is_own:
+                    continue
+
+                model_matched = bool(anchor_models & self._related_model_ids(metadata))
+                shared_tags = len(anchor_tags & self._related_tag_set(metadata))
+                if mode == "model":
+                    matched = model_matched
+                elif mode == "tags":
+                    matched = shared_tags > 0
+                else:
+                    matched = model_matched or shared_tags > 0
+                if not matched:
+                    continue
+
+                try:
+                    mtime = resolved.stat().st_mtime
+                except OSError as exc:
+                    logger.debug(
+                        "Skipping vanished gallery asset during related scan (%s)",
+                        type(exc).__name__,
+                    )
+                    continue
+                candidates.append((not is_own, model_matched, shared_tags, mtime, item.key, item))
+
+        # Own first (``own`` scope is all-own, so its order is unchanged), then
+        # model matches, most shared tags, newest, then key ascending (stable
+        # page boundaries when timestamps collide).
+        candidates.sort(key=lambda c: (c[0], not c[1], -c[2], -c[3], c[4]))
+
+        total = len(candidates)
+        start = (page - 1) * limit
+        page_items = [candidate[5] for candidate in candidates[start : start + limit]]
+        return page_items, total
 
     async def get_image_bytes(self, key: str) -> bytes:
         """Read a stored upload back into memory for reuse as a ComfyUI input.

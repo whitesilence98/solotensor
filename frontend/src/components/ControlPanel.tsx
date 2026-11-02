@@ -54,6 +54,7 @@ import { useAuth } from "@/lib/auth-context";
 import RoleBadge from "@/components/RoleBadge";
 import SeedInput from "@/components/SeedInput";
 import AspectRatioSelector from "@/components/AspectRatioSelector";
+import ImageInputSlot from "@/components/ImageInputSlot";
 import UpscalePanel, {
   type UpscaleConfig,
   DEFAULT_UPSCALE_CONFIG,
@@ -303,8 +304,8 @@ interface Props {
   videoModelIsLtx?: boolean;
   primePreset?: string;
   onPrimePresetChange?: (preset: string) => void;
-  img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
-  onImg2imgSubTabChange?: (tab: "image_to_image" | "detailer" | "upscaler") => void;
+  img2imgSubTab?: "image_to_image" | "inpaint" | "detailer" | "upscaler";
+  onImg2imgSubTabChange?: (tab: "image_to_image" | "inpaint" | "detailer" | "upscaler") => void;
   videoSubMode?: VideoSubMode;
   onVideoSubModeChange?: (mode: VideoSubMode) => void;
   samplerName?: string;
@@ -481,10 +482,10 @@ export default function ControlPanel(props: Props) {
     props.onActiveModeChange?.(modeId);
   };
   const [internalImg2imgSubTab, setInternalImg2imgSubTab] = useState<
-    "image_to_image" | "detailer" | "upscaler"
+    "image_to_image" | "inpaint" | "detailer" | "upscaler"
   >("image_to_image");
   const img2imgSubTab = props.img2imgSubTab ?? internalImg2imgSubTab;
-  const setImg2imgSubTab = (tab: "image_to_image" | "detailer" | "upscaler") => {
+  const setImg2imgSubTab = (tab: "image_to_image" | "inpaint" | "detailer" | "upscaler") => {
     setInternalImg2imgSubTab(tab);
     props.onImg2imgSubTabChange?.(tab);
   };
@@ -645,8 +646,10 @@ export default function ControlPanel(props: Props) {
     const aspect = naturalDimensions.width / naturalDimensions.height;
     let targetW: number;
     let targetH: number;
-    const maxDim = 1344;
-    const minDim = 512;
+    const isVideo = activeMode === "Video";
+    const step = isVideo ? 32 : 8;
+    const maxDim = isVideo ? 1024 : 1344;
+    const minDim = isVideo ? 576 : 512;
     if (aspect >= 1) {
       targetW = Math.min(maxDim, Math.max(minDim, naturalDimensions.width));
       targetH = Math.round(targetW / aspect);
@@ -654,8 +657,9 @@ export default function ControlPanel(props: Props) {
       targetH = Math.min(maxDim, Math.max(minDim, naturalDimensions.height));
       targetW = Math.round(targetH * aspect);
     }
-    const snappedW = Math.max(64, Math.min(2048, Math.round(targetW / 8) * 8));
-    const snappedH = Math.max(64, Math.min(2048, Math.round(targetH / 8) * 8));
+    const maxAllowed = isVideo ? 1280 : 2048;
+    const snappedW = Math.max(64, Math.min(maxAllowed, Math.round(targetW / step) * step));
+    const snappedH = Math.max(64, Math.min(maxAllowed, Math.round(targetH / step) * step));
     onFormatChange("custom");
     onCustomWidthChange(String(snappedW));
     onCustomHeightChange(String(snappedH));
@@ -832,11 +836,12 @@ export default function ControlPanel(props: Props) {
   };
   const isValidDimension = (value: string) => {
     const dimension = Number(value);
+    const step = activeMode === "Video" ? 32 : 8;
     return (
       Number.isInteger(dimension) &&
       dimension >= 64 &&
       dimension <= 4096 &&
-      dimension % 8 === 0
+      dimension % step === 0
     );
   };
   const customWidthInvalid = !isValidDimension(customWidth);
@@ -1225,81 +1230,36 @@ export default function ControlPanel(props: Props) {
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
           {/* 1. Source Image Input & Preview Card (Pinned on Top across all sub-tabs) */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
-                  SOURCE IMAGE
-                </span>
-                {props.referenceImage ? (
-                  <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+            <ImageInputSlot
+              standalone
+              label="SOURCE IMAGE"
+              value={props.referenceImage}
+              onFileSelect={(file) => void handleImg2ImgFileUpload(file)}
+              onClear={() => {
+                setSourceImageFile(null);
+                props.onReferenceImageChange?.(null);
+              }}
+              title="Drop source image or browse"
+              subtitle="PNG, JPG, WEBP · Up to 25MB"
+              alt="Img2Img Source"
+              badge={
+                props.referenceImage ? (
+                  <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
                     LOADED
                   </span>
                 ) : (
-                  <span className="rounded-xl bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
+                  <span className="rounded-xl bg-[var(--accent)]/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
                     REQUIRED
                   </span>
-                )}
-              </div>
-              {props.referenceImage && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSourceImageFile(null);
-                    props.onReferenceImageChange?.(null);
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger)] hover:underline transition"
-                  title="Remove source image"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  <span>Clear</span>
-                </button>
-              )}
-            </div>
-
-            {!props.referenceImage ? (
-              <div
-                onClick={() => img2imgFileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(true);
-                }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleImg2ImgDrop}
-                className={`group relative flex h-48 flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center transition-all duration-200 cursor-pointer ${
-                  isDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent)]/5 scale-[1.01]"
-                    : "border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[color-mix(in_srgb,var(--surface-raised)_60%,transparent)] hover:bg-[var(--surface-raised)]"
-                }`}
-              >
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--surface-soft)] text-[var(--accent)] mb-2.5 transition-transform duration-200 group-hover:scale-110">
-                  <UploadCloud className="h-5 w-5" />
-                </div>
-                <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop image here or{" "}
-                  <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
-                    browse
-                  </span>
-                </p>
-                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)] uppercase tracking-wider">
-                  PNG, JPG, WEBP · UP TO 25MB
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5">
-                <div className="relative rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--surface-sunken)] flex h-48 w-full items-center justify-center group">
-                  <img
-                    src={props.referenceImage}
-                    alt="Img2Img Source"
-                    className="h-full w-full object-contain rounded-lg"
-                  />
-                  {naturalDimensions && (
-                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--overlay)] backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] border border-[var(--line)]">
-                      {naturalDimensions.width} × {naturalDimensions.height}{" "}
-                      PX
+                )
+              }
+              overlay={
+                naturalDimensions && (
+                  <>
+                    <span className="absolute top-1.5 left-1.5 rounded-md bg-[var(--surface-sunken)]/85 backdrop-blur-md px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-soft)] border border-[var(--line)]">
+                      {naturalDimensions.width} × {naturalDimensions.height} PX
                     </span>
-                  )}
-                  {naturalDimensions &&
-                    Number(customWidth) ===
+                    {Number(customWidth) ===
                       Math.max(
                         64,
                         Math.min(
@@ -1307,59 +1267,30 @@ export default function ControlPanel(props: Props) {
                           Math.round(naturalDimensions.width / 8) * 8,
                         ),
                       ) &&
-                    Number(customHeight) ===
-                      Math.max(
-                        64,
-                        Math.min(
-                          2048,
-                          Math.round(naturalDimensions.height / 8) * 8,
-                        ),
-                      ) && (
-                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent-ink)] uppercase">
-                        CANVAS MATCHED
-                      </span>
-                    )}
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleAutoPromptFromReference}
-                    disabled={interrogating || busy}
-                    title="Extract prompt, seed, sampler & tags directly from this reference image"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--accent)]/30 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-[var(--accent)]/60 text-[11px] font-bold text-[var(--accent)] transition disabled:opacity-50"
-                  >
-                    {interrogating ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <ScanText className="h-3 w-3 text-[var(--accent)] shrink-0" />
-                    )}
-                    <span>
-                      {interrogating ? "Reading…" : "Read Image"}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleMatchDimensions}
-                    disabled={!naturalDimensions}
-                    title="Adjust canvas width & height to match this image natural aspect ratio"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition disabled:opacity-50"
-                  >
-                    <Sparkles className="h-3 w-3 text-[var(--accent)]" />
-                    <span>Match Size</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => img2imgFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] hover:bg-[var(--surface-soft)] hover:border-[var(--accent)]/40 text-[11px] font-medium text-[var(--ink)] transition"
-                    title="Replace image"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    <span>Replace</span>
-                  </button>
-                </div>
-              </div>
-            )}
+                      Number(customHeight) ===
+                        Math.max(
+                          64,
+                          Math.min(
+                            2048,
+                            Math.round(naturalDimensions.height / 8) * 8,
+                          ),
+                        ) && (
+                        <span className="absolute top-1.5 right-1.5 rounded-md bg-[var(--accent)]/90 backdrop-blur-md px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--accent-ink)] uppercase">
+                          MATCHED
+                        </span>
+                      )}
+                  </>
+                )
+              }
+              actions={{
+                onReadImage: handleAutoPromptFromReference,
+                onMatchDimensions: handleMatchDimensions,
+                onReplace: () => img2imgFileInputRef.current?.click(),
+                interrogating,
+                canMatchDimensions: Boolean(naturalDimensions),
+                disabled: busy,
+              }}
+            />
           </div>
 
           {/* Img2Img Sub-tab Segmented Navigation */}
@@ -1367,28 +1298,40 @@ export default function ControlPanel(props: Props) {
             <button
               type="button"
               onClick={() => setImg2imgSubTab("image_to_image")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition ${
                 img2imgSubTab === "image_to_image"
                   ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
-              <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--accent)]" />
-              <span>Image to Image</span>
+              <SlidersHorizontal className="h-3 w-3 text-[var(--accent)] shrink-0" />
+              <span className="truncate">Img2Img</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setImg2imgSubTab("inpaint")}
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition ${
+                img2imgSubTab === "inpaint"
+                  ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
+                  : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
+              }`}
+            >
+              <Brush className="h-3 w-3 text-[var(--accent)] shrink-0" />
+              <span className="truncate">Inpaint</span>
             </button>
             <button
               type="button"
               onClick={() => setImg2imgSubTab("detailer")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition ${
                 img2imgSubTab === "detailer"
                   ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
-              <span>Detailer</span>
+              <Sparkles className="h-3 w-3 text-[var(--accent)] shrink-0" />
+              <span className="truncate">Detailer</span>
               {activeDetailerCfg.enabled && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+                <span className="ml-0.5 px-1 py-0.2 rounded-full text-[8px] font-mono font-bold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
                   {activeDetailerCfg.items.filter((i) => i.enabled).length ||
                     "ON"}
                 </span>
@@ -1397,16 +1340,16 @@ export default function ControlPanel(props: Props) {
             <button
               type="button"
               onClick={() => setImg2imgSubTab("upscaler")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] font-semibold transition ${
                 img2imgSubTab === "upscaler"
                   ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm border border-[var(--line)]"
                   : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
               }`}
             >
-              <Zap className="h-3.5 w-3.5 text-[var(--accent)]" />
-              <span>Upscaler</span>
+              <Zap className="h-3 w-3 text-[var(--accent)] shrink-0" />
+              <span className="truncate">Upscaler</span>
               {activeUpscale.enabled && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+                <span className="ml-0.5 px-1 py-0.2 rounded-full text-[8px] font-mono font-bold bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
                   {activeUpscale.scale === 0
                     ? `${activeUpscale.customScale ?? 2}x`
                     : `${activeUpscale.scale}x`}
@@ -1416,49 +1359,114 @@ export default function ControlPanel(props: Props) {
           </div>
 
           {img2imgSubTab === "detailer" ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
-                  SEQUENTIAL DETAILER STAGE
-                </span>
-                <span className="text-[10px] font-mono text-[var(--accent)]">
-                  STAGE 3
-                </span>
-              </div>
-              <p className="text-[11px] text-[var(--ink-faint)] leading-relaxed px-1">
-                Cascading face, hand, and anatomical detailers applied after
-                Img2Img generation.
-              </p>
-              <DetailerPanel
-                config={activeDetailerCfg}
-                onChange={handleDetailerCfgChange}
-                selectedModel={selectedModel}
-              />
-            </div>
+            <DetailerPanel
+              config={activeDetailerCfg}
+              onChange={handleDetailerCfgChange}
+              selectedModel={selectedModel}
+              variant="standalone"
+            />
           ) : img2imgSubTab === "upscaler" ? (
+            <UpscalePanel
+              config={activeUpscale}
+              onChange={handleUpscaleChange}
+              outputWidth={widthNum}
+              outputHeight={heightNum}
+              variant="standalone"
+            />
+          ) : img2imgSubTab === "inpaint" ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
-                  SUPER-RESOLUTION STAGE
+                  INPAINTING CANVAS STAGE (COMING SOON)
                 </span>
-                <span className="text-[10px] font-mono text-[var(--accent)]">
-                  STAGE 2
+                <span className="rounded-full bg-[var(--surface-soft)] px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--ink-faint)] border border-[var(--line)]">
+                  DRAFT
                 </span>
               </div>
-              <p className="text-[11px] text-[var(--ink-faint)] leading-relaxed px-1">
-                SeedVR2 DiT Super-Resolution sharpens textures and enhances
-                image resolution.
-              </p>
-              <UpscalePanel
-                config={activeUpscale}
-                onChange={handleUpscaleChange}
-                outputWidth={widthNum}
-                outputHeight={heightNum}
-              />
+
+              {/* Inpaint Mode Selector */}
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
+                    INPAINT MASK MODE
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-0.5">
+                  <button
+                    type="button"
+                    className="rounded-md bg-[var(--accent)] py-1.5 px-2 text-xs font-semibold text-[var(--accent-ink)] shadow-sm"
+                  >
+                    Brush Mask
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md py-1.5 px-2 text-xs font-semibold text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                  >
+                    Masked Only
+                  </button>
+                </div>
+              </div>
+
+              {/* Mask Blur & Denoise Conditioning Card */}
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
+                    MASK CONDITIONING
+                  </span>
+                  <span className="font-mono text-[10px] text-[var(--accent)] font-semibold">
+                    4 PX BLUR
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-mono text-[var(--ink-faint)]">
+                      <span>MASK BLUR</span>
+                      <span>4 px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={64}
+                      defaultValue={4}
+                      disabled
+                      aria-label="Mask blur (coming soon)"
+                      className="workspace-range w-full opacity-60 cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-mono text-[var(--ink-faint)]">
+                      <span>INPAINT DENOISE</span>
+                      <span>0.75</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      defaultValue={0.75}
+                      disabled
+                      aria-label="Inpaint denoise (coming soon)"
+                      className="workspace-range w-full opacity-60 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Developer Hook Notice */}
+              <div className="rounded-xl border border-dashed border-[var(--line-strong)] bg-[color-mix(in_srgb,var(--surface-raised)_40%,transparent)] p-3 text-center">
+                <p className="text-[11px] font-semibold text-[var(--ink-soft)]">
+                  Canvas Mask Painter Hook
+                </p>
+                <p className="mt-1 font-mono text-[9px] text-[var(--ink-faint)]">
+                  Reserved for inpaint mask canvas integration and ComfyUI inpaint nodes.
+                </p>
+              </div>
             </div>
           ) : (
             /* img2imgSubTab === "image_to_image" */
             <div className="space-y-4">
+
+
 
               {/* 2. Denoising Strength Slider (Recommended Range 0.65 - 0.76 with Boundary Lines & Soft Gradient) */}
               {(() => {
@@ -1669,7 +1677,6 @@ export default function ControlPanel(props: Props) {
                 onToggleOpen={() => setAdvancedOpen((v) => !v)}
                 showDenoise={false}
               />
-
               {/* 6. Upscale Engine Panel */}
               <UpscalePanel
                 config={activeUpscale}
@@ -1689,286 +1696,108 @@ export default function ControlPanel(props: Props) {
         </div>
       ) : activeMode === "Edit" ? (
         <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Edit Mode Header */}
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] flex items-center justify-center">
-                <Brush className="h-3.5 w-3.5 text-[var(--accent)]" />
-              </div>
-              <span className="text-xs font-semibold text-[var(--ink)] tracking-tight">
-                Inpaint & Regional Edit
-              </span>
-            </div>
-            <span className="rounded-md bg-[var(--surface-soft)] border border-[var(--line)] px-2 py-0.5 font-mono text-[9px] font-medium text-[var(--ink-soft)]">
-              Mask Stage
+          {/* 1. Frames & Conditioning: Target Canvas + Reference Asset (2-column layout matching Video Tab) */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-mono font-bold text-[var(--ink-faint)] uppercase tracking-wider">
+              CANVAS & REFERENCE
             </span>
-          </div>
 
-          {/* 1. Primary Dropzone: Target Canvas */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[var(--ink)]">
-                  Target Canvas
-                </span>
-                {targetCanvasImage ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--accent)] border border-[var(--line)]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                    Loaded
-                  </span>
-                ) : (
-                  <span className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--ink-faint)] border border-[var(--line)]">
-                    Required
-                  </span>
-                )}
-              </div>
-              {targetCanvasImage && (
-                <button
-                  type="button"
-                  onClick={handleClearTargetImage}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors px-1 py-0.5 rounded hover:bg-[var(--danger-surface)]"
-                  title="Remove target canvas"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  <span>Clear</span>
-                </button>
-              )}
-            </div>
-
-            {!targetCanvasImage ? (
-              <div
-                tabIndex={0}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsTargetDragOver(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsTargetDragOver(false);
-                }}
-                onDrop={handleTargetDrop}
-                onPaste={handleTargetPaste}
-                onClick={() => editTargetFileInputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    editTargetFileInputRef.current?.click();
-                  }
-                }}
-                className={`group relative flex h-44 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)]/60 p-4 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
-                  isTargetDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent-ambient)] scale-[1.01]"
-                    : ""
-                }`}
-              >
-                <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-[var(--accent)] mb-2 transition-transform duration-200 group-hover:scale-105">
-                  <UploadCloud className="h-4.5 w-4.5" />
-                </div>
-                <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop base image to inpaint or{" "}
-                  <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
-                    browse
-                  </span>
-                </p>
-                <p className="mt-1 font-mono text-[10px] text-[var(--ink-faint)]">
-                  Target Canvas · PNG, JPG, WEBP · Paste or drop
-                </p>
-              </div>
-            ) : (
-              <div
-                tabIndex={0}
-                onPaste={handleTargetPaste}
-                className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
-              >
-                <div className="relative rounded-xl overflow-hidden border border-[var(--line-strong)] bg-[var(--surface-sunken)] flex h-52 w-full items-center justify-center group">
-                  <img
-                    src={targetCanvasImage}
-                    alt="Target Canvas"
-                    className="h-full w-full object-contain rounded-lg"
-                  />
-                  {naturalDimensions && (
-                    <span className="absolute bottom-2 left-2 rounded-md bg-[var(--surface-sunken)]/80 backdrop-blur-md px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)] border border-[var(--line)]">
-                      {naturalDimensions.width} × {naturalDimensions.height} PX
+            <div className="grid grid-cols-2 gap-2">
+              <ImageInputSlot
+                label="Target Canvas"
+                value={targetCanvasImage}
+                onFileSelect={(file) => void handleTargetFileUpload(file)}
+                onClear={handleClearTargetImage}
+                title="Drop base image"
+                subtitle="Inpaint target"
+                alt="Target Canvas"
+                badge={
+                  targetCanvasImage ? (
+                    <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+                      LOADED
                     </span>
-                  )}
-                  {naturalDimensions &&
-                    Number(customWidth) ===
-                      Math.max(
-                        64,
-                        Math.min(2048, Math.round(naturalDimensions.width / 8) * 8),
-                      ) &&
-                    Number(customHeight) ===
-                      Math.max(
-                        64,
-                        Math.min(2048, Math.round(naturalDimensions.height / 8) * 8),
-                      ) && (
-                      <span className="absolute bottom-2 right-2 rounded-md bg-[var(--accent-ambient)] backdrop-blur-md px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--accent)] border border-[var(--line)] uppercase tracking-wider">
-                        CANVAS MATCHED
+                  ) : (
+                    <span className="rounded-xl bg-[var(--accent)]/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--accent)] border border-[var(--accent)]/20">
+                      REQUIRED
+                    </span>
+                  )
+                }
+                overlay={
+                  naturalDimensions && (
+                    <>
+                      <span className="absolute top-1.5 left-1.5 rounded-md bg-[var(--surface-sunken)]/85 backdrop-blur-md px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-soft)] border border-[var(--line)]">
+                        {naturalDimensions.width} × {naturalDimensions.height} PX
                       </span>
-                    )}
-                </div>
+                      {Number(customWidth) ===
+                        Math.max(
+                          64,
+                          Math.min(
+                            2048,
+                            Math.round(naturalDimensions.width / 8) * 8,
+                          ),
+                        ) &&
+                        Number(customHeight) ===
+                          Math.max(
+                            64,
+                            Math.min(
+                              2048,
+                              Math.round(naturalDimensions.height / 8) * 8,
+                            ),
+                          ) && (
+                          <span className="absolute top-1.5 right-1.5 rounded-md bg-[var(--accent-ambient)] backdrop-blur-md px-1.5 py-0.5 font-mono text-[8px] font-bold text-[var(--accent)] border border-[var(--line)] uppercase">
+                            MATCHED
+                          </span>
+                        )}
+                    </>
+                  )
+                }
+                actions={{
+                  onReadImage: handleAutoPromptFromReference,
+                  onMatchDimensions: handleMatchDimensions,
+                  onReplace: () => editTargetFileInputRef.current?.click(),
+                  interrogating,
+                  canMatchDimensions: Boolean(naturalDimensions),
+                  disabled: busy,
+                  compact: true,
+                }}
+              />
 
-                <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={handleAutoPromptFromReference}
-                    disabled={interrogating || busy}
-                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors disabled:opacity-50 active:scale-[0.98]"
-                    title="Extract prompt and generation parameters from this canvas image"
-                  >
-                    {interrogating ? (
-                      <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)] shrink-0" />
-                    ) : (
-                      <ScanText className="h-3 w-3 text-[var(--accent)] shrink-0" />
-                    )}
-                    <span>{interrogating ? "Reading…" : "Read Image"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleMatchDimensions}
-                    disabled={!naturalDimensions}
-                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors disabled:opacity-50 active:scale-[0.98]"
-                    title="Adjust canvas dimensions to match image aspect ratio"
-                  >
-                    <Sparkles className="h-3 w-3 text-[var(--accent)] shrink-0" />
-                    <span>Match Size</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => editTargetFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors active:scale-[0.98]"
-                    title="Replace target image"
-                  >
-                    <RefreshCw className="h-3 w-3 text-[var(--ink-faint)] shrink-0" />
-                    <span>Replace</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 2. Secondary Dropzone: Reference Asset (Image 2 - Optional) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-[var(--ink)]">
-                  Reference Asset
-                </span>
-                {secondaryReferenceAsset ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--accent)] border border-[var(--line)]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
-                    Loaded
-                  </span>
-                ) : (
-                  <span className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[10px] font-mono font-medium text-[var(--ink-faint)] border border-[var(--line)]">
-                    Optional
-                  </span>
-                )}
-              </div>
-              {secondaryReferenceAsset && (
-                <button
-                  type="button"
-                  onClick={handleClearRefAsset}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink-faint)] hover:text-[var(--danger)] transition-colors px-1 py-0.5 rounded hover:bg-[var(--danger-surface)]"
-                  title="Remove reference asset"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  <span>Clear</span>
-                </button>
-              )}
+              <ImageInputSlot
+                label="Reference Asset"
+                value={secondaryReferenceAsset}
+                onFileSelect={(file) => void handleRefAssetFileUpload(file)}
+                onClear={handleClearRefAsset}
+                title="Optional guide"
+                subtitle="Style or outfit"
+                alt="Reference Asset"
+                badge={
+                  secondaryReferenceAsset ? (
+                    <span className="rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--accent)] border border-[color-mix(in_srgb,var(--accent)_24%,transparent)]">
+                      LOADED
+                    </span>
+                  ) : (
+                    <span className="rounded-xl bg-[var(--surface-soft)] px-1.5 py-0.5 text-[8px] font-mono font-bold text-[var(--ink-faint)] border border-[var(--line)]">
+                      OPTIONAL
+                    </span>
+                  )
+                }
+                actions={{
+                  onReplace: () => editRefAssetFileInputRef.current?.click(),
+                  disabled: busy,
+                  compact: true,
+                }}
+              />
             </div>
-
-            {!secondaryReferenceAsset ? (
-              <div
-                tabIndex={0}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsRefAssetDragOver(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setIsRefAssetDragOver(false);
-                }}
-                onDrop={handleRefAssetDrop}
-                onPaste={handleRefAssetPaste}
-                onClick={() => editRefAssetFileInputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    editRefAssetFileInputRef.current?.click();
-                  }
-                }}
-                className={`group relative flex h-28 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--line-strong)] hover:border-[var(--accent)]/50 bg-[var(--surface-sunken)] hover:bg-[var(--surface-raised)]/60 p-3 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ${
-                  isRefAssetDragOver
-                    ? "border-[var(--accent)] bg-[var(--accent-ambient)] scale-[1.01]"
-                    : ""
-                }`}
-              >
-                <div className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] text-[var(--accent)] mb-1.5 group-hover:scale-105 transition-transform">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                </div>
-                <p className="text-xs font-semibold text-[var(--ink)]">
-                  Drop reference image or{" "}
-                  <span className="text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-2">
-                    browse
-                  </span>
-                </p>
-                <p className="mt-0.5 font-mono text-[9px] text-[var(--ink-faint)]">
-                  Style, outfit, or object guide · Paste or drop
-                </p>
-              </div>
-            ) : (
-              <div
-                tabIndex={0}
-                onPaste={handleRefAssetPaste}
-                className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5 space-y-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
-              >
-                <div className="relative rounded-lg overflow-hidden border border-[var(--line-strong)] bg-[var(--surface-sunken)] flex h-36 w-full items-center justify-center group">
-                  <img
-                    src={secondaryReferenceAsset}
-                    alt="Reference Asset"
-                    className="h-full w-full object-contain rounded-lg"
-                  />
-                  <span className="absolute bottom-2 left-2 rounded-md bg-[var(--surface-sunken)]/80 backdrop-blur-md px-2 py-0.5 font-mono text-[9px] text-[var(--ink-soft)] border border-[var(--line)]">
-                    Reference Asset
-                  </span>
-                </div>
-                <div className="flex items-center justify-end gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => editRefAssetFileInputRef.current?.click()}
-                    className="flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] hover:border-[var(--line-strong)] text-[11px] font-medium text-[var(--ink)] transition-colors active:scale-[0.98]"
-                    title="Replace reference image"
-                  >
-                    <RefreshCw className="h-3 w-3 text-[var(--ink-faint)]" />
-                    <span>Replace</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleClearRefAsset}
-                    className="flex items-center justify-center gap-1.5 py-1 px-2.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--danger-surface)] hover:border-[var(--danger-line)] text-[11px] font-medium text-[var(--danger)] transition-colors active:scale-[0.98]"
-                    title="Remove reference image"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    <span>Clear</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* 2. Inpaint Settings Card */}
+          {/* 3. Inpaint Settings Card */}
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-[var(--ink-faint)]">
-                Inpaint Fill Mode
+                INPAINT FILL MODE
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1 rounded-lg bg-[var(--surface)] p-1 border border-[var(--line)]">
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-0.5">
               {[
                 {
                   id: "original",
@@ -1990,7 +1819,7 @@ export default function ControlPanel(props: Props) {
                   key={fill.id}
                   type="button"
                   onClick={() => onInpaintFillChange?.(fill.id as any)}
-                  className={`py-1.5 px-2 rounded-md text-[10px] font-bold transition text-center ${
+                  className={`rounded-md py-1.5 px-2 text-[10px] font-mono font-bold transition-colors text-center ${
                     inpaintFill === fill.id
                       ? "bg-[var(--accent)] text-[var(--accent-ink)] shadow-sm"
                       : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
@@ -2019,7 +1848,7 @@ export default function ControlPanel(props: Props) {
                 step={1}
                 value={maskBlur}
                 onChange={(e) => onMaskBlurChange?.(Number(e.target.value))}
-                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--surface-sunken)] rounded-lg cursor-pointer"
+                className="workspace-range w-full"
               />
             </div>
 
@@ -2030,7 +1859,7 @@ export default function ControlPanel(props: Props) {
                   Inpaint Denoise
                 </span>
                 <span className="font-mono text-[11px] font-bold text-[var(--accent)]">
-                  {denoise}
+                  {Number(denoise).toFixed(2)}
                 </span>
               </div>
               <input
@@ -2040,7 +1869,7 @@ export default function ControlPanel(props: Props) {
                 step={0.05}
                 value={Number(denoise) || 0.75}
                 onChange={(e) => onDenoiseChange(e.target.value)}
-                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--surface-sunken)] rounded-lg cursor-pointer"
+                className="workspace-range w-full"
               />
               <div className="flex items-center justify-between gap-1 pt-1">
                 {[
@@ -2052,10 +1881,10 @@ export default function ControlPanel(props: Props) {
                     key={chip.val}
                     type="button"
                     onClick={() => onDenoiseChange(chip.val)}
-                    className={`flex-1 py-0.5 rounded text-[9px] font-mono border transition ${
+                    className={`flex-1 py-1 rounded-lg text-[9px] font-mono font-bold border transition ${
                       denoise === chip.val
-                        ? "bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)] font-bold"
-                        : "border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
+                        ? "bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]"
+                        : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
                     }`}
                   >
                     {chip.label}
@@ -2065,7 +1894,7 @@ export default function ControlPanel(props: Props) {
             </div>
           </div>
 
-          {/* 3. Model & LoRA Stack */}
+          {/* 4. Model & LoRA Stack */}
           <ModelLoraStack
             selectedModel={selectedModel}
             coverUrl={currentModelCover}
@@ -2084,60 +1913,78 @@ export default function ControlPanel(props: Props) {
             disabled={busy}
           />
 
-          {/* 4. Aspect Ratio Selector */}
-          <AspectRatioSelector
-            value={format}
-            onChange={onFormatChange}
-            options={FORMATS}
-            disabled={busy}
-            label="Canvas Bounds"
-            columns={3}
-          />
+          {/* 5. Format & Dimensions */}
+          <div className="space-y-2 border-t border-[var(--line)] pt-3">
+            <AspectRatioSelector
+              value={format}
+              onChange={onFormatChange}
+              options={FORMATS}
+              disabled={busy}
+              label="Aspect Ratio"
+              columns={3}
+            />
 
-          {format === "custom" && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label
-                  htmlFor="edit-custom-width"
-                  className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
-                >
-                  Width
-                </label>
-                <input
-                  id="edit-custom-width"
-                  type="number"
-                  min="64"
-                  max="4096"
-                  step="8"
-                  value={customWidth}
-                  onChange={(e) => onCustomWidthChange(e.target.value)}
-                  disabled={busy}
-                  aria-invalid={customWidthInvalid}
-                  className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="edit-custom-height"
-                  className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
-                >
-                  Height
-                </label>
-                <input
-                  id="edit-custom-height"
-                  type="number"
-                  min="64"
-                  max="4096"
-                  step="8"
-                  value={customHeight}
-                  onChange={(e) => onCustomHeightChange(e.target.value)}
-                  disabled={busy}
-                  aria-invalid={customHeightInvalid}
-                  className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-            </div>
-          )}
+            {format === "custom" && (
+              <>
+                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                  <div>
+                    <label
+                      htmlFor="edit-custom-width"
+                      className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                    >
+                      Width
+                    </label>
+                    <input
+                      id="edit-custom-width"
+                      type="number"
+                      min="64"
+                      max="4096"
+                      step="8"
+                      value={customWidth}
+                      onChange={(e) => onCustomWidthChange(e.target.value)}
+                      disabled={busy}
+                      aria-invalid={customWidthInvalid}
+                      aria-describedby={
+                        customWidthInvalid ? "edit-custom-dimension-validation" : undefined
+                      }
+                      className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="edit-custom-height"
+                      className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                    >
+                      Height
+                    </label>
+                    <input
+                      id="edit-custom-height"
+                      type="number"
+                      min="64"
+                      max="4096"
+                      step="8"
+                      value={customHeight}
+                      onChange={(e) => onCustomHeightChange(e.target.value)}
+                      disabled={busy}
+                      aria-invalid={customHeightInvalid}
+                      aria-describedby={
+                        customHeightInvalid ? "edit-custom-dimension-validation" : undefined
+                      }
+                      className="workspace-field mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                </div>
+                {(customWidthInvalid || customHeightInvalid) && (
+                  <p
+                    id="edit-custom-dimension-validation"
+                    className="mt-1 text-[10px] text-[var(--danger-ink)]"
+                  >
+                    Dimensions must be multiples of 8 between 64 and 4096.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
 
           {/* 7. Sampling Parameters (Seed, Steps, CFG, Sampler, Scheduler) */}
           <AdvancedSamplingPanel
@@ -2240,121 +2087,49 @@ export default function ControlPanel(props: Props) {
             </span>
 
             <div className="grid grid-cols-2 gap-2">
-              {/* First frame */}
-              <div className="space-y-1">
-                <div className="flex h-4 items-center justify-between">
-                  <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]">
-                    First frame
-                  </span>
-                  {props.referenceImage && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSourceImageFile(null);
-                        props.onReferenceImageChange?.(null);
-                      }}
-                      aria-label="Remove first frame"
-                      title="Remove first frame (switch to T2V)"
-                      className="rounded p-0.5 text-[var(--ink-faint)] transition-colors hover:text-[var(--danger)] focus-visible:text-[var(--danger)] motion-reduce:transition-none"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-                {!props.referenceImage ? (
-                  <div
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setIsDragOver(true);
-                    }}
-                    onDragLeave={() => setIsDragOver(false)}
-                    onDrop={handleImg2ImgDrop}
-                    onClick={() => img2imgFileInputRef.current?.click()}
-                    className={`group flex h-[7.5rem] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition-colors motion-reduce:transition-none ${
-                      isDragOver
-                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                        : "border-[var(--line-strong)] bg-[var(--surface-sunken)] hover:border-[var(--ink-faint)]"
-                    }`}
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
-                      <UploadCloud className="h-4 w-4" />
-                    </div>
-                    <p className="mt-1.5 text-[11px] font-semibold text-[var(--ink)]">
-                      Add starter frame
-                    </p>
-                    <p className="mt-0.5 text-[9px] leading-tight text-[var(--ink-faint)]">
-                      Empty = text-only T2V
-                    </p>
-                  </div>
-                ) : (
-                  <div className="relative flex h-[7.5rem] items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1.5">
-                    <img
-                      src={resolveMediaUrl(props.referenceImage) || props.referenceImage}
-                      alt="First frame preview"
-                      className="h-full w-full rounded-md object-contain"
-                    />
-                  </div>
-                )}
-              </div>
+              <ImageInputSlot
+                label="First frame"
+                value={props.referenceImage}
+                onFileSelect={(file) => void handleImg2ImgFileUpload(file)}
+                onClear={() => {
+                  setSourceImageFile(null);
+                  props.onReferenceImageChange?.(null);
+                }}
+                title="Add starter frame"
+                subtitle="Empty = text-only T2V"
+                alt="First frame preview"
+                overlay={
+                  props.referenceImage && naturalDimensions && (
+                    <span className="absolute top-1.5 left-1.5 rounded-md bg-[var(--surface-sunken)]/85 backdrop-blur-md px-1.5 py-0.5 font-mono text-[9px] text-[var(--ink-soft)] border border-[var(--line)]">
+                      {naturalDimensions.width} × {naturalDimensions.height} PX
+                    </span>
+                  )
+                }
+                actions={{
+                  onReadImage: handleAutoPromptFromReference,
+                  onMatchDimensions: handleMatchDimensions,
+                  onReplace: () => img2imgFileInputRef.current?.click(),
+                  interrogating,
+                  canMatchDimensions: Boolean(naturalDimensions),
+                  disabled: busy,
+                  compact: true,
+                }}
+              />
 
-              {/* Last frame */}
-              <div className="space-y-1">
-                <div className="flex h-4 items-center justify-between">
-                  <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]">
-                    Last frame
-                  </span>
-                  {lastFrameImage && (
-                    <button
-                      type="button"
-                      onClick={() => props.onLastFrameImageChange?.(null)}
-                      aria-label="Remove last frame"
-                      title="Remove last frame"
-                      className="rounded p-0.5 text-[var(--ink-faint)] transition-colors hover:text-[var(--danger)] focus-visible:text-[var(--danger)] motion-reduce:transition-none"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-                {!lastFrameImage ? (
-                  <div
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setIsLastFrameDragOver(true);
-                    }}
-                    onDragLeave={() => setIsLastFrameDragOver(false)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setIsLastFrameDragOver(false);
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) void handleLastFrameFileUpload(file);
-                    }}
-                    onClick={() => lastFrameFileInputRef.current?.click()}
-                    className={`group flex h-[7.5rem] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-3 text-center transition-colors motion-reduce:transition-none ${
-                      isLastFrameDragOver
-                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                        : "border-[var(--line-strong)] bg-[var(--surface-sunken)] hover:border-[var(--ink-faint)]"
-                    }`}
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] transition-colors group-hover:text-[var(--accent)] motion-reduce:transition-none">
-                      <UploadCloud className="h-4 w-4" />
-                    </div>
-                    <p className="mt-1.5 text-[11px] font-semibold text-[var(--ink)]">
-                      Optional end frame
-                    </p>
-                    <p className="mt-0.5 text-[9px] leading-tight text-[var(--ink-faint)]">
-                      Interpolates toward it
-                    </p>
-                  </div>
-                ) : (
-                  <div className="relative flex h-[7.5rem] items-center justify-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-1.5">
-                    <img
-                      src={resolveMediaUrl(lastFrameImage) || lastFrameImage}
-                      alt="Last frame preview"
-                      className="h-full w-full rounded-md object-contain"
-                    />
-                  </div>
-                )}
-              </div>
+              <ImageInputSlot
+                label="Last frame"
+                value={lastFrameImage}
+                onFileSelect={(file) => void handleLastFrameFileUpload(file)}
+                onClear={() => props.onLastFrameImageChange?.(null)}
+                title="Optional end frame"
+                subtitle="Interpolates toward it"
+                alt="Last frame preview"
+                actions={{
+                  onReplace: () => lastFrameFileInputRef.current?.click(),
+                  disabled: busy,
+                  compact: true,
+                }}
+              />
             </div>
 
             {/* Frame conditioning strength */}
@@ -2740,95 +2515,94 @@ export default function ControlPanel(props: Props) {
             </div>
             )}
 
-            {/* Resolution presets (multiples of 32 for LTX-Video) */}
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-mono text-[var(--ink-faint)] uppercase">
-                {resizeMode === "source" && videoSubMode === "image-to-video"
-                  ? "Preset Dimensions (unused)"
-                  : "Preset Resolution"}
-              </span>
-              <div className={`grid grid-cols-2 gap-1.5 ${resizeMode === "source" && videoSubMode === "image-to-video" ? "opacity-50" : ""}`}>
-                {[
-                  { label: "16:9 Landscape", w: 1024, h: 576 },
-                  { label: "3:2 Standard", w: 768, h: 512 },
-                  { label: "1:1 Square", w: 704, h: 704 },
-                  { label: "9:16 Portrait", w: 576, h: 1024 },
-                ].map((res) => {
-                  const isMatch =
-                    format === "custom" &&
-                    Number(customWidth) === res.w &&
-                    Number(customHeight) === res.h;
-                  return (
-                    <button
-                      key={res.label}
-                      type="button"
-                      aria-pressed={isMatch}
-                      disabled={resizeMode === "source" && videoSubMode === "image-to-video"}
-                      onClick={() => {
-                        onFormatChange("custom");
-                        onCustomWidthChange(String(res.w));
-                        onCustomHeightChange(String(res.h));
-                      }}
-                      className={`rounded-lg border p-1.5 text-left font-mono text-[10px] transition-colors motion-reduce:transition-none disabled:cursor-not-allowed ${
-                        isMatch
-                          ? "border-[var(--accent)] bg-[var(--accent)]/15 font-bold text-[var(--accent)]"
-                          : "border-[var(--line)] bg-[var(--surface-raised)] text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                      }`}
+            {/* Format / Aspect Ratio */}
+            <div className="space-y-1.5 border-t border-[var(--line)] pt-2.5">
+              <AspectRatioSelector
+                value={format}
+                onChange={onFormatChange}
+                options={FORMATS}
+                disabled={busy || (resizeMode === "source" && videoSubMode === "image-to-video")}
+                label={
+                  resizeMode === "source" && videoSubMode === "image-to-video"
+                    ? "Aspect Ratio (unused)"
+                    : "Aspect Ratio"
+                }
+                columns={3}
+              />
+
+              {format === "custom" && (
+                <>
+                  <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <div>
+                      <label
+                        htmlFor="video-custom-width"
+                        className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                      >
+                        Width
+                      </label>
+                      <input
+                        id="video-custom-width"
+                        type="number"
+                        min={64}
+                        max={4096}
+                        step={32}
+                        value={customWidth}
+                        onChange={(e) => onCustomWidthChange(e.target.value)}
+                        disabled={busy || (resizeMode === "source" && videoSubMode === "image-to-video")}
+                        aria-invalid={customWidthInvalid}
+                        aria-describedby={
+                          customWidthInvalid ? "video-custom-dimension-validation" : undefined
+                        }
+                        className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
+                          customWidthInvalid
+                            ? "border-[var(--danger-line)]"
+                            : "border-[var(--line)]"
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="video-custom-height"
+                        className="text-[10px] text-[var(--ink-faint)] uppercase font-semibold"
+                      >
+                        Height
+                      </label>
+                      <input
+                        id="video-custom-height"
+                        type="number"
+                        min={64}
+                        max={4096}
+                        step={32}
+                        value={customHeight}
+                        onChange={(e) => onCustomHeightChange(e.target.value)}
+                        disabled={busy || (resizeMode === "source" && videoSubMode === "image-to-video")}
+                        aria-invalid={customHeightInvalid}
+                        aria-describedby={
+                          customHeightInvalid ? "video-custom-dimension-validation" : undefined
+                        }
+                        className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
+                          customHeightInvalid
+                            ? "border-[var(--danger-line)]"
+                            : "border-[var(--line)]"
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  {(customWidthInvalid || customHeightInvalid) && (
+                    <p
+                      id="video-custom-dimension-validation"
+                      className="mt-1 text-[10px] text-[var(--danger-ink)]"
                     >
-                      <div className="font-bold">{res.label}</div>
-                      <div className="text-[9px] opacity-75">
-                        {res.w}×{res.h}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <label
-                    htmlFor="video-custom-width"
-                    className="mb-1 block text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
-                  >
-                    Width
-                  </label>
-                  <input
-                    id="video-custom-width"
-                    type="number"
-                    min={64}
-                    max={4096}
-                    step={32}
-                    value={customWidth}
-                    disabled={busy}
-                    aria-invalid={customWidthInvalid}
-                    onChange={(e) => onCustomWidthChange(e.target.value)}
-                    className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
-                      customWidthInvalid ? "border-[var(--danger-line)]" : "border-[var(--line)]"
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="video-custom-height"
-                    className="mb-1 block text-[9px] font-mono uppercase tracking-wider text-[var(--ink-faint)]"
-                  >
-                    Height
-                  </label>
-                  <input
-                    id="video-custom-height"
-                    type="number"
-                    min={64}
-                    max={4096}
-                    step={32}
-                    value={customHeight}
-                    disabled={busy}
-                    aria-invalid={customHeightInvalid}
-                    onChange={(e) => onCustomHeightChange(e.target.value)}
-                    className={`w-full rounded-lg border bg-[var(--surface-raised)] px-2.5 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] disabled:opacity-50 ${
-                      customHeightInvalid ? "border-[var(--danger-line)]" : "border-[var(--line)]"
-                    }`}
-                  />
-                </div>
-              </div>
+                      Dimensions must be multiples of 32 between 64 and 4096.
+                    </p>
+                  )}
+                  {!(customWidthInvalid || customHeightInvalid) && (
+                    <p className="mt-1 text-[9px] font-mono text-[var(--ink-faint)]">
+                      Video dimensions must be multiples of 32 (64–4096).
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -3502,7 +3276,7 @@ export default function ControlPanel(props: Props) {
             }`}
             title={
               isProUser
-                ? `Private Output: ${isPrivateActive ? "ENABLED (Confidential, hidden from gallery)" : "DISABLED (Visible in local gallery)"}`
+                ? `Private Output: ${isPrivateActive ? "ENABLED (Confidential, hidden from gallery)" : "DISABLED (Visible in studio gallery)"}`
                 : "Private Output requires Solo Studio Pro"
             }
           >
@@ -3740,7 +3514,7 @@ export default function ControlPanel(props: Props) {
 
               {baseModels.length === 0 && (
                 <div className="py-12 text-center text-xs text-[var(--ink-faint)]">
-                  <p>No installed basic models found for {activeMode} mode in local gallery.</p>
+                  <p>No installed basic models found for {activeMode} mode in studio gallery.</p>
                   <Link
                     href="/models"
                     className="mt-2 inline-block font-semibold text-[var(--accent)] hover:underline focus-visible:underline"
@@ -3984,7 +3758,7 @@ export default function ControlPanel(props: Props) {
                   {availableLoraItems.length === 0 ? (
                     <div>
                       <p>
-                        No LoRA adapters installed in your local ComfyUI
+                        No LoRA adapters found in your model vault
                         gallery.
                       </p>
                       <Link
@@ -4200,7 +3974,7 @@ export default function ControlPanel(props: Props) {
                       ⚡ Fast-Lane Priority
                     </span>
                     <span className="text-[11px] text-[var(--ink-faint)]">
-                      Instant ComfyUI queue dispatch (~4s)
+                      Instant fast-lane queue dispatch (~4s)
                     </span>
                   </div>
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
@@ -4254,7 +4028,7 @@ export default function ControlPanel(props: Props) {
                 className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
               >
                 <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Unlock Pro (Local Studio Preview)</span>
+                <span>Unlock Pro (Studio Preview)</span>
               </button>
             </div>
           </div>
@@ -4290,7 +4064,7 @@ export default function ControlPanel(props: Props) {
 
             <div className="py-4 space-y-3">
               <p className="text-xs text-[var(--ink-soft)] leading-relaxed">
-                By default, outputs are saved to your local gallery and eligible
+                By default, outputs are saved to your studio gallery and eligible
                 for community feeds.{" "}
                 <strong className="text-[var(--ink)]">Private Output</strong>{" "}
                 guarantees your generated artwork, workflow graph, and prompt
@@ -4324,7 +4098,7 @@ export default function ControlPanel(props: Props) {
                 className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
               >
                 <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Unlock Pro (Local Studio Preview)</span>
+                <span>Unlock Pro (Studio Preview)</span>
               </button>
             </div>
           </div>

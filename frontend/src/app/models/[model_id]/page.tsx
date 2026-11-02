@@ -55,7 +55,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Can } from "@/components/rbac";
 import ModelGenerationsGrid from "@/components/ModelGenerationsGrid";
 import WorkspaceModal from "@/components/WorkspaceModal";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import EditModelDrawer from "@/components/EditModelDrawer";
 import UserAvatar from "@/components/UserAvatar";
 import Carousel from "@/components/Carousel";
@@ -780,8 +780,8 @@ export default function PublicModelDetailPage({
       }
       setInstallMessage(
         result.already_present
-          ? `${getBaseFilename(file.filename)} is already installed in ComfyUI.`
-          : `${getBaseFilename(file.filename)} installed in ComfyUI.`,
+          ? `${getBaseFilename(file.filename)} is already installed in Studio Vault.`
+          : `${getBaseFilename(file.filename)} mounted to Studio Vault.`,
       );
     } catch (reason) {
       setInstallError(
@@ -2043,7 +2043,7 @@ export default function PublicModelDetailPage({
                 primaryFile.from_vault || primaryFile.in_vault || installedFileIds.has(primaryFile.file_id) ? (
                   <div
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/20 py-2 px-3 text-xs font-mono font-bold text-emerald-400"
-                    title={primaryFile.from_vault ? "Weights sourced directly from local ComfyUI vault" : "Weights already mounted into ComfyUI vault"}
+                    title={primaryFile.from_vault ? "Weights sourced directly from Studio Model Vault" : "Weights already mounted into Studio Vault"}
                   >
                     <Check className="h-3.5 w-3.5 text-emerald-400" />
                     <span>{primaryFile.from_vault ? "Vault Source" : "In Vault"}</span>
@@ -2056,13 +2056,13 @@ export default function PublicModelDetailPage({
                     }
                     disabled={installing === primaryFile.file_id}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--accent)]/60 bg-[var(--accent)]/10 py-2 text-xs font-bold text-[var(--accent)] transition hover:bg-[var(--accent)]/20 disabled:opacity-50"
-                    title="Install weight file into ComfyUI vault (Moderator Tool)"
+                    title="Mount weight file into Studio Vault (Moderator Tool)"
                   >
                     <HardDriveDownload className="h-3.5 w-3.5" />
                     <span>
                       {installing === primaryFile.file_id
                         ? "Installing…"
-                        : "Install to ComfyUI"}
+                        : "Mount to Vault"}
                     </span>
                     <span className="rounded bg-[var(--accent)]/20 px-1 py-0.2 font-mono text-[9px] uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)]/30">
                       Mod
@@ -2288,7 +2288,7 @@ export default function PublicModelDetailPage({
                                 (file.from_vault || file.in_vault || installedFileIds.has(file.file_id)) ? (
                                   <span
                                     className="inline-flex items-center justify-center h-6 w-6 rounded border border-emerald-500/30 bg-emerald-950/30 text-emerald-400"
-                                    title={file.from_vault ? "Vault Source: Weights sourced directly from local ComfyUI vault" : "In Vault: Weights already mounted into ComfyUI vault"}
+                                    title={file.from_vault ? "Vault Source: Weights sourced directly from Studio Model Vault" : "In Vault: Weights already mounted into Studio Vault"}
                                     aria-label={file.from_vault ? "Vault Source" : "In Vault"}
                                   >
                                     <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -2299,8 +2299,8 @@ export default function PublicModelDetailPage({
                                     onClick={() => void install(file, activeVersion.version_id)}
                                     disabled={installing === file.file_id}
                                     className="inline-flex items-center justify-center h-6 w-6 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-40"
-                                    title={`Install ${getBaseFilename(file.filename)} into ComfyUI (Moderator Tool)`}
-                                    aria-label={`Install ${getBaseFilename(file.filename)} into ComfyUI`}
+                                    title={`Mount ${getBaseFilename(file.filename)} into Studio Vault (Moderator Tool)`}
+                                    aria-label={`Mount ${getBaseFilename(file.filename)} into Studio Vault`}
                                   >
                                     {installing === file.file_id ? (
                                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2535,23 +2535,12 @@ export default function PublicModelDetailPage({
         </div>
       </div>
 
-      <WorkspaceModal
-        open={Boolean(selectedSample)}
+      <AssetDetailOverlay
+        asset={selectedSample}
+        items={sampleItems}
+        onSelectAsset={(asset) => setSelectedSample(asset)}
         onClose={() => setSelectedSample(null)}
-        headless
-        size="media"
-      >
-        {selectedSample && (
-          <AssetInspectionStage
-            mode="modal"
-            asset={selectedSample}
-            items={sampleItems}
-            currentIndex={sampleItems.findIndex((a) => a.key === selectedSample.key)}
-            onSelectAsset={(asset) => setSelectedSample(asset)}
-            onClose={() => setSelectedSample(null)}
-          />
-        )}
-      </WorkspaceModal>
+      />
 
       {/* Delete Model Confirmation Modal */}
       {model && (
@@ -2802,7 +2791,7 @@ export default function PublicModelDetailPage({
                   }`}
               >
                 <HardDriveDownload className="h-4 w-4" />
-                <span>Import from ComfyUI Vault</span>
+                <span>Import from Studio Vault</span>
               </button>
             </div>
 
@@ -2891,11 +2880,11 @@ export default function PublicModelDetailPage({
                 {loadingLocalModels ? (
                   <div className="flex items-center justify-center p-8 text-xs font-mono text-[var(--ink-soft)] gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-[var(--accent)]" />
-                    <span>Scanning ComfyUI model directories…</span>
+                    <span>Scanning studio model vault…</span>
                   </div>
                 ) : localModelsList.length === 0 ? (
                   <p className="font-mono text-xs text-[var(--ink-faint)] italic p-4 text-center border border-dashed border-[var(--line)] rounded-lg">
-                    No files found in ComfyUI models directory.
+                    No files found in studio model vault.
                   </p>
                 ) : (
                   <div className="max-h-56 overflow-y-auto space-y-1 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2">
@@ -3136,7 +3125,7 @@ export default function PublicModelDetailPage({
             <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
               <div className="flex items-center gap-2 font-mono text-xs font-bold uppercase text-[var(--danger)]">
                 <ShieldAlert className="h-4 w-4" />
-                <span>Moderation Action // {model.title}</span>
+                <span>Moderation Action: {model.title}</span>
               </div>
               <button
                 type="button"

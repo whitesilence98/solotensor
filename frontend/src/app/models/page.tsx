@@ -479,7 +479,7 @@ export default function ModelsPage() {
                   ? "border-emerald-500 bg-emerald-950/40 text-emerald-400 font-bold shadow-sm"
                   : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)] hover:border-emerald-500/50 hover:text-emerald-400"
               }`}
-              title="Only show models installed in ComfyUI vault"
+              title="Only show models installed in Studio Vault"
             >
               <HardDrive className="h-3 w-3 text-emerald-400" />
               <span>In Vault ({facetCounts.vaultCount})</span>

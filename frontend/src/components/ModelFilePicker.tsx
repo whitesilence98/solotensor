@@ -85,7 +85,7 @@ export default function ModelFilePicker({
             setUnconfigured(true);
             setLocalModels([]);
           } else {
-            setError(reason instanceof Error ? reason.message : "Could not load ComfyUI models");
+            setError(reason instanceof Error ? reason.message : "Could not load model files");
           }
         })
         .finally(() => {
@@ -181,7 +181,7 @@ export default function ModelFilePicker({
                   : "border border-[var(--line)] text-[var(--ink-soft)] hover:text-[var(--ink)]"
               }`}
             >
-              {key === "comfy" ? "ComfyUI files" : "Solo vault"}
+              {key === "comfy" ? "Model Files" : "Studio Vault"}
             </button>
           ))}
         </div>
@@ -192,7 +192,7 @@ export default function ModelFilePicker({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={tab === "comfy" ? "Search ComfyUI models" : "Search the Solo vault"}
+            placeholder={tab === "comfy" ? "Search model files" : "Search the Studio vault"}
             aria-label="Search model files"
             className={`${FIELD} pl-8 font-mono text-xs`}
           />
@@ -202,9 +202,9 @@ export default function ModelFilePicker({
           {unconfigured ? (
             <div className="flex flex-col items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-4 py-8 text-center">
               <FolderOpen className="h-5 w-5 text-[var(--ink-faint)]" strokeWidth={1.5} />
-              <p className="text-xs font-semibold text-[var(--ink)]">ComfyUI model browsing not configured</p>
+              <p className="text-xs font-semibold text-[var(--ink)]">Studio model browsing not configured</p>
               <p className="text-[10px] text-[var(--ink-soft)]">
-                Set <span className="font-mono">COMFY_MODEL_ROOT</span> on the backend to browse local model folders.
+                Set <span className="font-mono">COMFY_MODEL_ROOT</span> on the backend to browse vault model folders.
               </p>
             </div>
           ) : error ? (

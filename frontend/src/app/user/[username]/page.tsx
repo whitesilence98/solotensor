@@ -34,8 +34,7 @@ import {
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import TensorModelCard, { ModelCardSkeleton } from "@/components/TensorModelCard";
 import AssetCardList from "@/components/AssetCardList";
-import WorkspaceModal from "@/components/WorkspaceModal";
-import AssetInspectionStage from "@/components/AssetInspectionStage";
+import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import { generationRecordToGalleryItem } from "@/components/ModelGenerationsGrid";
 import RoleBadge from "@/components/RoleBadge";
 import UserAvatar from "@/components/UserAvatar";
@@ -321,7 +320,7 @@ export default function UserProfilePage({
     return tools.map((t) => ({
       id: t.tool_id,
       title: t.name,
-      description: `Automated visual synthesis pipeline configured for ${t.mode.replace(/-/g, " ")}. Backed by native ComfyUI graph execution.`,
+      description: `Automated visual synthesis pipeline configured for ${t.mode.replace(/-/g, " ")}. Backed by native SoloTensor Studio pipeline execution.`,
       mode: t.mode,
       aspectRatio: t.default_aspect_ratio,
       created: t.created_at
@@ -1062,22 +1061,12 @@ export default function UserProfilePage({
       {/* ========================================================= */}
       {/* ASSET INSPECTION STAGE MODAL                              */}
       {/* ========================================================= */}
-      <WorkspaceModal
-        open={Boolean(selectedAsset)}
+      <AssetDetailOverlay
+        asset={selectedAsset}
+        items={activeTab === "all" ? galleryItems.slice(0, 6) : filteredGalleryItems}
+        onSelectAsset={selectAssetInCarousel}
         onClose={closeAsset}
-        headless
-        size="media"
-      >
-        {selectedAsset && (
-          <AssetInspectionStage
-            mode="modal"
-            asset={selectedAsset}
-            items={activeTab === "all" ? galleryItems.slice(0, 6) : filteredGalleryItems}
-            onSelectAsset={selectAssetInCarousel}
-            onClose={closeAsset}
-          />
-        )}
-      </WorkspaceModal>
+      />
 
       {/* ========================================================= */}
       {/* REPORT USER MODAL                                         */}

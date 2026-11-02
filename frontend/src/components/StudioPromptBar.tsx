@@ -40,7 +40,7 @@ export interface StudioPromptBarProps {
   activeMode?: string;
   referenceImage?: string | null;
   lastFrameImage?: string | null;
-  img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
+  img2imgSubTab?: "image_to_image" | "inpaint" | "detailer" | "upscaler";
   stage2Upscale?: boolean;
   videoSubMode?: VideoSubMode;
 }
@@ -373,6 +373,8 @@ export default function StudioPromptBar({
                           ? "Run Detailer Pass"
                           : img2imgSubTab === "upscaler"
                           ? "Run SeedVR2 Upscaler"
+                          : img2imgSubTab === "inpaint"
+                          ? "Generate Inpaint"
                           : "Generate Img2Img"
                         : activeMode === "Edit"
                         ? "Generate Inpaint"

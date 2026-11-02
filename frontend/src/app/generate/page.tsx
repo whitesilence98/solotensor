@@ -48,6 +48,14 @@ const FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> =
   "3:2": [1216, 832],
 };
 
+const VIDEO_FORMATS: Record<Exclude<FormatKey, "custom">, readonly [number, number]> = {
+  "1:1": [704, 704],
+  "16:9": [1024, 576],
+  "9:16": [576, 1024],
+  "4:3": [768, 576],
+  "3:2": [768, 512],
+};
+
 const FORMAT_KEYS: FormatKey[] = ["1:1", "16:9", "9:16", "4:3", "3:2", "custom"];
 
 const DEFAULT_SAMPLE_PROMPT =
@@ -171,7 +179,7 @@ interface TabState {
   // Prime mode
   primePreset: string;
   // Img2Img sub-tab
-  img2imgSubTab?: "image_to_image" | "detailer" | "upscaler";
+  img2imgSubTab?: "image_to_image" | "inpaint" | "detailer" | "upscaler";
   // Sampler & Scheduler
   samplerName: string;
   scheduler: string;
@@ -328,7 +336,7 @@ function createDefaultTabState(
         imageCount: "1",
         cfg: "1.0",
         denoise: "1",
-        format: "custom",
+        format: "16:9",
         customWidth: "1024",
         customHeight: "576",
         referenceImage: null,
@@ -457,7 +465,7 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {  try {
       matchColor: typeof saved.matchColor === "boolean" ? saved.matchColor : defaults.matchColor,
       tiledVaeDecode: typeof saved.tiledVaeDecode === "boolean" ? saved.tiledVaeDecode : defaults.tiledVaeDecode,
       primePreset: typeof saved.primePreset === "string" ? saved.primePreset : defaults.primePreset,
-      img2imgSubTab: ["image_to_image", "detailer", "upscaler"].includes(saved.img2imgSubTab)
+      img2imgSubTab: ["image_to_image", "inpaint", "detailer", "upscaler"].includes(saved.img2imgSubTab)
         ? saved.img2imgSubTab
         : defaults.img2imgSubTab,
       videoSubMode:
@@ -915,15 +923,36 @@ export default function StudioPage() {
   }, []);
 
   const outputDimensions = useMemo(() => {
+    const isVideo = activeTensorMode === "Video";
+    const formatsMap = isVideo ? VIDEO_FORMATS : FORMATS;
     const values =
       activeTab.format === "custom"
         ? [Number(activeTab.customWidth), Number(activeTab.customHeight)]
-        : FORMATS[activeTab.format];
+        : formatsMap[activeTab.format];
+    const defaultDim = isVideo ? 704 : 1024;
     return {
-      width: Number.isFinite(values[0]) && values[0] > 0 ? values[0] : 1024,
-      height: Number.isFinite(values[1]) && values[1] > 0 ? values[1] : 1024,
+      width: Number.isFinite(values[0]) && values[0] > 0 ? values[0] : defaultDim,
+      height: Number.isFinite(values[1]) && values[1] > 0 ? values[1] : defaultDim,
     };
-  }, [activeTab.format, activeTab.customWidth, activeTab.customHeight]);
+  }, [activeTensorMode, activeTab.format, activeTab.customWidth, activeTab.customHeight]);
+
+  const handleFormatChange = useCallback(
+    (format: FormatKey) => {
+      if (format !== "custom") {
+        const isVideo = activeTensorMode === "Video";
+        const map = isVideo ? VIDEO_FORMATS : FORMATS;
+        const [w, h] = map[format];
+        updateActiveTab({
+          format,
+          customWidth: String(w),
+          customHeight: String(h),
+        });
+      } else {
+        updateActiveTab({ format });
+      }
+    },
+    [activeTensorMode, updateActiveTab],
+  );
 
   const canGenerate = useMemo(() => {
     if (busy) return false;
@@ -1031,17 +1060,23 @@ export default function StudioPage() {
         on: l.enabled !== false,
       }));
 
+    const isVideo = activeTensorMode === "Video";
+    const formatsMap = isVideo ? VIDEO_FORMATS : FORMATS;
     const [resolvedWidth, resolvedHeight] =
       activeTab.format === "custom"
         ? [activeTab.customWidth, activeTab.customHeight]
-        : FORMATS[activeTab.format].map(String);
+        : formatsMap[activeTab.format].map(String);
 
     const parsedSteps = Math.max(1, Math.min(100, Number(activeTab.steps) || 20));
     const parsedImageCount = Math.max(1, Math.min(4, Number(activeTab.imageCount) || 1));
     const parsedCfg = Math.max(0, Math.min(30, Number(activeTab.cfg) || 7.0));
     const parsedDenoise = Math.max(0, Math.min(1, Number(activeTab.denoise) || 1.0));
-    const parsedWidth = Math.floor((Number(resolvedWidth) || 1024) / 8) * 8;
-    const parsedHeight = Math.floor((Number(resolvedHeight) || 1024) / 8) * 8;
+    const parsedWidth = isVideo
+      ? Math.max(64, Math.floor((Number(resolvedWidth) || 704) / 32) * 32)
+      : Math.floor((Number(resolvedWidth) || 1024) / 8) * 8;
+    const parsedHeight = isVideo
+      ? Math.max(64, Math.floor((Number(resolvedHeight) || 704) / 32) * 32)
+      : Math.floor((Number(resolvedHeight) || 1024) / 8) * 8;
     const rawSeed = activeTab.seed.trim();
     const rawNum = rawSeed ? Number(rawSeed) : undefined;
     const isRandomSeed =
@@ -1173,7 +1208,7 @@ export default function StudioPage() {
           activeTab.detailerConfig.enabled ||
           activeTensorMode === "Prime",
         upscale: {
-          enabled: activeTab.upscaleConfig.enabled || activeTensorMode === "Prime",
+          enabled: activeTab.upscaleConfig.enabled || activeTensorMode === "Prime" || (activeTensorMode === "Img2Img" && activeTab.img2imgSubTab === "upscaler"),
           scale:
             activeTab.upscaleConfig.scale === 0
               ? activeTab.upscaleConfig.customScale ?? 2
@@ -1190,7 +1225,8 @@ export default function StudioPage() {
           enabled:
             activeTab.detailerConfig.enabled ||
             activeTab.enableDetailer ||
-            activeTensorMode === "Prime",
+            activeTensorMode === "Prime" ||
+            (activeTensorMode === "Img2Img" && activeTab.img2imgSubTab === "detailer"),
           items: activeTab.detailerConfig.items.map((item) => ({
             type: item.type,
             enabled: item.enabled,
@@ -1265,12 +1301,9 @@ export default function StudioPage() {
     if (plan.img2imgSubTab) patch.img2imgSubTab = plan.img2imgSubTab;
 
     if (targetMode === "Video") {
-      // The Video tab has no aspect-ratio selector; it sizes through LTX-aligned
-      // preset chips. Map the shot's aspect onto that surface so the card and the
-      // highlighted preset agree, rather than writing a `format` the tab ignores.
       if (plan.format !== null) {
+        patch.format = plan.format;
         const size = videoSizeForAspect(plan.format);
-        patch.format = "custom";
         patch.customWidth = String(size.width);
         patch.customHeight = String(size.height);
       }
@@ -1579,7 +1612,7 @@ export default function StudioPage() {
             customHeight={activeTab.customHeight}
             onCustomHeightChange={(customHeight) => updateActiveTab({ customHeight })}
             format={activeTab.format}
-            onFormatChange={(format) => updateActiveTab({ format })}
+            onFormatChange={handleFormatChange}
             isPrivate={activeTab.isPrivate}
             onPrivateChange={(isPrivate) => updateActiveTab({ isPrivate })}
             enableDetailer={activeTab.enableDetailer}
