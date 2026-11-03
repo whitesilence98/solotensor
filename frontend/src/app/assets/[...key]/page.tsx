@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ImageIcon, Sparkles } from "lucide-react";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
 import RelatedPostsSection from "@/components/RelatedPostsSection";
-import { api, type GalleryItem, type InstalledGalleryModel } from "@/lib/api";
+import { api, type AssetRecord, type GalleryItem, type InstalledGalleryModel } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 
@@ -52,8 +52,14 @@ export default function AssetDetailPage() {
   // Layout effect so the previous asset's scroll offset is gone before paint.
   useIsomorphicLayoutEffect(() => {
     const scroller = mainRef.current;
-    if (scroller) scroller.scrollTop = 0;
-  }, [key]);
+    if (scroller) {
+      scroller.scrollTo({ top: 0, behavior: "instant" });
+      scroller.scrollTop = 0;
+    }
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [key, asset?.key]);
 
   // Load asset
   useEffect(() => {
@@ -63,6 +69,12 @@ export default function AssetDetailPage() {
       return;
     }
     if (!isAuthenticated) return;
+
+    // If we already have the result for this exact key (e.g. from optimistic related selection), keep it!
+    if (result && result.key === key && result.item) {
+      return;
+    }
+
     setResult(null);
 
     api
@@ -84,7 +96,7 @@ export default function AssetDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [key, retryKey, isAuthenticated]);
+  }, [key, retryKey, isAuthenticated, result]);
 
   // Load selectable models for LoRA / model name resolution
   useEffect(() => {
@@ -101,6 +113,48 @@ export default function AssetDetailPage() {
     };
   }, []);
 
+  const handleSelectRelatedAsset = useCallback(
+    (item: GalleryItem | AssetRecord) => {
+      // 1. Defocus clicked card to prevent browser anchor/focus scrolling
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      // 2. Force immediate scroll to top on container and window
+      const scroller = mainRef.current;
+      if (scroller) {
+        scroller.scrollTo({ top: 0, behavior: "instant" });
+        scroller.scrollTop = 0;
+      }
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+
+      // 3. Immediately set the clicked asset in state (0ms delay, zero blank frame)
+      setResult({ key: item.key, item: item as GalleryItem, error: null });
+
+      // 4. Update the URL cleanly
+      const encoded = item.key.split("/").map(encodeURIComponent).join("/");
+      router.push(`/assets/${encoded}`);
+
+      // 5. Multi-pass RAF to guarantee scroll position remains locked at y = 0
+      requestAnimationFrame(() => {
+        if (mainRef.current) {
+          mainRef.current.scrollTo({ top: 0, behavior: "instant" });
+          mainRef.current.scrollTop = 0;
+        }
+        window.scrollTo({ top: 0, behavior: "instant" });
+        setTimeout(() => {
+          if (mainRef.current) {
+            mainRef.current.scrollTo({ top: 0, behavior: "instant" });
+            mainRef.current.scrollTop = 0;
+          }
+        }, 60);
+      });
+    },
+    [router]
+  );
+
   const handleDelete = async (targetKey: string) => {
     try {
       await api.deleteAsset(targetKey);
@@ -111,9 +165,6 @@ export default function AssetDetailPage() {
   };
 
   const filename = key ? basename(key) : "";
-  const isOwnerView = Boolean(
-    asset && user?.id && asset.metadata?.user_id && asset.metadata.user_id === user.id
-  );
 
   return (
     <ProtectedRoute
@@ -124,7 +175,7 @@ export default function AssetDetailPage() {
       <main
         id="main-content"
         ref={mainRef}
-        className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] [container-type:size]"
+        className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)]"
       >
         {/* Pinned Top Navigation Breadcrumbs */}
         <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--ground)_90%,transparent)] px-4 sm:px-6 backdrop-blur-xl">
@@ -159,7 +210,7 @@ export default function AssetDetailPage() {
         </header>
 
         {/* Main Content Area */}
-        <div className="mx-auto flex w-full max-w-[1600px] 2xl:max-w-[1720px] flex-1 flex-col p-3 sm:p-5 lg:p-6">
+        <div className="mx-auto flex w-full max-w-[1600px] 2xl:max-w-[1720px] flex-1 flex-col p-2.5 sm:p-4 lg:p-5">
           {/*
             First-screen band. <main> is a size container, so 100cqh is exactly
             the visible scrollport. Subtracting the h-12 header and this
@@ -168,7 +219,7 @@ export default function AssetDetailPage() {
             The panel's own 580/640px minima are a floor, so short screens grow
             the page instead of clipping the panel.
           */}
-          <div className="flex shrink-0 flex-col justify-center min-h-[calc(100cqh_-_4.5rem)] sm:min-h-[calc(100cqh_-_5.5rem)] lg:min-h-[calc(100cqh_-_6rem)]">
+          <div className="flex shrink-0 flex-col justify-center min-h-[calc(100cqh_-_3.5rem)] sm:min-h-[calc(100cqh_-_4.5rem)] lg:min-h-[calc(100cqh_-_5rem)]">
             {loading ? (
               <div
                 className="relative grid min-h-[580px] w-full overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] lg:grid-cols-[minmax(0,1fr)_24.5rem] shadow-2xl"
@@ -260,11 +311,12 @@ export default function AssetDetailPage() {
             ) : null}
           </div>
 
-          {!loading && !error && asset && isOwnerView && (
+          {!loading && !error && asset && (
             <RelatedPostsSection
               key={asset.key}
               anchorKey={asset.key}
               scrollRootRef={mainRef}
+              onOpen={handleSelectRelatedAsset}
             />
           )}
         </div>

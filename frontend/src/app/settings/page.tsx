@@ -26,6 +26,9 @@ import {
   RefreshCw,
   LogOut,
   Flame,
+  Monitor,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   DEFAULT_SETTINGS,
@@ -33,7 +36,10 @@ import {
   loadSettings,
   resetSettings,
   saveSettings,
+  applyDisplayDensity,
+  DENSITY_EVENT_NAME,
   type StudioSettings,
+  type DisplayDensity,
 } from "@/lib/settings";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -81,6 +87,60 @@ const SCHEDULER_OPTIONS = [
   { value: "exponential", label: "Exponential (Deep dynamic range)" },
   { value: "simple", label: "Simple (Uniform decay)" },
   { value: "sgm_uniform", label: "SGM Uniform" },
+];
+
+const DENSITY_OPTIONS: Array<{
+  id: DisplayDensity;
+  title: string;
+  badge?: string;
+  description: string;
+  metrics: string;
+  detail: string;
+  icon: typeof Monitor;
+}> = [
+  {
+    id: "auto",
+    title: "Auto (DPI Normalize)",
+    badge: "RECOMMENDED",
+    description: "Automatically applies engine zoom to counter Windows 125%/150% scaling, restoring 1:1 desktop real estate.",
+    metrics: "0.80x @ 125% • 0.67x @ 150%",
+    detail: "Dynamic ratio countering OS scale",
+    icon: Monitor,
+  },
+  {
+    id: "ultra-compact",
+    title: "Ultra Compact (75% Zoom)",
+    badge: "EXACT 75%",
+    description: "Exact 1:1 equivalent to Ctrl + scroll to 75%. Shrinks the entire canvas, icons, borders, modals, and viewport.",
+    metrics: "0.75x true engine zoom",
+    detail: "Full viewport & SVG icon scaling",
+    icon: Minimize2,
+  },
+  {
+    id: "compact",
+    title: "Compact (80% Zoom)",
+    badge: "EXACT 80%",
+    description: "Exact 1:1 equivalent to Ctrl + scroll to 80%. Perfectly neutralizes Windows 125% scaling (1.25 × 0.8 = 1.00).",
+    metrics: "0.80x true engine zoom",
+    detail: "Condensed rails, modals, and canvas",
+    icon: SlidersHorizontal,
+  },
+  {
+    id: "standard",
+    title: "Standard (100% Zoom)",
+    description: "Native unscaled desktop zoom (1.0x).",
+    metrics: "1.00x native desktop",
+    detail: "Native browser desktop density",
+    icon: SlidersHorizontal,
+  },
+  {
+    id: "comfortable",
+    title: "Comfortable (110% Zoom)",
+    description: "Spacious padding and enlarged interface controls.",
+    metrics: "1.10x magnified zoom",
+    detail: "Generous spacing and larger fonts",
+    icon: Maximize2,
+  },
 ];
 
 const fieldLabel = "text-[11px] font-bold text-[var(--ink-soft)] uppercase tracking-wider font-mono";
@@ -152,9 +212,52 @@ export default function SettingsPage() {
   const [isClaiming, setIsClaiming] = useState(false);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
 
-  // Load local settings on mount
+  // Technical display scale & DPI info
+  const [deviceDprInfo, setDeviceDprInfo] = useState<{
+    dpr: number;
+    scalePercent: number;
+  } | null>(null);
+
+  // Load local settings on mount and track live display scale
   useEffect(() => {
     setSettings(loadSettings());
+
+    if (typeof window === "undefined") return;
+    const updateDpr = () => {
+      const dpr = Number((window.devicePixelRatio || 1).toFixed(2));
+      setDeviceDprInfo({
+        dpr,
+        scalePercent: Math.round(dpr * 100),
+      });
+    };
+    updateDpr();
+
+    window.addEventListener("resize", updateDpr);
+    let mq: MediaQueryList | null = null;
+    try {
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      if (mq.addEventListener) {
+        mq.addEventListener("change", updateDpr);
+      }
+    } catch {
+      /* matchMedia fallback */
+    }
+
+    const handleDensityChange = (e: Event) => {
+      const detail = (e as CustomEvent<DisplayDensity>).detail;
+      if (detail) {
+        setSettings((prev) => ({ ...prev, displayDensity: detail }));
+      }
+    };
+    window.addEventListener(DENSITY_EVENT_NAME, handleDensityChange);
+
+    return () => {
+      window.removeEventListener("resize", updateDpr);
+      if (mq && mq.removeEventListener) {
+        mq.removeEventListener("change", updateDpr);
+      }
+      window.removeEventListener(DENSITY_EVENT_NAME, handleDensityChange);
+    };
   }, []);
 
   // Sync profile form fields when auth user changes
@@ -398,7 +501,7 @@ export default function SettingsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased"
+      className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] antialiased"
     >
       <WorkspaceNavbar
         subtitle="STUDIO CONFIGURATION &amp; PREFERENCES"
@@ -1315,6 +1418,136 @@ export default function SettingsPage() {
         {/* TAB 6: Preferences */}
         {activeTab === "preferences" && (
           <div className="mt-6 space-y-6" aria-label="Interface and Notification Preferences">
+            {/* Dedicated Obsidian-styled Section: Studio Display Density & Scale */}
+            <section className="workspace-bezel p-6 md:p-8" aria-label="Studio Display Density &amp; Scale">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--line)] pb-5">
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h2 className="text-base font-semibold text-[var(--ink)]">Studio Display Density &amp; Scale</h2>
+                    <span className="rounded bg-[var(--surface-raised)] px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--line)]">
+                      DPI Engine
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--ink-faint)] max-w-xl">
+                    Configure root UI density to counter Windows display scaling on 1080p and high-DPI displays without browser zoom.
+                  </p>
+                </div>
+
+                {/* Live technical microcopy badge */}
+                <div className="inline-flex items-center gap-2.5 self-start sm:self-auto rounded-lg border border-[var(--line-strong)] bg-[var(--surface-sunken)] px-3.5 py-2 font-mono text-xs shadow-inner">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
+                  </span>
+                  <span>
+                    Detected Display Scale:{" "}
+                    <strong className="text-[var(--ink)]">
+                      {deviceDprInfo ? `${deviceDprInfo.scalePercent}%` : "100%"}
+                    </strong>{" "}
+                    <span className="text-[var(--ink-faint)]">
+                      (dpr: {deviceDprInfo ? deviceDprInfo.dpr : 1.0})
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* 4 Selectable Visual Option Cards */}
+              <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {DENSITY_OPTIONS.map((option) => {
+                  const isSelected = (settings.displayDensity || "auto") === option.id;
+                  const Icon = option.icon;
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        updateSetting("displayDensity", option.id);
+                        applyDisplayDensity(option.id);
+                      }}
+                      className={`group relative flex flex-col justify-between text-left rounded-xl border p-5 transition-all duration-200 outline-none ${
+                        isSelected
+                          ? "border-[var(--accent)] bg-[var(--surface-raised)] shadow-[0_0_24px_rgba(199,227,106,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-[var(--accent)]"
+                          : "border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--line-strong)] hover:bg-[var(--surface)] hover:shadow-md"
+                      }`}
+                    >
+                      <div>
+                        {/* Header: Icon, Title & Badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                                isSelected
+                                  ? "border-[var(--accent)] bg-[var(--accent-ambient)] text-[var(--accent)]"
+                                  : "border-[var(--line)] bg-[var(--surface-soft)] text-[var(--ink-soft)] group-hover:text-[var(--ink)]"
+                              }`}
+                            >
+                              <Icon className="h-4 w-4" strokeWidth={1.8} />
+                            </span>
+                            <span className="text-sm font-bold text-[var(--ink)]">
+                              {option.title}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {option.badge && (
+                              <span
+                                className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-black uppercase tracking-wider ${
+                                  option.id === "auto"
+                                    ? "bg-[var(--accent)] text-[var(--accent-ink)]"
+                                    : "bg-[var(--surface-soft)] text-[var(--ink-soft)] border border-[var(--line)]"
+                                }`}
+                              >
+                                {option.badge}
+                              </span>
+                            )}
+                            <span
+                              className={`flex h-5 w-5 items-center justify-center rounded-full border transition-all ${
+                                isSelected
+                                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                                  : "border-[var(--line-strong)] bg-[var(--surface-raised)] text-transparent"
+                              }`}
+                              aria-hidden="true"
+                            >
+                              <Check className="h-3 w-3 stroke-[3]" />
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Description */}
+                        <p className="mt-3 text-xs leading-relaxed text-[var(--ink-soft)]">
+                          {option.description}
+                        </p>
+                      </div>
+
+                      {/* Footer tags */}
+                      <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--line)] pt-3 font-mono text-[11px]">
+                        <span className="text-[var(--ink-faint)] truncate">{option.detail}</span>
+                        <span
+                          className={`shrink-0 rounded px-2 py-0.5 ${
+                            isSelected
+                              ? "bg-[var(--accent-ambient)] text-[var(--accent)] font-semibold"
+                              : "bg-[var(--surface-soft)] text-[var(--ink-soft)]"
+                          }`}
+                        >
+                          {option.metrics}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Technical explanation callout */}
+              <div className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--surface-soft)]/50 p-3.5 text-xs text-[var(--ink-soft)] flex items-start gap-2.5">
+                <Sparkles className="h-4 w-4 shrink-0 text-[var(--accent)] mt-0.5" />
+                <p className="leading-relaxed">
+                  <strong>How DPI Normalization Works:</strong> When Windows scales a 1080p display to 125%, physical canvas space drops from 1920&times;1080 to 1536&times;864. SoloTensor calculates the exact inverse ratio (<span className="font-mono text-[var(--ink)]">12px &times; 1.25 = 15px physical</span>) so menus and nodes retain crisp pixel-level density without shrinking workspace viewport.
+                </p>
+              </div>
+            </section>
+
+            {/* Audio & Interface Preferences */}
             <section className="workspace-bezel p-6 md:p-8">
               <div className="border-b border-[var(--line)] pb-4">
                 <h2 className="text-base font-semibold text-[var(--ink)]">Interface &amp; Notification Preferences</h2>

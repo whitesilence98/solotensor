@@ -32,6 +32,14 @@ import {
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 import { STORAGE_KEYS } from "@/lib/storage";
+import {
+  COMFY_SAMPLER_KEYS,
+  COMFY_SCHEDULER_KEYS,
+  EDIT_SAMPLER_KEYS,
+  EDIT_SCHEDULER_KEYS,
+  sanitizeSampler,
+  sanitizeScheduler,
+} from "@/lib/sampling";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 import { findMatchingModel, resolveLoraDisplayName } from "@/lib/models";
@@ -319,8 +327,8 @@ function createDefaultTabState(
         ...DEFAULT_VIDEO_FIELDS,
         primePreset: "portrait_pro",
         img2imgSubTab: "image_to_image",
-        samplerName: "euler",
-        scheduler: "normal",
+        samplerName: "linear/euler",
+        scheduler: "beta57",
       };
 
     case "Video":
@@ -389,7 +397,13 @@ function createDefaultTabState(
   }
 }
 
-function parseSavedTabState(raw: string, defaults: TabState): TabState {  try {
+function parseSavedTabState(raw: string, defaults: TabState): TabState {
+  // A tab's vocabulary is identified by its default sampler: the Edit tab's
+  // default is a Clownshar `family/name` key, every other tab's is flat.
+  const editVocabulary = defaults.samplerName.includes("/");
+  const samplerKeys = editVocabulary ? EDIT_SAMPLER_KEYS : COMFY_SAMPLER_KEYS;
+  const schedulerKeys = editVocabulary ? EDIT_SCHEDULER_KEYS : COMFY_SCHEDULER_KEYS;
+  try {
     const saved = JSON.parse(raw);
     if (!saved || typeof saved !== "object") return defaults;
     return {
@@ -474,8 +488,8 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {  try {
           : saved.referenceImage || saved.lastFrameImage
             ? "image-to-video"
             : defaults.videoSubMode,
-      samplerName: typeof saved.samplerName === "string" ? saved.samplerName : defaults.samplerName,
-      scheduler: typeof saved.scheduler === "string" ? saved.scheduler : defaults.scheduler,
+      samplerName: sanitizeSampler(saved.samplerName, samplerKeys) ?? defaults.samplerName,
+      scheduler: sanitizeScheduler(saved.scheduler, schedulerKeys) ?? defaults.scheduler,
     };
   } catch {
     return defaults;
@@ -670,14 +684,21 @@ export default function StudioPage() {
         const res = await api.interrogateImage(file, file.name);
         if (res.has_metadata && res.metadata) {
           const m = res.metadata;
+          // Metadata may carry a manufactured composite such as
+          // `exponential/ddim_beta57`, or a key from the other enum family.
+          // Adopt it only when the active tab can actually submit it.
+          const samplerKeys = activeTensorMode === "Edit" ? EDIT_SAMPLER_KEYS : COMFY_SAMPLER_KEYS;
+          const schedulerKeys = activeTensorMode === "Edit" ? EDIT_SCHEDULER_KEYS : COMFY_SCHEDULER_KEYS;
+          const adoptedSampler = sanitizeSampler(m.sampler_name, samplerKeys);
+          const adoptedScheduler = sanitizeScheduler(m.scheduler, schedulerKeys);
           updateActiveTab((prev) => {
             const next: Partial<TabState> = {};
             if (m.prompt) next.prompt = m.prompt;
             if (typeof m.negative_prompt === "string") next.negativePrompt = m.negative_prompt;
             if (m.steps) next.steps = String(m.steps);
             if (m.cfg) next.cfg = String(m.cfg);
-            if (m.sampler_name) next.samplerName = m.sampler_name;
-            if (m.scheduler) next.scheduler = m.scheduler;
+            if (adoptedSampler) next.samplerName = adoptedSampler;
+            if (adoptedScheduler) next.scheduler = adoptedScheduler;
             if (m.seed !== undefined && m.seed !== null) next.seed = String(m.seed);
             return next;
           });
@@ -702,7 +723,7 @@ export default function StudioPage() {
         setInterrogating(false);
       }
     },
-    [updateActiveTab]
+    [updateActiveTab, activeTensorMode]
   );
   const [modelsLoading, setModelsLoading] = useState(true);
 
@@ -1195,8 +1216,12 @@ export default function StudioPage() {
         image_count: parsedImageCount,
         cfg: parsedCfg,
         denoise: effectiveDenoise,
-        sampler_name: activeTab.samplerName || "euler",
-        scheduler: activeTab.scheduler || "normal",
+        // Fallbacks must match the active tab's vocabulary: an Edit run that
+        // fell back to the flat `euler` would be rejected by ClownsharKSampler_Beta.
+        sampler_name:
+          activeTab.samplerName || (activeTensorMode === "Edit" ? "linear/euler" : "euler"),
+        scheduler:
+          activeTab.scheduler || (activeTensorMode === "Edit" ? "beta57" : "normal"),
         width: parsedWidth,
         height: parsedHeight,
         format_name: activeTab.format,

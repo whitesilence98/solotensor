@@ -47,6 +47,7 @@ import {
   resolveModelGalleryUrl,
 } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
+import { COMFY_SAMPLER_KEYS, COMFY_SCHEDULER_KEYS, sanitizeSampler, sanitizeScheduler } from "@/lib/sampling";
 
 /**
  * Formats timestamp into exact string: 'Published: MMM d, yyyy h:mm a'
@@ -116,14 +117,20 @@ export function saveRemixToStorage(meta: GalleryMetadata, modelOptions?: Install
       })
       : [];
 
+    // This stage is not mode-aware, so validate against the flat ComfyUI
+    // vocabulary and omit the field entirely when it does not belong there.
+    // The Edit tab's read-side sanitiser translates a valid flat key.
+    const samplerOfMeta = sanitizeSampler(meta.sampler_name, COMFY_SAMPLER_KEYS);
+    const schedulerOfMeta = sanitizeScheduler(meta.scheduler, COMFY_SCHEDULER_KEYS);
+
     const draft = {
       prompt: meta.prompt || "",
       negativePrompt: typeof meta.negative_prompt === "string" ? meta.negative_prompt : "",
       seed: meta.seed !== undefined && meta.seed !== null ? String(meta.seed) : "",
       steps: meta.steps !== undefined && meta.steps !== null ? String(meta.steps) : "25",
       cfg: meta.cfg !== undefined && meta.cfg !== null ? String(meta.cfg) : "7.0",
-      samplerName: meta.sampler_name || "euler",
-      scheduler: meta.scheduler || "normal",
+      ...(samplerOfMeta !== null ? { samplerName: samplerOfMeta } : {}),
+      ...(schedulerOfMeta !== null ? { scheduler: schedulerOfMeta } : {}),
       denoise: meta.denoise !== undefined && meta.denoise !== null ? String(meta.denoise) : "1",
       format: meta.format_name || "1:1",
       modelId: meta.model_id || matchedModel?.model_id || "",
@@ -217,6 +224,11 @@ export default function AssetInspectionStage({
   const [newTagDraft, setNewTagDraft] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [tagToast, setTagToast] = useState<string | null>(null);
+
+  // Tags Clamping & Expansion State (2 lines max collapsed)
+  const [isTagsExpanded, setIsTagsExpanded] = useState(false);
+  const [isTagsOverflowing, setIsTagsOverflowing] = useState(false);
+  const tagsContainerRef = useRef<HTMLDivElement>(null);
 
   // Moderation Governance State
   const { user, isMod, isAdmin, hasPermission } = useAuth();
@@ -377,6 +389,7 @@ export default function AssetInspectionStage({
   useEffect(() => {
     setIsPromptExpanded(false);
     setIsNegExpanded(false);
+    setIsTagsExpanded(false);
 
     const checkOverflow = () => {
       if (promptTextRef.current) {
@@ -384,6 +397,9 @@ export default function AssetInspectionStage({
       }
       if (negTextRef.current) {
         setIsNegOverflowing(negTextRef.current.scrollHeight > 132);
+      }
+      if (tagsContainerRef.current) {
+        setIsTagsOverflowing(tagsContainerRef.current.scrollHeight > 64);
       }
     };
 
@@ -394,7 +410,7 @@ export default function AssetInspectionStage({
       clearTimeout(timer);
       window.removeEventListener("resize", checkOverflow);
     };
-  }, [asset.key, meta?.prompt, meta?.negative_prompt]);
+  }, [asset.key, meta?.prompt, meta?.negative_prompt, tags]);
 
   const effectiveItems = items.length > 0 ? items : [asset];
   const activeIndex =
@@ -544,10 +560,10 @@ export default function AssetInspectionStage({
   const isOverlay = mode === "overlay";
   const containerClasses =
     mode === "modal"
-      ? "relative grid max-h-[88vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl"
+      ? "relative grid max-h-[92vh] sm:max-h-[90vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:grid-cols-[minmax(0,1fr)_28rem] shadow-2xl"
       : isOverlay
-      ? "relative grid min-h-[calc(100vh_-_4rem)] supports-[height:100svh]:min-h-[calc(100svh_-_4rem)] overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl"
-      : "relative grid min-h-[580px] overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] 2xl:grid-cols-[minmax(0,1fr)_460px] shadow-2xl";
+      ? "relative grid min-h-[580px] shrink-0 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] shadow-2xl"
+      : "relative grid min-h-[500px] lg:min-h-[560px] overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:grid-cols-[minmax(0,1fr)_28rem] shadow-2xl";
 
   return (
     <div className={containerClasses}>
@@ -570,12 +586,12 @@ export default function AssetInspectionStage({
 
       {/* Left Column: Atmospheric Media Stage */}
       <div
-        className={`relative flex flex-col items-center justify-center overflow-hidden bg-[var(--surface-sunken)] p-4 sm:p-6 select-none ${
+        className={`relative flex flex-col items-center justify-center overflow-hidden bg-[var(--surface-sunken)] p-3 sm:p-5 select-none ${
           mode === "modal"
-            ? "min-h-[380px] lg:min-h-[580px]"
+            ? "min-h-[340px] lg:min-h-[520px]"
             : isOverlay
-            ? "min-h-[460px] lg:min-h-0 lg:h-full"
-            : "min-h-[460px] lg:min-h-[640px]"
+            ? "min-h-[400px] lg:min-h-0 lg:h-full"
+            : "min-h-[400px] lg:min-h-[560px]"
         }`}
       >
         {/* Ambient blurred backdrop scrim mirroring artwork palette */}
@@ -639,10 +655,10 @@ export default function AssetInspectionStage({
               after={mediaUrl}
               beforeLabel="Original Base"
               afterLabel="Detailed"
-              className={`w-full max-h-[78vh]`}
+              className={isOverlay ? "w-full max-h-[510px]" : "w-full max-h-[78vh]"}
             />
           ) : isVideo ? (
-            <div className={`flex h-full max-h-[78vh] w-full flex-col`}>
+            <div className={`flex h-full ${isOverlay ? "max-h-[510px]" : "max-h-[78vh]"} w-full flex-col`}>
               <VideoResultPreview
                 url={mediaUrl}
                 filename={asset.key.split("/").pop() || "video.mp4"}
@@ -660,8 +676,8 @@ export default function AssetInspectionStage({
                 isZoomed
                   ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
                   : isOverlay
-                  ? "max-h-[82vh] max-w-full object-contain cursor-zoom-in"
-                  : "max-h-[82vh] max-w-full object-contain cursor-zoom-in"
+                  ? "max-h-[510px] max-w-full object-contain cursor-zoom-in"
+                  : "max-h-[84vh] max-w-full object-contain cursor-zoom-in"
               }`}
             />
           )}
@@ -782,7 +798,7 @@ export default function AssetInspectionStage({
       <div
         className={
           mode === "modal"
-            ? "w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[88vh] overflow-y-auto workspace-scroll relative"
+            ? "w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] max-h-[92vh] sm:max-h-[90vh] overflow-y-auto workspace-scroll relative"
             : "w-full shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-[var(--line)] bg-[var(--surface-raised)] relative"
         }
       >
@@ -790,8 +806,8 @@ export default function AssetInspectionStage({
         <div
           className={
             isOverlay
-              ? "relative z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
-              : "sticky top-0 z-20 shrink-0 p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
+              ? "relative z-20 shrink-0 p-3.5 sm:p-4 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
+              : "sticky top-0 z-20 shrink-0 p-3.5 sm:p-4 border-b border-[var(--line)] bg-[var(--surface-raised)]/95 backdrop-blur-md"
           }
         >
           {/* Top Row: Author Profile Card + Close / Mod Controls */}
@@ -946,8 +962,8 @@ export default function AssetInspectionStage({
         <div
           className={
             mode === "modal"
-              ? "workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 pb-6 space-y-4"
-              : "p-5 space-y-4 flex-1 pb-6"
+              ? "workspace-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 pb-6 space-y-3 sm:space-y-4"
+              : "p-4 sm:p-5 space-y-3 sm:space-y-4 flex-1 pb-6"
           }
         >
           {/* Models & LoRAs Stack */}
@@ -1062,7 +1078,7 @@ export default function AssetInspectionStage({
 
           {/* Tags Deck (WD14 Interrogation & Curation) */}
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5">
                 <Tag className="h-3 w-3 text-[var(--accent)]" />
                 <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--ink-soft)] uppercase">
@@ -1074,6 +1090,40 @@ export default function AssetInspectionStage({
                   </span>
                 )}
               </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingTag(true);
+                    setIsTagsExpanded(true);
+                  }}
+                  className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                  title="Add tag"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add</span>
+                </button>
+                {isTagsOverflowing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsTagsExpanded((prev) => !prev)}
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors"
+                    title={isTagsExpanded ? "Collapse tags" : "Expand all tags"}
+                  >
+                    {isTagsExpanded ? (
+                      <>
+                        <ChevronUp className="h-3 w-3" />
+                        <span>Collapse</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-3 w-3" />
+                        <span>Expand</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
 
             {tagError && (
@@ -1082,27 +1132,36 @@ export default function AssetInspectionStage({
               </p>
             )}
 
-            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto workspace-scroll rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2.5">
+            <div
+              ref={tagsContainerRef}
+              className={`flex flex-wrap gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-1.5 transition-[max-height] duration-200 ${
+                isTagsExpanded
+                  ? "max-h-72 overflow-y-auto workspace-scroll"
+                  : isTagsOverflowing
+                  ? "max-h-[62px] overflow-hidden"
+                  : "max-h-[62px]"
+              }`}
+            >
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="group inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink)] hover:border-[var(--line-strong)] transition"
+                  className="group inline-flex items-center gap-1 rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 h-[22px] font-mono text-[10px] text-[var(--ink)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-raised)] transition shrink-0"
                 >
                   <a
                     href={`/assets?tags=${encodeURIComponent(tag)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:text-[var(--accent)] transition"
+                    className="hover:text-[var(--accent)] transition inline-flex items-center gap-0.5"
                     title={`Browse assets with #${tag}`}
                   >
-                    <span className="text-[var(--accent)]">#</span>
+                    <span className="text-[var(--accent)] font-semibold">#</span>
                     <span>{tag}</span>
                   </a>
                   <button
                     type="button"
                     onClick={() => handleRemoveTag(tag)}
                     title="Remove tag"
-                    className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5 leading-none"
                   >
                     ×
                   </button>
@@ -1110,7 +1169,7 @@ export default function AssetInspectionStage({
               ))}
 
               {isAddingTag ? (
-                <div className="inline-flex items-center gap-1">
+                <div className="inline-flex items-center gap-1 shrink-0">
                   <input
                     type="text"
                     value={newTagDraft}
@@ -1122,14 +1181,17 @@ export default function AssetInspectionStage({
                     onBlur={handleAddTagSubmit}
                     autoFocus
                     placeholder="tag name…"
-                    className="h-5 w-24 rounded border border-[var(--accent)] bg-[var(--surface-raised)] px-1.5 text-[10px] font-mono text-[var(--ink)] outline-none"
+                    className="h-[22px] w-24 rounded border border-[var(--accent)] bg-[var(--surface-raised)] px-1.5 text-[10px] font-mono text-[var(--ink)] outline-none"
                   />
                 </div>
               ) : (
                 <button
                   type="button"
-                  onClick={() => setIsAddingTag(true)}
-                  className="inline-flex items-center gap-0.5 rounded-md border border-dashed border-[var(--line)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition"
+                  onClick={() => {
+                    setIsAddingTag(true);
+                    setIsTagsExpanded(true);
+                  }}
+                  className="inline-flex items-center gap-0.5 rounded-md border border-dashed border-[var(--line)] px-2 h-[22px] font-mono text-[10px] text-[var(--ink-faint)] hover:border-[var(--line-strong)] hover:text-[var(--ink)] transition shrink-0"
                   title="Add tag"
                 >
                   <Plus className="h-2.5 w-2.5" />
@@ -1346,15 +1408,15 @@ export default function AssetInspectionStage({
         <div
           className={
             isOverlay
-              ? "z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
-              : "sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-4 sm:p-5 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
+              ? "z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-3 sm:p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
+              : "sticky bottom-0 z-20 mt-auto shrink-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur-md p-3 sm:p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
           }
         >
           {/* Dominant Primary Remix CTA */}
           <button
             type="button"
             onClick={handleRemixClick}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(213,240,111,0.25)]"
+            className="flex h-10 sm:h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] px-4 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-all shadow-[0_0_24px_rgba(213,240,111,0.25)]"
           >
             <Zap className="h-4 w-4 fill-current stroke-current" />
             <span>REMIX</span>

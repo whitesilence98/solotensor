@@ -3,10 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, ChevronRight, Film, Folder, Home, MessageSquareCode, MoreHorizontal, Settings, Shield, SlidersHorizontal, Wand2, Wrench } from "lucide-react";
+import { Box, ChevronRight, Film, Folder, Home, MessageSquareCode, MoreHorizontal, Settings, Shield, SlidersHorizontal, Wand2, Wrench, Monitor, Check, Sparkles } from "lucide-react";
 import UserNavProfile from "./UserNavProfile";
 import BrandLogo, { TensorPrismEmblem } from "./BrandLogo";
 import { useAuth } from "@/lib/auth-context";
+import {
+  loadSettings,
+  saveSettings,
+  applyDisplayDensity,
+  DENSITY_EVENT_NAME,
+  type DisplayDensity,
+} from "@/lib/settings";
 
 interface NavItem {
   id: string;
@@ -43,6 +50,290 @@ function SparkleStar({ className }: { className?: string }) {
 }
 
 const SIDEBAR_EXPANDED_KEY = "soloTensor.sidebarExpanded";
+
+function DensitySwitcher({ effectiveExpanded }: { effectiveExpanded: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [currentDensity, setCurrentDensity] = useState<DisplayDensity>("auto");
+  const [detectedScale, setDetectedScale] = useState<number>(100);
+  const [dpr, setDpr] = useState<number>(1);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Initialize and track settings & DPR
+  useEffect(() => {
+    const s = loadSettings();
+    if (s.displayDensity) {
+      setCurrentDensity(s.displayDensity);
+    }
+
+    if (typeof window === "undefined") return;
+
+    const updateDpr = () => {
+      const currentDpr = Number((window.devicePixelRatio || 1).toFixed(2));
+      setDpr(currentDpr);
+      setDetectedScale(Math.round(currentDpr * 100));
+    };
+    updateDpr();
+
+    window.addEventListener("resize", updateDpr);
+    let mq: MediaQueryList | null = null;
+    try {
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      if (mq.addEventListener) {
+        mq.addEventListener("change", updateDpr);
+      }
+    } catch {
+      /* fallback */
+    }
+
+    const handleDensityChange = (e: Event) => {
+      const detail = (e as CustomEvent<DisplayDensity>).detail;
+      if (detail) {
+        setCurrentDensity(detail);
+      }
+    };
+    window.addEventListener(DENSITY_EVENT_NAME, handleDensityChange);
+
+    return () => {
+      window.removeEventListener("resize", updateDpr);
+      if (mq && mq.removeEventListener) {
+        mq.removeEventListener("change", updateDpr);
+      }
+      window.removeEventListener(DENSITY_EVENT_NAME, handleDensityChange);
+    };
+  }, []);
+
+  // Close on outside click or Escape
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [open]);
+
+  const selectDensity = (density: DisplayDensity) => {
+    setCurrentDensity(density);
+    const prev = loadSettings();
+    saveSettings({ ...prev, displayDensity: density });
+    applyDisplayDensity(density);
+    setOpen(false);
+  };
+
+  const getLabelShort = (d: DisplayDensity) => {
+    switch (d) {
+      case "auto":
+        return "Auto";
+      case "ultra-compact":
+        return "Ultra";
+      case "compact":
+        return "Compact";
+      case "standard":
+        return "100%";
+      case "comfortable":
+        return "Comfy";
+    }
+  };
+
+  const options: Array<{
+    id: DisplayDensity;
+    label: string;
+    sublabel: string;
+    badge?: string;
+  }> = [
+    {
+      id: "auto",
+      label: "Auto (DPI Normalize)",
+      sublabel: `Auto-zooms to counter ${detectedScale}% scale`,
+      badge: "AUTO",
+    },
+    {
+      id: "ultra-compact",
+      label: "Ultra Compact (75% Zoom)",
+      sublabel: "Exact Ctrl + scroll to 75% equivalent",
+      badge: "75%",
+    },
+    {
+      id: "compact",
+      label: "Compact (80% Zoom)",
+      sublabel: "Counters 125% scale • Exact 80% zoom",
+      badge: "80%",
+    },
+    {
+      id: "standard",
+      label: "Standard (100% Zoom)",
+      sublabel: "Native 100% unscaled desktop",
+    },
+    {
+      id: "comfortable",
+      label: "Comfortable (110% Zoom)",
+      sublabel: "Spacious padding • 110% zoom",
+    },
+  ];
+
+  return (
+    <div className={`relative ${effectiveExpanded ? "w-full" : "flex justify-center"}`}>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={`Display Density: ${getLabelShort(currentDensity)} (Detected ${detectedScale}%)`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`group relative flex h-11 items-center transition-colors duration-200 ${
+          effectiveExpanded
+            ? "w-full justify-between px-[14px] text-[var(--ink-soft)] hover:text-white"
+            : "w-11 justify-center text-[var(--ink-faint)] hover:text-white"
+        } ${open ? "text-white" : ""}`}
+      >
+        <div className="flex items-center">
+          {/* Icon tile */}
+          <span className="relative flex h-11 w-11 shrink-0 items-center justify-center transition-transform duration-200 group-active:scale-95">
+            {open && (
+              <span
+                className="absolute inset-0 rounded-2xl bg-white/[0.08] border border-white/10"
+                aria-hidden="true"
+              />
+            )}
+            <Monitor className="relative z-10 h-5 w-5" strokeWidth={1.6} />
+
+            {/* Micro dot on icon indicating active density */}
+            <span
+              className={`absolute top-2 right-2 h-1.5 w-1.5 rounded-full ${
+                currentDensity === "auto" ? "bg-[var(--accent)] shadow-[0_0_6px_var(--accent)]" : "bg-sky-400"
+              }`}
+              aria-hidden="true"
+            />
+          </span>
+
+          {/* Label when expanded */}
+          {effectiveExpanded && (
+            <span className="ml-3 text-[13px] font-medium tracking-tight text-[var(--ink-soft)] group-hover:text-[var(--ink)]">
+              Density
+            </span>
+          )}
+        </div>
+
+        {/* Pill on right when expanded */}
+        {effectiveExpanded && (
+          <span className="rounded-md border border-[var(--line-strong)] bg-[var(--surface-soft)] px-2 py-0.5 font-mono text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">
+            {getLabelShort(currentDensity)}
+          </span>
+        )}
+
+        {/* Collapsed tooltip */}
+        {!effectiveExpanded && (
+          <span className="pointer-events-none absolute left-[calc(100%+.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full border border-white/10 bg-[var(--surface-raised)] px-3 py-1 text-xs font-semibold tracking-wide text-white opacity-0 shadow-[0_12px_32px_rgba(0,0,0,0.8)] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100 z-50 md:flex items-center gap-1.5">
+            <Monitor className="h-3.5 w-3.5 text-[var(--accent)]" />
+            <span>Density: {getLabelShort(currentDensity)} ({detectedScale}%)</span>
+          </span>
+        )}
+      </button>
+
+      {/* Popover / Dropdown Menu */}
+      {open && (
+        <div
+          ref={popoverRef}
+          role="dialog"
+          aria-label="Display Density &amp; Scale Selector"
+          className="absolute left-[calc(100%+0.75rem)] bottom-0 z-50 w-72 workspace-core rounded-xl border border-[var(--line-strong)] bg-[var(--surface)] p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-[var(--line)] pb-2 mb-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)]">
+              <Monitor className="h-4 w-4 text-[var(--accent)]" />
+              <span>Display Density</span>
+            </div>
+            <span className="rounded bg-[var(--surface-sunken)] px-2 py-0.5 font-mono text-[10px] text-[var(--ink-soft)] border border-[var(--line)]">
+              {detectedScale}% (dpr: {dpr})
+            </span>
+          </div>
+
+          <p className="text-[11px] text-[var(--ink-faint)] mb-2.5 leading-snug">
+            Counter Windows display scaling or choose a fixed workspace scale.
+          </p>
+
+          {/* Options */}
+          <div className="space-y-1">
+            {options.map((opt) => {
+              const isSelected = currentDensity === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => selectDensity(opt.id)}
+                  className={`flex w-full items-start justify-between rounded-lg p-2 text-left transition-colors ${
+                    isSelected
+                      ? "bg-[var(--surface-raised)] border border-[var(--accent)] text-[var(--ink)] shadow-sm"
+                      : "border border-transparent text-[var(--ink-soft)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  <div className="flex-1 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold leading-tight text-[var(--ink)]">
+                        {opt.label}
+                      </span>
+                      {opt.badge && (
+                        <span className="rounded bg-[var(--accent)] px-1 py-0.2 text-[9px] font-black font-mono text-[var(--accent-ink)] leading-none">
+                          {opt.badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="block text-[10px] font-mono text-[var(--ink-faint)] mt-0.5">
+                      {opt.sublabel}
+                    </span>
+                  </div>
+
+                  <span
+                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                      isSelected
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                        : "border-[var(--line-strong)] bg-transparent text-transparent"
+                    }`}
+                  >
+                    <Check className="h-2.5 w-2.5 stroke-[3]" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Settings link footer */}
+          <div className="mt-2.5 pt-2 border-t border-[var(--line)] flex items-center justify-between text-[11px] font-mono text-[var(--ink-faint)]">
+            <Link
+              href="/settings"
+              onClick={() => setOpen(false)}
+              className="text-[var(--accent)] hover:underline flex items-center gap-1"
+            >
+              <span>Full scale preferences &rarr;</span>
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SidebarNav() {
   const pathname = usePathname();
@@ -420,9 +711,9 @@ export default function SidebarNav() {
           </div>
         </div>
 
-        {/* Desktop Bottom Controls: Settings, Hairline Dividers, Expand Chevron, Profile */}
+        {/* Desktop Bottom Controls: Settings, Quick Density Switcher, Hairline Dividers, Expand Chevron, Profile */}
         <div className="hidden md:flex md:w-full md:flex-col md:items-center md:mt-auto">
-          {/* Hairline Divider above Settings */}
+          {/* Hairline Divider above Controls */}
           <div
             className={`h-px bg-white/[0.08] mb-2 ${effectiveExpanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
             aria-hidden="true"
@@ -431,7 +722,10 @@ export default function SidebarNav() {
           {/* Settings Nav Item */}
           {settingsItem && item(settingsItem, true)}
 
-          {/* Hairline Divider below Settings */}
+          {/* Quick Density Switcher Pill/Button */}
+          <DensitySwitcher effectiveExpanded={effectiveExpanded} />
+
+          {/* Hairline Divider below Controls */}
           <div
             className={`h-px bg-white/[0.08] my-2 ${effectiveExpanded ? "w-[calc(100%-1.75rem)]" : "w-7"}`}
             aria-hidden="true"

@@ -990,7 +990,7 @@ export default function PublicModelDetailPage({
   return (
     <main
       id="main-content"
-      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink-soft)]"
+      className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] text-[var(--ink-soft)]"
     >
       {/* Moderation Status Alert Banners */}
       {model.moderation_status === "pending_review" && (

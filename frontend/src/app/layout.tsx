@@ -24,12 +24,21 @@ export const viewport: Viewport = {
   themeColor: "#0b0d0c",
 };
 
+// Inline script to prevent Flash of Unstyled Content (FOUC) by synchronizing
+// the display density preference before DOM paint.
+const densityInitScript = `(function(){try{var s=JSON.parse(localStorage.getItem('solotensor:settings:v1')||'{}');var d=s.displayDensity||'auto';document.documentElement.dataset.density=d;}catch(e){document.documentElement.dataset.density='auto';}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable} ${jakarta.variable}`}>
+    <html
+      lang="en"
+      className={`${geist.variable} ${geistMono.variable} ${jakarta.variable}`}
+      suppressHydrationWarning
+    >
       <body className="font-sans antialiased text-ink bg-ground">
+        <script dangerouslySetInnerHTML={{ __html: densityInitScript }} />
         <a href="#main-content" className="skip-link">Skip to content</a>
         <AuthProvider>
           <div className="app-shell">

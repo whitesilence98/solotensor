@@ -266,13 +266,28 @@ export function RelatedPostsSection({
 
   const handleOpen = useCallback(
     (asset: GalleryItem | AssetRecord) => {
+      // Defocus clicked card to prevent browser from keeping scroll pinned to it
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      // Immediately reset scroll on the parent scroll container so the user instantly sees the primary view at the top
+      const root = scrollRootRef?.current;
+      if (root) {
+        root.scrollTo({ top: 0, behavior: "instant" });
+        root.scrollTop = 0;
+      }
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+
       if (onOpen) {
         onOpen(asset);
         return;
       }
       router.push(relatedAssetPath(asset.key));
     },
-    [onOpen, router]
+    [onOpen, router, scrollRootRef]
   );
 
   const isPanel = variant === "panel";

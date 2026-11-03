@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { X } from "lucide-react";
 import WorkspaceModal from "@/components/WorkspaceModal";
 import AssetInspectionStage from "@/components/AssetInspectionStage";
@@ -56,6 +56,40 @@ export default function AssetDetailOverlay({
   const scrollerRef = useRef<HTMLDivElement>(null);
   const previousKeyRef = useRef<string | null>(null);
 
+  const handleSelectRelatedAsset = useCallback(
+    (item: GalleryItem) => {
+      // 1. Defocus clicked element to prevent browser anchor/focus scrolling
+      if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+
+      // 2. Force immediate scroll to top on modal scroller
+      const scroller = scrollerRef.current;
+      if (scroller) {
+        scroller.scrollTo({ top: 0, behavior: "instant" });
+        scroller.scrollTop = 0;
+      }
+
+      // 3. Trigger parent asset selection
+      onSelectAsset?.(item);
+
+      // 4. Multi-pass RAF to guarantee scroll position remains locked at y = 0
+      requestAnimationFrame(() => {
+        if (scrollerRef.current) {
+          scrollerRef.current.scrollTo({ top: 0, behavior: "instant" });
+          scrollerRef.current.scrollTop = 0;
+        }
+        setTimeout(() => {
+          if (scrollerRef.current) {
+            scrollerRef.current.scrollTo({ top: 0, behavior: "instant" });
+            scrollerRef.current.scrollTop = 0;
+          }
+        }, 60);
+      });
+    },
+    [onSelectAsset]
+  );
+
   // One in-place swap resets the scroll surface. Focus moves only on a swap:
   // on first open WorkspaceModal's own rAF focus must win so closing returns
   // focus to the card that opened the overlay.
@@ -66,8 +100,16 @@ export default function AssetDetailOverlay({
     previousKeyRef.current = key;
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    scroller.scrollTo({ top: 0, behavior: "instant" });
     scroller.scrollTop = 0;
     if (focusScroller) scroller.focus({ preventScroll: true });
+
+    requestAnimationFrame(() => {
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollTo({ top: 0, behavior: "instant" });
+        scrollerRef.current.scrollTop = 0;
+      }
+    });
   }, [asset?.key]);
 
   // A related asset that is not in the host's list leaves the chevrons on an
@@ -80,10 +122,10 @@ export default function AssetDetailOverlay({
       open={open}
       onClose={onClose}
       headless
-      size="media"
+      size="asset-detail"
       title={title ?? asset?.key ?? "Asset Details"}
     >
-      <div className="relative">
+      <div className="relative h-full w-full">
         {asset && (
           <button
             type="button"
@@ -99,7 +141,7 @@ export default function AssetDetailOverlay({
           <div
             ref={scrollerRef}
             tabIndex={-1}
-            className="workspace-scroll max-h-[calc(100vh_-_4rem)] overflow-y-auto overscroll-contain rounded-[var(--radius-panel)] bg-[var(--ground)] outline-none supports-[height:100svh]:max-h-[calc(100svh_-_4rem)]"
+            className="workspace-scroll h-full w-full overflow-y-auto overscroll-contain rounded-[var(--radius-panel)] bg-[var(--ground)] outline-none"
           >
             <AssetInspectionStage
               key={asset.key}
@@ -118,7 +160,7 @@ export default function AssetDetailOverlay({
               anchorKey={asset.key}
               scrollRootRef={scrollerRef}
               variant="panel"
-              onOpen={onSelectAsset}
+              onOpen={handleSelectRelatedAsset}
               enabled={isAuthenticated}
             />
           </div>

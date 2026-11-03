@@ -351,7 +351,7 @@ export default function AssetsPage() {
       title="Asset Library Access"
       description="Sign in to view, search, and manage your personal creations and asset history."
     >
-      <main id="main-content" className="assets-root workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
+      <main id="main-content" className="assets-root flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] antialiased">
         <div className="flex-1 flex flex-col">
       {/* ---------------- Integrated In-Grid Toolbar ---------------- */}
       <div className="mx-auto w-full max-w-[1600px] px-4 pt-4 sm:px-6 sm:pt-6">

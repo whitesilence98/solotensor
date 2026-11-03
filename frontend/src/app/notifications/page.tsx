@@ -228,7 +228,7 @@ export default function NotificationsPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink)]">
+    <div className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] text-[var(--ink)]">
       <WorkspaceNavbar
         subtitle="Signal Stream"
         href="/notifications"

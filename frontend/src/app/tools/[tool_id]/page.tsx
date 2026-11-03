@@ -865,7 +865,7 @@ export default function ToolDetailPage() {
     return (
       <main
         id="main-content"
-        className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] p-8"
+        className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] p-8"
         role="status"
         aria-busy="true"
         aria-label="Loading tool"
@@ -915,7 +915,7 @@ export default function ToolDetailPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] text-[var(--ink-soft)]"
+      className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] text-[var(--ink-soft)]"
     >
       {/* 1. TOP HEADER & IDENTITY BAR (Matches Models Detail Page) */}
       <header className="z-30 border-b border-[var(--line)] bg-[var(--ground)]/95 backdrop-blur-sm">

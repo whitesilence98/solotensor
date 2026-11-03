@@ -3,29 +3,15 @@
 import React, { useState } from "react";
 import { SlidersHorizontal, ChevronDown } from "lucide-react";
 import SeedInput from "@/components/SeedInput";
+import { COMFY_SAMPLER_KEYS, COMFY_SCHEDULER_KEYS } from "@/lib/sampling";
 
-export const SAMPLER_OPTIONS = [
-  { value: "euler", label: "Euler" },
-  { value: "euler_ancestral", label: "Euler A (Ancestral)" },
-  { value: "dpmpp_2m", label: "DPM++ 2M" },
-  { value: "dpmpp_sde", label: "DPM++ SDE" },
-  { value: "dpmpp_2m_sde", label: "DPM++ 2M SDE" },
-  { value: "dpmpp_3m_sde", label: "DPM++ 3M SDE" },
-  { value: "heun", label: "Heun" },
-  { value: "ddim", label: "DDIM" },
-  { value: "uni_pc", label: "UniPC" },
-  { value: "lcm", label: "LCM" },
-];
-
-export const SCHEDULER_OPTIONS = [
-  { value: "normal", label: "Normal" },
-  { value: "karras", label: "Karras" },
-  { value: "exponential", label: "Exponential" },
-  { value: "sgm_uniform", label: "SGM Uniform" },
-  { value: "simple", label: "Simple" },
-  { value: "ddim_uniform", label: "DDIM Uniform" },
-  { value: "beta", label: "Beta" },
-];
+/**
+ * Re-exported under the historical names so existing importers keep working.
+ * The flat ComfyUI vocabularies live in `@/lib/sampling` alongside the Edit
+ * (Clownshar) lists.
+ */
+export const SAMPLER_OPTIONS = COMFY_SAMPLER_KEYS;
+export const SCHEDULER_OPTIONS = COMFY_SCHEDULER_KEYS;
 
 export interface AdvancedSamplingPanelProps {
   idPrefix?: string;
@@ -52,6 +38,12 @@ export interface AdvancedSamplingPanelProps {
   defaultOpen?: boolean;
   title?: string;
   badge?: string;
+  /**
+   * Option vocabularies for the two selects. Defaults reproduce the flat
+   * ComfyUI lists, so callers that pass nothing render identically.
+   */
+  samplerOptions?: readonly { value: string; label: string }[];
+  schedulerOptions?: readonly { value: string; label: string }[];
 }
 
 export default function AdvancedSamplingPanel({
@@ -79,6 +71,8 @@ export default function AdvancedSamplingPanel({
   defaultOpen = false,
   title = "Advanced Settings",
   badge = "Seed & Sampling",
+  samplerOptions = SAMPLER_OPTIONS,
+  schedulerOptions = SCHEDULER_OPTIONS,
 }: AdvancedSamplingPanelProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const isExpanded = isOpen !== undefined ? isOpen : internalOpen;
@@ -247,7 +241,7 @@ export default function AdvancedSamplingPanel({
                   disabled={busy}
                   className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] cursor-pointer"
                 >
-                  {SAMPLER_OPTIONS.map((opt) => (
+                  {samplerOptions.map((opt) => (
                     <option key={opt.value} value={opt.value} className="bg-[var(--surface)] text-[var(--ink)]">
                       {opt.label}
                     </option>
@@ -270,7 +264,7 @@ export default function AdvancedSamplingPanel({
                   disabled={busy}
                   className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-2 py-1.5 font-mono text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)] cursor-pointer"
                 >
-                  {SCHEDULER_OPTIONS.map((opt) => (
+                  {schedulerOptions.map((opt) => (
                     <option key={opt.value} value={opt.value} className="bg-[var(--surface)] text-[var(--ink)]">
                       {opt.label}
                     </option>

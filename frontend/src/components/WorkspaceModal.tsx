@@ -14,6 +14,7 @@ export default function WorkspaceModal({
   size = "default",
   eyebrow,
   headless = false,
+  className,
 }: {
   open: boolean;
   title?: string;
@@ -21,9 +22,10 @@ export default function WorkspaceModal({
   children: ReactNode;
   onClose: () => void;
   destructive?: boolean;
-  size?: "default" | "wide" | "media";
+  size?: "default" | "wide" | "media" | "asset-detail";
   eyebrow?: string;
   headless?: boolean;
+  className?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -57,9 +59,17 @@ export default function WorkspaceModal({
       aria-describedby={!headless && description ? descriptionId : undefined}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
-      className={`workspace-modal ${size === "wide" ? "!max-w-4xl" : size === "media" ? "!max-w-[1600px] 2xl:!max-w-[1720px] !w-[95vw]" : ""} ${destructive ? "workspace-modal-danger" : ""}`}
+      className={`workspace-modal ${
+        size === "wide"
+          ? "!max-w-4xl"
+          : size === "media"
+          ? "!max-w-[1600px] 2xl:!max-w-[1720px] !w-[95vw]"
+          : size === "asset-detail"
+          ? "!w-[960px] !max-w-[calc(100%-2rem)] !h-[580px] !max-h-[calc(100%-2rem)]"
+          : ""
+      } ${destructive ? "workspace-modal-danger" : ""} ${className || ""}`}
     >
-      <div className={`workspace-modal-card ${headless ? "!p-0 !border-0 bg-transparent overflow-hidden relative shadow-[0_32px_96px_rgba(0,0,0,0.9)]" : ""}`}>
+      <div className={`workspace-modal-card ${headless ? "!p-0 !border-0 bg-transparent overflow-hidden relative shadow-[0_32px_96px_rgba(0,0,0,0.9)]" : ""} ${size === "asset-detail" ? "h-full w-full" : ""}`}>
         {!headless && (
           <>
             <div className="flex items-start justify-between gap-5">

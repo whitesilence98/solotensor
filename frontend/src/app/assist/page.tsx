@@ -113,7 +113,7 @@ export default function AssistPage() {
   };
 
   return (
-    <main id="main-content" className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)] antialiased">
+    <main id="main-content" className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)] antialiased">
       <WorkspaceNavbar
         subtitle="AI CREATIVE DIRECTOR • STUDIO COPILOT"
         href="/assist"

@@ -280,7 +280,7 @@ export default function ModelsPage() {
   return (
     <main
       id="main-content"
-      className="workspace-scroll flex h-full min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--ground)]"
+      className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)]"
     >
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pt-4 pb-6 sm:px-6 sm:pt-6 sm:pb-8 lg:px-8">
         {/* Main Content Container */}

@@ -64,6 +64,7 @@ import DetailerPanel, {
   DEFAULT_DETAILER_CONFIG,
 } from "@/components/DetailerPanel";
 import AdvancedSamplingPanel from "@/components/AdvancedSamplingPanel";
+import { EDIT_SAMPLER_KEYS, EDIT_SCHEDULER_KEYS } from "@/lib/sampling";
 import LoraStackPanel from "@/components/LoraStackPanel";
 import GenerationModelCard from "@/components/GenerationModelCard";
 import ModelLoraStack from "@/components/ModelLoraStack";
@@ -2003,6 +2004,8 @@ export default function ControlPanel(props: Props) {
             isOpen={advancedOpen}
             onToggleOpen={() => setAdvancedOpen((v) => !v)}
             showDenoise={false}
+            samplerOptions={EDIT_SAMPLER_KEYS}
+            schedulerOptions={EDIT_SCHEDULER_KEYS}
           />
 
           {/* 8. Upscale Engine Panel */}
