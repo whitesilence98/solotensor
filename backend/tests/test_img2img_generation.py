@@ -129,6 +129,8 @@ class TestImg2ImgGeneration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(side_effect=lambda t: t)
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.upload_image = AsyncMock(return_value="uploaded_detailer_ref.png")
 
         real_comfy = ComfyClient()
@@ -199,6 +201,8 @@ class TestImg2ImgGeneration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(side_effect=lambda t: t)
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.upload_image = AsyncMock(return_value="uploaded_upscale_ref.png")
 
         real_comfy = ComfyClient()
@@ -257,6 +261,8 @@ class TestImg2ImgGeneration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(side_effect=lambda t: t)
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.upload_image = AsyncMock(return_value="uploaded_source_input.png")
 
         real_comfy = ComfyClient()

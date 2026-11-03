@@ -84,6 +84,8 @@ class TestPipelineOrchestration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(return_value="krea2")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.build_gallery_workflow = MagicMock(return_value={"1084": {"class_type": "SaveImage"}})
         mock_comfy.queue_prompt = AsyncMock(return_value="prompt-stage1-uuid")
         mock_comfy.wait_until_done = AsyncMock(return_value="completed")
@@ -115,11 +117,60 @@ class TestPipelineOrchestration(unittest.TestCase):
             # Exactly 1 queue_prompt call
             self.assertEqual(mock_comfy.queue_prompt.call_count, 1)
 
+    def test_public_image_generation_still_auto_tags(self):
+        """The video skip must not become a blanket disable for image assets.
+
+        A successful public text-to-image generation keeps scheduling the
+        background tagger, so this is the symmetric counterpart to the video
+        guard test.
+        """
+        mock_comfy = AsyncMock()
+        mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
+        mock_comfy.resolve_clip_type = AsyncMock(return_value="krea2")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
+        mock_comfy.build_gallery_workflow = MagicMock(return_value={"1084": {"class_type": "SaveImage"}})
+        mock_comfy.queue_prompt = AsyncMock(return_value="prompt-tag-uuid")
+        mock_comfy.wait_until_done = AsyncMock(return_value="completed")
+        mock_comfy.list_images = AsyncMock(return_value=[{"filename": "base_t2i_002.png"}])
+        mock_comfy.fetch_image_bytes = AsyncMock(return_value=b"PNG_BASE_DATA")
+
+        with patch("app.main.get_comfy_client", return_value=mock_comfy), \
+             patch("app.main.model_storage", self.mock_model_storage), \
+             patch("app.main.storage", self.storage), \
+             patch("app.main.get_tagger_service") as mock_tagger_get:
+            mock_tagger = mock_tagger_get.return_value
+            mock_tagger.auto_tag_asset = AsyncMock(return_value=["city"])
+
+            res = self.client.post(
+                "/api/v1/generate",
+                json={
+                    "model_id": "a" * 32,
+                    "version_id": "b" * 32,
+                    "file_id": "c" * 32,
+                    "prompt": "serene mountain lake",
+                    "upscale": {"enabled": False},
+                    "detailer": {"enabled": False},
+                },
+                headers=self.headers,
+            )
+
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(res.json()["status"], "completed")
+            mock_tagger.auto_tag_asset.assert_called_once()
+            tagged_key = mock_tagger.auto_tag_asset.call_args.args[0]
+            self.assertTrue(
+                tagged_key.endswith(".png"),
+                f"Expected image key to be tagged, got {tagged_key!r}",
+            )
+
     def test_pipeline_stage1_and_stage2_upscale(self):
         """When upscale is enabled, Stage 1 runs then Stage 2 SeedVR2 upscaler runs."""
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(return_value="krea2")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.build_gallery_workflow = MagicMock(return_value={"1084": {"class_type": "SaveImage"}})
         mock_comfy.load_seedvr_upscaler_template = MagicMock(return_value={"1089": {"inputs": {}}, "1090": {}})
         mock_comfy.upload_image = AsyncMock(return_value="uploaded_input.png")
@@ -166,6 +217,8 @@ class TestPipelineOrchestration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, name: name)
         mock_comfy.resolve_clip_type = AsyncMock(return_value="krea2")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         mock_comfy.build_gallery_workflow = MagicMock(return_value={"1084": {"class_type": "SaveImage"}})
         mock_comfy.load_seedvr_upscaler_template = MagicMock(return_value={"1089": {"inputs": {}}, "1090": {}})
         mock_comfy.load_modular_detailer_template = MagicMock(return_value={"1088:660": {"inputs": {}}, "1087": {}})

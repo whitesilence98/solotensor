@@ -499,6 +499,8 @@ class ModelTabAffinityEndpointTests(unittest.TestCase):
         comfy = AsyncMock()
         comfy.resolve_model_name = AsyncMock(side_effect=lambda cat, fn: fn)
         comfy.resolve_clip_type = AsyncMock(return_value="")
+        comfy.resolve_sampler = AsyncMock(return_value={})
+        comfy.resolve_scheduler = AsyncMock(return_value={})
         comfy.build_gallery_workflow = MagicMock(return_value={})
         comfy.build_lora_workflow = MagicMock(return_value={})
         comfy.upload_image = AsyncMock(side_effect=lambda b, name: f"mock_{name}")

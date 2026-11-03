@@ -13,6 +13,7 @@ from app.config import Settings
 from app.db import Database, get_db, set_db
 from app.main import app
 from app.services.auth_service import LocalAuthProvider, set_auth_provider
+from app.services.comfy_client import ComfyClientError, ComfyValidationError
 from app.services.credit_service import CreditService, set_credit_service
 from app.services.mailer_service import MailerService, set_mailer_service
 from app.services.storage import StorageService
@@ -267,6 +268,8 @@ class TestVideoGeneration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(return_value="ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors")
         mock_comfy.resolve_clip_type = AsyncMock(return_value="ltxv")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={"KSamplerSelect": "euler"})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={"BasicScheduler": "normal"})
         mock_comfy.upload_image = AsyncMock(return_value="input_video_starter.png")
         mock_comfy.load_video_it2v_template = lambda: json.loads(json.dumps(self.template))
         mock_comfy.queue_prompt = AsyncMock(return_value="prompt-video-uuid-12345")
@@ -352,6 +355,8 @@ class TestVideoGeneration(unittest.TestCase):
         mock_comfy = AsyncMock()
         mock_comfy.resolve_model_name = AsyncMock(return_value="ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors")
         mock_comfy.resolve_clip_type = AsyncMock(return_value="ltxv")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={"KSamplerSelect": "euler"})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={"BasicScheduler": "normal"})
         mock_comfy.upload_image = AsyncMock(return_value="input_video_starter.png")
         mock_comfy.load_video_it2v_template = lambda: json.loads(json.dumps(self.template))
         mock_comfy.queue_prompt = AsyncMock(return_value="prompt-video-uuid-t2v")
@@ -392,6 +397,8 @@ class TestVideoGeneration(unittest.TestCase):
             return_value="ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors"
         )
         mock_comfy.resolve_clip_type = AsyncMock(return_value="ltxv")
+        mock_comfy.resolve_sampler = AsyncMock(return_value={"KSamplerSelect": "euler"})
+        mock_comfy.resolve_scheduler = AsyncMock(return_value={"BasicScheduler": "normal"})
         mock_comfy.upload_image = AsyncMock(return_value="input_video_starter.png")
         mock_comfy.load_video_it2v_template = lambda: json.loads(json.dumps(self.template))
         mock_comfy.queue_prompt = AsyncMock(return_value=f"prompt-video-{suffix}")
@@ -413,6 +420,42 @@ class TestVideoGeneration(unittest.TestCase):
     # ------------------------------------------------------------------
     # _ensure_video_capable — the LTX hard gate.
     # ------------------------------------------------------------------
+
+    def test_public_video_generation_never_auto_tags(self):
+        """A completed public video must not schedule WD14 auto-tagging.
+
+        The video branch no longer queues the tagger, and the helper's own guard
+        must keep the service from being constructed. BackgroundTasks run
+        synchronously after the TestClient response, so a 200 that yields one
+        .mp4 proves the job really completed rather than exiting early.
+        """
+        mock_comfy = self._mock_comfy_success("no-autotag")
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+            patch("app.main.get_tagger_service") as mock_tagger_get,
+        ):
+            mock_tagger = mock_tagger_get.return_value
+            mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+            resp = self.client.post(
+                "/api/v1/generate", json=self._video_payload(), headers=self.headers
+            )
+
+            self.assertEqual(resp.status_code, 200, resp.text)
+            data = resp.json()
+            self.assertEqual(data["status"], "completed")
+            self.assertEqual(len(data["images"]), 1)
+            self.assertEqual(data["images"][0]["kind"], "video")
+            self.assertTrue(
+                data["images"][0]["url"].endswith(".mp4"),
+                f"Expected .mp4 URL, got {data['images'][0]['url']}",
+            )
+
+            mock_tagger_get.assert_not_called()
+            mock_tagger.auto_tag_asset.assert_not_called()
 
     def test_video_gate_rejects_non_ltx_architecture_and_refunds_credits(self):
         """A non-LTX checkpoint is rejected with 409 and the deducted credits refunded."""
@@ -520,6 +563,115 @@ class TestVideoGeneration(unittest.TestCase):
                     self.assertNotIn("is not an LTX model", resp.text)
                 else:
                     self.assertEqual(resp.json()["status"], "completed")
+
+    # ------------------------------------------------------------------
+    # Sampler/scheduler: four KSamplerSelect + four BasicScheduler nodes.
+    # ------------------------------------------------------------------
+
+    def test_patch_writes_sampler_to_all_four_ksampler_select_nodes(self):
+        """One resolved KSamplerSelect value must reach every stage mirror.
+
+        The reported crash named only ``389:974`` and ``389:372`` because fast
+        mode prunes the ``1194:*`` mirror; Pro mode reaches all four.
+        """
+        patched = patch_video_it2v_workflow(
+            self.template,
+            prompt="ocean",
+            stage2_upscale=True,
+            sampler_by_class={"KSamplerSelect": "dpm_2"},
+        )
+
+        for node_id in ("389:372", "389:974", "1194:1168", "1194:1173"):
+            with self.subTest(node=node_id):
+                self.assertEqual(patched[node_id]["class_type"], "KSamplerSelect")
+                self.assertEqual(patched[node_id]["inputs"]["sampler_name"], "dpm_2")
+
+    def test_patch_writes_scheduler_to_all_four_basic_scheduler_nodes(self):
+        patched = patch_video_it2v_workflow(
+            self.template,
+            prompt="ocean",
+            stage2_upscale=True,
+            scheduler_by_class={"BasicScheduler": "karras"},
+        )
+
+        for node_id in ("389:754", "389:975", "1194:1172", "1194:1174"):
+            with self.subTest(node=node_id):
+                self.assertEqual(patched[node_id]["class_type"], "BasicScheduler")
+                self.assertEqual(patched[node_id]["inputs"]["scheduler"], "karras")
+
+    def test_patch_ignores_a_sampler_keyed_for_another_class(self):
+        """A Clownshar-keyed value is not written into a KSamplerSelect node."""
+        template_sampler = self.template["389:372"]["inputs"]["sampler_name"]
+        patched = patch_video_it2v_workflow(
+            self.template,
+            prompt="ocean",
+            stage2_upscale=True,
+            sampler_by_class={"ClownsharKSampler_Beta": "linear/euler"},
+        )
+
+        self.assertEqual(patched["389:372"]["inputs"]["sampler_name"], template_sampler)
+
+    def test_video_api_rejects_unsupported_sampler_with_422_and_refunds(self):
+        """The reported crash, end to end: no queue, 422, credits restored."""
+        mock_comfy = self._mock_comfy_success("bad-sampler")
+        mock_comfy.resolve_sampler = AsyncMock(
+            side_effect=ComfyValidationError(
+                "Sampler 'exponential/ddim_beta57' is not supported by ComfyUI for "
+                "KSamplerSelect"
+            )
+        )
+        initial_credits = self.credits.get_user_credits(self.user.id).balance
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate",
+                json=self._video_payload(sampler_name="exponential/ddim_beta57"),
+                headers=self.headers,
+            )
+
+        self.assertEqual(resp.status_code, 422, resp.text)
+        detail = resp.json()["detail"]
+        self.assertIn("KSamplerSelect", detail)
+        self.assertIn("exponential/ddim_beta57", detail)
+
+        # Nothing reached ComfyUI.
+        mock_comfy.queue_prompt.assert_not_awaited()
+        mock_comfy.wait_until_done.assert_not_awaited()
+
+        self.assertEqual(
+            self.credits.get_user_credits(self.user.id).balance, initial_credits
+        )
+
+    def test_video_api_maps_enum_lookup_outage_to_502_not_422(self):
+        """An /object_info outage is a backend failure, not bad input."""
+        mock_comfy = self._mock_comfy_success("enum-outage")
+        mock_comfy.resolve_sampler = AsyncMock(
+            side_effect=ComfyClientError(
+                "ComfyUI did not report its sampler list for KSamplerSelect"
+            )
+        )
+        initial_credits = self.credits.get_user_credits(self.user.id).balance
+
+        with (
+            patch("app.main.model_storage", self.mock_model_storage),
+            patch("app.main.storage", self.storage),
+            patch("app.main.get_comfy_client", return_value=mock_comfy),
+        ):
+            resp = self.client.post(
+                "/api/v1/generate",
+                json=self._video_payload(sampler_name="euler"),
+                headers=self.headers,
+            )
+
+        self.assertEqual(resp.status_code, 502, resp.text)
+        mock_comfy.queue_prompt.assert_not_awaited()
+        self.assertEqual(
+            self.credits.get_user_credits(self.user.id).balance, initial_credits
+        )
 
     def test_video_generation_with_diffusion_model_without_external_vae(self):
         """A Diffusion Model category without external VAE/clip passes for video generation."""

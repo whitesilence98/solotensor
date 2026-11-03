@@ -686,8 +686,31 @@ class GenerateRequest(BaseModel):
     format_name: Literal["1:1", "16:9", "9:16", "4:3", "3:2", "custom"] = "9:16"
     cfg: float = Field(1.0, ge=0.0, le=30.0)
     denoise: float = Field(1.0, ge=0.0, le=1.0)
-    sampler_name: Optional[str] = Field("euler", max_length=64)
-    scheduler: Optional[str] = Field("normal", max_length=64)
+    sampler_name: Optional[str] = Field(
+        "euler",
+        max_length=64,
+        description=(
+            "Sampler key. Image and video modes use ComfyUI's flat vocabulary "
+            "(the 63-key KSampler/KSamplerSelect set, e.g. 'euler', 'dpm_2'). "
+            "The backend translates this to a ClownsharKSampler_Beta 'family/name' "
+            "key (e.g. 'linear/euler') where an exact equivalent exists; otherwise "
+            "that node keeps its template default. Edit mode may pass a "
+            "'family/name' key directly. A value valid for none of the mode's "
+            "sampler classes is rejected with HTTP 422 before anything is queued."
+        ),
+    )
+    scheduler: Optional[str] = Field(
+        "normal",
+        max_length=64,
+        description=(
+            "Scheduler key. Image and video modes use ComfyUI's flat scheduler "
+            "vocabulary (e.g. 'normal', 'karras'), which the backend translates "
+            "to a ClownsharKSampler_Beta equivalent where one exists; otherwise "
+            "that node keeps its template default. A value valid for none of the "
+            "mode's sampler classes is rejected with HTTP 422 before anything is "
+            "queued."
+        ),
+    )
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
     client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")

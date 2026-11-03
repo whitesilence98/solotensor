@@ -11,12 +11,18 @@ import io
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+# Sampler node classes whose `sampler_name` enum is the flat ComfyUI vocabulary
+# (e.g. "euler", "dpmpp_2m"). Other sampler nodes (notably ClownsharKSampler_Beta)
+# use a disjoint `family/name` vocabulary, so a flat value must always win when a
+# graph contains both.
+FLAT_SAMPLER_CLASSES = frozenset({"KSampler", "KSamplerAdvanced", "KSamplerSelect"})
 
 
 @dataclass
@@ -147,8 +153,14 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
     seed: Optional[int] = None
     steps: Optional[int] = None
     cfg: Optional[float] = None
-    sampler: Optional[str] = None
-    scheduler: Optional[str] = None
+    # Sampler/scheduler are collected per vocabulary so the result does not depend
+    # on JSON key order: a flat-vocabulary value (KSampler*) always beats a
+    # `family/name` value (ClownsharKSampler_Beta), and within a vocabulary the
+    # first value found is kept.
+    flat_sampler: Optional[str] = None
+    family_sampler: Optional[str] = None
+    flat_scheduler: Optional[str] = None
+    family_scheduler: Optional[str] = None
     model_name: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -182,10 +194,20 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
                 steps = inputs["steps"]
             if "cfg" in inputs and isinstance(inputs["cfg"], (int, float)):
                 cfg = float(inputs["cfg"])
+
+            is_flat = ctype in FLAT_SAMPLER_CLASSES
             if "sampler_name" in inputs and isinstance(inputs["sampler_name"], str):
-                sampler = inputs["sampler_name"]
+                if is_flat:
+                    if flat_sampler is None:
+                        flat_sampler = inputs["sampler_name"]
+                elif family_sampler is None:
+                    family_sampler = inputs["sampler_name"]
             if "scheduler" in inputs and isinstance(inputs["scheduler"], str):
-                scheduler = inputs["scheduler"]
+                if is_flat:
+                    if flat_scheduler is None:
+                        flat_scheduler = inputs["scheduler"]
+                elif family_scheduler is None:
+                    family_scheduler = inputs["scheduler"]
 
         # Empty Latent Image
         if ctype == "EmptyLatentImage":
@@ -206,6 +228,9 @@ def _parse_comfyui_prompt(prompt_json_str: str) -> ExtractedMetadata:
 
     if not pos and not neg and seed is None:
         return ExtractedMetadata(has_metadata=False)
+
+    sampler = flat_sampler or family_sampler
+    scheduler = flat_scheduler or family_scheduler
 
     return ExtractedMetadata(
         has_metadata=True,
@@ -256,6 +281,17 @@ def _parse_novelai_comment(comment_json_str: str) -> ExtractedMetadata:
     )
 
 
+def _read_prompt_chunk(info: dict[str, Any]) -> Optional[ExtractedMetadata]:
+    """Decode and parse the ComfyUI "prompt" chunk, if present and usable."""
+    raw = info.get("prompt")
+    if not isinstance(raw, (str, bytes)):
+        return None
+    prompt_str = raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else raw
+    if not prompt_str.strip():
+        return None
+    return _parse_comfyui_prompt(prompt_str)
+
+
 def extract_image_metadata(image_bytes: bytes) -> ExtractedMetadata:
     """Inspect and extract generation metadata from PNG/EXIF/WebP image bytes."""
     if not image_bytes:
@@ -269,23 +305,33 @@ def extract_image_metadata(image_bytes: bytes) -> ExtractedMetadata:
 
     info = getattr(im, "info", {})
 
-    # 1. Automatic1111 / WebUI "parameters" chunk (also used by ComfyUI ImageSaver)
+    # 1. Automatic1111 / WebUI "parameters" chunk (also used by ComfyUI ImageSaver).
+    #    The A1111 block is a lossy rendering: comfyui-image-saver's Civitai helper
+    #    writes f"{sampler_name}_{scheduler}" for samplers it cannot map, which
+    #    manufactures values like "exponential/ddim_beta57". When the same image also
+    #    carries the lossless ComfyUI graph, let the graph correct the sampler pair.
+    #    Everything else (prompt text, model name, raw parameters, tags) stays A1111.
     if "parameters" in info and isinstance(info["parameters"], (str, bytes)):
         param_str = info["parameters"]
         if isinstance(param_str, bytes):
             param_str = param_str.decode("utf-8", errors="ignore")
         if param_str.strip():
-            return _parse_a1111_parameters(param_str)
+            res = _parse_a1111_parameters(param_str)
+            graph = _read_prompt_chunk(info)
+            if graph is not None:
+                overrides: dict[str, str] = {}
+                if graph.sampler_name:
+                    overrides["sampler_name"] = graph.sampler_name
+                if graph.scheduler:
+                    overrides["scheduler"] = graph.scheduler
+                if overrides:
+                    res = replace(res, **overrides)
+            return res
 
     # 2. ComfyUI "prompt" JSON chunk
-    if "prompt" in info and isinstance(info["prompt"], (str, bytes)):
-        prompt_str = info["prompt"]
-        if isinstance(prompt_str, bytes):
-            prompt_str = prompt_str.decode("utf-8", errors="ignore")
-        if prompt_str.strip():
-            res = _parse_comfyui_prompt(prompt_str)
-            if res.has_metadata:
-                return res
+    graph = _read_prompt_chunk(info)
+    if graph is not None and graph.has_metadata:
+        return graph
 
     # 3. NovelAI / Fooocus "Comment" chunk
     if "Comment" in info and isinstance(info["Comment"], (str, bytes)):

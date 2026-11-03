@@ -493,6 +493,8 @@ class AuthEndpointsAPITests(unittest.TestCase):
                 "filename": "sd_xl_base.safetensors",
             }
             mock_comfy.resolve_model_name = AsyncMock(return_value="sd_xl_base.safetensors")
+            mock_comfy.resolve_sampler = AsyncMock(return_value={})
+            mock_comfy.resolve_scheduler = AsyncMock(return_value={})
             mock_comfy.queue_prompt = AsyncMock(return_value="prompt-123")
             mock_comfy.wait_until_done = AsyncMock(return_value="completed")
             mock_comfy.list_images = AsyncMock(return_value=[])

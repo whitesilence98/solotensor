@@ -197,6 +197,8 @@ class TestAssetUserAttributionAndSidecarPersistence(unittest.TestCase):
         # Mock ComfyUI client
         self.mock_comfy = AsyncMock()
         self.mock_comfy.resolve_model_name = AsyncMock(return_value="sd_model.safetensors")
+        self.mock_comfy.resolve_sampler = AsyncMock(return_value={})
+        self.mock_comfy.resolve_scheduler = AsyncMock(return_value={})
         self.mock_comfy.build_gallery_workflow = MagicMock(return_value={})
         self.mock_comfy.queue_prompt = AsyncMock(return_value="prompt-gen-uuid-12345")
         self.mock_comfy.wait_until_done = AsyncMock(return_value="completed")

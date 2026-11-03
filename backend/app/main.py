@@ -125,7 +125,11 @@ from .services.code_assistant import (
     AssistantUpstreamError,
     get_code_assistant_service,
 )
-from .services.comfy_client import ComfyClientError, get_comfy_client
+from .services.comfy_client import (
+    ComfyClientError,
+    ComfyValidationError,
+    get_comfy_client,
+)
 from .services.director import (
     DirectorRateLimited,
     DirectorUnavailable,
@@ -144,7 +148,7 @@ from .services.social_service import (
     SocialValidationError,
     get_social_service,
 )
-from .services.storage import StorageError, get_storage
+from .services.storage import StorageError, VIDEO_EXTENSIONS, get_storage
 from .services.tagger import TaggerError, get_tagger_service
 from .services.workflow_router import (
     patch_seedvr_upscaler_workflow,
@@ -1650,6 +1654,12 @@ async def workflow_template_info(mode: str = "text-to-image") -> dict[str, Any]:
 
 async def _bg_auto_tag_asset(key: str) -> None:
     """Non-blocking background auto-tagger running WD14 interrogation for public assets."""
+    # WD14 is an image tagger: it feeds the file to a LoadImage node, so a video
+    # cannot be interrogated. Skip before constructing the service rather than
+    # letting every video generation fail and log a warning.
+    if "." in key and ("." + key.rsplit(".", 1)[-1].lower()) in VIDEO_EXTENSIONS:
+        logger.debug("Skipping auto-tag for video asset %s", key)
+        return
     try:
         tagger = get_tagger_service()
         tags = await tagger.auto_tag_asset(key)
@@ -1881,7 +1891,16 @@ async def generate(
         resolved_clip_type = ""
         resolved_vae = ""
         if is_modular:
-            folder = "unet" if (is_gguf or base_category == "unet") else "diffusion_models"
+            # ComfyUI enumerates .gguf files only under "unet_gguf" (/models/unet
+            # is 404); plain UNETs live under "diffusion_models", which lists both
+            # models/diffusion_models and models/unet. The .gguf test must come
+            # first because diffusion_models also serves .safetensors UNETs.
+            if is_gguf:
+                folder = "unet_gguf"
+            elif base_category in ("unet", "diffusion_models"):
+                folder = "diffusion_models"
+            else:
+                folder = "checkpoints"
             resolved_base = await comfy.resolve_model_name(
                 folder, base_model["filename"]
             )
@@ -1911,6 +1930,60 @@ async def generate(
             resolved_vae = (
                 await comfy.resolve_model_name("vae", vae_name) if vae_name else ""
             )
+
+        # Resolve sampler/scheduler against each target node class BEFORE any
+        # graph is built. Classes the value is invalid for are omitted, so their
+        # template defaults survive; a value valid for none of the classes is a
+        # user-input error (ComfyValidationError -> 422), not a backend outage.
+        # detailer/upscale stay empty: those templates patch no sampler at all.
+        sampler_classes: tuple[str, ...] = ()
+        scheduler_classes: tuple[str, ...] = ()
+        if req.mode == "video":
+            sampler_classes = ("KSamplerSelect",)
+            # Video's scheduler nodes are BasicScheduler; KSamplerSelect has no
+            # scheduler input, so validating against it would reject every run.
+            scheduler_classes = ("BasicScheduler",)
+        elif req.mode == "edit":
+            sampler_classes = ("ClownsharKSampler_Beta",)
+            scheduler_classes = ("ClownsharKSampler_Beta",)
+        elif req.mode in ("text-to-image", "image-to-image"):
+            # The full t2i template reaches ClownsharKSampler_Beta (1059) while
+            # node 1056 is KSamplerAdvanced; a flat key with no Clownshar
+            # equivalent therefore writes 1056 only and leaves 1059 at default.
+            sampler_classes = ("KSampler", "KSamplerAdvanced", "ClownsharKSampler_Beta")
+            scheduler_classes = sampler_classes
+
+        sampler_by_class = (
+            await comfy.resolve_sampler(req.sampler_name, sampler_classes)
+            if req.sampler_name and sampler_classes
+            else {}
+        )
+        scheduler_by_class = (
+            await comfy.resolve_scheduler(req.scheduler, scheduler_classes)
+            if req.scheduler and scheduler_classes
+            else {}
+        )
+
+        # Edit's loader comes from the folder the model file was actually found
+        # in, plus the .gguf extension. Never from is_modular: a .gguf whose
+        # record says model_type "Checkpoint" (e.g. Z-Image Turbo Q8 GGUF,
+        # category "unet") is modular yet must load through UnetLoaderGGUF.
+        # A record with no category keeps loader_kind=None (router heuristic).
+        loader_kind: Optional[Literal["checkpoint", "unet", "gguf"]] = None
+        if req.mode == "edit":
+            if is_gguf and base_category in ("diffusion_models", "unet"):
+                loader_kind = "gguf"
+            elif base_category == "checkpoints" and is_gguf:
+                raise ModelConflict(
+                    f"Model '{base_model.get('title') or base_model.get('filename')}' "
+                    "is a .gguf stored under checkpoints, which no ComfyUI loader can "
+                    "load. Move it to diffusion_models/unet or install the checkpoint "
+                    "as .safetensors."
+                )
+            elif base_category == "checkpoints":
+                loader_kind = "checkpoint"
+            elif base_category in ("diffusion_models", "unet"):
+                loader_kind = "unet"
 
         source_image_filename = None
         raw_source = (
@@ -2052,8 +2125,8 @@ async def generate(
                 height=req.height,
                 steps=req.steps,
                 cfg=req.cfg,
-                sampler_name=req.sampler_name,
-                scheduler=req.scheduler,
+                sampler_by_class=sampler_by_class,
+                scheduler_by_class=scheduler_by_class,
                 loras=active_loras,
                 source_image_filename=source_image_filename,
                 last_frame_filename=last_frame_filename,
@@ -2097,7 +2170,9 @@ async def generate(
                 clip_type=resolved_clip_type,
                 vae_name=resolved_vae,
                 loras=active_loras,
-                is_checkpoint=(not is_modular),
+                loader_kind=loader_kind,
+                sampler_by_class=sampler_by_class,
+                scheduler_by_class=scheduler_by_class,
             )
         elif is_lora:
             graph = comfy.build_lora_workflow(
@@ -2114,8 +2189,8 @@ async def generate(
                 image_count=req.image_count,
                 cfg=req.cfg,
                 denoise=req.denoise,
-                sampler_name=req.sampler_name,
-                scheduler=req.scheduler,
+                sampler_by_class=sampler_by_class,
+                scheduler_by_class=scheduler_by_class,
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
@@ -2141,8 +2216,8 @@ async def generate(
                 image_count=req.image_count,
                 cfg=req.cfg,
                 denoise=req.denoise,
-                sampler_name=req.sampler_name,
-                scheduler=req.scheduler,
+                sampler_by_class=sampler_by_class,
+                scheduler_by_class=scheduler_by_class,
                 width=req.width,
                 height=req.height,
                 loras=active_loras,
@@ -2166,6 +2241,21 @@ async def generate(
                 + cost,
             )
         raise _model_http_error(exc) from exc
+    except ComfyValidationError as exc:
+        # A value the user chose that no target node class accepts. This must
+        # not fall through to the 502 handler below: that would report a bad
+        # request as a ComfyUI outage. 422 matches this endpoint's semantic
+        # rejection convention elsewhere.
+        if credits_deducted:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
+            )
+        logger.warning("Rejected sampler/scheduler: %s", exc)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except ComfyClientError as exc:
         if credits_deducted:
             credit_service.db.update_credits(
@@ -2359,8 +2449,6 @@ async def generate(
                 logger.warning(
                     "Failed to insert video generation record into DB: %s", exc
                 )
-            if is_public:
-                background_tasks.add_task(_bg_auto_tag_asset, rel_key)
             return GenerationResult(
                 prompt_id=prompt_id,
                 status="completed",

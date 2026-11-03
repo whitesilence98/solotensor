@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Literal, Optional, Set, TYPE_CHECKING
+from typing import Any, Literal, Mapping, Optional, Set, TYPE_CHECKING
 
 from .workflow_bypass import apply_t2i_pipeline, apply_detailer_pipeline
 
@@ -21,6 +21,81 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 WORKFLOW_DIR = Path(__file__).resolve().parents[2] / "workflows"
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+
+# Flat sampler key -> ClownsharKSampler_Beta family/name. All eleven pairs were
+# verified present in BOTH live enums; 52 of the 63 flat keys have no Clownshar
+# equivalent and must not be guessed by pattern (heun != linear/heun_2s,
+# dpmpp_sde != exponential/dpmpp_sde_2s — different integrators).
+CLOWNSHAR_SAMPLER_ALIASES: dict[str, str] = {
+    "euler": "linear/euler",
+    "dpmpp_2m": "multistep/dpmpp_2m",
+    "ddim": "exponential/ddim",
+    "deis_2m": "multistep/deis_2m",
+    "deis_3m": "multistep/deis_3m",
+    "res_2m": "multistep/res_2m",
+    "res_3m": "multistep/res_3m",
+    "res_2s": "exponential/res_2s",
+    "res_3s": "exponential/res_3s",
+    "res_5s": "exponential/res_5s",
+    "res_6s": "exponential/res_6s",
+}
+CLOWNSHAR_TO_FLAT_ALIASES: dict[str, str] = {
+    v: k for k, v in CLOWNSHAR_SAMPLER_ALIASES.items()
+}
+
+
+def _resolved(mapping: Any, class_type: str) -> Optional[str]:
+    """Return a resolved value only when it is a real string in a real mapping.
+
+    Guards the graph writers against mock objects and against a resolver that
+    returned a non-string: ComfyUI must never receive anything but a validated
+    enum value, and anything else must leave the template default untouched.
+    """
+    if not isinstance(mapping, Mapping):
+        return None
+    value = mapping.get(class_type)
+    return value if isinstance(value, str) and value else None
+
+
+def _write_sampler(
+    inputs: dict[str, Any],
+    class_type: str,
+    sampler_by_class: Optional[Mapping[str, str]],
+    scheduler_by_class: Optional[Mapping[str, str]],
+) -> None:
+    """Write this node's own sampler/scheduler, if the resolver produced one.
+
+    A missing key means the caller's value did not belong to this node's enum
+    vocabulary, so the template default is preserved. A flat sampler value can
+    therefore never reach a Clownshar node.
+    """
+    if (value := _resolved(sampler_by_class, class_type)):
+        inputs["sampler_name"] = value
+    if (value := _resolved(scheduler_by_class, class_type)):
+        inputs["scheduler"] = value
+
+
+def normalize_sampler_maps(
+    sampler_by_class: Optional[Mapping[str, str]],
+    scheduler_by_class: Optional[Mapping[str, str]],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Drop non-string / empty entries from the resolver maps.
+
+    Keeps the graph writers honest: ComfyUI must only ever receive a validated
+    enum string, and a malformed map (including a mock passed in a test) must
+    leave the template default untouched rather than poison the graph.
+    """
+    samplers = {
+        key: value
+        for key, value in (sampler_by_class or {}).items()
+        if isinstance(value, str) and value
+    } if isinstance(sampler_by_class, Mapping) else {}
+    schedulers = {
+        key: value
+        for key, value in (scheduler_by_class or {}).items()
+        if isinstance(value, str) and value
+    } if isinstance(scheduler_by_class, Mapping) else {}
+    return samplers, schedulers
 
 
 def load_workflow(name: str) -> dict[str, Any]:
@@ -105,11 +180,20 @@ def patch_base_t2i_workflow(
     loras: Optional[list[dict[str, Any]]] = None,
     source_image_filename: Optional[str] = None,
     denoise: float = 1.0,
-    sampler_name: Optional[str] = None,
-    scheduler: Optional[str] = None,
+    sampler_by_class: Optional[Mapping[str, str]] = None,
+    scheduler_by_class: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
-    """Patch standard generator nodes in workflow_generate_t2i.json (supporting both T2I and Img2Img)."""
+    """Patch standard generator nodes in workflow_generate_t2i.json (supporting both T2I and Img2Img).
+
+    Sampler and scheduler are written per node class: ``1056`` is
+    ``KSamplerAdvanced`` (flat keys, ``euler``) and ``1059`` is
+    ``ClownsharKSampler_Beta`` (``family/name`` keys, ``linear/euler``). Their
+    enums are disjoint, so each resolved value must arrive keyed by its own class.
+    """
     graph = json.loads(json.dumps(template))
+    sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+        sampler_by_class, scheduler_by_class
+    )
 
     # 1. Prompt & Negative Prompt
     if "1051" in graph:
@@ -128,17 +212,21 @@ def patch_base_t2i_workflow(
     if "1055" in graph:
         graph["1055"].setdefault("inputs", {})["value"] = int(steps)
 
-    # 3b. Sampler & Scheduler
-    if sampler_name:
-        if "1056" in graph:
-            graph["1056"].setdefault("inputs", {})["sampler_name"] = str(sampler_name)
-        if "1059" in graph:
-            graph["1059"].setdefault("inputs", {})["sampler_name"] = str(sampler_name)
-    if scheduler:
-        if "1056" in graph:
-            graph["1056"].setdefault("inputs", {})["scheduler"] = str(scheduler)
-        if "1059" in graph:
-            graph["1059"].setdefault("inputs", {})["scheduler"] = str(scheduler)
+    # 3b. Sampler & Scheduler — per class, never shared across the two vocabularies
+    if "1056" in graph:
+        _write_sampler(
+            graph["1056"].setdefault("inputs", {}),
+            "KSamplerAdvanced",
+            sampler_by_class,
+            scheduler_by_class,
+        )
+    if "1059" in graph:
+        _write_sampler(
+            graph["1059"].setdefault("inputs", {}),
+            "ClownsharKSampler_Beta",
+            sampler_by_class,
+            scheduler_by_class,
+        )
 
     # 4. Latent Image / Img2Img Source
     if source_image_filename:
@@ -212,11 +300,17 @@ def patch_base_i2i_workflow(
     vae_name: str = "wan_2.1_vae.safetensors",
     source_image_filename: str,
     loras: Optional[list[dict[str, Any]]] = None,
-    sampler_name: Optional[str] = None,
-    scheduler: Optional[str] = None,
+    sampler_by_class: Optional[Mapping[str, str]] = None,
+    scheduler_by_class: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
-    """Patch standard generator nodes in native workflow_generate_i2i.json."""
+    """Patch standard generator nodes in native workflow_generate_i2i.json.
+
+    Node ``3`` is a plain ``KSampler`` (flat 63-entry sampler enum).
+    """
     graph = json.loads(json.dumps(template))
+    sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+        sampler_by_class, scheduler_by_class
+    )
 
     # 1. Source Image input (node 30)
     if "30" in graph:
@@ -236,10 +330,7 @@ def patch_base_i2i_workflow(
         inputs["steps"] = int(steps)
         inputs["cfg"] = float(cfg)
         inputs["denoise"] = float(denoise)
-        if sampler_name:
-            inputs["sampler_name"] = str(sampler_name)
-        if scheduler:
-            inputs["scheduler"] = str(scheduler)
+        _write_sampler(inputs, "KSampler", sampler_by_class, scheduler_by_class)
 
     # 4. Model Loaders (nodes 593:590, 593:589, 593:588)
     if "593:590" in graph and unet_name:
@@ -351,6 +442,8 @@ def patch_detailer_workflow(
 
     # 3. Model Loaders
     if "1111:615" in graph:
+        if str(unet_name).lower().endswith(".gguf"):
+            graph["1111:615"]["class_type"] = "UnetLoaderGGUF"
         graph["1111:615"].setdefault("inputs", {})["unet_name"] = unet_name
     if "1111:616" in graph:
         inputs = graph["1111:616"].setdefault("inputs", {})
@@ -403,8 +496,8 @@ def patch_full_t2i_workflow(
     source_image_filename: Optional[str] = None,
     denoise: float = 1.0,
     cfg: float = 1.0,
-    sampler_name: Optional[str] = None,
-    scheduler: Optional[str] = None,
+    sampler_by_class: Optional[Mapping[str, str]] = None,
+    scheduler_by_class: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
     """Patch generator nodes and apply cascade bypass (supporting both modular and legacy graphs)."""
     if "30" in template and "32" in template and "3" in template and source_image_filename:
@@ -422,8 +515,8 @@ def patch_full_t2i_workflow(
             vae_name=vae_name,
             source_image_filename=source_image_filename,
             loras=loras,
-            sampler_name=sampler_name,
-            scheduler=scheduler,
+            sampler_by_class=sampler_by_class,
+            scheduler_by_class=scheduler_by_class,
         )
 
     # Base T2I node patching
@@ -443,8 +536,8 @@ def patch_full_t2i_workflow(
         loras=loras,
         source_image_filename=source_image_filename,
         denoise=denoise,
-        sampler_name=sampler_name,
-        scheduler=scheduler,
+        sampler_by_class=sampler_by_class,
+        scheduler_by_class=scheduler_by_class,
     )
 
     # Apply pipeline bypass if graph contains multi-stage nodes
@@ -471,8 +564,8 @@ def patch_video_it2v_workflow(
     height: int = 576,
     steps: int = 8,
     cfg: float = 1.0,
-    sampler_name: Optional[str] = None,
-    scheduler: Optional[str] = None,
+    sampler_by_class: Optional[Mapping[str, str]] = None,
+    scheduler_by_class: Optional[Mapping[str, str]] = None,
     loras: Optional[list[dict[str, Any]]] = None,
     source_image_filename: Optional[str] = None,
     last_frame_filename: Optional[str] = None,
@@ -612,20 +705,29 @@ def patch_video_it2v_workflow(
         if (inputs := inputs_of(node_id)) is not None:
             inputs["cfg"] = cfg_val
 
-    # 8. Sampler: Stage 1 (389:372 T2V, 389:974 I2V), Stage 2 (1194:1168/1194:1173)
-    if sampler_name:
+    # 8. Sampler: Stage 1 (389:372 T2V, 389:974 I2V), Stage 2 (1194:1168/1194:1173).
+    #    All four are KSamplerSelect, one shared enum, so one key covers them.
+    #    This function writes whatever it is given: validation lives in
+    #    ``main.py``, where the enum lookup has a live ComfyUI client.
+    sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+        sampler_by_class, scheduler_by_class
+    )
+    sampler_value = (sampler_by_class or {}).get("KSamplerSelect")
+    if sampler_value:
         for node_id in ("389:372", "389:974", "1194:1168", "1194:1173"):
             if (inputs := inputs_of(node_id)) is not None:
-                inputs["sampler_name"] = str(sampler_name)
+                inputs["sampler_name"] = sampler_value
 
     # 9. Scheduler: Stage 1 (389:754/389:975), Stage 2 (1194:1172/1194:1174).
+    #    All four are BasicScheduler; one shared 12-entry enum.
     #    NOTE: 389:1440/389:1649 and 1194:1468/1194:1677 default to their "on"
     #    branch, so the tuned VideoFlow sigma chain shadows these BasicSchedulers
     #    unless the caller disables it in the UI.
-    if scheduler:
+    scheduler_value = (scheduler_by_class or {}).get("BasicScheduler")
+    if scheduler_value:
         for node_id in ("389:754", "389:975", "1194:1172", "1194:1174"):
             if (inputs := inputs_of(node_id)) is not None:
-                inputs["scheduler"] = str(scheduler)
+                inputs["scheduler"] = scheduler_value
 
     # 10. LoRAs: nodes 2022 (I2V) and 2023 (T2V) are rgthree Power Lora Loaders.
     #     Same contract as 1061 in workflow_generate_t2i.json: drop lora_* keys,
@@ -832,9 +934,20 @@ def patch_edit_workflow(
     clip_type: Optional[str] = None,
     vae_name: Optional[str] = None,
     loras: Optional[list[dict[str, Any]]] = None,
-    is_checkpoint: bool = False,
+    loader_kind: Optional[Literal["checkpoint", "unet", "gguf"]] = None,
+    sampler_by_class: Optional[Mapping[str, str]] = None,
+    scheduler_by_class: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
-    """Patch the Qwen Image Edit workflow (workflow_generate_edit.json)."""
+    """Patch the Qwen Image Edit workflow (workflow_generate_edit.json).
+
+    ``loader_kind`` is the deterministic loader choice derived from the folder
+    the model file was found in (checkpoint / diffusion_models / unet_gguf).
+    When it is ``None`` the legacy filename heuristic is kept for old callers.
+
+    Only the chosen loader's ``ctx_NN`` link is kept on the rgthree Context
+    Switch: every ``ctx_*`` link is a strong (non-lazy) edge, so keeping the
+    losing branches makes ComfyUI load — and validate — all three weight files.
+    """
     graph = json.loads(json.dumps(template))
 
     # 1. Image 1 (node 134)
@@ -867,27 +980,43 @@ def patch_edit_workflow(
     if "138" in graph and "vae" not in graph["138"].get("inputs", {}):
         graph["138"].setdefault("inputs", {})["vae"] = ["611:612", 3]
 
-    # 7. Model Loader (Checkpoint vs UNET vs GGUF)
+    # 7. Model Loader (Checkpoint vs UNET vs GGUF) — deterministic when the
+    #    caller resolved the file category; filename heuristic only as fallback.
     is_gguf = bool(unet_name) and str(unet_name).lower().endswith(".gguf")
-    eff_is_checkpoint = (not is_gguf) and (is_checkpoint or (
-        bool(unet_name) and (
-            "aio" in str(unet_name).lower()
-            or "checkpoint" in str(unet_name).lower()
-            or str(unet_name).replace("\\", "/").startswith("qwen/Qwen-Rapid")
-        )
-    ))
-    if is_gguf and "611:610" in graph:
-        graph["611:610"].setdefault("inputs", {})["unet_name"] = str(unet_name)
-        if "611:612" in graph:
-            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:616", 0]
-    elif eff_is_checkpoint and unet_name and "611:587" in graph:
-        graph["611:587"].setdefault("inputs", {})["ckpt_name"] = str(unet_name)
-        if "611:612" in graph:
-            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:615", 0]
-    elif unet_name and "611:593" in graph:
-        graph["611:593"].setdefault("inputs", {})["unet_name"] = str(unet_name)
-        if "611:612" in graph:
-            graph["611:612"].setdefault("inputs", {})["ctx_01"] = ["611:614", 0]
+    if loader_kind is not None:
+        kind: Optional[str] = loader_kind
+    elif is_gguf:
+        kind = "gguf"
+    elif bool(unet_name) and (
+        "aio" in str(unet_name).lower()
+        or "checkpoint" in str(unet_name).lower()
+        or str(unet_name).replace("\\", "/").startswith("qwen/Qwen-Rapid")
+    ):
+        kind = "checkpoint"
+    else:
+        kind = "unet"
+
+    selected_ctx: Optional[str] = None
+    if unet_name:
+        if kind == "gguf" and "611:610" in graph:
+            graph["611:610"].setdefault("inputs", {})["unet_name"] = str(unet_name)
+            selected_ctx = "611:616"
+        elif kind == "checkpoint" and "611:587" in graph:
+            graph["611:587"].setdefault("inputs", {})["ckpt_name"] = str(unet_name)
+            selected_ctx = "611:615"
+        elif kind == "unet" and "611:593" in graph:
+            graph["611:593"].setdefault("inputs", {})["unet_name"] = str(unet_name)
+            selected_ctx = "611:614"
+
+    # 7b. Prune the losing contexts. Every ctx_* link is a strong edge, so an
+    #     unused (and possibly missing) branch would still be loaded and
+    #     validated. The Context/loader nodes themselves are left in place so
+    #     the template stays diffable; they simply become unreachable.
+    if selected_ctx and "611:612" in graph:
+        switch_inputs = graph["611:612"].setdefault("inputs", {})
+        for key in [k for k in switch_inputs if k.startswith("ctx_")]:
+            del switch_inputs[key]
+        switch_inputs["ctx_01"] = [selected_ctx, 0]
 
     # 8. CLIP model & type (node 611:592 if provided)
     if "611:592" in graph:
@@ -900,6 +1029,27 @@ def patch_edit_workflow(
     # 9. VAE model (node 611:591 if provided)
     if vae_name and "611:591" in graph:
         graph["611:591"].setdefault("inputs", {})["vae_name"] = str(vae_name)
+
+    # 9b. The Checkpoint context (611:615) is wired to the checkpoint's own
+    #     clip/vae outputs. When the caller resolved external encoders, repoint
+    #     each component independently — a monolithic checkpoint usually has no
+    #     external encoder, but it does carry its own VAE (and vice versa).
+    if selected_ctx == "611:615" and "611:615" in graph:
+        ctx_inputs = graph["611:615"].setdefault("inputs", {})
+        if clip_name and "611:592" in graph:
+            ctx_inputs["clip"] = ["611:592", 0]
+        if vae_name and "611:591" in graph:
+            ctx_inputs["vae"] = ["611:591", 0]
+
+    # 9c. Sampler & scheduler for the Edit pipeline (node 141 ClownsharKSampler_Beta).
+    #     Template defaults (linear/euler + beta57) win when no value is resolved.
+    if "141" in graph:
+        _write_sampler(
+            graph["141"].setdefault("inputs", {}),
+            "ClownsharKSampler_Beta",
+            sampler_by_class,
+            scheduler_by_class,
+        )
 
     # 10. LoRA loader (node 589 if loras provided)
     if loras is not None and "589" in graph:

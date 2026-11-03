@@ -202,6 +202,7 @@ class TaggerApiTests(unittest.TestCase):
         asyncio.run(_bg_auto_tag_asset("sample/failed.png"))
         mock_tagger.auto_tag_asset.assert_called_once_with("sample/failed.png")
 
+
     def test_interrogate_image_with_embedded_metadata(self) -> None:
         import io
         from PIL import Image
@@ -255,4 +256,99 @@ class TaggerApiTests(unittest.TestCase):
         self.assertIsNone(data["metadata"])
         self.assertEqual(data["tags"], ["solo", "outdoors", "scenery"])
         mock_tagger.interrogate_image.assert_called_once()
+
+
+class BgAutoTagVideoGuardTests(unittest.TestCase):
+    """_bg_auto_tag_asset skips video assets before the tagger is constructed.
+
+    WD14 interrogation feeds the file to a LoadImage node, so a video cannot be
+    tagged. The guard must be a fast path (no service construction) and must key
+    off the real extension, not a substring of the asset name.
+    """
+
+    @patch("app.main.get_tagger_service")
+    def test_mp4_key_skips_before_service_construction(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+        asyncio.run(_bg_auto_tag_asset("sample/clip.mp4"))
+
+        mock_tagger_get.assert_not_called()
+        mock_tagger.auto_tag_asset.assert_not_called()
+
+    @patch("app.main.get_tagger_service")
+    def test_webm_and_mov_keys_skip_before_service_construction(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        for key in ("sample/clip.webm", "sample/clip.mov"):
+            with self.subTest(key=key):
+                mock_tagger_get.reset_mock()
+                mock_tagger = mock_tagger_get.return_value
+                mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+                asyncio.run(_bg_auto_tag_asset(key))
+
+                mock_tagger_get.assert_not_called()
+                mock_tagger.auto_tag_asset.assert_not_called()
+
+    @patch("app.main.get_tagger_service")
+    def test_uppercase_video_extension_is_skipped(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+        asyncio.run(_bg_auto_tag_asset("sample/clip.MP4"))
+
+        mock_tagger_get.assert_not_called()
+        mock_tagger.auto_tag_asset.assert_not_called()
+
+    @patch("app.main.get_tagger_service")
+    def test_image_key_still_runs_the_tagger(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(return_value=["city"])
+
+        asyncio.run(_bg_auto_tag_asset("sample/photo.png"))
+
+        mock_tagger_get.assert_called_once()
+        mock_tagger.auto_tag_asset.assert_called_once_with("sample/photo.png")
+
+    @patch("app.main.get_tagger_service")
+    def test_video_substring_without_video_extension_still_runs_the_tagger(
+        self, mock_tagger_get
+    ) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        for key in ("sample/notes-mp4.png", "sample/clip.mp4.json"):
+            with self.subTest(key=key):
+                mock_tagger_get.reset_mock()
+                mock_tagger = mock_tagger_get.return_value
+                mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+                asyncio.run(_bg_auto_tag_asset(key))
+
+                mock_tagger_get.assert_called_once()
+                mock_tagger.auto_tag_asset.assert_called_once_with(key)
+
+    @patch("app.main.get_tagger_service")
+    def test_key_without_extension_still_runs_the_tagger(self, mock_tagger_get) -> None:
+        import asyncio
+        from app.main import _bg_auto_tag_asset
+
+        mock_tagger = mock_tagger_get.return_value
+        mock_tagger.auto_tag_asset = AsyncMock(return_value=["tag"])
+
+        asyncio.run(_bg_auto_tag_asset("sample/noext"))
+
+        mock_tagger_get.assert_called_once()
+        mock_tagger.auto_tag_asset.assert_called_once_with("sample/noext")
 

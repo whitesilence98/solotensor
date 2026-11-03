@@ -94,6 +94,131 @@ class TestImageMetadata(unittest.TestCase):
         self.assertEqual(res.width, 1024)
         self.assertEqual(res.height, 1024)
 
+    def _png_with_chunks(self, chunks):
+        """Build PNG bytes carrying the given text chunks."""
+        im = Image.new("RGB", (100, 100))
+        pnginfo = PngImagePlugin.PngInfo()
+        for key, value in chunks.items():
+            pnginfo.add_text(key, value)
+        buf = io.BytesIO()
+        im.save(buf, format="PNG", pnginfo=pnginfo)
+        return buf.getvalue()
+
+    def test_a1111_composite_sampler_is_corrected_by_graph(self):
+        """comfyui-image-saver writes f"{sampler}_{scheduler}" when it cannot map a
+        sampler, producing e.g. "exponential/ddim_beta57". The lossless graph chunk
+        must correct that pair without disturbing the rest of the A1111 result."""
+        import json
+        raw_text = (
+            "a cinematic cyberpunk female warrior, neon atmosphere\n"
+            "Negative prompt: low quality, blurry\n"
+            "Steps: 25, Sampler: exponential/ddim_beta57, Schedule type: beta57, "
+            "CFG scale: 7.5, Seed: 987654321, Size: 768x1344, Model: test_checkpoint"
+        )
+        prompt_graph = {
+            "20": {
+                "class_type": "ClownsharKSampler_Beta",
+                "inputs": {
+                    "seed": 987654321,
+                    "steps": 25,
+                    "cfg": 7.5,
+                    "sampler_name": "exponential/ddim",
+                    "scheduler": "beta57",
+                },
+            },
+        }
+        png_bytes = self._png_with_chunks({
+            "parameters": raw_text,
+            "prompt": json.dumps(prompt_graph),
+        })
+
+        res = extract_image_metadata(png_bytes)
+        self.assertTrue(res.has_metadata)
+        self.assertEqual(res.source, "a1111")
+        self.assertEqual(res.sampler_name, "exponential/ddim")
+        self.assertEqual(res.scheduler, "beta57")
+        # The rest of the A1111 record is untouched, so model matching still works.
+        self.assertEqual(
+            res.prompt, "a cinematic cyberpunk female warrior, neon atmosphere"
+        )
+        self.assertEqual(res.negative_prompt, "low quality, blurry")
+        self.assertEqual(res.model_name, "test_checkpoint")
+        self.assertEqual(res.steps, 25)
+        self.assertEqual(res.cfg, 7.5)
+        self.assertEqual(res.seed, 987654321)
+        self.assertEqual(res.width, 768)
+        self.assertEqual(res.height, 1344)
+        self.assertEqual(res.raw_parameters, raw_text)
+        self.assertIn("neon atmosphere", res.tags)
+
+    def test_a1111_sampler_survives_graph_without_sampler_node(self):
+        """A graph that yields no sampler value must not blank the A1111 pair."""
+        import json
+        raw_text = (
+            "a quiet forest\n"
+            "Steps: 20, Sampler: Euler a, Schedule type: Karras, CFG scale: 7, "
+            "Seed: 42, Size: 512x512, Model: test_checkpoint"
+        )
+        prompt_graph = {
+            "10": {
+                "class_type": "CLIPTextEncode",
+                "_meta": {"title": "Positive Prompt"},
+                "inputs": {"text": "a quiet forest"},
+            },
+        }
+        png_bytes = self._png_with_chunks({
+            "parameters": raw_text,
+            "prompt": json.dumps(prompt_graph),
+        })
+
+        res = extract_image_metadata(png_bytes)
+        self.assertTrue(res.has_metadata)
+        self.assertEqual(res.source, "a1111")
+        self.assertEqual(res.sampler_name, "Euler a")
+        self.assertEqual(res.scheduler, "Karras")
+        self.assertEqual(res.model_name, "test_checkpoint")
+
+    def _assert_flat_sampler_wins(self, node_order):
+        import json
+        nodes = {
+            "1056": {
+                "class_type": "KSamplerAdvanced",
+                "inputs": {
+                    "noise_seed": 11,
+                    "steps": 20,
+                    "cfg": 7.0,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                },
+            },
+            "1059": {
+                "class_type": "ClownsharKSampler_Beta",
+                "inputs": {
+                    "seed": 11,
+                    "steps": 20,
+                    "cfg": 7.0,
+                    "sampler_name": "exponential/ddim",
+                    "scheduler": "beta57",
+                },
+            },
+        }
+        prompt_graph = {nid: nodes[nid] for nid in node_order}
+        png_bytes = self._png_with_chunks({"prompt": json.dumps(prompt_graph)})
+
+        res = extract_image_metadata(png_bytes)
+        self.assertTrue(res.has_metadata)
+        self.assertEqual(res.source, "comfyui")
+        self.assertEqual(res.sampler_name, "euler")
+        self.assertEqual(res.scheduler, "normal")
+
+    def test_comfyui_flat_sampler_beats_family_sampler_flat_first(self):
+        """Both node classes run; the flat (KSampler*) vocabulary must win
+        regardless of JSON key order."""
+        self._assert_flat_sampler_wins(["1056", "1059"])
+
+    def test_comfyui_flat_sampler_beats_family_sampler_family_first(self):
+        self._assert_flat_sampler_wins(["1059", "1056"])
+
     def test_novelai_comment_chunk_extraction(self):
         im = Image.new("RGB", (100, 100))
         pnginfo = PngImagePlugin.PngInfo()

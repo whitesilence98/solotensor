@@ -1,4 +1,12 @@
-from .workflow_router import patch_full_t2i_workflow, patch_base_i2i_workflow, patch_edit_workflow
+from .workflow_router import (
+    CLOWNSHAR_SAMPLER_ALIASES,
+    CLOWNSHAR_TO_FLAT_ALIASES,
+    _write_sampler,
+    normalize_sampler_maps,
+    patch_base_i2i_workflow,
+    patch_edit_workflow,
+    patch_full_t2i_workflow,
+)
 """Async HTTP + WebSocket client for a headless ComfyUI instance.
 
 Queues API-format workflows, streams execution progress, and fetches the
@@ -9,9 +17,10 @@ import asyncio
 import json
 import logging
 import random
+import time
 import uuid
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 import httpx
 import websockets
@@ -57,6 +66,18 @@ MODEL_PRESETS: dict[str, dict[str, Any]] = {
 
 class ComfyClientError(RuntimeError):
     """Raised when ComfyUI is unreachable or a workflow fails."""
+
+
+class ComfyValidationError(ComfyClientError):
+    """A caller-supplied value is not in the node enum — a 4xx, not an outage."""
+
+
+# Module-level enum cache: ``get_comfy_client()`` builds a fresh ComfyClient per
+# request, so an instance cache would never hit. Keyed
+# ``(comfy_http_url, class_type, field)`` with a short TTL so a ComfyUI restart
+# or node-pack install is picked up quickly. Guarded by ``_ENUM_CACHE_TTL``.
+_ENUM_CACHE: dict[tuple[str, str, str], tuple[float, list[str]]] = {}
+_ENUM_CACHE_TTL = 300.0
 
 
 CLIP_TYPE_ALIASES: dict[str, str] = {
@@ -110,19 +131,81 @@ class ComfyClient:
             raise ComfyClientError(f"ComfyUI returned an invalid model list for {category}")
         return data
 
-    async def _node_enum(self, class_type: str) -> list[str]:
-        """Return one ComfyUI node's required `type` enum, or [] if unavailable."""
+    @staticmethod
+    def _combo_options(spec: Any) -> list[str]:
+        """Unwrap a COMBO spec into its option strings.
+
+        This ComfyUI build emits three shapes for the same concept:
+        ``[[...], {"tooltip": ...}]`` (KSampler, KSamplerAdvanced),
+        ``["COMBO", {"options": [...]}]`` (KSamplerSelect, ClownsharKSampler_Beta)
+        and ``["COMBO", {"multiselect": ..., "options": [...]}]``.
+        """
+        if not isinstance(spec, (list, tuple)) or not spec:
+            return []
+        options: Any
+        if isinstance(spec[0], (list, tuple)):
+            options = spec[0]
+        elif spec[0] == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
+            options = spec[1].get("options", [])
+        else:
+            return []
+        if not isinstance(options, (list, tuple)):
+            return []
+        return [item for item in options if isinstance(item, str) and item]
+
+    async def _node_enum_input(self, class_type: str, field: str = "type") -> list[str]:
+        """Return one node input's COMBO options, or [] if unavailable.
+
+        Reads ``input.required[field]`` then ``input.optional[field]`` and
+        unwraps either legacy bare-list or ``["COMBO", {...}]`` specs. Results
+        are cached at module level (300 s TTL) because ``get_comfy_client()``
+        hands out a new instance per request.
+        """
+        key = (self.settings.comfy_http, class_type, field)
+        now = time.monotonic()
+        cached = _ENUM_CACHE.get(key)
+        if cached is not None and now - cached[0] < _ENUM_CACHE_TTL:
+            return list(cached[1])
         try:
             async with self._http() as client:
                 resp = await client.get(f"/object_info/{class_type}")
                 await self._drain(resp)
                 data = resp.json()
-            values = data[class_type]["input"]["required"]["type"][0]
-        except (httpx.HTTPError, ValueError, ComfyClientError, KeyError, IndexError, TypeError):
+            node_input = data[class_type]["input"]
+            spec = None
+            required = node_input.get("required") or {}
+            if isinstance(required, dict) and field in required:
+                spec = required[field]
+            else:
+                optional = node_input.get("optional") or {}
+                if isinstance(optional, dict):
+                    spec = optional.get(field)
+            values = self._combo_options(spec)
+        except (httpx.HTTPError, ValueError, ComfyClientError, KeyError, IndexError, TypeError, AttributeError):
             return []
-        if not isinstance(values, list) or not all(isinstance(item, str) and item for item in values):
-            return []
-        return values
+        # Do not cache an empty result: it usually means the endpoint failed or
+        # ComfyUI is mid-restart, and caching it for the whole TTL would keep
+        # reporting an outage after the server has recovered.
+        if values:
+            _ENUM_CACHE[key] = (now, list(values))
+        return list(values)
+
+    async def _node_enum(self, class_type: str) -> list[str]:
+        """Return one ComfyUI node's required `type` enum, or [] if unavailable."""
+        return await self._node_enum_input(class_type, "type")
+
+    @classmethod
+    def clear_enum_cache(cls) -> None:
+        """Drop cached node-input enums (test isolation, or after a model install)."""
+        _ENUM_CACHE.clear()
+
+    async def sampler_options(self, class_type: str) -> list[str]:
+        """Return a sampler-bearing node class's `sampler_name` COMBO options."""
+        return await self._node_enum_input(class_type, "sampler_name")
+
+    async def scheduler_options(self, class_type: str) -> list[str]:
+        """Return a scheduler-bearing node class's `scheduler` COMBO options."""
+        return await self._node_enum_input(class_type, "scheduler")
 
     async def clip_types(self) -> list[str]:
         """Return CLIP loader architecture types from both loader nodes.
@@ -155,6 +238,102 @@ class ComfyClient:
         if aliased and aliased in types:
             return aliased
         raise ComfyClientError(f"CLIP type {clip_type} is not supported by ComfyUI")
+
+    @staticmethod
+    def _match_enum_value(
+        value: str,
+        options: Sequence[str],
+        cross_vocabulary: Mapping[str, str],
+    ) -> Optional[str]:
+        """Return the spelling of ``value`` valid in ``options``, or None.
+
+        Exact match wins, then case-insensitive, then a cross-vocabulary alias
+        (flat ``euler`` <-> Clownshar ``linear/euler``). Only a target that is
+        actually in *that node's* enum is ever returned.
+        """
+        if value in options:
+            return value
+        lower = value.lower()
+        folded = {option.lower(): option for option in options}
+        if lower in folded:
+            return folded[lower]
+        aliased = cross_vocabulary.get(value) or cross_vocabulary.get(lower)
+        if aliased and aliased in options:
+            return aliased
+        return None
+
+    async def _resolve_node_enum(
+        self,
+        value: str,
+        class_types: Sequence[str],
+        field: str,
+        label: str,
+        cross_vocabulary: Mapping[str, str],
+    ) -> dict[str, str]:
+        """Resolve one enum value against each class independently.
+
+        Returns ``{class_type: spelling}`` for the classes that accept it, omitting
+        the rest so their template defaults survive. Raises ``ComfyValidationError``
+        when the value belongs to no target class, and plain ``ComfyClientError``
+        when ComfyUI could not answer at all (an outage, not user error).
+        """
+        if not isinstance(value, str):
+            return {}
+        clean = value.strip()
+        if not clean:
+            return {}
+        resolved: dict[str, str] = {}
+        unreachable = False
+        for class_type in class_types:
+            options = await self._node_enum_input(class_type, field)
+            if not options:
+                unreachable = True
+                continue
+            match = self._match_enum_value(clean, options, cross_vocabulary)
+            if match is not None:
+                resolved[class_type] = match
+        if not resolved and unreachable:
+            raise ComfyClientError(
+                f"ComfyUI did not report its {label} list for {', '.join(class_types)}"
+            )
+        if not resolved:
+            raise ComfyValidationError(
+                f"{label.capitalize()} '{clean}' is not supported by ComfyUI for "
+                f"{', '.join(class_types)}"
+            )
+        return resolved
+
+    async def resolve_sampler(
+        self, sampler_name: str, class_types: Sequence[str]
+    ) -> dict[str, str]:
+        """Resolve a sampler for each target node class independently.
+
+        Returns ``{class_type: sampler_name}`` containing only classes whose own
+        enum accepts the value (directly, case-insensitively, or via the verified
+        flat <-> Clownshar alias map). Empty input yields ``{}``.
+        """
+        return await self._resolve_node_enum(
+            sampler_name,
+            class_types,
+            "sampler_name",
+            "sampler",
+            {
+                **CLOWNSHAR_SAMPLER_ALIASES,
+                **CLOWNSHAR_TO_FLAT_ALIASES,
+            },
+        )
+
+    async def resolve_scheduler(
+        self, scheduler: str, class_types: Sequence[str]
+    ) -> dict[str, str]:
+        """Resolve a scheduler for each target node class independently.
+
+        All scheduler-bearing classes share one list, so in practice a valid
+        value lands on every class; validation still happens per class.
+        """
+        return await self._resolve_node_enum(
+            scheduler, class_types, "scheduler", "scheduler", {}
+        )
 
     # ------------------------------------------------------------------ #
     # Workflow graph
@@ -534,6 +713,8 @@ class ComfyClient:
         if "683" in graph:
             graph["683"].setdefault("inputs", {})["text"] = negative_prompt
         if "1027:615" in graph:
+            if str(unet_name).lower().endswith(".gguf"):
+                graph["1027:615"]["class_type"] = "UnetLoaderGGUF"
             graph["1027:615"].setdefault("inputs", {})["unet_name"] = unet_name
         if "1027:616" in graph:
             graph["1027:616"].setdefault("inputs", {})["clip_name"] = clip_name
@@ -621,8 +802,17 @@ class ComfyClient:
         width: int = 768,
         height: int = 1344,
         enable_detailer: bool = False,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
     ) -> dict[str, Any]:
-        """Patch the exported Text-to-Image graph by its stable node IDs."""
+        """Patch the exported Text-to-Image graph by its stable node IDs.
+
+        ``sampler_by_class`` / ``scheduler_by_class`` map a ComfyUI node class
+        (``"KSamplerAdvanced"``, ``"ClownsharKSampler_Beta"``) to an already
+        validated value. Only the classes present in the map are written, so a
+        flat sampler key can never reach the Clownshar node (their enums are
+        disjoint). Stage 1 (``1028``) is the flat one.
+        """
         graph = json.loads(json.dumps(template))
         unet_ids = [node_id for node_id, node in graph.items() if node.get("class_type") == "UNETLoader"]
         clip_ids = [node_id for node_id, node in graph.items() if node.get("class_type") == "CLIPLoader"]
@@ -676,6 +866,11 @@ class ComfyClient:
         graph["903"]["inputs"]["height"] = height
         graph["903"]["inputs"]["batch_size"] = image_count
 
+        _write_sampler(graph["1028"].setdefault("inputs", {}), "KSamplerAdvanced", sampler_by_class, scheduler_by_class)
+
+        # Image Saver metadata must describe Stage 1 (the flat KSamplerAdvanced).
+        # Copying the Clownshar pair ("exponential/ddim" + "beta57") makes the
+        # saver's Civitai helper emit the bogus composite "exponential/ddim_beta57".
         metadata_inputs = graph["1025:2"]["inputs"]
         metadata_inputs["modelname"] = unet_name
         metadata_inputs["positive"] = prompt
@@ -684,8 +879,14 @@ class ComfyClient:
         metadata_inputs["steps"] = steps
         metadata_inputs["cfg"] = cfg
         metadata_inputs["denoise"] = denoise
-        metadata_inputs["sampler_name"] = graph["1029"]["inputs"].get("sampler_name", "")
-        metadata_inputs["scheduler_name"] = graph["1029"]["inputs"].get("scheduler", "")
+        metadata_inputs["sampler_name"] = (
+            (sampler_by_class or {}).get("KSamplerAdvanced")
+            or graph["1028"]["inputs"].get("sampler_name", "")
+        )
+        metadata_inputs["scheduler_name"] = (
+            (scheduler_by_class or {}).get("KSamplerAdvanced")
+            or graph["1028"]["inputs"].get("scheduler", "")
+        )
 
         lora_inputs = graph["1043"]["inputs"]
         for key in list(lora_inputs):
@@ -723,8 +924,13 @@ class ComfyClient:
         width: int = 768,
         height: int = 1344,
         enable_detailer: bool = False,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
     ) -> dict[str, Any]:
         """Build the exported Text-to-Image workflow."""
+        sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+            sampler_by_class, scheduler_by_class
+        )
         template = self.load_workflow_template()
         if template is not None:
             return self.patch_workflow_template(
@@ -746,6 +952,8 @@ class ComfyClient:
                 width=width,
                 height=height,
                 enable_detailer=enable_detailer,
+                sampler_by_class=sampler_by_class,
+                scheduler_by_class=scheduler_by_class,
             )
         if loras:
             raise ComfyClientError("LoRAs require the exported Power Lora Loader workflow")
@@ -762,6 +970,8 @@ class ComfyClient:
             style=style,
             width=width,
             height=height,
+            sampler_by_class=sampler_by_class,
+            scheduler_by_class=scheduler_by_class,
         )
         if enable_detailer:
             graph = self.attach_detailer_nodes(graph, seed=seed)
@@ -791,9 +1001,19 @@ class ComfyClient:
         upscale: Optional[Any] = None,
         detailer: Optional[Any] = None,
         source_image_filename: Optional[str] = None,
-        sampler_name: Optional[str] = None,
-        scheduler: Optional[str] = None,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
     ) -> dict[str, Any]:
+        """Build a gallery-record generation graph.
+
+        ``sampler_by_class`` / ``scheduler_by_class`` are resolved per ComfyUI node
+        class (see ``ComfyClient.resolve_sampler``); a class missing from the map
+        keeps its template default, so a flat sampler key can never reach a
+        Clownshar node.
+        """
+        sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+            sampler_by_class, scheduler_by_class
+        )
         if is_modular is None:
             is_modular = (category == "diffusion_models" or model_type == "Diffusion Model")
 
@@ -818,8 +1038,8 @@ class ComfyClient:
                             vae_name=vae_name or "wan_2.1_vae.safetensors",
                             source_image_filename=source_image_filename,
                             loras=loras or [],
-                            sampler_name=sampler_name,
-                            scheduler=scheduler,
+                            sampler_by_class=sampler_by_class,
+                            scheduler_by_class=scheduler_by_class,
                         )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
@@ -841,8 +1061,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
-                        sampler_name=sampler_name,
-                        scheduler=scheduler,
+                        sampler_by_class=sampler_by_class,
+                        scheduler_by_class=scheduler_by_class,
                     )
             template = self.load_workflow_template()
             if template is None:
@@ -866,8 +1086,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
-                        sampler_name=sampler_name,
-                        scheduler=scheduler,
+                        sampler_by_class=sampler_by_class,
+                        scheduler_by_class=scheduler_by_class,
                     )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -912,8 +1132,8 @@ class ComfyClient:
                     vae_name=vae_name,
                     clip_name=clip_name,
                     clip_type=clip_type,
-                    sampler_name=sampler_name,
-                    scheduler=scheduler,
+                    sampler_by_class=sampler_by_class,
+                    scheduler_by_class=scheduler_by_class,
                     source_image_filename=source_image_filename,
                 )
                 if enable_detailer:
@@ -934,8 +1154,8 @@ class ComfyClient:
             clip_name=clip_name,
             clip_type=clip_type,
             vae_name=vae_name,
-            sampler_name=sampler_name,
-            scheduler=scheduler,
+            sampler_by_class=sampler_by_class,
+            scheduler_by_class=scheduler_by_class,
             source_image_filename=source_image_filename,
         )
         if enable_detailer:
@@ -967,9 +1187,17 @@ class ComfyClient:
         upscale: Optional[Any] = None,
         detailer: Optional[Any] = None,
         source_image_filename: Optional[str] = None,
-        sampler_name: Optional[str] = None,
-        scheduler: Optional[str] = None,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
     ) -> dict[str, Any]:
+        """Build a LoRA-base generation graph.
+
+        ``sampler_by_class`` / ``scheduler_by_class`` are resolved per ComfyUI node
+        class (see ``ComfyClient.resolve_sampler``).
+        """
+        sampler_by_class, scheduler_by_class = normalize_sampler_maps(
+            sampler_by_class, scheduler_by_class
+        )
         if is_modular is None:
             is_modular = (category == "diffusion_models" or base_model_type == "Diffusion Model")
 
@@ -995,8 +1223,8 @@ class ComfyClient:
                             vae_name=vae_name or "wan_2.1_vae.safetensors",
                             source_image_filename=source_image_filename,
                             loras=active_loras,
-                            sampler_name=sampler_name,
-                            scheduler=scheduler,
+                            sampler_by_class=sampler_by_class,
+                            scheduler_by_class=scheduler_by_class,
                         )
                 t2i_template = self.load_full_t2i_template()
                 if t2i_template:
@@ -1018,8 +1246,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
-                        sampler_name=sampler_name,
-                        scheduler=scheduler,
+                        sampler_by_class=sampler_by_class,
+                        scheduler_by_class=scheduler_by_class,
                     )
             template = self.load_workflow_template()
             if template is None:
@@ -1043,8 +1271,8 @@ class ComfyClient:
                         detailer_cfg=detailer,
                         source_image_filename=source_image_filename,
                         denoise=denoise,
-                        sampler_name=sampler_name,
-                        scheduler=scheduler,
+                        sampler_by_class=sampler_by_class,
+                        scheduler_by_class=scheduler_by_class,
                     )
             if template is None:
                 raise ComfyClientError("Diffusion Model gallery records require the exported workflow")
@@ -1084,8 +1312,8 @@ class ComfyClient:
             vae_name=vae_name,
             clip_name=clip_name,
             clip_type=clip_type,
-            sampler_name=sampler_name,
-            scheduler=scheduler,
+            sampler_by_class=sampler_by_class,
+            scheduler_by_class=scheduler_by_class,
             source_image_filename=source_image_filename,
         )
         if enable_detailer:
@@ -1110,8 +1338,8 @@ class ComfyClient:
         vae_name: str = "",
         clip_name: str = "",
         clip_type: str = "",
-        sampler_name: Optional[str] = None,
-        scheduler: Optional[str] = None,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
         source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         final_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
@@ -1196,8 +1424,8 @@ class ComfyClient:
                     "seed": final_seed,
                     "steps": steps,
                     "cfg": cfg,
-                    "sampler_name": sampler_name or "euler",
-                    "scheduler": scheduler or "normal",
+                    "sampler_name": (sampler_by_class or {}).get("KSampler") or "euler",
+                    "scheduler": (scheduler_by_class or {}).get("KSampler") or "normal",
                     "denoise": denoise,
                     "model": last_model_ref,
                     "positive": ["3", 0],
@@ -1229,8 +1457,8 @@ class ComfyClient:
         clip_name: str = "",
         clip_type: str = "",
         vae_name: str = "",
-        sampler_name: Optional[str] = None,
-        scheduler: Optional[str] = None,
+        sampler_by_class: Optional[Mapping[str, str]] = None,
+        scheduler_by_class: Optional[Mapping[str, str]] = None,
         source_image_filename: Optional[str] = None,
     ) -> dict[str, Any]:
         preset = MODEL_PRESETS.get(model, MODEL_PRESETS["sdxl"])
@@ -1293,8 +1521,8 @@ class ComfyClient:
                     "seed": final_seed,
                     "steps": steps or preset["steps"],
                     "cfg": cfg if cfg is not None else preset["cfg"],
-                    "sampler_name": sampler_name or preset["sampler"],
-                    "scheduler": scheduler or preset["scheduler"],
+                    "sampler_name": (sampler_by_class or {}).get("KSampler") or preset["sampler"],
+                    "scheduler": (scheduler_by_class or {}).get("KSampler") or preset["scheduler"],
                     "denoise": denoise,
                     "model": ["1", 0],
                     "positive": ["2", 0],

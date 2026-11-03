@@ -55,8 +55,10 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(graph["1025:2"]["inputs"]["steps"], 17)
         self.assertEqual(graph["1025:2"]["inputs"]["cfg"], 1.5)
         self.assertEqual(graph["1025:2"]["inputs"]["denoise"], 0.8)
-        self.assertEqual(graph["1025:2"]["inputs"]["sampler_name"], "exponential/ddim")
-        self.assertEqual(graph["1025:2"]["inputs"]["scheduler_name"], "beta57")
+        # Image Saver metadata describes Stage 1 (the flat KSamplerAdvanced), not
+        # the Clownshar pair — otherwise the saver writes "exponential/ddim_beta57".
+        self.assertEqual(graph["1025:2"]["inputs"]["sampler_name"], "euler")
+        self.assertEqual(graph["1025:2"]["inputs"]["scheduler_name"], "simple")
         self.assertEqual(graph["1025:2"]["inputs"]["positive"], "a red fox")
         self.assertEqual(graph["1025:1"]["inputs"]["metadata"], ["1025:2", 0])
         self.assertEqual(graph["903"]["inputs"]["width"], 1024)
@@ -611,6 +613,287 @@ class WorkflowPatchTests(unittest.TestCase):
         self.assertEqual(patched["611:591"]["inputs"]["vae_name"], template["611:591"]["inputs"]["vae_name"])
         # Node 589 untouched when loras is None
         self.assertEqual(patched["589"]["inputs"]["text"], "")
+
+
+class SamplerVocabularySplitTests(unittest.TestCase):
+    """Two disjoint sampler vocabularies must never share one written value.
+
+    ``1056`` is a KSamplerAdvanced (flat keys: ``euler``) and ``1059`` is a
+    ClownsharKSampler_Beta (``family/name`` keys: ``exponential/ddim``). Their
+    enums share no entries, so writing one string to both nodes poisons the
+    graph — the latent bug this regression suite pins shut.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from app.services.workflow_router import load_workflow
+
+        cls.t2i_template = load_workflow("workflow_generate_t2i.json")
+        cls.client = ComfyClient()
+
+    def _base_t2i(self, **kwargs):
+        from app.services.workflow_router import patch_base_t2i_workflow
+
+        return patch_base_t2i_workflow(
+            self.t2i_template,
+            prompt="a red fox",
+            seed=7,
+            **kwargs,
+        )
+
+    def test_flat_sampler_reaches_only_the_flat_node(self):
+        graph = self._base_t2i(
+            sampler_by_class={"KSamplerAdvanced": "euler"},
+            scheduler_by_class={"KSamplerAdvanced": "simple"},
+        )
+
+        self.assertEqual(graph["1056"]["class_type"], "KSamplerAdvanced")
+        self.assertEqual(graph["1056"]["inputs"]["sampler_name"], "euler")
+        self.assertEqual(graph["1056"]["inputs"]["scheduler"], "simple")
+
+        self.assertEqual(graph["1059"]["class_type"], "ClownsharKSampler_Beta")
+        # Template default, untouched: ``euler`` is not in the Clownshar enum.
+        self.assertEqual(
+            graph["1059"]["inputs"]["sampler_name"],
+            self.t2i_template["1059"]["inputs"]["sampler_name"],
+        )
+        self.assertEqual(graph["1059"]["inputs"]["sampler_name"], "exponential/ddim")
+        self.assertEqual(
+            graph["1059"]["inputs"]["scheduler"],
+            self.t2i_template["1059"]["inputs"]["scheduler"],
+        )
+
+    def test_clownshar_sampler_reaches_only_the_clownshar_node(self):
+        template_flat_sampler = self.t2i_template["1056"]["inputs"]["sampler_name"]
+        template_flat_scheduler = self.t2i_template["1056"]["inputs"]["scheduler"]
+
+        graph = self._base_t2i(
+            sampler_by_class={"ClownsharKSampler_Beta": "linear/euler"},
+            scheduler_by_class={"ClownsharKSampler_Beta": "beta57"},
+        )
+
+        self.assertEqual(graph["1059"]["inputs"]["sampler_name"], "linear/euler")
+        self.assertEqual(graph["1059"]["inputs"]["scheduler"], "beta57")
+        self.assertEqual(graph["1056"]["inputs"]["sampler_name"], template_flat_sampler)
+        self.assertEqual(graph["1056"]["inputs"]["scheduler"], template_flat_scheduler)
+
+    def test_absent_map_preserves_both_template_defaults(self):
+        graph = self._base_t2i()
+
+        for node_id in ("1056", "1059"):
+            self.assertEqual(
+                graph[node_id]["inputs"]["sampler_name"],
+                self.t2i_template[node_id]["inputs"]["sampler_name"],
+            )
+            self.assertEqual(
+                graph[node_id]["inputs"]["scheduler"],
+                self.t2i_template[node_id]["inputs"]["scheduler"],
+            )
+
+
+class EditLoaderKindTests(unittest.TestCase):
+    """Edit picks its loader from the resolved file category, not the filename."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from app.services.workflow_router import load_workflow
+
+        cls.template = load_workflow("workflow_generate_edit.json")
+
+    def _patch(self, **kwargs):
+        from app.services.workflow_router import patch_edit_workflow
+
+        return patch_edit_workflow(
+            self.template,
+            prompt="change the dress to red velvet",
+            image1_filename="model_pose.png",
+            **kwargs,
+        )
+
+    def _assert_ctx_pruned(self, graph, ctx_node: str) -> None:
+        switch_inputs = graph["611:612"]["inputs"]
+        self.assertEqual(switch_inputs["ctx_01"], [ctx_node, 0])
+        self.assertFalse(
+            [key for key in switch_inputs if key.startswith("ctx_") and key != "ctx_01"],
+            f"losing contexts survived on 611:612: {switch_inputs}",
+        )
+
+    def test_loader_kind_checkpoint(self):
+        graph = self._patch(
+            loader_kind="checkpoint",
+            unet_name="Qwen-Rapid-AIO.safetensors",
+        )
+
+        self.assertEqual(
+            graph["611:587"]["inputs"]["ckpt_name"], "Qwen-Rapid-AIO.safetensors"
+        )
+        self.assertEqual(graph["611:612"]["class_type"], "Context Switch (rgthree)")
+        self._assert_ctx_pruned(graph, "611:615")
+        # The unselected loaders keep their template values (unreachable now).
+        self.assertEqual(
+            graph["611:593"]["inputs"]["unet_name"],
+            self.template["611:593"]["inputs"]["unet_name"],
+        )
+        self.assertEqual(
+            graph["611:610"]["inputs"]["unet_name"],
+            self.template["611:610"]["inputs"]["unet_name"],
+        )
+
+    def test_loader_kind_unet(self):
+        graph = self._patch(
+            loader_kind="unet",
+            unet_name="qwen_edit.safetensors",
+        )
+
+        self.assertEqual(
+            graph["611:593"]["inputs"]["unet_name"], "qwen_edit.safetensors"
+        )
+        self._assert_ctx_pruned(graph, "611:614")
+        self.assertEqual(
+            graph["611:587"]["inputs"]["ckpt_name"],
+            self.template["611:587"]["inputs"]["ckpt_name"],
+        )
+
+    def test_loader_kind_gguf(self):
+        graph = self._patch(
+            loader_kind="gguf",
+            unet_name="z-image-turbo-q8_0.gguf",
+        )
+
+        self.assertEqual(graph["611:610"]["class_type"], "UnetLoaderGGUF")
+        self.assertEqual(
+            graph["611:610"]["inputs"]["unet_name"], "z-image-turbo-q8_0.gguf"
+        )
+        self._assert_ctx_pruned(graph, "611:616")
+        self.assertEqual(
+            graph["611:587"]["inputs"]["ckpt_name"],
+            self.template["611:587"]["inputs"]["ckpt_name"],
+        )
+
+    def test_loader_kind_beats_the_aio_filename_heuristic(self):
+        """A ``diffusion_models`` file named *aio* is a UNET, not a checkpoint.
+
+        Today's bug: ``is_checkpoint=(not is_modular)`` was False for a
+        monolithic checkpoint stored in diffusion_models, so the filename
+        heuristic guessed from the "aio" substring and picked CheckpointLoader.
+        """
+        graph = self._patch(
+            loader_kind="unet",
+            unet_name="Qwen-Rapid-AIO-NSFW-v11.4.safetensors",
+        )
+
+        self.assertEqual(
+            graph["611:593"]["inputs"]["unet_name"],
+            "Qwen-Rapid-AIO-NSFW-v11.4.safetensors",
+        )
+        self.assertEqual(
+            graph["611:587"]["inputs"]["ckpt_name"],
+            self.template["611:587"]["inputs"]["ckpt_name"],
+        )
+        self._assert_ctx_pruned(graph, "611:614")
+
+    def test_loader_kind_beats_the_checkpoint_substring_heuristic(self):
+        """``loader_kind="gguf"`` wins even over a ``checkpoint`` in the name."""
+        graph = self._patch(
+            loader_kind="gguf",
+            unet_name="my_checkpoint_repackage.gguf",
+        )
+
+        self.assertEqual(
+            graph["611:610"]["inputs"]["unet_name"], "my_checkpoint_repackage.gguf"
+        )
+        self._assert_ctx_pruned(graph, "611:616")
+
+    def test_loader_kind_none_keeps_the_legacy_aio_heuristic(self):
+        graph = self._patch(unet_name="Qwen-Rapid-AIO-x")
+
+        self.assertEqual(graph["611:587"]["inputs"]["ckpt_name"], "Qwen-Rapid-AIO-x")
+        self._assert_ctx_pruned(graph, "611:615")
+
+    def test_loader_kind_none_keeps_the_legacy_gguf_heuristic(self):
+        graph = self._patch(unet_name="z-image-turbo-q8_0.gguf")
+
+        self.assertEqual(
+            graph["611:610"]["inputs"]["unet_name"], "z-image-turbo-q8_0.gguf"
+        )
+        self._assert_ctx_pruned(graph, "611:616")
+
+    def test_checkpoint_branch_honours_caller_clip_and_vae(self):
+        graph = self._patch(
+            loader_kind="checkpoint",
+            unet_name="Qwen-Rapid-AIO.safetensors",
+            clip_name="t5.safetensors",
+            vae_name="ae.safetensors",
+        )
+
+        self.assertEqual(graph["611:592"]["inputs"]["clip_name"], "t5.safetensors")
+        self.assertEqual(graph["611:591"]["inputs"]["vae_name"], "ae.safetensors")
+        self.assertEqual(graph["611:615"]["inputs"]["clip"], ["611:592", 0])
+        self.assertEqual(graph["611:615"]["inputs"]["vae"], ["611:591", 0])
+
+    def test_checkpoint_branch_repoints_vae_alone_when_only_vae_given(self):
+        """The two components repoint independently — a checkpoint often has its
+        own CLIP but needs an external VAE."""
+        graph = self._patch(
+            loader_kind="checkpoint",
+            unet_name="Qwen-Rapid-AIO.safetensors",
+            vae_name="ae.safetensors",
+        )
+
+        self.assertEqual(graph["611:615"]["inputs"]["vae"], ["611:591", 0])
+        self.assertEqual(
+            graph["611:615"]["inputs"]["clip"],
+            self.template["611:615"]["inputs"]["clip"],
+        )
+        self.assertEqual(graph["611:615"]["inputs"]["clip"], ["611:587", 1])
+
+    def test_clip_and_vae_are_not_repointed_on_the_unet_branch(self):
+        graph = self._patch(
+            loader_kind="unet",
+            unet_name="qwen_edit.safetensors",
+            clip_name="t5.safetensors",
+            vae_name="ae.safetensors",
+        )
+
+        self.assertEqual(
+            graph["611:615"]["inputs"]["clip"],
+            self.template["611:615"]["inputs"]["clip"],
+        )
+        self.assertEqual(
+            graph["611:615"]["inputs"]["vae"],
+            self.template["611:615"]["inputs"]["vae"],
+        )
+
+    def test_sampler_and_scheduler_reach_node_141(self):
+        graph = self._patch(
+            sampler_by_class={"ClownsharKSampler_Beta": "linear/euler"},
+            scheduler_by_class={"ClownsharKSampler_Beta": "beta57"},
+        )
+
+        self.assertEqual(graph["141"]["class_type"], "ClownsharKSampler_Beta")
+        self.assertEqual(graph["141"]["inputs"]["sampler_name"], "linear/euler")
+        self.assertEqual(graph["141"]["inputs"]["scheduler"], "beta57")
+
+    def test_flat_sampler_map_writes_nothing_to_the_clownshar_node(self):
+        """Structural proof the vocabulary barrier holds: a flat key is not in
+        node 141's class, so it is dropped rather than guessed at."""
+        graph = self._patch(
+            sampler_by_class={"KSamplerAdvanced": "euler"},
+            scheduler_by_class={"KSamplerAdvanced": "simple"},
+        )
+
+        self.assertEqual(
+            graph["141"]["inputs"]["sampler_name"],
+            self.template["141"]["inputs"]["sampler_name"],
+        )
+        self.assertEqual(graph["141"]["inputs"]["sampler_name"], "linear/euler")
+        self.assertEqual(graph["141"]["inputs"]["scheduler"], "beta57")
+
+    def test_edit_patch_is_performed_on_a_copy(self):
+        original = json.loads(json.dumps(self.template))
+        graph = self._patch(loader_kind="unet", unet_name="qwen_edit.safetensors")
+        self.assertIsNot(graph, self.template)
+        self.assertEqual(self.template, original)
 
 
 if __name__ == "__main__":
