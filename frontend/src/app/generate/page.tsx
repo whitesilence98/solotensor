@@ -18,7 +18,6 @@ import { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/Upscale
 import { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
 import {
   api,
-  uuid,
   type GalleryItem,
   type GalleryMetadata,
   type GeneratePayload,
@@ -33,6 +32,12 @@ import {
 } from "@/lib/api";
 import { loadSettings } from "@/lib/settings";
 import { STORAGE_KEYS } from "@/lib/storage";
+import { stableMediaRef, needsMediaRefresh, fileKeyFromRef } from "@/lib/mediaRenewal";
+import { isAttemptCurrent, type RunAttempt, type RunScopeState } from "@/lib/runGuard";
+import {
+  classifyThrown,
+  type ActionableError,
+} from "@/lib/actionableError";
 import {
   COMFY_SAMPLER_KEYS,
   COMFY_SCHEDULER_KEYS,
@@ -419,7 +424,7 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
       format: typeof saved.format === "string" && FORMAT_KEYS.includes(saved.format) ? saved.format : defaults.format,
       customWidth: typeof saved.customWidth === "string" ? saved.customWidth : defaults.customWidth,
       customHeight: typeof saved.customHeight === "string" ? saved.customHeight : defaults.customHeight,
-      referenceImage: typeof saved.referenceImage === "string" ? saved.referenceImage : defaults.referenceImage,
+      referenceImage: stableMediaRef(typeof saved.referenceImage === "string" ? saved.referenceImage : defaults.referenceImage),
       selection:
         defaults.selection?.modelId === BUNDLED_LTX_MODEL.modelId
           ? (saved.modelId && saved.versionId && saved.fileId && saved.modelId === BUNDLED_LTX_MODEL.modelId
@@ -443,7 +448,7 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
       enableDetailer: typeof saved.enableDetailer === "boolean" ? saved.enableDetailer : defaults.enableDetailer,
       upscaleConfig: saved.upscaleConfig ? { ...defaults.upscaleConfig, ...saved.upscaleConfig } : defaults.upscaleConfig,
       detailerConfig: saved.detailerConfig ? { ...defaults.detailerConfig, ...saved.detailerConfig } : defaults.detailerConfig,
-      maskImage: typeof saved.maskImage === "string" ? saved.maskImage : defaults.maskImage,
+      maskImage: stableMediaRef(typeof saved.maskImage === "string" ? saved.maskImage : defaults.maskImage),
       maskBlur: typeof saved.maskBlur === "number" ? saved.maskBlur : defaults.maskBlur,
       inpaintFill: ["original", "latent_noise", "latent_zero"].includes(saved.inpaintFill) ? saved.inpaintFill : defaults.inpaintFill,
       motionBucketId: typeof saved.motionBucketId === "number" ? saved.motionBucketId : defaults.motionBucketId,
@@ -459,9 +464,9 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
           : defaults.videoDurationSeconds,
       stage2Upscale: typeof saved.stage2Upscale === "boolean" ? saved.stage2Upscale : defaults.stage2Upscale,
       audioMode: saved.audioMode === "silent" || saved.audioMode === "voice_clone" ? saved.audioMode : defaults.audioMode,
-      referenceAudio: typeof saved.referenceAudio === "string" ? saved.referenceAudio : defaults.referenceAudio,
+      referenceAudio: stableMediaRef(typeof saved.referenceAudio === "string" ? saved.referenceAudio : defaults.referenceAudio),
       extractVoice: typeof saved.extractVoice === "boolean" ? saved.extractVoice : defaults.extractVoice,
-      lastFrameImage: typeof saved.lastFrameImage === "string" ? saved.lastFrameImage : defaults.lastFrameImage,
+      lastFrameImage: stableMediaRef(typeof saved.lastFrameImage === "string" ? saved.lastFrameImage : defaults.lastFrameImage),
       resizeMode: saved.resizeMode === "preset" || saved.resizeMode === "source" ? saved.resizeMode : defaults.resizeMode,
       videoMegapixels:
         typeof saved.videoMegapixels === "number" && saved.videoMegapixels > 0 && saved.videoMegapixels <= 8
@@ -498,8 +503,8 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
 }
 
 export default function StudioPage() {
-  const { user } = useAuth();
-  const { health } = useEngineStatus();
+  const { user, openAuthModal } = useAuth();
+  const { health, unreachable: engineUnreachable, retry: retryEngine } = useEngineStatus();
   const engineBlockReason = generationBlockReason(health);
   const [mode, setMode] = useState<GenerationMode>("text-to-image");
   const [activeTensorMode, setActiveTensorMode] = useState<TensorMode>("Text2Img");
@@ -735,10 +740,72 @@ export default function StudioPage() {
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Extra presentation for a failed request: status-derived guidance plus one
+  // safe action (sign in, recheck engine). Plain validation errors leave this
+  // null and keep the existing inline message.
+  const [errorInfo, setErrorInfo] = useState<ActionableError | null>(null);
   const [gallery, setGallery] = useState<GalleryItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const clientIdRef = useRef<string>("");
+  const handshakeAbortRef = useRef<AbortController | null>(null);
+  // Run lifetime: a generate belongs to the viewer who started it and to one
+  // attempt counter. Every callback, the pre-queue check, and the post-await
+  // writes consult this, so an account switch cannot apply stale progress,
+  // refresh the next viewer's gallery, or surface another account's result.
+  const runScopeRef = useRef<RunScopeState>({
+    mounted: true,
+    viewerId: user?.id ?? null,
+    latestAttempt: 0,
+  });
+  runScopeRef.current.viewerId = user?.id ?? null;
+
+  // Errors stay inline; `reportFailure` only adds status-derived guidance and a
+  // single safe action. Plain validation messages clear any prior guidance so a
+  // stale 401/403 hint can never linger on an unrelated message.
+  const engineOffline = engineUnreachable || health?.comfy === "down";
+  const reportError = useCallback((next: string | null) => {
+    setError(next);
+    setErrorInfo(null);
+  }, []);
+  const reportFailure = useCallback(
+    (cause: unknown, context?: "reference" | "tool") => {
+      const actionable = classifyThrown(cause, { engineOffline, context });
+      setError(actionable.message);
+      setErrorInfo(actionable.action ? actionable : null);
+    },
+    [engineOffline],
+  );
+  const handleErrorAction = useCallback(() => {
+    if (!errorInfo?.action) return;
+    if (errorInfo.action === "sign-in") {
+      openAuthModal("Your session has expired. Sign in to continue.");
+      return;
+    }
+    if (errorInfo.action === "recheck-engine") {
+      // Recheck health only; never auto-resubmit a job that may have been paid.
+      retryEngine();
+      return;
+    }
+    if (errorInfo.action === "reselect") {
+      setError(null);
+      setErrorInfo(null);
+      return;
+    }
+    // permission guidance is informational; nothing to invoke.
+  }, [errorInfo, openAuthModal, retryEngine]);
+  const errorActionLabel =
+    errorInfo?.action === "sign-in"
+      ? "Sign in"
+      : errorInfo?.action === "recheck-engine"
+        ? "Recheck engine"
+        : errorInfo?.action === "reselect"
+          ? "Dismiss"
+          : null;
+  // Coarse, polite progress announcement: one update per 10% bucket instead of
+  // announcing every socket frame. Unchanged strings are not re-announced.
+  const announcedProgress = busy
+    ? `Generating, ${Math.min(100, Math.max(0, Math.floor(progress / 10) * 10))} percent`
+    : "";
 
   // Find currently selected Basic Model for the active tab
   const selectedModel = useMemo(() => {
@@ -839,6 +906,79 @@ export default function StudioPage() {
     setHydrated(true);
   }, []);
 
+  // Stored references keep only the stable /files/ path (a signed capability is
+  // never persisted). A private reference therefore needs one authenticated
+  // re-resolve so its preview still loads; public ones stay as-is, and any
+  // failure leaves the stable path, which the backend can still use at submit.
+  // Keep one bounded attempt per stored value for the current viewer; a
+  // re-render or refresh failure must not turn this into a request loop, and a
+  // capability minted for one viewer is never reused by another.
+  const refreshedRefs = useRef<Set<string>>(new Set());
+  const resolveAbortRef = useRef<AbortController | null>(null);
+  const activeStoredTab = tabStates[activeTensorMode];
+  useEffect(() => {
+    // Only the authenticated owner can re-resolve a private reference; an
+    // anonymous page would just get 401s, so leave the stable path alone.
+    if (!hydrated || !user?.id) return;
+    const controller = new AbortController();
+    resolveAbortRef.current?.abort();
+    resolveAbortRef.current = controller;
+    const viewerAtStart = user.id;
+    const refs = [
+      activeStoredTab?.referenceImage,
+      activeStoredTab?.maskImage,
+      activeStoredTab?.referenceAudio,
+      activeStoredTab?.lastFrameImage,
+      activeTensorMode === "Edit" ? referenceImage : null,
+    ];
+    for (const ref of refs) {
+      if (!ref || !needsMediaRefresh(ref) || refreshedRefs.current.has(ref)) continue;
+      const fileKey = fileKeyFromRef(ref);
+      if (!fileKey) continue;
+      refreshedRefs.current.add(ref);
+      void api
+        .refreshAssetMedia(fileKey, controller.signal)
+        .then((fresh) => {
+          if (controller.signal.aborted || !runScopeRef.current.mounted) return;
+          if (runScopeRef.current.viewerId !== viewerAtStart) return;
+          // The tab write path de-signs before persisting, so keeping the fresh
+          // (unexpired) URL in React state never leaks a capability to disk.
+          setTabStates((prev) => {
+            const next = { ...prev };
+            for (const mode of Object.keys(next) as TensorMode[]) {
+              const tab = next[mode];
+              const patch: Partial<TabState> = {};
+              if (tab.referenceImage === ref) patch.referenceImage = fresh.url;
+              if (tab.maskImage === ref) patch.maskImage = fresh.url;
+              if (tab.referenceAudio === ref) patch.referenceAudio = fresh.url;
+              if (tab.lastFrameImage === ref) patch.lastFrameImage = fresh.url;
+              if (Object.keys(patch).length > 0) next[mode] = { ...tab, ...patch };
+            }
+            return next;
+          });
+          setReferenceImage((current) => (current === ref ? fresh.url : current));
+        })
+        .catch((cause: unknown) => {
+          if (controller.signal.aborted || !runScopeRef.current.mounted) return;
+          if (runScopeRef.current.viewerId !== viewerAtStart) return;
+          // Explicit, non-blocking: the stable path is still submittable, but
+          // the owner should know the preview itself could not be refreshed.
+          const detail = cause instanceof Error ? cause.message : "";
+          setError(
+            `A saved reference could not be refreshed${detail ? `: ${detail}` : ""}. Re-select it before generating if the preview looks broken.`,
+          );
+        });
+    }
+    return () => controller.abort();
+  }, [hydrated, user?.id, activeTensorMode, activeStoredTab, referenceImage]);
+
+  // A viewer switch invalidates every capability minted for the old session.
+  useEffect(() => {
+    refreshedRefs.current.clear();
+    resolveAbortRef.current?.abort();
+    resolveAbortRef.current = null;
+  }, [user?.id]);
+
   const resetStudioDefaults = useCallback(() => {
     const settings = loadSettings();
     const defaultState = createDefaultTabState(
@@ -871,6 +1011,13 @@ export default function StudioPage() {
         getTabStorageKey(activeTensorMode),
         JSON.stringify({
           ...currentState,
+          // Persist stable media paths only: a signed capability is a
+          // short-lived credential and must never be written to disk. The
+          // generation endpoint resolves reference bytes by path.
+          referenceImage: stableMediaRef(currentState.referenceImage),
+          maskImage: stableMediaRef(currentState.maskImage),
+          referenceAudio: stableMediaRef(currentState.referenceAudio),
+          lastFrameImage: stableMediaRef(currentState.lastFrameImage),
           modelId: selectedModel?.model_id ?? currentState.selection?.modelId ?? "",
           versionId: selectedModel?.version_id ?? currentState.selection?.versionId ?? "",
           fileId: selectedModel?.file_id ?? currentState.selection?.fileId ?? "",
@@ -941,10 +1088,32 @@ export default function StudioPage() {
   }, [refreshGallery, user?.id]);
 
   useEffect(() => {
+    runScopeRef.current.mounted = true;
     return () => {
+      runScopeRef.current.mounted = false;
+      runScopeRef.current.latestAttempt += 1;
+      // Cancel a handshake that has not queued yet, then drop any live relay.
+      handshakeAbortRef.current?.abort();
+      handshakeAbortRef.current = null;
       wsRef.current?.close();
+      wsRef.current = null;
     };
   }, []);
+
+  // A viewer switch invalidates the whole run: the ticket was minted for the
+  // previous session, a late generate response belongs to that account, and a
+  // stale completion must not refresh the new viewer's gallery.
+  useEffect(() => {
+    runScopeRef.current.latestAttempt += 1;
+    handshakeAbortRef.current?.abort();
+    handshakeAbortRef.current = null;
+    wsRef.current?.close();
+    wsRef.current = null;
+    setBusy(false);
+    setProgress(0);
+    setProgressLabel("");
+    setError(null);
+  }, [user?.id]);
 
   const outputDimensions = useMemo(() => {
     const isVideo = activeTensorMode === "Video";
@@ -1009,12 +1178,12 @@ export default function StudioPage() {
 
   const handleGenerate = useCallback(async () => {
     if (engineBlockReason) {
-      setError(engineBlockReason);
+      reportError(engineBlockReason);
       return;
     }
     if (!activeTab.prompt.trim() || busy) return;
     if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
-      setError(`Please upload a reference image for ${activeTensorMode} generation.`);
+      reportError(`Please upload a reference image for ${activeTensorMode} generation.`);
       return;
     }
     if (
@@ -1023,13 +1192,13 @@ export default function StudioPage() {
       !activeTab.referenceImage &&
       !activeTab.lastFrameImage
     ) {
-      setError(
+      reportError(
         "Image-to-Video needs a first or last frame. Drop one in, or switch the mode pill to Text-to-Video."
       );
       return;
     }
     if (activeTensorMode === "Video" && activeTab.audioMode === "voice_clone" && !activeTab.referenceAudio) {
-      setError(
+      reportError(
         "Voice clone needs a reference audio file. Upload one, or switch the audio track to Model-generated audio."
       );
       return;
@@ -1073,7 +1242,7 @@ export default function StudioPage() {
     }
 
     if (!targetModel) {
-      setError("Please ensure at least one model is available in the gallery before generating.");
+      reportError("Please ensure at least one model is available in the gallery before generating.");
       return;
     }
 
@@ -1122,29 +1291,68 @@ export default function StudioPage() {
         parsedSeed < 0 ||
         parsedSeed > 2 ** 32 - 1)
     ) {
-      setError("Seed must be an integer from 0 to 4,294,967,295.");
+      reportError("Seed must be an integer from 0 to 4,294,967,295.");
       return;
     }
 
     setBusy(true);
-    setError(null);
+    reportError(null);
     setProgress(0);
     setProgressLabel("Queuing workflow…");
 
-    clientIdRef.current = uuid();
-    const clientId = clientIdRef.current;
-
-    const ws = api.openProgressSocket(clientId, (event: ProgressEvent) => {
-      if (event.type === "progress" && event.max) {
-        const pct = Math.round(((event.value ?? 0) / event.max) * 100);
-        setProgress(pct);
-        setProgressLabel(`Rendering… node ${event.node ?? ""} ${pct}%`);
-      } else if (event.type === "executing") {
-        setProgressLabel(`Executing node ${event.node ?? ""}`);
-      } else if (event.type === "error") {
-        setError(event.message ?? "Generation failed");
+    const attempt: RunAttempt = {
+      viewerAtStart: runScopeRef.current.viewerId,
+      attempt: ++runScopeRef.current.latestAttempt,
+    };
+    const stillCurrent = () =>
+      isAttemptCurrent(attempt, runScopeRef.current);
+    handshakeAbortRef.current?.abort();
+    const handshake = new AbortController();
+    handshakeAbortRef.current = handshake;
+    let ws: WebSocket;
+    let clientId: string;
+    try {
+      ({ clientId, socket: ws } = await api.openProgressSocket(
+        (event: ProgressEvent) => {
+          if (!stillCurrent()) return;
+          if (event.type === "progress" && event.max) {
+            const pct = Math.round(((event.value ?? 0) / event.max) * 100);
+            setProgress(pct);
+            setProgressLabel(`Rendering… node ${event.node ?? ""} ${pct}%`);
+          } else if (event.type === "executing") {
+            setProgressLabel(`Executing node ${event.node ?? ""}`);
+          } else if (event.type === "error") {
+            setError(event.message ?? "Generation failed");
+            setErrorInfo(null);
+          }
+        },
+        { signal: handshake.signal },
+      ));
+    } catch (err) {
+      // Cancelled by unmount/account switch: never queue, and leave no busy
+      // shell behind if the page itself is still alive.
+      if (handshake.signal.aborted) {
+        if (runScopeRef.current.mounted) setBusy(false);
+        return;
       }
-    });
+      if (!stillCurrent()) return;
+      const actionable = classifyThrown(err, { engineOffline });
+      setError(actionable.message);
+      setErrorInfo(actionable.action ? actionable : null);
+      setBusy(false);
+      return;
+    } finally {
+      if (handshakeAbortRef.current === handshake) {
+        handshakeAbortRef.current = null;
+      }
+    }
+    // The relay opened after the page went away or the viewer changed: close
+    // it and never queue work for a stale session. Always close the socket.
+    if (!stillCurrent()) {
+      ws.close();
+      if (runScopeRef.current.mounted) setBusy(false);
+      return;
+    }
     wsRef.current = ws;
 
     // Denoise routing: 1.0 in Text2Img, Video, Prime; configurable in Img2Img and Edit
@@ -1277,17 +1485,25 @@ export default function StudioPage() {
       };
 
       const result: GenerationResult = await api.generate(payload);
+      // The response may land after an account switch (the socket was already
+      // closed, but the HTTP request was not): never apply it to the new
+      // viewer, and never refresh their gallery with it.
+      if (!stillCurrent()) return;
       if (result.status === "completed") {
         setProgress(100);
         setProgressLabel("Done");
         void refreshGallery();
       } else {
         setError(result.error ?? `Generation ${result.status}`);
+        setErrorInfo(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      if (!stillCurrent()) return;
+      const actionable = classifyThrown(err, { engineOffline });
+      setError(actionable.message);
+      setErrorInfo(actionable.action ? actionable : null);
     } finally {
-      setBusy(false);
+      if (stillCurrent()) setBusy(false);
       setTimeout(() => ws.close(), 1500);
     }
   }, [
@@ -1775,6 +1991,38 @@ export default function StudioPage() {
           selectedModelCover={selectedModel?.cover_url ?? null}
           />
         </div>
+
+        {/* Polite, throttled progress announcement for screen readers. */}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcedProgress}
+        </p>
+
+        {/* Actionable error banner. The plain message already renders inside
+            CanvasPreview; this adds guidance and one safe action without a new
+            drawer. role="alert" announces the guidance once when it appears. */}
+        {errorInfo && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mx-3 mt-2 flex items-start gap-2.5 rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 text-[11px] leading-5 text-[var(--ink-soft)] sm:mx-6"
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--danger)]" />
+            <div className="min-w-0 flex-1">
+              {/* CanvasPreview already shows the raw message; this strip adds
+                  the status-derived guidance and the one safe action. */}
+              {errorInfo.guidance && <p className="text-[var(--ink)]">{errorInfo.guidance}</p>}
+            </div>
+            {errorActionLabel && (
+              <button
+                type="button"
+                onClick={handleErrorAction}
+                className="shrink-0 rounded-md border border-[var(--line-strong)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--ink)] transition hover:bg-[var(--surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                {errorActionLabel}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* LoRA Architecture Compatibility Notice */}
         {loraPruneNotice && (

@@ -1,6 +1,7 @@
 """Comprehensive tests for SoloTensor authentication, user identity, credits, and API keys."""
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -8,8 +9,75 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.db import Database, get_db
-from app.main import app
+from app.db import Database, get_db, set_db
+from app.services.app_settings import AppSettingsService
+from app.services.storage import StorageService
+
+
+# Isolation defaults for every ``Settings`` built in this module.
+# ``_env_file=None`` stops dotenv loading, but shell env is still inherited, so
+# external boundaries are switched off explicitly: no Postgres, cloud/object
+# storage, SMTP/Resend, Redis, or outbound proxy. Tests then never depend on
+# the caller's shell and can never reach a real service.
+_ISOLATED_SETTINGS_DEFAULTS: dict[str, object] = {
+    "_env_file": None,
+    "DATABASE_URL": None,
+    "AUTH_PROVIDER": "local",
+    "S3_ENABLED": False,
+    "S3_BUCKET": None,
+    "S3_ACCESS_KEY_ID": None,
+    "SMTP_HOST": None,
+    "RESEND_API_KEY": None,
+    "REDIS_URL": None,
+    "PROXY_URL": "",
+}
+
+
+def _test_settings(**overrides: object) -> Settings:
+    values = {**_ISOLATED_SETTINGS_DEFAULTS, **overrides}
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Import-time isolation for ``app.main``.
+#
+# ``app.main`` builds its module-level singletons at import time: it reads the
+# process settings (which would otherwise load ``backend/.env`` and any shell
+# env), constructs the default Database / StorageService / ModelService against
+# the real working tree, and calls ``AppSettingsService.load()`` against
+# ``backend/app_settings.json``. Here -- before ``app.main`` is imported -- the
+# settings factory is pointed at a throwaway temp tree with env-file loading
+# disabled, and the app-settings loader reads a temp path that cannot exist.
+#
+# This only has an effect when this module is the first to import ``app.main``
+# (standalone module run). Under full-suite discovery an earlier module has
+# already imported it and Python returns the cached module unchanged, so this
+# is a guard, not a substitute for per-test isolation.
+# ---------------------------------------------------------------------------
+_IMPORT_ISOLATION_DIR = tempfile.TemporaryDirectory(prefix="solotensor-auth-import-")
+_IMPORT_SETTINGS = _test_settings(
+    DB_PATH=str(Path(_IMPORT_ISOLATION_DIR.name) / "import_isolation.db"),
+    STORAGE_DIR=str(Path(_IMPORT_ISOLATION_DIR.name) / "generated"),
+    MODELS_DIR=str(Path(_IMPORT_ISOLATION_DIR.name) / "models"),
+    TOOLS_DIR=str(Path(_IMPORT_ISOLATION_DIR.name) / "tools"),
+)
+
+# A real service bound to a temp path (no file exists there yet) instead of a
+# mock, so nothing mock-shaped is left on ``app.main`` for later modules.
+_IMPORT_APP_SETTINGS = AppSettingsService(
+    _IMPORT_SETTINGS, path=Path(_IMPORT_ISOLATION_DIR.name) / "app_settings.json"
+)
+
+with patch("app.config.get_settings", lambda: _IMPORT_SETTINGS), patch(
+    "app.db.get_settings", lambda: _IMPORT_SETTINGS
+), patch("app.services.storage.get_settings", lambda: _IMPORT_SETTINGS), patch(
+    "app.services.models.get_settings", lambda: _IMPORT_SETTINGS
+), patch(
+    "app.services.app_settings.get_app_settings_service",
+    lambda *a, **k: _IMPORT_APP_SETTINGS,
+):
+    from app.main import app
+
 from app.schemas import UserResponse
 from app.services.auth_service import (
     LocalAuthProvider,
@@ -27,14 +95,30 @@ from app.services.mailer_service import (
     render_obsidian_template,
     set_mailer_service,
 )
+from app.services.storage import get_storage
 
 
 class DatabaseTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = f"{self.temp_dir.name}/test_solotensor.db"
-        self.db = Database(db_path=self.db_path)
+        self.settings = _test_settings(DB_PATH=self.db_path)
+        self.db = Database(db_path=self.db_path, settings=self.settings)
         self.db.init_db()
+
+    def test_database_resolves_to_temp_path(self) -> None:
+        # Constructor-relative paths resolve against backend/, so assert the
+        # explicit test path really wins and never points into the repo.
+        temp_root = Path(self.temp_dir.name).resolve()
+        resolved_db = Path(self.db.db_path).resolve()
+        self.assertTrue(resolved_db.is_relative_to(temp_root), resolved_db)
+        self.assertEqual(resolved_db.name, "test_solotensor.db")
+        # External boundaries stay disabled even if the caller's shell exports
+        # DATABASE_URL/S3/SMTP/etc.
+        self.assertIsNone(self.settings.DATABASE_URL)
+        self.assertIsNone(self.settings.effective_database_url)
+        self.assertFalse(self.db.is_postgres)
+        self.assertFalse(self.settings.S3_ENABLED)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -143,7 +227,7 @@ class DatabaseTests(unittest.TestCase):
 class LocalAuthProviderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.settings = Settings(
+        self.settings = _test_settings(
             DB_PATH=f"{self.temp_dir.name}/auth_test.db",
             JWT_SECRET="test-jwt-secret-12345",
         )
@@ -254,7 +338,7 @@ class LocalAuthProviderTests(unittest.TestCase):
 class CreditServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.settings = Settings(DB_PATH=f"{self.temp_dir.name}/credits_test.db")
+        self.settings = _test_settings(DB_PATH=f"{self.temp_dir.name}/credits_test.db")
         self.db = Database(db_path=self.settings.DB_PATH, settings=self.settings)
         self.db.init_db()
         self.service = CreditService(db=self.db, settings=self.settings)
@@ -332,7 +416,7 @@ class MailerServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SOLO STUDIO", html)
 
     async def test_mailer_service_dispatch(self) -> None:
-        mailer = MailerService(Settings())
+        mailer = MailerService(_test_settings())
         success = await mailer.send_verification_email("user@test.com", "artist", "tok123", "654321")
         self.assertTrue(success)
         success_reset = await mailer.send_password_reset_email("user@test.com", "artist", "tok123", "654321")
@@ -342,8 +426,11 @@ class MailerServiceTests(unittest.IsolatedAsyncioTestCase):
 class AuthEndpointsAPITests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.settings = Settings(
+        self.settings = _test_settings(
             DB_PATH=f"{self.temp_dir.name}/api_test.db",
+            STORAGE_DIR=f"{self.temp_dir.name}/generated",
+            MODELS_DIR=f"{self.temp_dir.name}/models",
+            TOOLS_DIR=f"{self.temp_dir.name}/tools",
             JWT_SECRET="api-test-jwt-secret-xyz",
         )
         self.db = Database(db_path=self.settings.DB_PATH, settings=self.settings)
@@ -351,12 +438,28 @@ class AuthEndpointsAPITests(unittest.TestCase):
         self.credits = CreditService(db=self.db, settings=self.settings)
         self.provider = LocalAuthProvider(db=self.db, settings=self.settings, credits=self.credits)
         self.mailer = MailerService(settings=self.settings)
+        self.storage = StorageService(settings=self.settings)
+        self.storage.ensure_root()
+
+        # Rebind the process-wide ``get_db()`` singleton so any service that
+        # bypasses FastAPI dependency injection (e.g. ``CreditService`` built
+        # from a bare ``get_db()``) still hits this test's temp DB. Restored
+        # through ``addCleanup`` so a failing assertion cannot leak state.
+        previous_db = get_db()
+        import app.main as main_module
+
+        previous_storage = main_module.storage
+        set_db(self.db)
+        main_module.storage = self.storage
+        self.addCleanup(set_db, previous_db)
+        self.addCleanup(setattr, main_module, "storage", previous_storage)
 
         set_auth_provider(self.provider)
         set_credit_service(self.credits)
         set_mailer_service(self.mailer)
 
         app.dependency_overrides[get_db] = lambda: self.db
+        app.dependency_overrides[get_storage] = lambda: self.storage
 
         self.client = TestClient(app)
 
@@ -364,7 +467,10 @@ class AuthEndpointsAPITests(unittest.TestCase):
         set_auth_provider(None)
         set_credit_service(None)
         set_mailer_service(None)
-        app.dependency_overrides.clear()
+        # Pop only the overrides this suite installed so concurrent fixtures
+        # (or later modules) never inherit or lose state across test order.
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_storage, None)
         self.temp_dir.cleanup()
 
     def test_register_login_flow(self) -> None:
@@ -757,6 +863,19 @@ class AuthEndpointsAPITests(unittest.TestCase):
         self.assertIn("avatar_url", res.json())
         avatar_url = res.json()["avatar_url"]
         self.assertIn("/files/", avatar_url)
+
+        # The avatar must land under this test's temp storage root, never the
+        # repository working tree. ``upload_asset`` writes
+        # ``<user_id>/avatars/<random>.png`` beneath ``STORAGE_DIR``.
+        storage_root = Path(self.settings.STORAGE_DIR).resolve()
+        user_id = reg.json()["user"]["id"]
+        written = list((storage_root / user_id / "avatars").glob("*.png"))
+        self.assertTrue(written, f"No avatar written under temp storage root {storage_root}")
+        for path in written:
+            self.assertTrue(
+                path.resolve().is_relative_to(storage_root),
+                f"Avatar escaped temp storage root: {path}",
+            )
 
         # Verify /api/auth/me reflects updated avatar_url
         me_res = self.client.get("/api/auth/me", headers=headers)

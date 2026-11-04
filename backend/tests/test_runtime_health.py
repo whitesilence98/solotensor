@@ -157,6 +157,236 @@ class RequestCorrelationTests(unittest.TestCase):
         finally:
             request_id.reset(token)
 
+    def test_access_log_filter_redacts_capability_and_ticket_values(self):
+        from app.services.runtime_health import (
+            SecretQueryFilter,
+            configure_access_log_redaction,
+            redact_sensitive_query,
+        )
+
+        logger = logging.getLogger("uvicorn.access")
+
+        def _drop_secret_filters() -> None:
+            for item in list(logger.filters):
+                if isinstance(item, SecretQueryFilter):
+                    logger.filters.remove(item)
+
+        self.addCleanup(_drop_secret_filters)
+        configure_access_log_redaction()
+        configure_access_log_redaction()
+        self.assertEqual(
+            sum(isinstance(item, SecretQueryFilter) for item in logger.filters), 1
+        )
+
+        record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=(
+                "127.0.0.1:5555",
+                "GET",
+                "/files/owner/p1/private.png?cap=secret-token&size=2",
+                "1.1",
+                200,
+            ),
+            exc_info=None,
+        )
+        secret_filter = next(
+            item for item in logger.filters if isinstance(item, SecretQueryFilter)
+        )
+        self.assertTrue(secret_filter.filter(record))
+        rendered = record.getMessage()
+        self.assertIn("/files/owner/p1/private.png?cap=[redacted]&size=2", rendered)
+        self.assertIn("200", rendered)
+        self.assertNotIn("secret-token", rendered)
+
+        ticket = redact_sensitive_query(
+            'GET /api/v1/ws/progress?ticket=abc123&x=1 HTTP/1.1" 101'
+        )
+        self.assertEqual(
+            ticket, 'GET /api/v1/ws/progress?ticket=[redacted]&x=1 HTTP/1.1" 101'
+        )
+        # Non-credential query values are untouched.
+        self.assertEqual(
+            redact_sensitive_query("GET /api/v1/gallery/me?limit=20 HTTP/1.1"),
+            "GET /api/v1/gallery/me?limit=20 HTTP/1.1",
+        )
+
+    def test_real_uvicorn_access_formatter_still_formats_redacted_record(self):
+        """The real uvicorn formatter must keep working after redaction.
+
+        ``AccessFormatter.formatMessage`` unpacks ``record.args``; a filter that
+        cleared them would raise and lose the log line. The filtered record must
+        therefore still format, with the secret gone and path/status intact.
+        """
+        from uvicorn.logging import AccessFormatter
+
+        from app.services.runtime_health import SecretQueryFilter
+
+        record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=(
+                "127.0.0.1:5555",
+                "GET",
+                "/files/owner/p1/private.png?cap=secret-token&size=2",
+                "1.1",
+                200,
+            ),
+            exc_info=None,
+        )
+        self.assertTrue(SecretQueryFilter().filter(record))
+        self.assertIsInstance(record.args, tuple)
+        self.assertEqual(len(record.args), 5)
+        self.assertNotIn("secret-token", record.args[2])
+
+        formatter = AccessFormatter(fmt="%(client_addr)s - %(request_line)s %(status_code)s")
+        output = formatter.format(record)
+        self.assertNotIn("secret-token", output)
+        self.assertIn("/files/owner/p1/private.png?cap=[redacted]&size=2", output)
+        self.assertIn("GET /files/owner/p1/private.png", output)
+        self.assertIn("200 OK", output)
+
+        ticket_record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=("127.0.0.1:5555", "GET", "/api/v1/ws/progress?ticket=abc123", "1.1", 101),
+            exc_info=None,
+        )
+        self.assertTrue(SecretQueryFilter().filter(ticket_record))
+        ticket_output = formatter.format(ticket_record)
+        self.assertNotIn("abc123", ticket_output)
+        self.assertIn("ticket=[redacted]", ticket_output)
+        self.assertIn("101", ticket_output)
+
+    def test_websocket_handshake_ticket_is_redacted_on_uvicorn_error(self):
+        """uvicorn logs WS handshakes from ``uvicorn.error``, not access.
+
+        The record shape there is ``(client, path)`` (or a 3-tuple with status),
+        so the rendered-message fallback must redact it once the filter is
+        attached to that logger too.
+        """
+        from app.services.runtime_health import (
+            SecretQueryFilter,
+            configure_access_log_redaction,
+        )
+
+        error_logger = logging.getLogger("uvicorn.error")
+        access_logger = logging.getLogger("uvicorn.access")
+
+        def _drop_secret_filters() -> None:
+            for logger in (error_logger, access_logger):
+                for item in list(logger.filters):
+                    if isinstance(item, SecretQueryFilter):
+                        logger.filters.remove(item)
+
+        self.addCleanup(_drop_secret_filters)
+        configure_access_log_redaction()
+        configure_access_log_redaction()
+        for logger in (access_logger, error_logger):
+            self.assertEqual(
+                sum(isinstance(item, SecretQueryFilter) for item in logger.filters),
+                1,
+                logger.name,
+            )
+
+        record = logging.LogRecord(
+            name="uvicorn.error",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "WebSocket %s" [accepted]',
+            args=(
+                ("127.0.0.1", 55299),
+                "/api/v1/ws/progress?ticket=SECRETTICKETVALUE-abc123",
+            ),
+            exc_info=None,
+        )
+        secret_filter = next(
+            item for item in error_logger.filters if isinstance(item, SecretQueryFilter)
+        )
+        self.assertTrue(secret_filter.filter(record))
+        rendered = record.getMessage()
+        self.assertNotIn("SECRETTICKETVALUE", rendered)
+        self.assertIn("/api/v1/ws/progress?ticket=[redacted]", rendered)
+        self.assertIn("[accepted]", rendered)
+
+        # The 3-tuple form (status lines) is redacted the same way.
+        status_record = logging.LogRecord(
+            name="uvicorn.error",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "WebSocket %s" %d',
+            args=("127.0.0.1", "/api/v1/ws/progress?ticket=SECRETTICKETVALUE-abc123", 200),
+            exc_info=None,
+        )
+        self.assertTrue(secret_filter.filter(status_record))
+        status_rendered = status_record.getMessage()
+        self.assertNotIn("SECRETTICKETVALUE", status_rendered)
+        self.assertIn("ticket=[redacted]", status_rendered)
+        self.assertIn("200", status_rendered)
+
+        # The real uvicorn error formatter must still produce a line.
+        from uvicorn.logging import DefaultFormatter
+
+        formatter = DefaultFormatter(
+            fmt="%(levelprefix)s %(message)s", use_colors=False
+        )
+        output = formatter.format(record)
+        self.assertNotIn("SECRETTICKETVALUE", output)
+        self.assertIn("/api/v1/ws/progress?ticket=[redacted]", output)
+        self.assertIn("[accepted]", output)
+
+    def test_filter_falls_back_to_rendered_message_for_plain_records(self):
+        from app.services.runtime_health import SecretQueryFilter
+
+        record = logging.LogRecord(
+            name="some.other.logger",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg="fetch /files/a/b.png?cap=leak",
+            args=(),
+            exc_info=None,
+        )
+        self.assertTrue(SecretQueryFilter().filter(record))
+        self.assertNotIn("leak", record.getMessage())
+        self.assertIn("cap=[redacted]", record.getMessage())
+
+        filtered_record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=("127.0.0.1:5555", "GET", "/files/a/b.png?cap=leak", "1.1", 200),
+            exc_info=None,
+        )
+        self.assertTrue(SecretQueryFilter().filter(filtered_record))
+        self.assertNotIn("leak", filtered_record.args[2])
+        self.assertEqual(filtered_record.msg, '%s - "%s %s HTTP/%s" %d')
+
+        safe = logging.LogRecord(
+            name="some.other.logger",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg="fetch /api/v1/gallery/me?limit=20",
+            args=(),
+            exc_info=None,
+        )
+        self.assertTrue(SecretQueryFilter().filter(safe))
+        self.assertEqual(safe.msg, "fetch /api/v1/gallery/me?limit=20")
+
 
 class RuntimeRouteTests(unittest.TestCase):
     @classmethod

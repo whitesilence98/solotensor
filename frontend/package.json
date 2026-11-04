@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check": "node scripts/check-asset-card-counts.mjs && node scripts/check-deep-link.mjs && node scripts/check-related-posts.mjs && node scripts/check-engine-status.mjs && node scripts/check-home-sections.mjs && node scripts/check-library.mjs && node scripts/check-auth-credits.mjs && node scripts/check-auth-api.mjs"
+    "check": "node scripts/check-asset-card-counts.mjs && node scripts/check-deep-link.mjs && node scripts/check-related-posts.mjs && node scripts/check-engine-status.mjs && node scripts/check-home-sections.mjs && node scripts/check-library.mjs && node scripts/check-auth-credits.mjs && node scripts/check-auth-api.mjs && node scripts/check-progress-media-api.mjs && node scripts/check-progress-media-renewal.mjs && node scripts/check-use-asset-media-lifecycle.mjs && node scripts/check-run-lifetime.mjs && node scripts/check-actionable-error.mjs && node scripts/check-owned-a11y-media.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
@@ -16,6 +17,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

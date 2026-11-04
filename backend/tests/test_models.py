@@ -3,8 +3,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config import Settings
+from app.db import Database
 from app.schemas import (
     CreatorModelType,
     ModelCompatibility,
@@ -31,11 +33,55 @@ import app.services.model_storage as model_storage_module
 from app.services.models import ModelConflict, ModelError, ModelNotFound, ModelService
 
 
+def _temp_settings(temp_root: str, comfy_root: str) -> Settings:
+    """Settings pinned to throwaway dirs and never to an on-disk ``.env``.
+
+    ``_env_file=None`` disables dotenv loading but still inherits shell env,
+    so external boundaries are explicitly switched off as well: no Postgres,
+    no cloud/object storage, no SMTP/email delivery, no Redis, no outbound
+    proxy. This keeps the module isolated without depending on the caller's
+    shell environment.
+    """
+    return Settings(
+        _env_file=None,
+        MODELS_DIR=temp_root,
+        COMFY_MODEL_ROOT=comfy_root,
+        STORAGE_DIR=str(Path(temp_root) / "generated"),
+        TOOLS_DIR=str(Path(temp_root) / "tools"),
+        DB_PATH=str(Path(temp_root) / "solotensor.db"),
+        FILES_PUBLIC_BASE="http://test",
+        DATABASE_URL=None,
+        AUTH_PROVIDER="local",
+        S3_ENABLED=False,
+        S3_BUCKET=None,
+        S3_ACCESS_KEY_ID=None,
+        SMTP_HOST=None,
+        RESEND_API_KEY=None,
+        REDIS_URL=None,
+        PROXY_URL="",
+    )
+
+
+def _isolate_db(test_case: unittest.TestCase, settings: Settings) -> Database:
+    """Point ``ModelService``'s ``get_db`` boundary at a temp SQLite file."""
+    db = Database(db_path=settings.DB_PATH, settings=settings)
+    db.init_db()
+    patcher = patch("app.services.models.get_db", return_value=db)
+    patcher.start()
+    test_case.addCleanup(patcher.stop)
+    return db
+
+
 class ModelServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.comfy = tempfile.TemporaryDirectory()
-        self.settings = Settings(MODELS_DIR=self.temp.name, COMFY_MODEL_ROOT=self.comfy.name, FILES_PUBLIC_BASE="http://test")
+        self.settings = _temp_settings(self.temp.name, self.comfy.name)
+        # ``ModelService`` persists definitions to JSON *and* mirrors them into
+        # the process-wide ``get_db()`` SQLite handle. Patching that boundary
+        # keeps those upserts inside this test's temp DB instead of the repo's
+        # live ``solotensor.db``.
+        self.db = _isolate_db(self, self.settings)
         self.service = ModelService(self.settings)
         self.model = self.service.create(ModelCreateRequest(title="Demo", tags=["style"]))
         self.version = self.model.versions[0]
@@ -43,6 +89,30 @@ class ModelServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
         self.comfy.cleanup()
+
+    def test_service_paths_are_isolated_to_temp(self) -> None:
+        # Guard against a future default-dir fallback leaking into the repo.
+        # Use ``samefile``-style comparison: Windows temp dirs resolve to their
+        # 8.3 short-form alias, which is a different string but same dir.
+        root = Path(self.settings.MODELS_DIR).resolve()
+        self.assertTrue(
+            root.samefile(Path(self.temp.name)), f"MODELS_DIR {root} not temp {self.temp.name}"
+        )
+        self.assertEqual(self.service.root, root)
+        self.assertTrue(
+            Path(self.settings.DB_PATH).resolve().parent.samefile(Path(self.temp.name))
+        )
+        model_json = Path(self.temp.name) / "definitions" / f"{self.model.model_id}.json"
+        self.assertTrue(model_json.is_file())
+        # The DB mirror write landed in this temp DB (patched boundary), proving
+        # ``ModelService.create`` never reached a repo-level live handle.
+        with self.db.get_connection() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM models").fetchone()
+        self.assertGreaterEqual(row["n"], 1)
+        # External boundaries disabled regardless of shell env.
+        self.assertIsNone(self.settings.DATABASE_URL)
+        self.assertFalse(self.db.is_postgres)
+        self.assertFalse(self.settings.S3_ENABLED)
 
     def _published_file(self, model_type: CreatorModelType = CreatorModelType.CHECKPOINT) -> tuple[str, bytes]:
         if model_type != CreatorModelType.CHECKPOINT:
@@ -624,11 +694,8 @@ class ModelModerationLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.comfy = tempfile.TemporaryDirectory()
-        self.settings = Settings(
-            MODELS_DIR=self.temp.name,
-            COMFY_MODEL_ROOT=self.comfy.name,
-            FILES_PUBLIC_BASE="http://test",
-        )
+        self.settings = _temp_settings(self.temp.name, self.comfy.name)
+        self.db = _isolate_db(self, self.settings)
         self.service = ModelService(self.settings)
 
     def tearDown(self) -> None:
@@ -998,11 +1065,8 @@ class ModelArchitectureCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.comfy = tempfile.TemporaryDirectory()
-        self.settings = Settings(
-            MODELS_DIR=self.temp.name,
-            COMFY_MODEL_ROOT=self.comfy.name,
-            FILES_PUBLIC_BASE="http://test",
-        )
+        self.settings = _temp_settings(self.temp.name, self.comfy.name)
+        self.db = _isolate_db(self, self.settings)
         self.service = ModelService(self.settings)
 
     def tearDown(self) -> None:
@@ -1163,11 +1227,8 @@ class ModelSampleMediaManagementTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.comfy = tempfile.TemporaryDirectory()
-        self.settings = Settings(
-            MODELS_DIR=self.temp.name,
-            COMFY_MODEL_ROOT=self.comfy.name,
-            FILES_PUBLIC_BASE="http://test",
-        )
+        self.settings = _temp_settings(self.temp.name, self.comfy.name)
+        self.db = _isolate_db(self, self.settings)
         self.service = ModelService(self.settings)
         self.model = self.service.create(ModelCreateRequest(title="Media Test Model"))
         self.version_id = self.model.versions[0].version_id
@@ -1367,11 +1428,8 @@ class VideoFamilyResolutionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.comfy = tempfile.TemporaryDirectory()
-        self.settings = Settings(
-            MODELS_DIR=self.temp.name,
-            COMFY_MODEL_ROOT=self.comfy.name,
-            FILES_PUBLIC_BASE="http://test",
-        )
+        self.settings = _temp_settings(self.temp.name, self.comfy.name)
+        self.db = _isolate_db(self, self.settings)
         self.service = ModelService(self.settings)
 
     def tearDown(self) -> None:

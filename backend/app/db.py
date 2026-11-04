@@ -2099,9 +2099,19 @@ class Database:
         return {"id": gen_id, "prompt_id": prompt_id, "key": key, "url": url}
 
     def get_model_generations(
-        self, model_id: str, version_id: Optional[str] = None, page: int = 1, limit: int = 20
+        self,
+        model_id: str,
+        version_id: Optional[str] = None,
+        page: int = 1,
+        limit: int = 20,
+        visibility: Optional[Any] = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Fetch paginated generations created with a model (as base model or LoRA)."""
+        """Fetch paginated generations created with a model (as base model or LoRA).
+
+        ``visibility`` is an optional ``row -> bool`` predicate applied before
+        counting and slicing, so private/unsaved assets never inflate totals or
+        occupy a public page.
+        """
         page = max(1, page)
         limit = max(1, min(limit, 100))
         offset = (page - 1) * limit
@@ -2144,12 +2154,24 @@ class Database:
                 """
                 query_params = (model_id, model_id, limit, offset)
 
-            total = conn.execute(count_sql, count_params).fetchone()["total"]
-            rows = conn.execute(query_sql, query_params).fetchall()
+            if visibility is not None:
+                # Re-run without LIMIT so filtering precedes the page boundary.
+                all_sql = query_sql.rsplit("LIMIT", 1)[0].strip()
+                visible = [
+                    dict(r)
+                    for r in conn.execute(all_sql, query_params[:-2]).fetchall()
+                    if visibility(r)
+                ]
+                total = len(visible)
+                row_dicts = visible[offset : offset + limit]
+            else:
+                total = conn.execute(count_sql, count_params).fetchone()["total"]
+                row_dicts = [
+                    dict(r) for r in conn.execute(query_sql, query_params).fetchall()
+                ]
 
             items: list[dict[str, Any]] = []
-            for r in rows:
-                item = dict(r)
+            for item in row_dicts:
                 if isinstance(item.get("created_at"), datetime):
                     item["created_at"] = item["created_at"].isoformat()
                 raw_meta = item.pop("metadata_json", None)
@@ -2214,9 +2236,18 @@ class Database:
             return items, total
 
     def get_paginated_generations(
-        self, user_id: Optional[str] = None, model_id: Optional[str] = None, page: int = 1, limit: int = 20
+        self,
+        user_id: Optional[str] = None,
+        model_id: Optional[str] = None,
+        page: int = 1,
+        limit: int = 20,
+        visibility: Optional[Any] = None,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Fetch paginated gallery generations with optional user and model filtering."""
+        """Fetch paginated gallery generations with optional user and model filtering.
+
+        ``visibility`` is an optional ``row -> bool`` predicate applied before
+        counting/paging so private or unsaved foreign assets are never exposed.
+        """
         page = max(1, page)
         limit = max(1, min(limit, 100))
         offset = (page - 1) * limit
@@ -2249,6 +2280,22 @@ class Database:
                 LIMIT ? OFFSET ?
             """
             rows = conn.execute(query_sql, tuple(params + [limit, offset])).fetchall()
+
+            if visibility is not None:
+                all_sql = f"""
+                    SELECT g.*, m.title as model_title
+                    FROM generations g
+                    LEFT JOIN models m ON g.model_id = m.id
+                    WHERE {where_stmt}
+                    ORDER BY g.created_at DESC
+                """
+                visible = [
+                    row
+                    for row in conn.execute(all_sql, tuple(params)).fetchall()
+                    if visibility(row)
+                ]
+                total = len(visible)
+                rows = visible[offset : offset + limit]
 
             items: list[dict[str, Any]] = []
             for r in rows:

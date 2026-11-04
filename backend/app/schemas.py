@@ -713,7 +713,14 @@ class GenerateRequest(BaseModel):
     )
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] = "1:1"
     style: str = Field("none", max_length=64)
-    client_id: Optional[str] = Field(None, description="WS /api/v1/ws/progress/{client_id} session id")
+    client_id: Optional[str] = Field(
+        None,
+        description=(
+            "Relay session id previously issued by POST /api/v1/ws/ticket. "
+            "When supplied it must exist and be bound to the caller; when omitted "
+            "the server allocates an internal id with no browser relay."
+        ),
+    )
     image: Optional[str] = Field(None, description="Primary source image (data-URI, /files/ URL, or base64) for image-to-image or edit")
     source_image: Optional[str] = Field(None, description="Primary source image alias (data-URI, /files/ URL, or base64)")
     reference_images: list[str] = Field(default_factory=list)
@@ -871,12 +878,72 @@ class GalleryItem(BaseModel):
     before_detailer_url: str | None = None
     enable_detailer: bool | None = None
     has_detailer: bool | None = None
+    # Privacy is enforced by the serving route, not by this descriptor. Exposed
+    # so the owner UI can distinguish its private assets without guessing.
+    is_private: bool | None = None
+    # Expiry of the short-lived media capability embedded in ``url`` (private
+    # assets only). None means the URL does not expire (public asset).
+    url_expires_at: str | None = None
+
+
+class AssetMediaResponse(BaseModel):
+    """Freshly signed media URLs for one asset, scoped to the current viewer."""
+
+    key: str
+    url: str
+    url_expires_at: str | None = None
+    thumbnail_url: str | None = None
+    before_detailer_url: str | None = None
+
+
+class ProgressTicketResponse(BaseModel):
+    """Single-use relay credential; the server, never the browser, owns client_id."""
+
+    ticket: str = Field(..., min_length=16, max_length=256)
+    client_id: str = Field(
+        ..., min_length=32, max_length=32, pattern=r"^[0-9a-fA-F]{32}$"
+    )
+    expires_in_seconds: int = Field(..., ge=1, le=300)
+    ws_path: str = Field(..., min_length=1, max_length=512)
 
 
 class GalleryResponse(BaseModel):
-    """Paginated gallery payload."""
+    """Simple gallery payload; unchanged for existing public-listing callers."""
 
     items: list[GalleryItem] = Field(default_factory=list)
+
+
+class GalleryPageResponse(BaseModel):
+    """Offset-paged owner gallery envelope (``GET /api/v1/gallery/me``).
+
+    Additive over ``GalleryResponse``: existing callers that only read
+    ``items`` keep working. ``total`` counts visible assets before paging, so
+    it can never include another viewer's private or unsaved media.
+    """
+
+    items: list[GalleryItem] = Field(default_factory=list)
+    total: int = Field(..., ge=0)
+    offset: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    has_more: bool = False
+
+    @classmethod
+    def create(
+        cls,
+        items: list[GalleryItem],
+        total: int,
+        offset: int,
+        limit: int,
+    ) -> "GalleryPageResponse":
+        offset = max(0, offset)
+        limit = max(1, limit)
+        return cls(
+            items=items,
+            total=total,
+            offset=offset,
+            limit=limit,
+            has_more=offset + len(items) < total,
+        )
 
 
 class DeleteAssetResponse(BaseModel):
@@ -1134,7 +1201,15 @@ class ToolExecuteRequest(BaseModel):
     prompt: str = Field("", max_length=50_000)
     aspect_ratio: ToolAspectRatio | None = None
     values: dict[str, Any] = Field(default_factory=dict)
-    client_id: str | None = Field(None, min_length=1, max_length=128)
+    client_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description=(
+            "Relay session id previously issued by POST /api/v1/ws/ticket, bound "
+            "to the caller; omit it to run with no browser relay."
+        ),
+    )
     save_to_gallery: bool = True
 
     model_config = {"extra": "forbid"}

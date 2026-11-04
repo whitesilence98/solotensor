@@ -1,7 +1,8 @@
 """Comfy Studio FastAPI application: generate, WS progress relay, gallery.
 
-Generated images are stored on local disk under STORAGE_DIR and served
-statically at /files/{key} — no object storage service needed.
+Generated images are stored on local disk under STORAGE_DIR and served through
+a guarded ``/files/{key}`` route: public generation media is readable by anyone,
+while private/unsaved assets require the owner or a short-lived owner capability.
 """
 
 import base64
@@ -13,6 +14,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Optional
+from urllib.parse import unquote
 
 from fastapi import (
     BackgroundTasks,
@@ -24,13 +26,10 @@ from fastapi import (
     Query,
     Request,
     UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from .config import get_settings
@@ -43,6 +42,8 @@ from .routers.collections import router as collections_router
 from .routers.moderation import router as moderation_router
 from .routers.notifications import router as notifications_router
 from .routers.presets import router as presets_router
+from .routers.ws import router as ws_router
+
 from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
@@ -54,6 +55,7 @@ from .schemas import (
     AssetLikeRequest,
     AssetLikeResponse,
     AssetLikeState,
+    AssetMediaResponse,
     AssistantRequest,
     AssistantResponse,
     CommentLikeResponse,
@@ -64,6 +66,7 @@ from .schemas import (
     DirectorReply,
     DirectorRequest,
     GalleryItem,
+    GalleryPageResponse,
     GalleryResponse,
     GenerateRequest,
     GeneratedAsset,
@@ -139,9 +142,17 @@ from .services.director import (
     DirectorUpstreamError,
     get_director_service,
 )
+from .services.collections_service import (
+    CollectionError,
+    CollectionNotFoundError,
+    CollectionsService,
+    get_collections_service,
+)
 from .services.credit_service import get_credit_service
 from .services.model_attribution import attribute_graph, build_index
+from .services.media_access import MediaNotFound
 from .services.models import ModelConflict, ModelError, ModelNotFound, get_model_service
+from .services.progress_registry import ProgressScopeError, get_progress_registry
 from .services.rbac_service import RBACService, get_rbac_service
 from .services.redis_service import get_redis_service
 from .services.social_service import (
@@ -223,6 +234,8 @@ app.include_router(notifications_router, prefix="/api/notifications")
 app.include_router(collections_router, prefix="/api/v1/collections")
 app.include_router(presets_router, prefix="/api/v1/presets")
 app.include_router(admin_settings_router, prefix="/api/admin/settings")
+app.include_router(ws_router, prefix="/api/v1/ws")
+
 
 
 # --- Creator Profiles & Social Endpoints ------------------------------------
@@ -439,13 +452,15 @@ async def toggle_gallery_asset_like(
     req: AssetLikeRequest,
     current_user: UserResponse = Depends(get_current_user),
 ) -> AssetLikeResponse:
-    """Toggle the current user's like on an existing gallery asset."""
+    """Toggle the current user's like on an existing, visible gallery asset."""
     try:
         storage.get_asset(req.key)
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
     except StorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not storage.is_asset_reference_visible(req.key, current_user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     try:
         payload = get_social_service().toggle_asset_like(current_user.id, req.key)
         return AssetLikeResponse(**payload)
@@ -460,9 +475,11 @@ async def query_gallery_asset_like_states(
     viewer: UserResponse | None = Depends(get_optional_user),
     db: Database = Depends(get_db),
 ) -> AssetLikeQueryResponse:
-    """Return the viewer's like state for up to 200 gallery asset keys."""
+    """Return the viewer's like state for up to 200 visible gallery asset keys."""
     viewer_id = viewer.id if viewer else None
-    states = db.get_asset_like_map(req.keys, viewer_id)
+    # Never disclose like state for an asset this viewer cannot see.
+    visible_keys = [key for key in req.keys if _asset_visible_to(key, viewer_id)]
+    states = db.get_asset_like_map(visible_keys, viewer_id)
     items = {
         key: AssetLikeState(
             like_count=int(state.get("like_count") or 0),
@@ -484,8 +501,112 @@ async def close_code_assistant() -> None:
     await director.close()
 
 
-# Serve saved images: http://localhost:8000/files/<prompt_id>/<hash>.png
-app.mount("/files", StaticFiles(directory=str(storage.root)), name="files")
+# Media responses must never be cached or leak the referring page.
+_MEDIA_HEADERS = {
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _media_error(status_code: int, detail: str) -> JSONResponse:
+    """Uniform, uncached media denial envelope."""
+    return JSONResponse(
+        {"detail": detail}, status_code=status_code, headers=dict(_MEDIA_HEADERS)
+    )
+
+
+def _media_response_type(path: Any) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix in (".png",):
+        return "image/png"
+    if suffix in (".jpg", ".jpeg"):
+        return "image/jpeg"
+    if suffix in (".webp",):
+        return "image/webp"
+    if suffix in (".gif",):
+        return "image/gif"
+    if suffix in (".mp4",):
+        return "video/mp4"
+    if suffix in (".webm",):
+        return "video/webm"
+    if suffix in (".mov",):
+        return "video/quicktime"
+    return None
+
+
+class _NoStoreFileResponse(FileResponse):
+    """FileResponse whose Range error replies keep the media security headers.
+
+    Starlette answers malformed (400) and unsatisfiable (416) ranges with a
+    fresh ``PlainTextResponse``, which would drop ``Cache-Control`` and
+    ``Referrer-Policy``. The response-start message is stamped with the media
+    headers before it is sent, so every reply -- including range errors -- is
+    uncached while the status and ``Content-Range`` stay intact.
+    """
+
+    def __init__(self, *args: Any, media_headers: dict[str, str], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._media_headers = {
+            key.lower().encode("latin-1"): value.encode("latin-1")
+            for key, value in media_headers.items()
+        }
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        async def _send(message: Any) -> None:
+            if message["type"] == "http.response.start" and int(message["status"]) >= 400:
+                managed = set(self._media_headers)
+                headers = [
+                    (key, value)
+                    for key, value in message.get("headers", [])
+                    if key.lower() not in managed
+                ]
+                headers.extend(self._media_headers.items())
+                message = {
+                    "type": message["type"],
+                    "status": message["status"],
+                    "headers": headers,
+                }
+            await send(message)
+
+        await super().__call__(scope, receive, _send)
+
+
+# Guarded media route: /files/<user_id>/<prompt_id>/<hash>.png (URL compatibility).
+@app.get("/files/{key:path}")
+@app.head("/files/{key:path}")
+async def serve_media_file(
+    key: str,
+    request: Request,
+    viewer: UserResponse | None = Depends(get_optional_user),
+) -> Response:
+    """Serve stored media only when the sidecar authorizes this exact key.
+
+    Public generation media is anonymous; private/unsaved media requires the
+    owner (bearer) or a short-lived ``?cap=`` capability for the same key and
+    viewer. The sidecar is re-read on every request, so a later privacy flip
+    defeats any previously issued URL. JSON sidecars/configs are never served.
+    """
+    try:
+        access = storage.authorize_media(
+            key,
+            viewer_id=viewer.id if viewer else None,
+            capability=request.query_params.get("cap"),
+        )
+    except (MediaNotFound, FileNotFoundError, StorageError):
+        return _media_error(status.HTTP_404_NOT_FOUND, "Asset not found")
+    media_type = _media_response_type(access.path)
+    if media_type is None:
+        return _media_error(status.HTTP_404_NOT_FOUND, "Asset not found")
+    response = _NoStoreFileResponse(
+        access.path,
+        media_type=media_type,
+        headers=dict(_MEDIA_HEADERS),
+        media_headers=_MEDIA_HEADERS,
+        content_disposition_type="inline",
+    )
+    return response
+
 
 ALLOWED_IMAGE_MIME = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 
@@ -657,8 +778,21 @@ def _audio_suffix(raw: str) -> str:
     return ".mp3"
 
 
-async def _resolve_upload_bytes(storage_service: Any, raw: str, *, binary: bool = False) -> bytes:
-    """Decode a data-URI, a stored ``/files/`` key, or bare base64 into bytes."""
+async def _resolve_upload_bytes(
+    storage_service: Any,
+    raw: str,
+    *,
+    binary: bool = False,
+    viewer_id: str | None = None,
+    allow_audio: bool = False,
+) -> bytes:
+    """Decode a data-URI, a stored ``/files/`` key, or bare base64 into bytes.
+
+    A stored reference is read through the same visibility policy as ``/files``:
+    the caller may only reuse public media or their own private/unsaved media.
+    This stops a foreign private ``/files`` key from being laundered into the
+    caller's own generation as a reference image or audio track.
+    """
     if raw.startswith("data:"):
         _, _, payload = raw.partition(",")
         try:
@@ -666,13 +800,25 @@ async def _resolve_upload_bytes(storage_service: Any, raw: str, *, binary: bool 
         except (binascii.Error, ValueError) as exc:
             raise ValueError("Malformed data URI payload") from exc
     if "/files/" in raw:
-        return await storage_service.get_image_bytes(raw.split("/files/")[-1].split("?")[0])
+        key = raw.split("/files/", 1)[1].split("?", 1)[0].split("#", 1)[0]
+        return await storage_service.get_image_bytes(
+            unquote(key),
+            viewer_id=viewer_id,
+            allow_audio=allow_audio,
+        )
     if raw.startswith("http://") or raw.startswith("https://"):
-        return await storage_service.get_image_bytes(raw.split("/")[-1].split("?")[0])
+        key = raw.split("/")[-1].split("?", 1)[0].split("#", 1)[0]
+        return await storage_service.get_image_bytes(
+            unquote(key),
+            viewer_id=viewer_id,
+            allow_audio=allow_audio,
+        )
     try:
         return base64.b64decode(raw, validate=True)
     except (binascii.Error, ValueError):
-        return await storage_service.get_image_bytes(raw)
+        return await storage_service.get_image_bytes(
+            raw, viewer_id=viewer_id, allow_audio=allow_audio
+        )
 
 
 def _ensure_video_capable(selected_model: dict, base_model: dict, is_lora: bool) -> None:
@@ -1427,6 +1573,7 @@ async def list_model_generations(
     page: int = 1,
     limit: int = 20,
     version_id: str | None = None,
+    viewer: UserResponse | None = Depends(get_optional_user),
 ) -> PaginatedGenerationsResponse:
     """Return paginated list of all images created with this model (as base model or LoRA adapter)."""
     try:
@@ -1434,8 +1581,13 @@ async def list_model_generations(
     except (ModelError, ModelNotFound) as exc:
         raise _model_http_error(exc) from exc
 
+    viewer_id = viewer.id if viewer else None
     items, total = get_db().get_model_generations(
-        model_id, version_id=version_id, page=page, limit=limit
+        model_id,
+        version_id=version_id,
+        page=page,
+        limit=limit,
+        visibility=lambda row: _generation_row_visible(row, viewer_id),
     )
     return PaginatedGenerationsResponse.create(
         items=[GenerationRecordResponse(**item) for item in items],
@@ -1706,6 +1858,21 @@ async def generate(
         )
     credits_deducted = True
 
+    # The relay client_id is server-issued and bound to the caller. A supplied
+    # id must belong to this user; omitting one keeps the run off the relay.
+    try:
+        client_id = get_progress_registry().claim_client_id(req.client_id, user.id)
+    except ProgressScopeError as exc:
+        if credits_deducted:
+            credit_service.db.update_credits(
+                user.id,
+                balance=credit_service.get_user_credits(
+                    user.id, auto_replenish=False
+                ).balance
+                + cost,
+            )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
     try:
         selected_model = model_storage.resolve_installed_gallery_file(
             req.model_id, req.version_id, req.file_id
@@ -1767,7 +1934,6 @@ async def generate(
         )
 
     comfy = get_comfy_client()
-    client_id = req.client_id or str(uuid.uuid4())
     resolved_seed = req.seed if req.seed is not None else random.randint(0, 2**32 - 1)
     started = time.monotonic()
 
@@ -1999,12 +2165,18 @@ async def generate(
                 )
             if raw_source:
                 try:
-                    source_bytes = await _resolve_upload_bytes(storage, raw_source, binary=True)
+                    source_bytes = await _resolve_upload_bytes(
+                        storage, raw_source, binary=True, viewer_id=user.id
+                    )
                     source_image_filename = await comfy.upload_image(
                         source_bytes, f"input_{req.mode}_{client_id or uuid.uuid4().hex[:8]}.png"
                     )
                 except HTTPException:
                     raise
+                except MediaNotFound as exc:
+                    raise HTTPException(
+                        status.HTTP_404_NOT_FOUND, "Asset not found"
+                    ) from exc
                 except Exception as exc:
                     logger.error("Failed to process reference image for %s: %s", req.mode, exc)
                     raise HTTPException(
@@ -2019,12 +2191,18 @@ async def generate(
         )
         if raw_reference:
             try:
-                reference_bytes = await _resolve_upload_bytes(storage, raw_reference, binary=True)
+                reference_bytes = await _resolve_upload_bytes(
+                    storage, raw_reference, binary=True, viewer_id=user.id
+                )
                 reference_image_filename = await comfy.upload_image(
                     reference_bytes, f"input_ref_{client_id or uuid.uuid4().hex[:8]}.png"
                 )
             except HTTPException:
                 raise
+            except MediaNotFound as exc:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, "Asset not found"
+                ) from exc
             except Exception as exc:
                 logger.error("Failed to process secondary reference image: %s", exc)
                 raise HTTPException(
@@ -2039,11 +2217,20 @@ async def generate(
             if req.last_frame_image:
                 try:
                     last_frame_filename = await comfy.upload_image(
-                        await _resolve_upload_bytes(storage, req.last_frame_image, binary=True),
+                        await _resolve_upload_bytes(
+                            storage,
+                            req.last_frame_image,
+                            binary=True,
+                            viewer_id=user.id,
+                        ),
                         f"input_video_last_{client_id or uuid.uuid4().hex[:8]}.png",
                     )
                 except HTTPException:
                     raise
+                except MediaNotFound as exc:
+                    raise HTTPException(
+                        status.HTTP_404_NOT_FOUND, "Asset not found"
+                    ) from exc
                 except Exception as exc:
                     logger.error("Failed to process last frame: %s", exc)
                     raise HTTPException(
@@ -2053,7 +2240,11 @@ async def generate(
             if req.audio_mode == "voice_clone" and req.reference_audio:
                 try:
                     audio_bytes = await _resolve_upload_bytes(
-                        storage, req.reference_audio, binary=True
+                        storage,
+                        req.reference_audio,
+                        binary=True,
+                        viewer_id=user.id,
+                        allow_audio=True,
                     )
                     reference_audio_filename = await comfy.upload_audio(
                         audio_bytes,
@@ -2061,6 +2252,10 @@ async def generate(
                     )
                 except HTTPException:
                     raise
+                except MediaNotFound as exc:
+                    raise HTTPException(
+                        status.HTTP_404_NOT_FOUND, "Asset not found"
+                    ) from exc
                 except Exception as exc:
                     logger.error("Failed to process reference audio: %s", exc)
                     raise HTTPException(
@@ -2228,6 +2423,7 @@ async def generate(
                 source_image_filename=source_image_filename,
             )
         prompt_id = await comfy.queue_prompt(graph, client_id)
+        get_progress_registry().register_prompt(client_id, prompt_id)
         final_status = await comfy.wait_until_done(prompt_id, client_id)
     except (ModelError, ModelConflict, ModelNotFound) as exc:
         if credits_deducted:
@@ -2515,6 +2711,7 @@ async def generate(
                         base_height=req.height,
                     )
                     upscale_pid = await comfy.queue_prompt(upscale_graph, client_id)
+                    get_progress_registry().register_prompt(client_id, upscale_pid)
                     up_status = await comfy.wait_until_done(upscale_pid, client_id)
                     if up_status == "completed":
                         up_raw = await comfy.list_images(upscale_pid)
@@ -2564,6 +2761,7 @@ async def generate(
                         loras=active_loras,
                     )
                     detail_pid = await comfy.queue_prompt(detail_graph, client_id)
+                    get_progress_registry().register_prompt(client_id, detail_pid)
                     det_status = await comfy.wait_until_done(detail_pid, client_id)
                     if det_status == "completed":
                         det_raw = await comfy.list_images(detail_pid)
@@ -3038,9 +3236,20 @@ async def _run_tool(
         graph, resolved = tools.build_graph(
             tool_id, prompt, chosen_ratio, values=values, images=uploaded_images
         )
-        session_id = client_id or f"tool-{uuid.uuid4().hex}"
+        if user_id:
+            try:
+                session_id = get_progress_registry().claim_client_id(
+                    client_id, user_id
+                )
+            except ProgressScopeError as exc:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, detail=str(exc)
+                ) from exc
+        else:
+            session_id = client_id or uuid.uuid4().hex
         started = time.monotonic()
         prompt_id = await comfy.queue_prompt(graph, session_id)
+        get_progress_registry().register_prompt(session_id, prompt_id)
         final_status = await comfy.wait_until_done(prompt_id, session_id)
     except AIToolError as exc:
         raise HTTPException(
@@ -3260,68 +3469,101 @@ async def tool_file(tool_id: str, relative_path: str) -> FileResponse:
     return FileResponse(path)
 
 
-@app.websocket("/api/v1/ws/progress/{client_id}")
-async def ws_progress(websocket: WebSocket, client_id: str) -> None:
-    """Relay ComfyUI execution events for a given client_id to the browser."""
-    await websocket.accept()
-    import websockets
-
-    logger.info("WS progress channel opened for %s", client_id)
-    try:
-        url = f"{settings.comfy_ws}/ws?clientId={client_id}"
-        async with websockets.connect(
-            url, max_size=64 * 1024 * 1024, ping_interval=30, ping_timeout=120
-        ) as upstream:
-            async for raw in upstream:
-                if isinstance(raw, (bytes, bytearray)):
-                    # Binary frames = live preview images; forward as-is.
-                    await websocket.send_bytes(raw)
-                    continue
-                await websocket.send_text(raw)
-    except WebSocketDisconnect:
-        logger.info("WS progress channel closed by browser: %s", client_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("WS relay error for %s: %s", client_id, exc)
-        try:
-            await websocket.send_text(
-                json.dumps({"type": "error", "message": f"Relay lost: {exc}"})
-            )
-        except Exception:  # noqa: BLE001
-            pass
-    finally:
-        try:
-            await websocket.close()
-        except Exception:  # noqa: BLE001
-            pass
-
-
 # ---------------------------------------------------------------------- #
 # Gallery
 # ---------------------------------------------------------------------- #
 
 
-@app.get("/api/v1/gallery/me", response_model=GalleryResponse)
+def _asset_visible_to(key: str, viewer_id: str | None) -> bool:
+    """Visibility predicate used by DB-backed gallery listings."""
+    return storage.is_asset_reference_visible(key, viewer_id)
+
+
+def _row_value(row: Any, name: str, default: Any = None) -> Any:
+    """Read a column from a dict or sqlite3.Row without assuming one type."""
+    if isinstance(row, dict):
+        return row.get(name, default)
+    try:
+        return row[name]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _generation_row_visible(row: Any, viewer_id: str | None) -> bool:
+    """Visibility predicate over a ``generations`` row for public listings.
+
+    The sidecar is authoritative whenever the media file exists: a public
+    sidecar, or the viewer's own asset, is visible; a private/unsaved foreign
+    asset is hidden even if the DB row still claims ``gallery_saved``. Only a
+    legacy DB row with no media file on disk (pre-sidecar migration data) falls
+    back to the DB flag, and only when the row is either unattributed or the
+    viewer's own.
+    """
+    key = _row_value(row, "key")
+    if not isinstance(key, str) or not key:
+        return False
+    if _asset_visible_to(key, viewer_id):
+        return True
+    if storage.media_file_exists(key):
+        # A live file whose sidecar denies this viewer must stay hidden.
+        return False
+    owner = _row_value(row, "user_id")
+    saved = _row_value(row, "gallery_saved", 1)
+    if owner:
+        return bool(viewer_id and owner == viewer_id and saved)
+    return bool(saved)
+
+
+@app.get("/api/v1/gallery/me", response_model=GalleryPageResponse)
 async def my_gallery(
-    limit: int = 60,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(60, ge=1),
     origin: str | None = None,
     tool_id: str | None = None,
     tool_type: str | None = None,
     tag: str | None = None,
     tags: str | None = None,
     tag_mode: str = "all",
+    q: str | None = Query(None, max_length=200),
+    sort: Literal["newest", "oldest", "name"] = "newest",
+    source: Literal["all", "workspace", "ai_tool_studio"] = "all",
+    media_type: Literal["image", "video", "3d"] | None = None,
+    collection_id: str | None = Query(None, max_length=128),
     current_user: UserResponse = Depends(get_current_user),
-) -> GalleryResponse:
-    if limit < 1 or limit > settings.GALLERY_LIMIT:
+    collections: CollectionsService = Depends(get_collections_service),
+) -> GalleryPageResponse:
+    """Owner-scoped library page: visibility first, then search/sort/count.
+
+    The envelope is additive over the previous ``{items}`` response. Private and
+    unsaved assets are filtered before the total, search and page slice, so a
+    page never reveals another user's media or a hidden asset in ``total``.
+    """
+    if limit > settings.GALLERY_LIMIT:
         limit = settings.GALLERY_LIMIT
+
+    collection_keys: set[str] | None = None
+    if collection_id:
+        try:
+            collection_keys = set(
+                collections.list_items(current_user.id, collection_id)
+            )
+        except CollectionNotFoundError as exc:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "Collection not found"
+            ) from exc
+        except CollectionError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     try:
         import asyncio
 
         parsed_tags = (
             [t.strip() for t in tags.split(",") if t.strip()] if tags else None
         )
-        items = await asyncio.get_running_loop().run_in_executor(
+        items, total = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: storage.list_recent(
+            lambda: storage.list_gallery_page(
+                offset=offset,
                 limit=limit,
                 origin=origin,
                 tool_id=tool_id,
@@ -3330,11 +3572,17 @@ async def my_gallery(
                 tags=parsed_tags,
                 tag_mode=tag_mode,
                 user_id=current_user.id,
+                viewer_id=current_user.id,
+                q=q,
+                sort=sort,
+                source=source,
+                media_type=media_type,
+                collection_keys=collection_keys,
             ),
         )
     except StorageError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    return GalleryResponse(items=items)
+    return GalleryPageResponse.create(items, total, offset, limit)
 
 
 @app.get("/api/v1/gallery", response_model=GalleryResponse)
@@ -3360,6 +3608,9 @@ async def gallery(
         effective_user_id = user.id
     else:
         effective_user_id = user_id
+    # A viewer only ever sees their own private/unsaved assets when they are
+    # filtering for themselves; anonymous or foreign listings stay public-only.
+    viewer_id = user.id if user and effective_user_id == user.id else None
     try:
         import asyncio
 
@@ -3377,6 +3628,7 @@ async def gallery(
                 tags=parsed_tags,
                 tag_mode=tag_mode,
                 user_id=effective_user_id,
+                viewer_id=viewer_id,
             ),
         )
     except StorageError as exc:
@@ -3390,10 +3642,26 @@ async def paginated_gallery(
     limit: int = 20,
     model_id: str | None = None,
     user_id: str | None = None,
+    viewer: UserResponse | None = Depends(get_optional_user),
 ) -> PaginatedGenerationsResponse:
-    """Return paginated gallery with relational filtering by model and user."""
+    """Return paginated gallery with relational filtering by model and user.
+
+    Anonymous and foreign listings only ever see public generation media;
+    a caller viewing their own ``user_id`` also sees their unsaved/private runs.
+    """
+    viewer_id = viewer.id if viewer else None
+    effective_user_id = viewer_id if user_id == "me" and viewer_id else user_id
+    if user_id == "me" and not viewer_id:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for user_id='me'",
+        )
     items, total = get_db().get_paginated_generations(
-        user_id=user_id, model_id=model_id, page=page, limit=limit
+        user_id=effective_user_id,
+        model_id=model_id,
+        page=page,
+        limit=limit,
+        visibility=lambda row: _generation_row_visible(row, viewer_id),
     )
     return PaginatedGenerationsResponse.create(
         items=[GenerationRecordResponse(**item) for item in items],
@@ -3465,10 +3733,23 @@ async def related_gallery(
 async def list_popular_tags(
     limit: int = 50,
     user_id: str | None = None,
+    viewer: UserResponse | None = Depends(get_optional_user),
 ) -> TagSummaryList:
     if limit < 1 or limit > 200:
         limit = 50
-    tags = storage.list_popular_tags(limit=limit, user_id=user_id)
+    viewer_id = viewer.id if viewer else None
+    if user_id == "me":
+        if not viewer_id:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for user_id='me'",
+            )
+        user_id = viewer_id
+    tags = storage.list_popular_tags(
+        limit=limit,
+        user_id=user_id,
+        viewer_id=viewer_id if user_id in (None, viewer_id) else None,
+    )
     return TagSummaryList(items=[TagSummary(**item) for item in tags])
 
 
@@ -3508,13 +3789,52 @@ async def interrogate_image(file: UploadFile = File(...)) -> TagInterrogateRespo
     )
 
 
+async def _authorize_asset_mutation(
+    key: str,
+    current_user: UserResponse,
+    rbac: RBACService,
+    *,
+    override_permission: str,
+) -> GalleryItem:
+    """Authorize a tag/saved mutation on an asset.
+
+    404 for an unknown key or a foreign asset the caller cannot see (existence
+    is not leaked); 403 when a visible foreign asset is not theirs and they
+    lack the moderator override.
+    """
+    try:
+        item = storage.get_asset(key)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    owner = (item.metadata or {}).get("user_id")
+    if owner != current_user.id:
+        visible = _asset_visible_to(key, current_user.id)
+        if not visible:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
+        await RequireOwnerOrPermission(override_permission).enforce(
+            owner, current_user, rbac
+        )
+    return item
+
+
 @app.post("/api/v1/assets/{key:path}/tags/auto", response_model=GalleryItem)
-async def auto_tag_asset(key: str) -> GalleryItem:
+async def auto_tag_asset(
+    key: str,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> GalleryItem:
+    await _authorize_asset_mutation(
+        key, current_user, rbac, override_permission="generation:delete_any"
+    )
     tagger = get_tagger_service()
     try:
         await tagger.auto_tag_asset(key)
-        return storage.get_asset(key)
+        return storage.get_asset(key, viewer_id=current_user.id)
     except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+    except MediaNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
     except TaggerError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
@@ -3523,23 +3843,75 @@ async def auto_tag_asset(key: str) -> GalleryItem:
 
 
 @app.put("/api/v1/assets/{key:path}/tags", response_model=GalleryItem)
-async def update_asset_tags(key: str, req: TagUpdateRequest) -> GalleryItem:
+async def update_asset_tags(
+    key: str,
+    req: TagUpdateRequest,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
+) -> GalleryItem:
+    await _authorize_asset_mutation(
+        key, current_user, rbac, override_permission="generation:delete_any"
+    )
     try:
-        return storage.update_tags(key, req.tags)
+        return storage.update_tags(key, req.tags, viewer_id=current_user.id)
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
     except StorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/assets/{key:path}/media", response_model=AssetMediaResponse)
+async def asset_media(
+    key: str,
+    viewer: UserResponse | None = Depends(get_optional_user),
+) -> AssetMediaResponse:
+    """Return fresh, authorization-scoped URLs for one asset.
+
+    Public media gets plain URLs; a private/unsaved asset owned by the viewer
+    gets a short-lived capability URL. A foreign private asset is a 404 so its
+    existence is not leaked. The frontend calls this to renew expired URLs.
+    """
+    viewer_id = viewer.id if viewer else None
+    try:
+        access = storage.authorize_media(key, viewer_id=viewer_id)
+    except (MediaNotFound, FileNotFoundError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
+    except StorageError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if access.is_public:
+        item = storage.get_asset(key)
+        return AssetMediaResponse(
+            key=key,
+            url=item.url,
+            url_expires_at=None,
+            thumbnail_url=item.thumbnail_url,
+            before_detailer_url=item.before_detailer_url,
+        )
+    assert viewer_id is not None  # authorize_media already required ownership
+    item = storage.get_asset(key, viewer_id=viewer_id)
+    return AssetMediaResponse(
+        key=key,
+        url=item.url,
+        url_expires_at=item.url_expires_at,
+        thumbnail_url=item.thumbnail_url,
+        before_detailer_url=item.before_detailer_url,
+    )
 
 
 @app.get("/api/v1/assets/{key:path}", response_model=GalleryItem)
-async def asset_detail(key: str) -> GalleryItem:
+async def asset_detail(
+    key: str, viewer: UserResponse | None = Depends(get_optional_user)
+) -> GalleryItem:
+    viewer_id = viewer.id if viewer else None
     try:
-        return storage.get_asset(key)
-    except FileNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from exc
+        access = storage.authorize_media(key, viewer_id=viewer_id)
+    except (MediaNotFound, FileNotFoundError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     except StorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    owner_viewer = None if access.is_public else viewer_id
+    return storage.get_asset(key, viewer_id=owner_viewer)
 
 
 @app.patch("/api/v1/assets/{key:path}", response_model=GalleryItem)
@@ -3547,9 +3919,14 @@ async def save_asset(
     key: str,
     saved: bool,
     background_tasks: BackgroundTasks,
+    current_user: UserResponse = Depends(get_current_user),
+    rbac: RBACService = Depends(get_rbac_service),
 ) -> GalleryItem:
+    await _authorize_asset_mutation(
+        key, current_user, rbac, override_permission="generation:delete_any"
+    )
     try:
-        item = storage.set_saved(key, saved)
+        item = storage.set_saved(key, saved, viewer_id=current_user.id)
         if saved and not (item.metadata or {}).get("tags"):
             background_tasks.add_task(_bg_auto_tag_asset, key)
         return item
@@ -3560,8 +3937,10 @@ async def save_asset(
 
 
 @app.get("/api/v1/images/{key:path}", response_model=GalleryItem)
-async def image_detail(key: str) -> GalleryItem:
-    return await asset_detail(key)
+async def image_detail(
+    key: str, viewer: UserResponse | None = Depends(get_optional_user)
+) -> GalleryItem:
+    return await asset_detail(key, viewer=viewer)
 
 
 @app.delete("/api/v1/gallery/{key:path}", response_model=DeleteAssetResponse)
@@ -3571,10 +3950,12 @@ async def delete_gallery_asset(
     rbac: RBACService = Depends(get_rbac_service),
 ) -> DeleteAssetResponse:
     try:
-        item = storage.get_asset(key)
-        asset_user_id = (item.metadata or {}).get("user_id")
-        await RequireOwnerOrPermission("generation:delete_any").enforce(
-            asset_user_id, current_user, rbac
+        # Visibility precedes ownership: a foreign private/unsaved asset answers
+        # 404 exactly like an unknown key, so DELETE cannot confirm existence.
+        # Owners and moderators with ``generation:delete_any`` are unaffected,
+        # and a visible foreign public asset still answers 403.
+        await _authorize_asset_mutation(
+            key, current_user, rbac, override_permission="generation:delete_any"
         )
         storage.delete_asset(key)
         try:

@@ -49,6 +49,24 @@ export default function AuthModal() {
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const initialInputRef = useRef<HTMLInputElement>(null);
+  // Element that opened the dialog, captured once on open and restored on close.
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  // Capture the opener on open and restore focus on close. Kept separate from
+  // the keydown effect (which re-runs on tab changes) so switching tabs can
+  // never overwrite the real opener with a control inside the dialog.
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
+    openerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    return () => {
+      const opener = openerRef.current;
+      openerRef.current = null;
+      opener?.focus();
+    };
+  }, [isAuthModalOpen]);
 
   // Focus trap & escape key handler
   useEffect(() => {
@@ -72,15 +90,23 @@ export default function AuthModal() {
       }
       if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         );
         if (!focusable.length) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        const active = document.activeElement as HTMLElement | null;
+        // Focus that has escaped the dialog (or never entered it) is pulled
+        // back to the correct edge before the normal wrap-around logic.
+        if (!active || !dialogRef.current.contains(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+        if (e.shiftKey && active === first) {
           e.preventDefault();
           last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
+        } else if (!e.shiftKey && active === last) {
           e.preventDefault();
           first.focus();
         }
@@ -198,6 +224,10 @@ export default function AuthModal() {
         ref={dialogRef}
         className="relative z-10 w-full max-w-md rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-6 shadow-[0_32px_96px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-200"
       >
+        {/* Accessible name for aria-labelledby; the visible brand wordmark carries no id. */}
+        <h2 id="auth-modal-title" className="sr-only">
+          {tab === "forgot" ? "Account recovery" : "Creator sign in"}
+        </h2>
         {/* Top Header with BrandLogo & Close Button */}
         <div className="flex items-start justify-between mb-5 pb-4 border-b border-[var(--line)]">
           <BrandLogo
@@ -319,7 +349,10 @@ export default function AuthModal() {
 
         {/* Error Banner */}
         {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 text-xs font-mono text-[var(--danger)]">
+          <div
+            role="alert"
+            className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-surface)] p-3 text-xs font-mono text-[var(--danger)]"
+          >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span className="flex-1 leading-snug">{error}</span>
           </div>
@@ -327,7 +360,11 @@ export default function AuthModal() {
 
         {/* Success Banner */}
         {successMessage && !forgotSuccess && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3 text-xs font-mono text-[var(--accent)]">
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 flex items-center gap-2 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3 text-xs font-mono text-[var(--accent)]"
+          >
             <Check className="h-4 w-4 shrink-0" />
             <span className="flex-1 leading-snug">{successMessage}</span>
           </div>

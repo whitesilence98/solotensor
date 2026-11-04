@@ -32,6 +32,7 @@ import {
   type GalleryItem,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useAssetMedia } from "@/lib/useAssetMedia";
 import { toRemixCount } from "@/lib/assetCardCounts";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
@@ -368,7 +369,36 @@ export default function AssetCard({
   }, []);
 
   const type = getAssetType(asset);
-  const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
+  // Owner-scoped media is a short-lived signed URL. Keep it in state, renew
+  // before expiry, and refresh once if the browser reports a load failure.
+  const media = useAssetMedia(asset);
+  const mediaUrl = resolveMediaUrl(media.url) || media.url;
+
+  // Card preview videos are gated to the viewport. `autoPlay` ignores
+  // `preload="none"`, so mounting the element at all starts a fetch and a
+  // decode for every card in a gallery. Offscreen cards therefore render no
+  // video element; the pre-sized aspect box keeps the layout stable, and a
+  // card that scrolls into view mounts its existing <video> unchanged. The
+  // gate latches open so scrolling back does not tear down and restart it.
+  const [shouldLoadVideo, setShouldLoadVideo] = useState(false);
+  const articleRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (type !== "video" || shouldLoadVideo) return;
+    const node = articleRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setShouldLoadVideo(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setShouldLoadVideo(true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [type, shouldLoadVideo]);
 
   const isDetailer = Boolean(
     (asset as any)?.before_detailer_url ||
@@ -449,6 +479,7 @@ export default function AssetCard({
 
   return (
     <article
+      ref={articleRef}
       className={`group relative overflow-hidden rounded-2xl border bg-[var(--surface-sunken)] transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${
         selected ? "border-[var(--accent)]" : "border-[var(--line)] hover:border-[var(--accent)]/50"
       }`}
@@ -469,32 +500,36 @@ export default function AssetCard({
 
           {/* Full-Bleed Media: 100% Solid Artwork at Rest */}
           {type === "video" ? (
-            <video
-              src={mediaUrl}
-              aria-label={asset.key}
-              autoPlay={!reduceMotion}
-              muted
-              loop
-              playsInline
-              preload="auto"
-              onLoadedMetadata={(e) => {
-                setIsLoaded(true);
-                const vid = e.currentTarget;
-                if (vid.videoWidth && vid.videoHeight) {
-                  setNaturalAspect(`${vid.videoWidth} / ${vid.videoHeight}`);
-                }
-              }}
-              onLoadedData={() => setIsLoaded(true)}
-              onCanPlay={() => setIsLoaded(true)}
-              className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
-                }`}
-            />
+            shouldLoadVideo ? (
+              <video
+                src={mediaUrl}
+                aria-label={asset.key}
+                autoPlay={!reduceMotion}
+                muted
+                loop
+                playsInline
+                preload="auto"
+                onLoadedMetadata={(e) => {
+                  setIsLoaded(true);
+                  const vid = e.currentTarget;
+                  if (vid.videoWidth && vid.videoHeight) {
+                    setNaturalAspect(`${vid.videoWidth} / ${vid.videoHeight}`);
+                  }
+                }}
+                onLoadedData={() => setIsLoaded(true)}
+                onCanPlay={() => setIsLoaded(true)}
+                onError={() => media.handleMediaError()}
+                className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
+                  }`}
+              />
+            ) : null
           ) : (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={mediaUrl}
               alt={promptText}
               loading="lazy"
+              decoding="async"
               onLoad={(e) => {
                 setIsLoaded(true);
                 const img = e.currentTarget;
@@ -502,6 +537,7 @@ export default function AssetCard({
                   setNaturalAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
                 }
               }}
+              onError={() => media.handleMediaError()}
               className={`asset-zoom-media h-full w-full object-cover ${isLoaded ? "opacity-100" : "opacity-0"
                 }`}
             />

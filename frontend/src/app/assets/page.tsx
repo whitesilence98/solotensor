@@ -22,19 +22,23 @@ import EmptyState from "@/components/EmptyState";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import {
+  ApiError,
   api,
   withTypes,
   type AssetRecord,
   type AssetType,
   type CollectionRecord,
   type GalleryItem,
+  type GalleryPage,
   type InstalledGalleryModel,
   type TagSummary,
 } from "@/lib/api";
 import {
-  filterLibrary,
+  libraryRequestKey,
+  mergeLibraryPage,
+  nextLibraryOffset,
   parseLibraryUrl,
-  sortLibrary,
+  retainLoadedSelection,
   type LibrarySort,
   type LibrarySource,
 } from "@/lib/assetLibrary";
@@ -42,11 +46,12 @@ import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import { ProtectedRoute } from "@/components/rbac";
 
+/** One server page. Search/sort/filter always run over the full owner set. */
 const PAGE_SIZE = 24;
+/** Modest debounce so typing does not fire a request per keystroke. */
+const SEARCH_DEBOUNCE_MS = 350;
 const SOURCE_VALUES: readonly LibrarySource[] = ["all", "workspace", "ai_tool_studio"];
 type SourceOrigin = LibrarySource;
-/** The gallery endpoint caps one page at 500; search/sort only ever see those. */
-const LOADED_LIMIT = 500;
 const BULK_ADD_LIMIT = 100;
 
 const TABS: { id: AssetType; label: string; icon: typeof ImageIcon }[] = [
@@ -67,11 +72,40 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name?: unknown }).name === "AbortError"
+  );
+}
+
+/**
+ * The paged contract is `{ items, total, offset, limit, has_more }`. During the
+ * rollout window a backend that has not yet shipped paging still answers the
+ * legacy `{ items }`; the reader degrades to a single, honest "loaded page"
+ * rather than crashing on `undefined`.
+ */
+function readPage(page: Partial<GalleryPage> & { items?: GalleryItem[] }) {
+  const items = page.items ?? [];
+  const total =
+    typeof page.total === "number" ? page.total : items.length;
+  const hasMore = typeof page.has_more === "boolean" ? page.has_more : false;
+  return { items, total, hasMore };
+}
+
 export default function AssetsPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, openAuthModal } = useAuth();
   const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const [tab, setTab] = usePersistentState<AssetType>(STORAGE_KEYS.ASSETS_TAB, "image");
   const [origin, setOrigin] = usePersistentState<SourceOrigin>(
     STORAGE_KEYS.ASSETS_SOURCE,
@@ -80,7 +114,6 @@ export default function AssetsPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [searchDraft, setSearchDraft] = useState("");
-  const [visible, setVisible] = useState(PAGE_SIZE);
   const [savedKeyList, setSavedKeyList] = usePersistentState<string[]>(
     STORAGE_KEYS.ASSETS_BOOKMARKS,
     []
@@ -107,8 +140,6 @@ export default function AssetsPage() {
   const [collections, setCollections] = useState<CollectionRecord[]>([]);
   const [collectionsKey, setCollectionsKey] = useState(0);
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
-  const [collectionItemKeys, setCollectionItemKeys] = useState<Set<string>>(new Set());
-  const [collectionItemsKey, setCollectionItemsKey] = useState(0);
   const [collectionNameDraft, setCollectionNameDraft] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -120,6 +151,10 @@ export default function AssetsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
+
+  // Stale-response guards: one controller per first page, one per appended page.
+  const moreControllerRef = useRef<AbortController | null>(null);
+  const requestKeyRef = useRef("");
 
   // Tags Horizontal Scroll Rail State
   const tagsScrollRef = useRef<HTMLDivElement>(null);
@@ -241,18 +276,23 @@ export default function AssetsPage() {
 
   // Identity change: drop every account-owned surface immediately. Sources that
   // are no longer visible must not linger, and an in-flight request from the
-  // previous account is ignored by the identity token below.
+  // previous account is aborted by the identity change in the loader below.
   const identityToken = useRef(0);
   useEffect(() => {
     identityToken.current += 1;
     setAssets([]);
+    setTotal(0);
+    setHasMore(false);
+    setOffset(0);
     setPopularTags([]);
     setLoading(Boolean(isAuthenticated));
+    setLoadingMore(false);
     setError(null);
+    setErrorStatus(null);
+    setMoreError(null);
     setRetryKey(0);
     setCollections([]);
     setActiveCollectionId(null);
-    setCollectionItemKeys(new Set());
     setSelectedKeys(new Set());
     setSelectMode(false);
     setBulkTarget("");
@@ -286,46 +326,177 @@ export default function AssetsPage() {
         if (!cancelled) setCollections(items);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setCollectionError(errorMessage(err, "Could not load collections."));
+        if (!cancelled)
+          setCollectionError(errorMessage(err, "Could not load collections."));
       });
     return () => {
       cancelled = true;
     };
   }, [isAuthenticated, user?.id, collectionsKey]);
 
+  // Server-paged first page. Every control change (search, sort, source, tags,
+  // collection, tab) starts a new request and aborts the previous one, so a slow
+  // stale response can never repaint results for a filter the user has left.
   useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated || !activeCollectionId) {
-      setCollectionItemKeys(new Set());
+    if (!isAuthenticated) {
+      setAssets([]);
+      setTotal(0);
+      setHasMore(false);
+      setOffset(0);
+      setLoading(false);
       return;
     }
-    void api
-      .getCollectionItems(activeCollectionId)
-      .then((keys) => {
-        if (!cancelled) setCollectionItemKeys(new Set(keys));
+
+    moreControllerRef.current?.abort();
+    moreControllerRef.current = null;
+    setLoadingMore(false);
+    setMoreError(null);
+    setLoading(true);
+    setError(null);
+    setErrorStatus(null);
+    setAssets([]);
+    setTotal(0);
+    setHasMore(false);
+    setOffset(0);
+
+    const controller = new AbortController();
+    const requestKey = libraryRequestKey({
+      query,
+      sort,
+      source: origin,
+      tags: selectedTags,
+      collectionId: activeCollectionId,
+      mediaType: tab,
+    });
+    requestKeyRef.current = requestKey;
+    const isStale = () =>
+      controller.signal.aborted || requestKeyRef.current !== requestKey;
+
+    api
+      .getMyGalleryPage(
+        {
+          offset: 0,
+          limit: PAGE_SIZE,
+          q: query.trim() || undefined,
+          sort,
+          source: origin,
+          tags: selectedTags.length ? selectedTags : undefined,
+          media_type: tab,
+          collection_id: activeCollectionId ?? undefined,
+        },
+        controller.signal
+      )
+      .then((page) => {
+        if (isStale()) return;
+        const next = readPage(page);
+        setAssets(withTypes(next.items));
+        setTotal(next.total);
+        setHasMore(next.hasMore);
+        setOffset(nextLibraryOffset(0, next.items.length, next.hasMore));
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setCollectionItemKeys(new Set());
-          setCollectionError(errorMessage(err, "Could not load collection items."));
-        }
+        if (isStale() || isAbortError(err)) return;
+        setError(errorMessage(err, "Could not reach the asset library."));
+        setErrorStatus(err instanceof ApiError ? err.status : null);
+      })
+      .finally(() => {
+        if (!isStale()) setLoading(false);
       });
+
+    return () => controller.abort();
+    // `user?.id` and `retryKey` deliberately restart the query on identity /
+    // manual retry even when the visible filters are unchanged.
+  }, [isAuthenticated, user?.id, query, sort, origin, selectedTags, tab, activeCollectionId, retryKey]);
+
+  // Abort any appended page when the view unmounts.
+  useEffect(() => {
     return () => {
-      cancelled = true;
+      moreControllerRef.current?.abort();
+      moreControllerRef.current = null;
     };
-  }, [isAuthenticated, user?.id, activeCollectionId, collectionItemsKey]);
+  }, []);
+
+  // Modest search debounce; Enter/blur commit immediately (below).
+  useEffect(() => {
+    const trimmed = searchDraft.trim();
+    if (trimmed === query) return;
+    const timer = setTimeout(() => setQuery(trimmed), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchDraft, query]);
+
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return;
+    const controller = new AbortController();
+    moreControllerRef.current?.abort();
+    moreControllerRef.current = controller;
+    const requestKey = requestKeyRef.current;
+    const isStale = () =>
+      controller.signal.aborted || requestKeyRef.current !== requestKey;
+    setLoadingMore(true);
+    setMoreError(null);
+    api
+      .getMyGalleryPage(
+        {
+          offset,
+          limit: PAGE_SIZE,
+          q: query.trim() || undefined,
+          sort,
+          source: origin,
+          tags: selectedTags.length ? selectedTags : undefined,
+          media_type: tab,
+          collection_id: activeCollectionId ?? undefined,
+        },
+        controller.signal
+      )
+      .then((page) => {
+        if (isStale()) return;
+        const next = readPage(page);
+        setAssets((prev) => mergeLibraryPage(prev, withTypes(next.items)));
+        setTotal(next.total);
+        setHasMore(next.hasMore);
+        setOffset(nextLibraryOffset(offset, next.items.length, next.hasMore));
+      })
+      .catch((err: unknown) => {
+        if (isStale() || isAbortError(err)) return;
+        setMoreError(errorMessage(err, "Could not load more assets."));
+      })
+      .finally(() => {
+        if (moreControllerRef.current === controller) setLoadingMore(false);
+      });
+  }, [
+    loading,
+    loadingMore,
+    hasMore,
+    offset,
+    query,
+    sort,
+    origin,
+    selectedTags,
+    tab,
+    activeCollectionId,
+  ]);
+
+  // "/" focuses search, like every gallery tool.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement !== searchRef.current) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const toggleTag = useCallback((tagName: string) => {
     const norm = tagName.trim().toLowerCase();
     setSelectedTags((prev) =>
       prev.includes(norm) ? prev.filter((t) => t !== norm) : [...prev, norm]
     );
-    setVisible(PAGE_SIZE);
   }, [setSelectedTags]);
 
   const clearTags = useCallback(() => {
     setSelectedTags([]);
-    setVisible(PAGE_SIZE);
   }, [setSelectedTags]);
 
   const openAsset = useCallback((asset: AssetRecord) => {
@@ -384,6 +555,16 @@ export default function AssetsPage() {
       await api.deleteAsset(deleteTarget);
       if (!isCurrentIdentity(token)) return;
       setAssets((prev) => prev.filter((a) => a.key !== deleteTarget));
+      setSelectedKeys((prev) => {
+        if (!prev.has(deleteTarget)) return prev;
+        const next = new Set(prev);
+        next.delete(deleteTarget);
+        return next;
+      });
+      setTotal((prev) => Math.max(0, prev - 1));
+      // The removed row sat before the paging cursor; shift it so the next page
+      // does not skip the asset that moved into its place.
+      setOffset((prev) => Math.max(0, prev - 1));
       if (selectedAsset?.key === deleteTarget) {
         closeAsset();
       }
@@ -396,72 +577,13 @@ export default function AssetsPage() {
     }
   }, [deleteTarget, deleting, selectedAsset, closeAsset, isCurrentIdentity]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated) return;
-    setLoading(true);
-    setError(null);
-    api
-      .getMyGallery(LOADED_LIMIT, origin === "all" ? {} : { origin })
-      .then((items) => {
-        if (!cancelled) setAssets(withTypes(items));
-      })
-      .catch((err: unknown) => {
-        if (!cancelled)
-          setError(
-            err instanceof Error ? err.message : "Could not reach the asset library."
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, user?.id, origin, retryKey]);
-
-  // "/" focuses search, like every gallery tool.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && document.activeElement !== searchRef.current) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const byType = useMemo(() => {
-    const counts: Record<AssetType, AssetRecord[]> = { image: [], video: [], "3d": [] };
-    for (const a of assets) counts[a.type].push(a);
-    return counts;
-  }, [assets]);
-
-  const filtered = useMemo(() => {
-    const inCollection = activeCollectionId ? collectionItemKeys : null;
-    return sortLibrary(
-      filterLibrary(byType[tab], {
-        query,
-        tags: selectedTags,
-        keys: inCollection,
-      }),
-      sort
-    );
-  }, [byType, tab, query, selectedTags, activeCollectionId, collectionItemKeys, sort]);
-
-  const shown = filtered.slice(0, visible);
-  const activeCollection = collections.find((c) => c.id === activeCollectionId) ?? null;
-
   const commitSearch = useCallback(() => {
     setQuery(searchDraft.trim());
-    setVisible(PAGE_SIZE);
   }, [searchDraft]);
 
   const clearSearch = useCallback(() => {
     setSearchDraft("");
     setQuery("");
-    setVisible(PAGE_SIZE);
   }, []);
 
   const toggleSaved = useCallback((key: string) => {
@@ -488,12 +610,21 @@ export default function AssetsPage() {
     setBulkError(null);
   }, []);
 
-  // Selection belongs to one view; switching tab/source drops it.
+  // Selection belongs to one visible view: switching tab/source/filter drops it
+  // (the loaded set is replaced), and the prune below keeps only keys still
+  // present in the rows on screen. Unloaded assets are never auto-selected.
   useEffect(() => {
-    setSelectedKeys(new Set());
+    setSelectedKeys((prev) => {
+      if (prev.size === 0) return prev;
+      const retained = retainLoadedSelection(prev, assets);
+      return retained.size === prev.size ? prev : retained;
+    });
+  }, [assets]);
+
+  useEffect(() => {
     setBulkMessage(null);
     setBulkError(null);
-  }, [tab, origin]);
+  }, [tab, origin, query, sort, selectedTags, activeCollectionId]);
 
   const createCollection = useCallback(
     async (e: React.FormEvent) => {
@@ -509,7 +640,6 @@ export default function AssetsPage() {
         setCollectionNameDraft("");
         setActiveCollectionId(created.id);
         setBulkTarget(created.id);
-        setVisible(PAGE_SIZE);
       } catch (err) {
         if (!isCurrentIdentity(token)) return;
         setCollectionError(errorMessage(err, "Could not create collection."));
@@ -593,7 +723,7 @@ export default function AssetsPage() {
       setBulkTarget(targetId);
       setSelectedKeys(new Set());
       setCollectionsKey((k) => k + 1);
-      if (activeCollectionId === targetId) setCollectionItemsKey((k) => k + 1);
+      if (activeCollectionId === targetId) setRetryKey((k) => k + 1);
     } catch (err) {
       if (!isCurrentIdentity(token)) return;
       setBulkError(errorMessage(err, "Could not add assets to the collection."));
@@ -623,7 +753,7 @@ export default function AssetsPage() {
         `Removed ${removed} of ${keys.length} from this collection. Media files were not deleted.`
       );
       setSelectedKeys(new Set());
-      setCollectionItemsKey((k) => k + 1);
+      setRetryKey((k) => k + 1);
       setCollectionsKey((k) => k + 1);
     } catch (err) {
       if (!isCurrentIdentity(token)) return;
@@ -633,11 +763,29 @@ export default function AssetsPage() {
     }
   }, [activeCollectionId, selectedKeys, isCurrentIdentity]);
 
-  const counts: Record<AssetType, number> = {
-    image: byType.image.length,
-    video: byType.video.length,
-    "3d": byType["3d"].length,
-  };
+  const activeCollection = collections.find((c) => c.id === activeCollectionId) ?? null;
+  const hasActiveFilters =
+    query.trim() !== "" ||
+    selectedTags.length > 0 ||
+    activeCollectionId !== null ||
+    origin !== "all";
+  const noun =
+    tab === "3d" ? "3D assets" : `${tab}${total === 1 ? "" : "s"}`;
+
+  const retry = useCallback(() => {
+    setError(null);
+    setErrorStatus(null);
+    setRetryKey((key) => key + 1);
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setSearchDraft("");
+    setQuery("");
+    setSelectedTags([]);
+    setActiveCollectionId(null);
+    setOrigin("all");
+    setSort("newest");
+  }, [setOrigin, setSelectedTags]);
 
   return (
     <ProtectedRoute
@@ -668,7 +816,6 @@ export default function AssetsPage() {
                     aria-selected={active}
                     onClick={() => {
                       setTab(id);
-                      setVisible(PAGE_SIZE);
                     }}
                     className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition ${
                       active
@@ -678,13 +825,15 @@ export default function AssetsPage() {
                   >
                     <Icon className={`h-3.5 w-3.5 ${active ? "text-[var(--accent)]" : ""}`} />
                     <span>{label}</span>
-                    <span
-                      className={`font-mono text-[10px] tabular-nums rounded px-1.5 py-0.5 ${
-                        active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-semibold" : "text-[var(--ink-faint)]"
-                      }`}
-                    >
-                      {formatCount(counts[id])}
-                    </span>
+                    {active && (
+                      <span
+                        className={`font-mono text-[10px] tabular-nums rounded px-1.5 py-0.5 ${
+                          active ? "bg-[var(--accent)]/15 text-[var(--accent)] font-semibold" : "text-[var(--ink-faint)]"
+                        }`}
+                      >
+                        {loading ? "…" : formatCount(total)}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -703,8 +852,8 @@ export default function AssetsPage() {
                     if (e.key === "Enter") commitSearch();
                   }}
                   onBlur={commitSearch}
-                  placeholder="Search loaded library (up to 500 assets)…"
-                  aria-label="Search loaded asset filenames (up to 500 assets)"
+                  placeholder="Search your whole library…"
+                  aria-label="Search your whole asset library"
                   className="h-9 w-full rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] pl-9 pr-12 text-xs text-[var(--ink)] placeholder:text-[var(--ink-soft)]/60 outline-none transition-all duration-200 hover:border-[var(--line-strong)] hover:bg-[var(--surface)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30 focus:bg-[var(--surface)]"
                 />
                 {searchDraft ? (
@@ -730,7 +879,6 @@ export default function AssetsPage() {
                 value={sort}
                 onChange={(e) => {
                   setSort(e.target.value as LibrarySort);
-                  setVisible(PAGE_SIZE);
                 }}
                 className="h-9 shrink-0 rounded-lg border border-[var(--line-strong)]/40 bg-[var(--surface-sunken)] px-2.5 text-xs font-medium text-[var(--ink)] outline-none hover:border-[var(--line-strong)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/30"
               >
@@ -766,9 +914,6 @@ export default function AssetsPage() {
                     aria-pressed={origin === source}
                     onClick={() => {
                       setOrigin(source);
-                      setVisible(PAGE_SIZE);
-                      setLoading(true);
-                      setError(null);
                     }}
                     className={`whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium transition ${
                       origin === source
@@ -804,7 +949,6 @@ export default function AssetsPage() {
               aria-pressed={activeCollectionId === null}
               onClick={() => {
                 setActiveCollectionId(null);
-                setVisible(PAGE_SIZE);
               }}
               className={`h-6 shrink-0 rounded-md border px-2.5 text-[11px] font-medium transition-colors ${
                 activeCollectionId === null
@@ -851,7 +995,6 @@ export default function AssetsPage() {
                     aria-pressed={activeCollectionId === collection.id}
                     onClick={() => {
                       setActiveCollectionId(collection.id);
-                      setVisible(PAGE_SIZE);
                     }}
                     className={`h-6 shrink-0 rounded-l-md border px-2.5 text-[11px] font-medium transition-colors ${
                       activeCollectionId === collection.id
@@ -921,7 +1064,7 @@ export default function AssetsPage() {
                 {selectedKeys.size} selected
               </span>
               <span className="text-[11px] text-[var(--ink-faint)]">
-                Bulk add sends at most {BULK_ADD_LIMIT}.
+                Only loaded assets can be selected. Bulk add sends at most {BULK_ADD_LIMIT}.
               </span>
               <label className="sr-only" htmlFor="bulk-collection">Target collection</label>
               <select
@@ -1070,15 +1213,18 @@ export default function AssetsPage() {
       </div>
 
       {/* ---------------- Grid ---------------- */}
-      <section className="workspace-bezel mx-auto mt-4 w-full max-w-[1600px] px-5 pb-8 pt-6 sm:px-6" aria-label="Asset results">
+      <section
+        id="asset-results"
+        className="workspace-bezel mx-auto mt-4 w-full max-w-[1600px] px-5 pb-8 pt-6 sm:px-6"
+        aria-label="Asset results"
+        aria-busy={loading}
+      >
         <div className="mb-4 flex items-center justify-between gap-3 text-xs text-[var(--ink-faint)]">
           <div className="flex items-center gap-2 flex-wrap">
             <p aria-live="polite">
               {loading
                 ? "Loading assets…"
-                : `Showing ${formatCount(shown.length)} of ${formatCount(filtered.length)} ${
-                    tab === "3d" ? "3D assets" : `${tab}${filtered.length === 1 ? "" : "s"}`
-                  } from ${formatCount(assets.length)} loaded (latest ${LOADED_LIMIT})`}
+                : `Showing ${formatCount(assets.length)} of ${formatCount(total)} matching ${noun}`}
             </p>
             {activeCollection && (
               <span className="font-mono text-[11px] text-[var(--accent)]">
@@ -1126,31 +1272,42 @@ export default function AssetsPage() {
         ) : error ? (
           <div className="workspace-empty flex min-h-[420px] flex-col items-center justify-center px-6 text-center" role="alert">
             <p className="text-sm font-medium text-[var(--danger)]">{error}</p>
-            <p className="mt-1.5 text-sm text-[var(--ink-faint)]">Check your studio connection, then retry.</p>
-            <button type="button" onClick={() => { setLoading(true); setError(null); setRetryKey((key) => key + 1); }} className="workspace-action-secondary mt-4 px-3 py-2 text-xs">Try again</button>
-          </div>
-        ) : assets.length === 0 ? (
-          <div className="workspace-empty workspace-bezel flex min-h-[420px] flex-col items-center justify-center p-1.5 text-center">
-            <div className="workspace-core flex h-full w-full flex-col items-center justify-center px-6 py-16">
-              <div className="workspace-icon-island h-16 w-16 border border-[var(--accent-ambient)] text-[var(--accent)] shadow-ambient-glow rounded-2xl bg-[var(--surface-soft)]">
-                <Sparkles className="h-7 w-7" strokeWidth={1.5} />
-              </div>
-              <div className="workspace-kicker mt-8">Your private gallery</div>
-              <h3 className="workspace-heading mt-3 text-xl font-semibold text-[var(--ink)]">No creations yet</h3>
-              <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ink-soft)]">
-                Every artwork, upscale, and design you generate in the studio will be curated in your private library.
-              </p>
-              <Link href="/generate" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
-                <Sparkles className="h-4.5 w-4.5" strokeWidth={1.5} />
-                Open Studio &rarr;
-              </Link>
+            <p className="mt-1.5 text-sm text-[var(--ink-faint)]">
+              {errorStatus === 401
+                ? "Your session has expired. Sign in again to reach your library."
+                : errorStatus === 404 && activeCollectionId
+                  ? "This collection is no longer available to this account."
+                  : "Check your studio connection, then retry."}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {errorStatus === 401 ? (
+                <button
+                  type="button"
+                  onClick={() => openAuthModal("library_session_expired")}
+                  className="workspace-action-primary px-3 py-2 text-xs"
+                >
+                  Sign in again
+                </button>
+              ) : null}
+              {errorStatus === 404 && activeCollectionId ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveCollectionId(null)}
+                  className="workspace-action-secondary px-3 py-2 text-xs"
+                >
+                  Clear collection
+                </button>
+              ) : null}
+              <button type="button" onClick={retry} className="workspace-action-secondary px-3 py-2 text-xs">
+                Try again
+              </button>
             </div>
           </div>
-        ) : filtered.length === 0 ? (
-          activeCollectionId && query === "" && selectedTags.length === 0 ? (
+        ) : total === 0 ? (
+          activeCollectionId && query === "" && selectedTags.length === 0 && origin === "all" ? (
             <div className="workspace-empty flex min-h-[320px] flex-col items-center justify-center px-6 text-center">
               <p className="text-sm text-[var(--ink-soft)]">
-                Nothing from this page is in the collection yet.
+                Nothing in this collection yet.
               </p>
               <button
                 type="button"
@@ -1160,15 +1317,45 @@ export default function AssetsPage() {
                 Show all assets
               </button>
             </div>
+          ) : !hasActiveFilters && tab === "image" ? (
+            <div className="workspace-empty workspace-bezel flex min-h-[420px] flex-col items-center justify-center p-1.5 text-center">
+              <div className="workspace-core flex h-full w-full flex-col items-center justify-center px-6 py-16">
+                <div className="workspace-icon-island h-16 w-16 border border-[var(--accent-ambient)] text-[var(--accent)] shadow-ambient-glow rounded-2xl bg-[var(--surface-soft)]">
+                  <Sparkles className="h-7 w-7" strokeWidth={1.5} />
+                </div>
+                <div className="workspace-kicker mt-8">Your private gallery</div>
+                <h3 className="workspace-heading mt-3 text-xl font-semibold text-[var(--ink)]">No creations yet</h3>
+                <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ink-soft)]">
+                  Every artwork, upscale, and design you generate in the studio will be curated in your private library.
+                </p>
+                <Link href="/generate" className="workspace-action-primary mt-7 gap-2 px-5 py-2.5 text-sm">
+                  <Sparkles className="h-4.5 w-4.5" strokeWidth={1.5} />
+                  Open Studio &rarr;
+                </Link>
+              </div>
+            </div>
           ) : query ? (
             <EmptyState kind="image" onClearSearch={clearSearch} />
+          ) : hasActiveFilters ? (
+            <div className="workspace-empty flex min-h-[320px] flex-col items-center justify-center px-6 text-center">
+              <p className="text-sm text-[var(--ink-soft)]">
+                No {noun} match these filters.
+              </p>
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="workspace-action-secondary mt-4 px-3 py-2 text-xs"
+              >
+                Clear all filters
+              </button>
+            </div>
           ) : (
             <EmptyState kind={tab} />
           )
         ) : (
           <>
             <AssetCardList
-              items={shown}
+              items={assets}
               aspectRatio="natural"
               savedKeys={savedKeys}
               onBookmark={(asset) => toggleSaved(asset.key)}
@@ -1178,10 +1365,27 @@ export default function AssetsPage() {
               selectedKeys={selectedKeys}
               onToggleSelect={(asset) => toggleSelected(asset.key)}
             />
-            {filtered.length > shown.length && (
+            {(hasMore || moreError) && (
               <div className="mt-6 flex flex-col items-center gap-2 pb-4">
-                <p className="text-xs text-[var(--ink-faint)]">Showing {shown.length} of {formatCount(filtered.length)}</p>
-                <button type="button" onClick={() => setVisible((value) => value + PAGE_SIZE)} className="workspace-action-primary gap-2 px-5 py-3 text-xs"><ArrowDown className="h-4 w-4" />Load more</button>
+                <p className="text-xs text-[var(--ink-faint)]">
+                  Showing {formatCount(assets.length)} of {formatCount(total)}
+                </p>
+                {moreError ? (
+                  <p className="text-xs font-medium text-[var(--danger)]" role="alert">
+                    {moreError}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  aria-controls="asset-results"
+                  aria-busy={loadingMore}
+                  className="workspace-action-primary gap-2 px-5 py-3 text-xs disabled:opacity-60"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                  {loadingMore ? "Loading…" : moreError ? "Retry loading more" : "Load more"}
+                </button>
               </div>
             )}
           </>
@@ -1191,12 +1395,14 @@ export default function AssetsPage() {
       {/* Shallow History Inspection Modal */}
       <AssetDetailOverlay
         asset={selectedAsset}
-        items={filtered}
+        items={assets}
         modelOptions={modelOptions}
         onSelectAsset={selectAssetInCarousel}
         onClose={closeAsset}
         onDeleteOutput={(key) => {
           setAssets((prev) => prev.filter((a) => a.key !== key));
+          setTotal((prev) => Math.max(0, prev - 1));
+          setOffset((prev) => Math.max(0, prev - 1));
           closeAsset();
         }}
       />

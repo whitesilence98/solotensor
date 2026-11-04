@@ -15,6 +15,56 @@ from ..db import PostgresConnectionWrapper
 PROBE_TIMEOUT = 1.0
 request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+# Query credentials that must never reach an access log. Only the value is
+# replaced, so the path and status stay useful for diagnostics.
+_SENSITIVE_QUERY = re.compile(r"(?i)([?&](?:cap|ticket)=)[^&\s\"']*")
+_REDACTED = "[redacted]"
+
+
+def redact_sensitive_query(message: str) -> str:
+    """Strip ``cap``/``ticket`` values from a rendered log line."""
+    return _SENSITIVE_QUERY.sub(lambda match: match.group(1) + _REDACTED, message)
+
+
+class SecretQueryFilter(logging.Filter):
+    """Redact media capabilities and progress tickets from access records.
+
+    Uvicorn's ``AccessFormatter.formatMessage`` unpacks ``record.args`` as the
+    five-tuple ``(client_addr, method, full_path, http_version, status_code)``.
+    Rewriting ``msg``/``args`` would break that formatter, so the standard shape
+    is redacted in place: only the ``full_path`` element changes and the tuple,
+    ``msg`` and status stay intact for uvicorn to format.
+
+    Any other record falls back to redacting its rendered message, which keeps
+    the filter useful for plain ``logging`` calls without changing the shape
+    uvicorn expects.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            args = record.args
+            if isinstance(args, tuple) and len(args) == 5:
+                client_addr, method, full_path, http_version, status_code = args
+                if not isinstance(full_path, str):
+                    return True
+                redacted_path = redact_sensitive_query(full_path)
+                if redacted_path != full_path:
+                    record.args = (
+                        client_addr,
+                        method,
+                        redacted_path,
+                        http_version,
+                        status_code,
+                    )
+                return True
+            rendered = record.getMessage()
+            redacted = redact_sensitive_query(rendered)
+            if redacted != rendered:
+                record.msg = redacted
+                record.args = None
+        except Exception:  # noqa: BLE001 - logging must never raise
+            return True
+        return True
 
 
 class RequestIDFilter(logging.Filter):
@@ -23,7 +73,25 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
+def configure_access_log_redaction() -> None:
+    """Attach the redaction filter to the uvicorn loggers exactly once.
+
+    ``uvicorn.access`` carries HTTP access lines; ``uvicorn.error`` carries the
+    WebSocket handshake lines (``"WebSocket <path> [accepted]"``, 403 and
+    status lines) with a ``(client, path[, status])`` argument shape, which the
+    filter's rendered-message fallback redacts. Both are needed because a
+    logger's filters do not run for records propagated from a child logger.
+    The filter sits on the logger, not a handler, so it keeps applying when
+    uvicorn replaces handlers during its own logging configuration.
+    """
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(item, SecretQueryFilter) for item in logger.filters):
+            logger.addFilter(SecretQueryFilter())
+
+
 def configure_request_logging() -> None:
+    configure_access_log_redaction()
     for handler in logging.getLogger().handlers:
         if not any(isinstance(item, RequestIDFilter) for item in handler.filters):
             handler.addFilter(RequestIDFilter())

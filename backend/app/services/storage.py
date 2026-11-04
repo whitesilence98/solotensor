@@ -4,12 +4,23 @@ import json
 import logging
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 from ..config import Settings, get_settings
 from ..schemas import GalleryItem
+from .media_access import (
+    MediaNotFound,
+    is_forbidden_artifact,
+    is_public_avatar,
+    is_public_metadata,
+    metadata_owner,
+    signed_media_url,
+    verify_capability,
+)
 
 logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -24,9 +35,108 @@ RELATED_MODES = frozenset({"all", "model", "tags"})
 RELATED_SCOPES = frozenset({"own", "public"})
 MAX_RELATED_PAGE_SIZE = 100
 
+GALLERY_SOURCE_FILTERS = frozenset({"all", "workspace", "ai_tool_studio"})
+GALLERY_SORT_ORDERS = frozenset({"newest", "oldest", "name"})
+# Legacy sidecars predate origin/source; they are local generations ("workspace").
+WORKSPACE_SOURCES = frozenset({"", "generation", "workspace"})
+TOOL_SOURCES = frozenset({"ai_tool_studio", "tool"})
+# Must match ``assetTypeOf`` in frontend/src/lib/api.ts.
+GALLERY_MEDIA_TYPES = frozenset({"image", "video", "3d"})
+VIDEO_MEDIA_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
+MODEL_MEDIA_EXTENSIONS = frozenset({".glb", ".gltf", ".obj", ".fbx", ".blend", ".splat"})
+
 
 class StorageError(RuntimeError):
     """Raised when the storage directory is unusable or an IO operation fails."""
+
+
+@dataclass(frozen=True)
+class MediaAccess:
+    """Serve-time authorization result for one stored media key."""
+
+    key: str
+    path: Path
+    owner_id: Optional[str]
+    is_private: bool
+    is_public: bool
+    is_saved: bool = True
+
+
+def _metadata_is_private(metadata: Any) -> bool:
+    return isinstance(metadata, dict) and (
+        metadata.get("gallery_saved") is False or metadata.get("is_private") is True
+    )
+
+
+def _normalized_source(metadata: dict[str, Any]) -> str:
+    value = metadata.get("origin")
+    if not isinstance(value, str) or not value.strip():
+        value = metadata.get("source")
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _gallery_matches_source(
+    metadata: dict[str, Any], source: str, origin: str | None
+) -> bool:
+    """Source filter, with the legacy exact-``origin`` filter retained.
+
+    ``source != "all"`` replaces ``origin``; both are exact sidecar matches and
+    a legacy sidecar without either field counts as a workspace generation.
+    """
+    if source != "all":
+        normalized = _normalized_source(metadata)
+        if source == "workspace":
+            return normalized in WORKSPACE_SOURCES
+        return normalized in TOOL_SOURCES
+    if origin:
+        return metadata.get("origin", metadata.get("source")) == origin
+    return True
+
+
+def _gallery_matches_media_type(item: GalleryItem, media_type: str | None) -> bool:
+    """Gallery tab filter; mirrors ``assetTypeOf`` in the frontend."""
+    if not media_type:
+        return True
+    ext = Path(item.key).suffix.lower()
+    if media_type == "video":
+        return ext in VIDEO_MEDIA_EXTENSIONS
+    if media_type == "3d":
+        return ext in MODEL_MEDIA_EXTENSIONS
+    return ext not in VIDEO_MEDIA_EXTENSIONS and ext not in MODEL_MEDIA_EXTENSIONS
+
+
+def _gallery_matches_query(
+    item: GalleryItem, metadata: dict[str, Any], needle: str
+) -> bool:
+    """Case-insensitive substring over key, prompt, tool name and string tags."""
+    haystacks = [item.key, metadata.get("prompt"), metadata.get("tool_name")]
+    tags = metadata.get("tags")
+    if isinstance(tags, (list, tuple, set)):
+        haystacks.extend(tags)
+    for value in haystacks:
+        if isinstance(value, str) and needle in value.casefold():
+            return True
+    return False
+
+
+def _gallery_sort_key(item: GalleryItem, order: str) -> tuple[Any, ...]:
+    """Stable ordering with a unique key tie-break so pages never overlap."""
+    if order == "name":
+        basename = item.key.rsplit("/", 1)[-1].lower()
+        return (basename, item.key)
+    mtime = _iso_mtime(item.last_modified)
+    if order == "oldest":
+        return (mtime, item.key)
+    # newest: mtime DESC, key ASC. Negate the numeric timestamp so one sort
+    # direction keeps the key tie-break ascending.
+    return (-mtime, item.key)
+
+
+def _iso_mtime(value: str) -> float:
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class StorageService:
@@ -79,17 +189,51 @@ class StorageService:
     def _metadata_path(asset_path: Path) -> Path:
         return asset_path.with_suffix(f"{asset_path.suffix}.json")
 
-    def _gallery_item(self, path: Path) -> GalleryItem:
-        stat = path.stat()
-        rel = path.relative_to(self.root).as_posix()
-        metadata = None
+    def _read_sidecar(self, path: Path) -> dict[str, Any] | None:
+        """Return a dict sidecar or None; malformed JSON/list payloads fail closed."""
         try:
             sidecar = self._metadata_path(path)
             if sidecar.is_file():
                 raw = json.loads(sidecar.read_text(encoding="utf-8"))
-                metadata = raw if isinstance(raw, dict) else None
+                return raw if isinstance(raw, dict) else None
         except (OSError, json.JSONDecodeError):
             logger.warning("Could not read metadata for %s", path)
+        return None
+
+    def _local_file_url(self, key: str) -> str:
+        return f"{self.settings.FILES_PUBLIC_BASE.rstrip('/')}/files/{quote(key, safe='/')}"
+
+    def _signed_url(
+        self, key: str, viewer_id: str | None
+    ) -> tuple[str, str | None]:
+        if not viewer_id:
+            return self._local_file_url(key), None
+        return signed_media_url(key, viewer_id, settings=self.settings)
+
+    @staticmethod
+    def _key_from_url(url: Any) -> str | None:
+        """Extract the storage key from a ``/files/<key>`` URL, if present."""
+        if not isinstance(url, str) or "/files/" not in url:
+            return None
+        tail = url.split("/files/", 1)[1]
+        tail = tail.split("?", 1)[0].split("#", 1)[0]
+        return tail or None
+
+    def _gallery_item(self, path: Path, viewer_id: str | None = None) -> GalleryItem:
+        stat = path.stat()
+        rel = path.relative_to(self.root).as_posix()
+        metadata = self._read_sidecar(path)
+        private_like = _metadata_is_private(metadata)
+        owner = metadata_owner(metadata)
+        sign_for_owner = bool(
+            viewer_id and private_like and owner and owner == viewer_id
+        )
+        if sign_for_owner:
+            url, url_expires_at = self._signed_url(rel, viewer_id)
+        elif private_like:
+            url, url_expires_at = self._local_file_url(rel), None
+        else:
+            url, url_expires_at = self._file_url(rel), None
         before_detailer_url = (
             metadata.get("before_detailer_url") if isinstance(metadata, dict) else None
         )
@@ -103,15 +247,29 @@ class StorageService:
             if isinstance(metadata, dict) and "enable_detailer" in metadata
             else has_detailer
         )
+        is_private = _metadata_is_private(metadata)
+        if before_detailer_url:
+            # Derivative URLs inherit the parent's authorization. Sign with the
+            # parent key for the asset owner so a derivative is never treated as
+            # ownerless-public; serving re-checks the parent sidecar, so a
+            # capability never grants more than the parent allows.
+            parent_key = self._key_from_url(before_detailer_url)
+            if parent_key:
+                if viewer_id and owner and owner == viewer_id:
+                    before_detailer_url, _ = self._signed_url(parent_key, viewer_id)
+                else:
+                    before_detailer_url = self._local_file_url(parent_key)
         return GalleryItem(
             key=rel,
-            url=self._file_url(rel),
+            url=url,
+            url_expires_at=url_expires_at,
             size=stat.st_size,
             last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
             metadata=metadata,
             before_detailer_url=before_detailer_url,
             has_detailer=has_detailer,
             enable_detailer=enable_detailer,
+            is_private=is_private,
         )
 
     async def upload_asset(
@@ -161,6 +319,14 @@ class StorageService:
             except Exception as exc:
                 logger.error("Failed to upload to S3 (%s): %s", key, exc)
 
+        # Private/unsaved generation media must never surface as a raw public
+        # (or S3 public) link; the owner gets a short-lived local capability.
+        if _metadata_is_private(metadata):
+            owner = metadata_owner(metadata)
+            if owner:
+                signed, _ = signed_media_url(key, owner, settings=self.settings)
+                return signed
+            return self._local_file_url(key)
         return self._file_url(key)
 
     async def upload_image(self, data: bytes, prompt_id: str, filename: str = "image.png", content_type: str = "image/png", metadata: Optional[dict] = None, namespace: str | None = None) -> str:
@@ -187,42 +353,118 @@ class StorageService:
         tags: list[str] | None = None,
         tag_mode: str = "all",
         user_id: str | None = None,
+        viewer_id: str | None = None,
     ) -> list[GalleryItem]:
-        files = self._asset_files()
-        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        items: list[GalleryItem] = []
-        for path in files:
-            item = self._gallery_item(path)
-            metadata = item.metadata or {}
-            if metadata.get("gallery_saved", True) is False:
-                continue
-            if user_id and metadata.get("user_id") != user_id:
-                continue
-            item_origin = metadata.get("origin", metadata.get("source"))
-            if origin and item_origin != origin:
-                continue
-            if tool_id and metadata.get("tool_id") != tool_id:
-                continue
-            if tool_type and metadata.get("tool_type", metadata.get("tool_mode")) != tool_type:
-                continue
-            if tag and tag not in (metadata.get("tags") or []):
-                continue
-            if tags:
-                item_tags = {str(t).lower() for t in (metadata.get("tags") or [])}
-                req_tags = [str(t).lower() for t in tags if str(t).strip()]
-                if req_tags:
-                    if tag_mode == "any":
-                        if not any(t in item_tags for t in req_tags):
-                            continue
-                    else:  # "all"
-                        if not all(t in item_tags for t in req_tags):
-                            continue
-            items.append(item)
-            if len(items) >= limit:
-                break
+        items, _ = self.list_gallery_page(
+            user_id=user_id,
+            viewer_id=viewer_id,
+            offset=0,
+            limit=limit,
+            origin=origin,
+            tool_id=tool_id,
+            tool_type=tool_type,
+            tag=tag,
+            tags=tags,
+            tag_mode=tag_mode,
+        )
         return items
 
-    def get_asset(self, key: str) -> GalleryItem:
+    def list_gallery_page(
+        self,
+        *,
+        user_id: str | None,
+        viewer_id: str | None,
+        offset: int = 0,
+        limit: int = 60,
+        origin: str | None = None,
+        tool_id: str | None = None,
+        tool_type: str | None = None,
+        tag: str | None = None,
+        tags: list[str] | None = None,
+        tag_mode: str = "all",
+        q: str | None = None,
+        sort: str = "newest",
+        source: str = "all",
+        media_type: str | None = None,
+        collection_keys: set[str] | None = None,
+    ) -> tuple[list[GalleryItem], int]:
+        """One owner-scoped page plus the true post-visibility total.
+
+        Order of operations is the privacy contract: visibility first (unsaved
+        and foreign private assets never count), then filters, then count, then
+        slice. Sorting is stable with a unique key tie-break so pages never
+        overlap or skip when timestamps collide.
+        """
+        normalized_source = (source or "all").strip().lower()
+        if normalized_source not in GALLERY_SOURCE_FILTERS:
+            normalized_source = "all"
+        normalized_sort = (sort or "newest").strip().lower()
+        if normalized_sort not in GALLERY_SORT_ORDERS:
+            normalized_sort = "newest"
+        normalized_media = (media_type or "").strip().lower()
+        if normalized_media not in GALLERY_MEDIA_TYPES:
+            normalized_media = ""
+        needle = (q or "").strip().casefold()
+
+        files = self._asset_files()
+        matches: list[tuple[str, GalleryItem]] = []
+        for path in files:
+            try:
+                metadata = self._read_sidecar(path) or {}
+                # Visibility precedes every other filter and the total count.
+                if metadata.get("gallery_saved", True) is False:
+                    continue
+                if metadata.get("is_private") is True and not (
+                    viewer_id and metadata.get("user_id") == viewer_id
+                ):
+                    continue
+                if user_id and metadata.get("user_id") != user_id:
+                    continue
+                item = self._gallery_item(
+                    path,
+                    viewer_id=viewer_id if metadata.get("user_id") == viewer_id else None,
+                )
+                if collection_keys is not None and item.key not in collection_keys:
+                    continue
+                if not _gallery_matches_source(
+                    metadata, normalized_source, origin
+                ):
+                    continue
+                if tool_id and metadata.get("tool_id") != tool_id:
+                    continue
+                if tool_type and metadata.get("tool_type", metadata.get("tool_mode")) != tool_type:
+                    continue
+                if tag and tag not in (metadata.get("tags") or []):
+                    continue
+                if tags:
+                    item_tags = {str(t).lower() for t in (metadata.get("tags") or [])}
+                    req_tags = [str(t).lower() for t in tags if str(t).strip()]
+                    if req_tags:
+                        if tag_mode == "any":
+                            if not any(t in item_tags for t in req_tags):
+                                continue
+                        else:  # "all"
+                            if not all(t in item_tags for t in req_tags):
+                                continue
+                if needle and not _gallery_matches_query(item, metadata, needle):
+                    continue
+                if not _gallery_matches_media_type(item, normalized_media or None):
+                    continue
+                matches.append((_gallery_sort_key(item, normalized_sort), item))
+            except (OSError, ValueError) as exc:
+                logger.debug(
+                    "Skipping unreadable gallery asset during listing (%s)",
+                    type(exc).__name__,
+                )
+                continue
+
+        matches.sort(key=lambda entry: entry[0])
+        total = len(matches)
+        start = max(0, int(offset))
+        stop = start + max(1, int(limit))
+        return [item for _, item in matches[start:stop]], total
+
+    def get_asset(self, key: str, viewer_id: str | None = None) -> GalleryItem:
         path = (self.root / key).resolve()
         try:
             path.relative_to(self.root)
@@ -230,7 +472,147 @@ class StorageService:
             raise StorageError("Invalid asset key") from exc
         if not path.is_file() or path.suffix.lower() not in ASSET_EXTENSIONS:
             raise FileNotFoundError(key)
-        return self._gallery_item(path)
+        return self._gallery_item(
+            path,
+            viewer_id=viewer_id
+            if viewer_id and metadata_owner(self._read_sidecar(path)) == viewer_id
+            else None,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Guarded media serving
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _reject_key(key: str) -> None:
+        """Reject paths that are not plain relative POSIX storage keys."""
+        if not isinstance(key, str) or not key.strip() or "\x00" in key:
+            raise MediaNotFound(key)
+        if "\\" in key or key.startswith("/"):
+            raise MediaNotFound(key)
+        if len(key) > 1 and key[1] == ":":
+            raise MediaNotFound(key)
+        if any(segment in ("", ".", "..") for segment in key.split("/")):
+            raise MediaNotFound(key)
+        try:
+            decoded = key.encode("latin-1").decode("unicode_escape")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            decoded = key
+        if decoded != key and ("\\" in decoded or ".." in decoded.split("/")):
+            raise MediaNotFound(key)
+        if "%" in key:
+            from urllib.parse import unquote
+
+            decoded_key = unquote(key)
+            if decoded_key != key and (
+                "\\" in decoded_key
+                or decoded_key.startswith("/")
+                or ".." in decoded_key.split("/")
+                or (len(decoded_key) > 1 and decoded_key[1] == ":")
+            ):
+                raise MediaNotFound(key)
+
+    def resolve_media(self, key: str, *, allow_audio: bool = False) -> MediaAccess:
+        """Resolve a stored media key to a containment-checked file.
+
+        Raises ``MediaNotFound`` for anything that is not a readable media file
+        under ``STORAGE_DIR`` (including encoded traversal and symlink escapes).
+        """
+        self._reject_key(key)
+        if is_forbidden_artifact(key):
+            raise MediaNotFound(key)
+        candidate = self.root / key
+        try:
+            path = candidate.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise MediaNotFound(key) from exc
+        try:
+            path.relative_to(self.root)
+        except ValueError as exc:
+            raise MediaNotFound(key) from exc
+        if not path.is_file() or path.suffix.lower() not in READABLE_EXTENSIONS:
+            raise MediaNotFound(key)
+        if path.suffix.lower() in AUDIO_EXTENSIONS and not allow_audio:
+            # Audio is an input-only upload; it never has a media surface.
+            raise MediaNotFound(key)
+        metadata = self._read_sidecar(path)
+        return MediaAccess(
+            key=key,
+            path=path,
+            owner_id=metadata_owner(metadata),
+            is_private=_metadata_is_private(metadata),
+            is_public=is_public_metadata(metadata),
+            is_saved=not (
+                isinstance(metadata, dict)
+                and metadata.get("gallery_saved") is False
+            ),
+        )
+
+    def is_asset_reference_visible(self, key: str, viewer_id: str | None) -> bool:
+        """Visibility policy for endpoints that only *name* an asset key.
+
+        Likes/remix and tag counts never serve bytes, so they reuse the gallery
+        visibility rules rather than the stricter ``/files`` fail-closed rule:
+        a foreign private/unsaved asset is hidden, while a public asset or a
+        legacy ownerless media file stays addressable (matching ``list_related``
+        public scope and the old gallery behavior).
+        """
+        try:
+            access = self.resolve_media(key, allow_audio=True)
+        except (MediaNotFound, OSError, ValueError):
+            return False
+        if access.is_public:
+            return True
+        if access.owner_id:
+            return bool(viewer_id and access.owner_id == viewer_id)
+        if access.is_private:
+            # Unsaved/private ownerless media has no owner to authorize.
+            return False
+        return True
+
+    def media_file_exists(self, key: str) -> bool:
+        """True when ``key`` names an existing readable media file under root.
+
+        Used only to decide whether a DB row is legacy metadata (no file, no
+        sidecar) or points at an existing file whose sidecar visibility must
+        win over the DB row's stale flags.
+        """
+        try:
+            self.resolve_media(key, allow_audio=True)
+        except (MediaNotFound, OSError, ValueError):
+            return False
+        return True
+
+    def authorize_media(
+        self,
+        key: str,
+        *,
+        viewer_id: str | None = None,
+        capability: str | None = None,
+        allow_audio: bool = False,
+    ) -> MediaAccess:
+        """Serve-time authorization; re-reads the sidecar every call.
+
+        Public assets are readable by anyone. Private/unsaved assets require a
+        valid ``asset-read`` capability whose viewer is still the owner.
+        """
+        access = self.resolve_media(key, allow_audio=allow_audio)
+        if access.is_public or is_public_avatar(key):
+            return access
+        if not access.owner_id:
+            raise MediaNotFound(key)
+        viewer = viewer_id
+        if capability:
+            capability_viewer = verify_capability(
+                capability, key, settings=self.settings
+            )
+            if capability_viewer and (
+                viewer is None or capability_viewer == viewer
+            ):
+                viewer = capability_viewer
+        if viewer and viewer == access.owner_id:
+            return access
+        raise MediaNotFound(key)
 
     def get_image(self, key: str) -> GalleryItem:
         return self.get_asset(key)
@@ -432,25 +814,36 @@ class StorageService:
         page_items = [candidate[5] for candidate in candidates[start : start + limit]]
         return page_items, total
 
-    async def get_image_bytes(self, key: str) -> bytes:
+    async def get_image_bytes(
+        self,
+        key: str,
+        *,
+        viewer_id: str | None = None,
+        capability: str | None = None,
+        allow_audio: bool = False,
+    ) -> bytes:
         """Read a stored upload back into memory for reuse as a ComfyUI input.
 
-        Accepts images, videos and audio; the key is resolved under ``root`` so a
-        traversal attempt (``..``) cannot escape storage.
+        This is a trust boundary too: a caller must not be able to launder a
+        foreign private/unsaved asset into their own run by naming its key (or
+        an unsigned ``/files`` URL) as a reference image. The same visibility
+        policy as ``/files`` applies, so only public media or the viewer's own
+        media (bearer or scoped capability) can be read.
         """
-        path = (self.root / key).resolve()
+        access = self.authorize_media(
+            key,
+            viewer_id=viewer_id,
+            capability=capability,
+            allow_audio=allow_audio,
+        )
         try:
-            path.relative_to(self.root)
-        except ValueError as exc:
-            raise StorageError("Invalid asset key") from exc
-        if path == self.root or not path.is_file() or path.suffix.lower() not in READABLE_EXTENSIONS:
-            raise FileNotFoundError(key)
-        try:
-            return path.read_bytes()
+            return access.path.read_bytes()
         except OSError as exc:
             raise StorageError(f"Could not read stored asset: {exc}") from exc
 
-    def set_saved(self, key: str, saved: bool) -> GalleryItem:
+    def set_saved(
+        self, key: str, saved: bool, viewer_id: str | None = None
+    ) -> GalleryItem:
         path = (self.root / key).resolve()
         try:
             path.relative_to(self.root)
@@ -469,9 +862,11 @@ class StorageService:
             temp.replace(sidecar)
         except (OSError, json.JSONDecodeError) as exc:
             raise StorageError("Could not update asset visibility") from exc
-        return self._gallery_item(path)
+        return self._gallery_item(path, viewer_id=viewer_id)
 
-    def update_tags(self, key: str, tags: list[str]) -> GalleryItem:
+    def update_tags(
+        self, key: str, tags: list[str], viewer_id: str | None = None
+    ) -> GalleryItem:
         path = (self.root / key).resolve()
         try:
             path.relative_to(self.root)
@@ -490,23 +885,35 @@ class StorageService:
             temp.replace(sidecar)
         except (OSError, json.JSONDecodeError) as exc:
             raise StorageError("Could not update asset tags") from exc
-        return self._gallery_item(path)
+        return self._gallery_item(path, viewer_id=viewer_id)
 
     def list_popular_tags(
-        self, limit: int = 50, user_id: str | None = None
+        self,
+        limit: int = 50,
+        user_id: str | None = None,
+        viewer_id: str | None = None,
     ) -> list[dict[str, Any]]:
         self.ensure_root()
         counts: dict[str, int] = {}
         for p in self.root.rglob("*.json"):
             try:
                 raw = json.loads(p.read_text(encoding="utf-8"))
-                if isinstance(raw, dict):
-                    if user_id and raw.get("user_id") != user_id:
+                if not isinstance(raw, dict):
+                    continue
+                if user_id and raw.get("user_id") != user_id:
+                    continue
+                # Tag counts must not reveal another user's private/unsaved
+                # assets. Ownerless legacy sidecars stay counted (matching the
+                # gallery/related legacy policy); malformed or non-dict
+                # sidecars are skipped.
+                if raw.get("gallery_saved") is False or raw.get("is_private") is True:
+                    owner = metadata_owner(raw)
+                    if not (viewer_id and owner and owner == viewer_id):
                         continue
-                    for tag in raw.get("tags") or []:
-                        if isinstance(tag, str) and tag.strip():
-                            norm = tag.strip().lower()
-                            counts[norm] = counts.get(norm, 0) + 1
+                for tag in raw.get("tags") or []:
+                    if isinstance(tag, str) and tag.strip():
+                        norm = tag.strip().lower()
+                        counts[norm] = counts.get(norm, 0) + 1
             except Exception:
                 continue
         sorted_tags = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:limit]

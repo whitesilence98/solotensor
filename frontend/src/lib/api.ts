@@ -491,6 +491,19 @@ export interface GalleryItem {
   enable_detailer?: boolean;
   has_detailer?: boolean;
   user_id?: string | null;
+  /** Enforced by the serving route; mirrors the owner's privacy flag. */
+  is_private?: boolean | null;
+  /** Expiry of the short-lived media capability in `url` (private only). */
+  url_expires_at?: string | null;
+}
+
+/** Freshly signed media URLs for one asset (`GET /api/v1/assets/{key}/media`). */
+export interface AssetMediaResponse {
+  key: string;
+  url: string;
+  url_expires_at?: string | null;
+  thumbnail_url?: string | null;
+  before_detailer_url?: string | null;
 }
 
 export type NotificationCategory = "moderation" | "generation" | "social" | "system";
@@ -603,6 +616,17 @@ export interface ProgressEvent {
   max?: number | null;
   message?: string | null;
   [key: string]: unknown;
+}
+
+/**
+ * Short-lived, single-use relay credential issued by `POST /api/v1/ws/ticket`.
+ * The server chooses `client_id`; the browser never invents one.
+ */
+export interface ProgressTicketResponse {
+  ticket: string;
+  client_id: string;
+  expires_in_seconds: number;
+  ws_path: string;
 }
 
 export const AUTH_TOKEN_KEY = "solotensor_token";
@@ -1539,6 +1563,53 @@ export interface PaginatedGenerations {
   has_more: boolean;
 }
 
+/** Owner Library ordering; serialized exactly as these strings. */
+export type GallerySort = "newest" | "oldest" | "name";
+
+/** Owner Library source filter; `all` is never sent as a query parameter. */
+export type GallerySource = "all" | "workspace" | "ai_tool_studio";
+
+/** Query accepted by the owner gallery (`GET /api/v1/gallery/me`). */
+export interface MyGalleryQuery {
+  /** Default 0. Rows to skip; advance by the number of items received. */
+  offset?: number;
+  /** Default 60, clamped server-side to the gallery cap (500). */
+  limit?: number;
+  /** Case-insensitive match over key/filename, prompt, tool name and tags. */
+  q?: string;
+  sort?: GallerySort;
+  source?: GallerySource;
+  /**
+   * Media tab filter, applied before paging. Derived from the file extension,
+   * matching `assetTypeOf`. `3d` is currently always empty because the gallery
+   * allowlist has no model extensions, but the filter stays honest rather than
+   * client-filtering a single loaded page.
+   */
+  media_type?: AssetType;
+  tags?: string[] | string;
+  tag_mode?: "all" | "any";
+  /** Owner-only collection filter; a foreign or unknown id is 404. */
+  collection_id?: string;
+  /** Legacy filters, still honored when `source` is "all". */
+  tag?: string;
+  origin?: string;
+  tool_id?: string;
+  tool_type?: string;
+}
+
+/**
+ * Offset-paged owner gallery. `total` is the visible match count before
+ * paging, so `items` never contains hidden media and `has_more` is reliable
+ * for infinite scroll.
+ */
+export interface GalleryPage {
+  items: GalleryItem[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
 /** Paginated gallery envelope for related-asset matching (`GET /api/v1/gallery/related`). */
 export interface PaginatedGallery {
   items: GalleryItem[];
@@ -1916,6 +1987,62 @@ export const api = {
     }));
   },
 
+  /**
+   * One offset page of the owner gallery. Filters, search and sort run on the
+   * server over the full visible owner dataset, so `total`/`has_more` describe
+   * more than the loaded rows. Advance with `offset += items.length`.
+   */
+  async getMyGalleryPage(
+    params: MyGalleryQuery = {},
+    signal?: AbortSignal
+  ): Promise<GalleryPage> {
+    const query = new URLSearchParams();
+    query.set("offset", String(Math.max(0, Math.trunc(params.offset ?? 0))));
+    query.set(
+      "limit",
+      String(Math.min(Math.max(1, Math.trunc(params.limit ?? 60)), 500))
+    );
+    if (params.q?.trim()) query.set("q", params.q.trim());
+    if (params.sort && params.sort !== "newest") query.set("sort", params.sort);
+    if (params.source && params.source !== "all") query.set("source", params.source);
+    if (params.media_type) query.set("media_type", params.media_type);
+    if (params.collection_id) query.set("collection_id", params.collection_id);
+    if (params.tag_mode && params.tag_mode !== "all") {
+      query.set("tag_mode", params.tag_mode);
+    }
+    if (params.tags) {
+      const tags = Array.isArray(params.tags)
+        ? params.tags
+        : params.tags.split(",");
+      const joined = tags
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .join(",");
+      if (joined) query.set("tags", joined);
+    }
+    if (params.tag?.trim()) query.set("tag", params.tag.trim());
+    if (params.origin) query.set("origin", params.origin);
+    if (params.tool_id) query.set("tool_id", params.tool_id);
+    if (params.tool_type) query.set("tool_type", params.tool_type);
+
+    const data = await request<GalleryPage>(`/api/v1/gallery/me?${query}`, {
+      signal,
+    });
+    return {
+      ...data,
+      items: (data.items || []).map((item) => ({
+        ...item,
+        url: resolveMediaUrl(item.url) || item.url,
+        thumbnail_url: resolveMediaUrl(item.thumbnail_url) || item.thumbnail_url,
+      })),
+    };
+  },
+
+  /**
+   * Backward-compatible flat listing: the first `limit` owner assets, using
+   * the same server-side filters as `getMyGalleryPage`. New paged callers
+   * should use `getMyGalleryPage` directly.
+   */
   async getMyGallery(
     limit = 60,
     filters: {
@@ -1925,28 +2052,23 @@ export const api = {
       tag?: string;
       tags?: string[] | string;
       tag_mode?: "all" | "any";
-    } = {}
+      media_type?: AssetType;
+      source?: GallerySource;
+      sort?: GallerySort;
+      q?: string;
+      collection_id?: string;
+    } = {},
+    signal?: AbortSignal
   ): Promise<GalleryItem[]> {
-    const safeLimit = Math.min(Math.max(1, limit), 500);
-    const params = new URLSearchParams({ limit: String(safeLimit) });
-    Object.entries(filters).forEach(([key, value]) => {
-      if (!value) return;
-      if (key === "tags") {
-        if (Array.isArray(value)) {
-          if (value.length > 0) params.set("tags", value.join(","));
-        } else if (typeof value === "string" && value.trim()) {
-          params.set("tags", value.trim());
-        }
-      } else if (typeof value === "string") {
-        params.set(key, value);
-      }
-    });
-    const resp = await request<{ items: GalleryItem[] }>(`/api/v1/gallery/me?${params}`);
-    return (resp.items || []).map((item) => ({
-      ...item,
-      url: resolveMediaUrl(item.url) || item.url,
-      thumbnail_url: resolveMediaUrl(item.thumbnail_url) || item.thumbnail_url,
-    }));
+    const page = await this.getMyGalleryPage(
+      {
+        ...filters,
+        limit: Math.min(Math.max(1, Math.trunc(limit)), 500),
+        offset: 0,
+      },
+      signal
+    );
+    return page.items;
   },
 
   async getAssets(
@@ -2109,7 +2231,9 @@ export const api = {
     form.append("prompt", prompt);
     form.append("aspect_ratio", aspectRatio);
     form.append("values", JSON.stringify(values));
-    form.append("client_id", options.clientId ?? "");
+    // Omit entirely when absent: an empty string would read as a supplied
+    // (unreserved) id and must not be sent.
+    if (options.clientId) form.append("client_id", options.clientId);
     form.append("save_to_gallery", String(options.saveToGallery ?? true));
     const imageIds = Object.keys(images);
     form.append("image_control_ids", JSON.stringify(imageIds));
@@ -2128,6 +2252,29 @@ export const api = {
     return {
       ...item,
       url: resolveMediaUrl(item.url) || item.url,
+    };
+  },
+
+  /**
+   * Re-sign one asset's media URLs. Private assets are served through a
+   * short-lived capability in the URL, so a long-open page (or a download that
+   * starts after expiry) must refresh instead of showing broken media.
+   */
+  async refreshAssetMedia(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<AssetMediaResponse> {
+    const encoded = key.split("/").map(encodeURIComponent).join("/");
+    const item = await request<AssetMediaResponse>(
+      `/api/v1/assets/${encoded}/media`,
+      { signal },
+    );
+    return {
+      ...item,
+      url: resolveMediaUrl(item.url) || item.url,
+      thumbnail_url: resolveMediaUrl(item.thumbnail_url) ?? item.thumbnail_url,
+      before_detailer_url:
+        resolveMediaUrl(item.before_detailer_url) ?? item.before_detailer_url,
     };
   },
 
@@ -2238,11 +2385,58 @@ export const api = {
     return request<ReadyResponse>("/api/v1/ready", { signal });
   },
 
-  /** Open a relay WebSocket to /api/v1/ws/progress/{clientId}. */
-  openProgressSocket(
-    clientId: string,
-    onEvent: (event: ProgressEvent) => void
-  ): WebSocket {
+  /** Mint a single-use relay ticket bound to the caller; the server picks client_id. */
+  async createProgressTicket(signal?: AbortSignal): Promise<ProgressTicketResponse> {
+    return request<ProgressTicketResponse>("/api/v1/ws/ticket", {
+      method: "POST",
+      signal,
+    });
+  },
+
+  /**
+   * Mint a ticket and open the relay WebSocket in one call. Resolves only once
+   * the handshake is OPEN, so a submission can never queue before the
+   * authenticated relay is listening. Rejects on error, close-before-open, a
+   * bounded timeout, an aborted signal, or when the session token changes while
+   * the ticket/handshake is in flight (a stale account must not inherit it).
+   * Callers must submit the returned `clientId` to `/generate` or tool exec.
+   */
+  async openProgressSocket(
+    onEvent: (event: ProgressEvent) => void,
+    options: {
+      signal?: AbortSignal;
+      /**
+       * Milliseconds to wait for OPEN before rejecting. Bounds the WebSocket
+       * handshake only; the ticket HTTP request is bounded by its own fetch and
+       * the abort signal.
+       */
+      timeoutMs?: number;
+    } = {}
+  ): Promise<{ clientId: string; socket: WebSocket }> {
+    if (options.signal?.aborted) {
+      throw new ApiError(499, "Progress relay cancelled.");
+    }
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const tokenAtStart = getAuthToken();
+    let ticket: ProgressTicketResponse;
+    try {
+      ticket = await this.createProgressTicket(options.signal);
+    } catch (error) {
+      // A cancel racing the ticket request surfaces as a raw AbortError from
+      // fetch; normalize it to the 499 callers already handle.
+      if (options.signal?.aborted) {
+        throw new ApiError(499, "Progress relay cancelled.");
+      }
+      throw error;
+    }
+
+    if (options.signal?.aborted) {
+      throw new ApiError(499, "Progress relay cancelled.");
+    }
+    if (getAuthToken() !== tokenAtStart) {
+      throw new ApiError(401, "Session changed before the relay opened.");
+    }
+
     let wsBase: string;
     if (process.env.NEXT_PUBLIC_API_URL) {
       wsBase = process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws");
@@ -2252,17 +2446,69 @@ export const api = {
     } else {
       wsBase = "ws://127.0.0.1:8000";
     }
-    const ws = new WebSocket(`${wsBase}/api/v1/ws/progress/${clientId}`);
-    ws.onmessage = (msg) => {
-      // Binary frames are ComfyUI live previews — not structured events.
-      if (typeof msg.data !== "string") return;
-      try {
-        onEvent(JSON.parse(msg.data) as ProgressEvent);
-      } catch {
-        /* ignore malformed frames */
+
+    // `ws_path` is display metadata; the route is fixed so a server value can
+    // never redirect the relay to another endpoint.
+    const socket = new WebSocket(
+      `${wsBase}/api/v1/ws/progress?ticket=${encodeURIComponent(ticket.ticket)}`,
+    );
+
+    return await new Promise<{ clientId: string; socket: WebSocket }>(
+      (resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          fail(new ApiError(504, "Progress relay handshake timed out."));
+        }, timeoutMs);
+
+        const cleanup = () => {
+          settled = true;
+          clearTimeout(timer);
+          socket.onopen = null;
+          socket.onerror = null;
+          socket.onclose = null;
+          options.signal?.removeEventListener("abort", onAbort);
+        };
+
+        const fail = (error: Error) => {
+          if (settled) return;
+          cleanup();
+          try {
+            socket.close();
+          } catch {
+            /* already closing */
+          }
+          reject(error);
+        };
+
+        const onAbort = () => fail(new ApiError(499, "Progress relay cancelled."));
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+
+        socket.onopen = () => {
+          if (settled) return;
+          // A token swap during the handshake means this socket belongs to a
+          // session that is no longer current.
+          if (getAuthToken() !== tokenAtStart) {
+            fail(new ApiError(401, "Session changed before the relay opened."));
+            return;
+          }
+          cleanup();
+          resolve({ clientId: ticket.client_id, socket });
+        };
+        socket.onerror = () =>
+          fail(new ApiError(502, "Progress relay connection failed."));
+        socket.onclose = () =>
+          fail(new ApiError(502, "Progress relay closed before opening."));
+        socket.onmessage = (msg) => {
+          // Binary frames are ComfyUI live previews — not structured events.
+          if (typeof msg.data !== "string") return;
+          try {
+            onEvent(JSON.parse(msg.data) as ProgressEvent);
+          } catch {
+            /* ignore malformed frames */
+          }
+        };
       }
-    };
-    return ws;
+    );
   },
 
   async login(payload: LoginPayload): Promise<AuthResponse> {

@@ -3,7 +3,15 @@
  * Run: node frontend/scripts/check-library.mjs
  */
 import assert from "node:assert/strict";
-import { filterLibrary, parseLibraryUrl, sortLibrary } from "../src/lib/assetLibrary.ts";
+import {
+  filterLibrary,
+  libraryRequestKey,
+  mergeLibraryPage,
+  nextLibraryOffset,
+  parseLibraryUrl,
+  retainLoadedSelection,
+  sortLibrary,
+} from "../src/lib/assetLibrary.ts";
 
 const items = [
   { key: "b.png", last_modified: "2024-01-02T00:00:00Z", metadata: { tags: ["portrait", "neon"] } },
@@ -48,4 +56,48 @@ assert.deepEqual(parseLibraryUrl("?source=workspace&tags=Neon,%20portrait", true
 });
 assert.deepEqual(parseLibraryUrl("?tag=solo", false), { tags: ["solo"] });
 
-console.log("check-library: 16 checks passed");
+// --- Server-paged helpers ---------------------------------------------------
+// Request identity: same visible controls => same key (stale responses can be
+// dropped); any change => a different key (a new page is required).
+const baseState = { query: "", sort: "newest", source: "all", tags: [], collectionId: null, mediaType: "image" };
+assert.equal(
+  libraryRequestKey(baseState),
+  libraryRequestKey({ ...baseState, tags: [], query: "   " })
+);
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, query: "neon" }));
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, sort: "name" }));
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, source: "workspace" }));
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, tags: ["neon"] }));
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, collectionId: "c1" }));
+assert.notEqual(libraryRequestKey(baseState), libraryRequestKey({ ...baseState, mediaType: "video" }));
+// Tag order and casing must not create a spurious new request.
+assert.equal(
+  libraryRequestKey({ ...baseState, tags: ["Neon", "face"] }),
+  libraryRequestKey({ ...baseState, tags: ["neon", "face"] })
+);
+assert.equal(
+  libraryRequestKey({ ...baseState, tags: ["neon", "face"] }),
+  libraryRequestKey({ ...baseState, tags: ["face", "neon"] })
+);
+
+// Merging pages keeps order and never renders a key twice.
+assert.deepEqual(mergeLibraryPage([], items).map((i) => i.key), ["b.png", "a.png", "dir/c.png", "z.png"]);
+assert.deepEqual(
+  mergeLibraryPage([items[0], items[1]], [items[1], items[2]]).map((i) => i.key),
+  ["b.png", "a.png", "dir/c.png"]
+);
+const firstPage = [{ key: "b.png" }, { key: "a.png" }];
+assert.equal(mergeLibraryPage(firstPage, firstPage).length, 2);
+
+// Offset advances by the honest received count, and only while more exists.
+assert.equal(nextLibraryOffset(0, 24, true), 24);
+assert.equal(nextLibraryOffset(24, 10, false), 24);
+assert.equal(nextLibraryOffset(24, 0, true), 24);
+
+// Selection pruning keeps only currently loaded keys; unloaded assets are never
+// silently selected.
+const pruned = retainLoadedSelection(new Set(["a.png", "gone.png"]), items);
+assert.deepEqual([...pruned], ["a.png"]);
+assert.equal(retainLoadedSelection(new Set(), items).size, 0);
+
+console.log("check-library: 33 checks passed");

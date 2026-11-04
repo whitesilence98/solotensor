@@ -1,11 +1,16 @@
 /**
- * Pure Library ordering/filtering. Kept free of React and `@/lib/api` so it can
+ * Pure Library URL/page helpers. Kept free of React and `@/lib/api` so it can
  * be exercised with Node type stripping (`frontend/scripts/check-library.mjs`).
- * Filtering is client-side over the already-loaded (<=500) gallery page.
+ *
+ * Ordering, search, tag, source, collection and media-type filtering are all
+ * executed by the server (`GET /api/v1/gallery/me`) so they cover the full
+ * visible owner dataset, not just the rows already loaded in the browser.
+ * `sortLibrary`/`filterLibrary` remain as pure reference implementations.
  */
 
 export type LibrarySort = "newest" | "oldest" | "name";
 export type LibrarySource = "all" | "workspace" | "ai_tool_studio";
+export type LibraryMediaType = "image" | "video" | "3d";
 
 export const LIBRARY_SORT_VALUES: readonly LibrarySort[] = ["newest", "oldest", "name"];
 export const LIBRARY_SOURCE_VALUES: readonly LibrarySource[] = [
@@ -119,4 +124,97 @@ export function filterLibrary<T extends LibraryItem>(
     }
     return true;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Server-paged Library helpers
+// ---------------------------------------------------------------------------
+
+/** The complete filter identity of one Library request. */
+export interface LibraryQueryState {
+  query?: string;
+  sort?: LibrarySort;
+  source?: LibrarySource;
+  tags?: readonly string[];
+  collectionId?: string | null;
+  mediaType?: LibraryMediaType;
+}
+
+const DEFAULT_SORT: LibrarySort = "newest";
+const DEFAULT_SOURCE: LibrarySource = "all";
+
+/**
+ * Stable identity for the active query. Every async page response is tagged
+ * with the key it was requested under; when the key no longer matches the
+ * current controls the response is stale and must be discarded (covers filter
+ * changes and history navigation that happen mid-flight).
+ */
+export function libraryRequestKey(state: LibraryQueryState): string {
+  // Tag order/duplicates do not change "all" semantics, so normalize them to
+  // avoid a spurious refetch when the same set is re-activated in another order.
+  const tags = Array.from(
+    new Set(
+      (state.tags ?? [])
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean)
+    )
+  ).sort();
+  return JSON.stringify({
+    q: (state.query ?? "").trim(),
+    sort: state.sort ?? DEFAULT_SORT,
+    source: state.source ?? DEFAULT_SOURCE,
+    tags,
+    collection: state.collectionId ?? null,
+    mediaType: state.mediaType ?? null,
+  });
+}
+
+/**
+ * Appends one page to the rows already on screen, de-duplicating by key so an
+ * overlapping/shifted offset can never render the same asset twice. Order is
+ * preserved (server order, then new rows).
+ */
+export function mergeLibraryPage<T extends LibraryItem>(
+  current: readonly T[],
+  incoming: readonly T[]
+): T[] {
+  if (current.length === 0) return incoming.slice();
+  const seen = new Set(current.map((item) => item.key));
+  const merged = current.slice();
+  for (const item of incoming) {
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+/**
+ * Selections are only meaningful for rows the user can currently see. When the
+ * filters change, keep the intersection with the loaded set instead of silently
+ * carrying hidden selections into a bulk action.
+ */
+export function retainLoadedSelection(
+  selected: ReadonlySet<string>,
+  loadedItems: readonly LibraryItem[]
+): Set<string> {
+  const loaded = new Set(loadedItems.map((item) => item.key));
+  const next = new Set<string>();
+  for (const key of selected) {
+    if (loaded.has(key)) next.add(key);
+  }
+  return next;
+}
+
+/**
+ * Offset to request next. `items.length` is the honest count the server
+ * returned, so a page that skipped nothing still advances correctly.
+ */
+export function nextLibraryOffset(
+  offset: number,
+  received: number,
+  hasMore: boolean
+): number {
+  if (!hasMore || received <= 0) return offset;
+  return offset + received;
 }

@@ -590,6 +590,62 @@ class GeneratedAssetSchemaTests(unittest.TestCase):
         self.assertEqual(meta.before_detailer_url, "/static/before.png")
 
 
+class GalleryPageSchemaTests(unittest.TestCase):
+    """Owner-gallery offset envelope stays additive and clamps bad paging input."""
+
+    def _item(self, key: str):
+        from app.schemas import GalleryItem
+
+        return GalleryItem(
+            key=key,
+            url=f"/files/{key}",
+            size=1,
+            last_modified="2026-11-04T00:00:00Z",
+        )
+
+    def test_page_envelope_counts_visible_total_before_slicing(self) -> None:
+        from app.schemas import GalleryPageResponse
+
+        page = GalleryPageResponse.create(
+            items=[self._item("a.png")], total=3, offset=0, limit=1
+        )
+        self.assertEqual(page.total, 3)
+        self.assertEqual(page.offset, 0)
+        self.assertEqual(page.limit, 1)
+        self.assertTrue(page.has_more)
+
+    def test_page_envelope_last_page_has_no_more(self) -> None:
+        from app.schemas import GalleryPageResponse
+
+        page = GalleryPageResponse.create(
+            items=[self._item("b.png")], total=3, offset=2, limit=1
+        )
+        self.assertFalse(page.has_more)
+
+    def test_page_envelope_clamps_negative_offset_and_zero_limit(self) -> None:
+        from app.schemas import GalleryPageResponse
+
+        page = GalleryPageResponse.create(
+            items=[self._item("a.png")], total=1, offset=-10, limit=0
+        )
+        self.assertEqual(page.offset, 0)
+        self.assertEqual(page.limit, 1)
+        self.assertFalse(page.has_more)
+
+    def test_page_envelope_rejects_negative_total(self) -> None:
+        from app.schemas import GalleryPageResponse
+
+        with self.assertRaises(ValidationError):
+            GalleryPageResponse(items=[], total=-1, offset=0, limit=60)
+
+    def test_empty_owner_gallery_is_a_valid_page(self) -> None:
+        from app.schemas import GalleryPageResponse
+
+        page = GalleryPageResponse.create(items=[], total=0, offset=0, limit=60)
+        self.assertEqual(page.items, [])
+        self.assertFalse(page.has_more)
+
+
 class CollectionAndPresetSchemaTests(unittest.TestCase):
     """Owner-scoped collection + preset payload contracts."""
 

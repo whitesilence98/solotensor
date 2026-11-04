@@ -18,7 +18,6 @@ import {
 import {
   ApiError,
   api,
-  uuid,
   type ToolAspectRatio,
   type ToolControl,
   type ToolMode,
@@ -266,7 +265,7 @@ export default function ToolCanvasPage() {
         undefined,
         values,
         {},
-        { clientId: uuid(), saveToGallery: false },
+        { saveToGallery: false },
       );
       setTestResult(result);
       if (result.status === "failed") setTestError(result.error || "Run failed.");

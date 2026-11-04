@@ -54,7 +54,6 @@ import { useAuth } from "@/lib/auth-context";
 import { Can } from "@/components/rbac";
 import {
   api,
-  uuid,
   type ProgressEvent,
   type ToolAspectRatio,
   type ToolControl,
@@ -67,6 +66,9 @@ import {
   setStorageItem,
   removeStorageItem,
 } from "@/lib/storage";
+import { isAttemptCurrent, type RunAttempt, type RunScopeState } from "@/lib/runGuard";
+import { classifyThrown, type ActionableError } from "@/lib/actionableError";
+import { useEngineStatus } from "@/lib/useEngineStatus";
 
 const RATIOS: ToolAspectRatio[] = DEFAULT_TOOL_RATIOS;
 /** ToolAspectRatio plus the client-only "custom" mode, which is not sent to the API. */
@@ -94,6 +96,50 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export default function ToolDetailPage() {
   const params = useParams<{ tool_id: string }>();
   const router = useRouter();
+  const { user, openAuthModal } = useAuth();
+  const viewerId = user?.id ?? null;
+  const { health, unreachable: engineUnreachable, retry: retryEngine } = useEngineStatus();
+  const engineOffline = engineUnreachable || health?.comfy === "down";
+  // Status-derived guidance and one safe action for a failed run/load.
+  const [errorInfo, setErrorInfo] = useState<ActionableError | null>(null);
+  const reportError = useCallback((next: string | null) => {
+    setError(next);
+    setErrorInfo(null);
+  }, []);
+  const reportFailure = useCallback(
+    (cause: unknown, context?: "reference" | "tool") => {
+      const actionable = classifyThrown(cause, { engineOffline, context });
+      setError(actionable.message);
+      setErrorInfo(actionable.action ? actionable : null);
+    },
+    [engineOffline],
+  );
+  const handleErrorAction = useCallback(() => {
+    if (!errorInfo?.action) return;
+    if (errorInfo.action === "sign-in") {
+      openAuthModal("Your session has expired. Sign in to continue.");
+      return;
+    }
+    if (errorInfo.action === "recheck-engine") {
+      // Recheck health only; never auto-resubmit a job that may have been paid.
+      retryEngine();
+      return;
+    }
+    if (errorInfo.action === "reselect") {
+      setError(null);
+      setErrorInfo(null);
+      return;
+    }
+    // permission guidance is informational; nothing to invoke.
+  }, [errorInfo, openAuthModal, retryEngine]);
+  const errorActionLabel =
+    errorInfo?.action === "sign-in"
+      ? "Sign in"
+      : errorInfo?.action === "recheck-engine"
+        ? "Recheck engine"
+        : errorInfo?.action === "reselect"
+          ? "Dismiss"
+          : null;
   const [tool, setTool] = useState<ToolDetail | null>(null);
   const [values, setValues] = useState<Record<string, Scalar>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
@@ -114,6 +160,16 @@ export default function ToolDetailPage() {
   const [copiedRecipeIndex, setCopiedRecipeIndex] = useState<number | null>(null);
   const [sessionHistory, setSessionHistory] = useState<ToolRunResult[]>([]);
   const socket = useRef<WebSocket | null>(null);
+  const handshakeAbortRef = useRef<AbortController | null>(null);
+  // Run lifetime: a run belongs to the viewer who started it and to one attempt
+  // counter. Every callback, the pre-queue check, and the final result consult
+  // this, so an account switch or newer run cannot leak progress/results.
+  const runScopeRef = useRef<RunScopeState>({
+    mounted: true,
+    viewerId: viewerId,
+    latestAttempt: 0,
+  });
+  runScopeRef.current.viewerId = viewerId;
 
   // Cover picker: replace the tool's showcase thumbnail without leaving the page.
   const [coverOpen, setCoverOpen] = useState(false);
@@ -210,17 +266,38 @@ export default function ToolDetailPage() {
         setFiles({});
         setResult(null);
       })
-      .catch((cause) =>
-        setError(
-          cause instanceof Error ? cause.message : "Could not load tool.",
-        ),
-      );
+      .catch((cause) => reportFailure(cause, "tool"));
   }, [params.tool_id]);
 
   useEffect(() => {
+    runScopeRef.current.mounted = true;
     load();
-    return () => socket.current?.close();
+    return () => {
+      runScopeRef.current.mounted = false;
+      runScopeRef.current.latestAttempt += 1;
+      // Cancel a handshake that has not queued yet, then drop any live relay.
+      handshakeAbortRef.current?.abort();
+      handshakeAbortRef.current = null;
+      socket.current?.close();
+      socket.current = null;
+    };
   }, [load]);
+
+  // An account switch invalidates the whole run: cancel a pending handshake,
+  // close any live relay, and drop results/progress/history belonging to the
+  // previous viewer. The attempt bump ignores anything already in flight.
+  useEffect(() => {
+    runScopeRef.current.latestAttempt += 1;
+    handshakeAbortRef.current?.abort();
+    handshakeAbortRef.current = null;
+    socket.current?.close();
+    socket.current = null;
+    setResult(null);
+    setProgress(null);
+    setSessionHistory([]);
+    setError(null);
+    setBusy(false);
+  }, [viewerId]);
 
   const handleValueChange = useCallback(
     (controlId: string, value: Scalar) => {
@@ -704,13 +781,52 @@ export default function ToolDetailPage() {
 
   const run = useCallback(async () => {
     if (!tool || !canRun) return;
-    const clientId = uuid();
     setBusy(true);
-    setError(null);
+    reportError(null);
     setProgress({ type: "queued" });
-    const nextSocket = api.openProgressSocket(clientId, (event) =>
-      setProgress(event),
-    );
+    let nextSocket: WebSocket;
+    let clientId: string;
+    // Abortable so unmount cancels the ticket/handshake before the run queues.
+    // The attempt captures viewer + counter: a switch (or newer run) makes every
+    // later callback and the final result stale.
+    const attempt: RunAttempt = {
+      viewerAtStart: runScopeRef.current.viewerId,
+      attempt: ++runScopeRef.current.latestAttempt,
+    };
+    const stillCurrent = () =>
+      isAttemptCurrent(attempt, runScopeRef.current);
+    handshakeAbortRef.current?.abort();
+    const handshake = new AbortController();
+    handshakeAbortRef.current = handshake;
+    try {
+      // The server mints the client id with the relay ticket; submit that id.
+      ({ clientId, socket: nextSocket } = await api.openProgressSocket(
+        (event) => {
+          if (!stillCurrent()) return;
+          setProgress(event);
+        },
+        { signal: handshake.signal },
+      ));
+    } catch (cause) {
+      // Cancelled by unmount/account switch: never queue, and leave no busy
+      // shell behind if the page itself is still alive.
+      if (handshake.signal.aborted) {
+        if (runScopeRef.current.mounted) setBusy(false);
+        return;
+      }
+      if (!stillCurrent()) return;
+      reportFailure(cause);
+      setBusy(false);
+      return;
+    } finally {
+      if (handshakeAbortRef.current === handshake) {
+        handshakeAbortRef.current = null;
+      }
+    }
+    if (!stillCurrent()) {
+      nextSocket.close();
+      return;
+    }
     socket.current = nextSocket;
     try {
       // In custom mode the two inputs are the authority: they may be ahead of
@@ -741,17 +857,21 @@ export default function ToolDetailPage() {
         files,
         { clientId, saveToGallery },
       );
+      // A completion from a superseded attempt (viewer switch or newer run)
+      // must not surface as this viewer's result or enter their history.
+      if (!stillCurrent()) return;
       setResult(runResult);
       setSessionHistory((prev) => [
         runResult,
         ...prev.filter((r) => r.prompt_id !== runResult.prompt_id),
       ].slice(0, 8));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not run tool.");
+      if (!stillCurrent()) return;
+      reportFailure(cause, "reference");
     } finally {
       nextSocket.close();
-      socket.current = null;
-      setBusy(false);
+      if (socket.current === nextSocket) socket.current = null;
+      if (stillCurrent()) setBusy(false);
     }
   }, [
     tool,
@@ -790,6 +910,10 @@ export default function ToolDetailPage() {
     const max = progress.max ?? 1;
     return Math.min(100, Math.max(0, Math.round((val / max) * 100)));
   }, [progress]);
+  // One polite announcement per 10% bucket, not per socket frame.
+  const announcedProgress = busy
+    ? `Generating, ${Math.floor(progressPercentage / 10) * 10} percent`
+    : "";
 
   /**
    * Replace the showcase thumbnail. `PUT /api/tools/{id}` requires the graph as
@@ -891,8 +1015,20 @@ export default function ToolDetailPage() {
         <div className="w-full max-w-md rounded-2xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center">
           <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[var(--danger)]" />
           <h2 className="text-base font-bold text-[var(--ink)]">Failed to load workflow tool</h2>
-          <p className="mt-1 text-xs text-[var(--danger)]">{error}</p>
-          <div className="mt-5 flex items-center justify-center gap-3">
+          <p className="mt-1 text-xs text-[var(--danger)]" role="alert">{error}</p>
+          {errorInfo?.guidance && (
+            <p className="mt-2 text-[11px] leading-5 text-[var(--ink-soft)]">{errorInfo.guidance}</p>
+          )}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            {errorActionLabel && errorInfo?.action !== "reselect" && (
+              <button
+                type="button"
+                onClick={handleErrorAction}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                {errorActionLabel}
+              </button>
+            )}
             <Link
               href="/tools"
               className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-strong)] px-3.5 py-2 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--surface-soft)]"
@@ -1164,7 +1300,17 @@ export default function ToolDetailPage() {
                         <span>PROGRESS</span>
                         <span className="text-[var(--accent)]">{progressPercentage}%</span>
                       </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-sunken)] border border-[var(--line)]">
+                      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                        {announcedProgress}
+                      </p>
+                      <div
+                        className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-sunken)] border border-[var(--line)]"
+                        role="progressbar"
+                        aria-label="Generation progress"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progressPercentage}
+                      >
                         <div
                           className="h-full bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] transition-all duration-300 shadow-[0_0_10px_rgba(213,240,111,0.3)]"
                           style={{ width: `${progressPercentage}%` }}
@@ -1239,14 +1385,29 @@ export default function ToolDetailPage() {
                   <div className="w-full max-w-md rounded-2xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-6 text-center animate-fade-in">
                     <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[var(--danger)]" />
                     <h2 className="text-base font-bold text-[var(--ink)]">Execution Error</h2>
-                    <p className="mt-1 font-mono text-xs text-[var(--danger)]">{error}</p>
-                    <button
-                      type="button"
-                      onClick={() => void run()}
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger-line)] bg-[var(--surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--danger-surface)]"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" /> Retry Execution
-                    </button>
+                    <p className="mt-1 font-mono text-xs text-[var(--danger)]" role="alert">{error}</p>
+                    {errorInfo?.guidance && (
+                      <p className="mt-2 text-[11px] leading-5 text-[var(--ink-soft)]">{errorInfo.guidance}</p>
+                    )}
+                    {errorInfo?.action === "recheck-engine" ||
+                    errorInfo?.action === "sign-in" ||
+                    errorInfo?.action === "reselect" ? (
+                      <button
+                        type="button"
+                        onClick={handleErrorAction}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger-line)] bg-[var(--surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--danger-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> {errorActionLabel}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void run()}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--danger-line)] bg-[var(--surface)] px-3.5 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:bg-[var(--danger-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Retry Execution
+                      </button>
+                    )}
                   </div>
                 ) : (
                   /* IDLE / SHOWCASE HERO (No blank screen!) */

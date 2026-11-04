@@ -31,6 +31,7 @@ import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import CreditPill from "@/components/CreditPill";
 import AssetCardList from "@/components/AssetCardList";
 import { resolveMediaUrl, type GalleryItem, type GalleryMetadata, type InstalledGalleryModel } from "@/lib/api";
+import { useAssetMedia } from "@/lib/useAssetMedia";
 import { resolveModelGalleryUrl } from "@/lib/models";
 import { usePersistentState, STORAGE_KEYS } from "@/lib/storage";
 
@@ -89,7 +90,9 @@ function CanvasListCard({
  copied: boolean;
 }) {
  const [isLoaded, setIsLoaded] = useState(false);
- const mediaUrl = resolveMediaUrl(item.url) || item.url;
+ // Owner-scoped media renews shortly before its signed URL expires.
+ const media = useAssetMedia(item);
+ const mediaUrl = resolveMediaUrl(media.url) || media.url;
  const isVideoItem =
   meta?.kind === "video" || /\.(mp4|webm|mov|mkv)$/i.test(item.key);
 
@@ -122,6 +125,7 @@ function CanvasListCard({
        preload="metadata"
        aria-hidden="true"
        onLoadedMetadata={() => setIsLoaded(true)}
+       onError={() => media.handleMediaError()}
        className={`asset-zoom-media h-full w-full object-cover transition-opacity duration-300 ease-out motion-reduce:transition-none ${
         isLoaded ? "opacity-100" : "opacity-0"
        }`}
@@ -131,7 +135,9 @@ function CanvasListCard({
        src={mediaUrl}
        alt={item.key}
        loading="lazy"
+       decoding="async"
        onLoad={() => setIsLoaded(true)}
+       onError={() => media.handleMediaError()}
        className={`asset-zoom-media h-full w-full object-cover transition-opacity duration-300 ease-out motion-reduce:transition-none ${
         isLoaded ? "opacity-100" : "opacity-0"
        }`}
@@ -175,7 +181,7 @@ function CanvasListCard({
      {copied ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
     <a
-     href={item.url}
+     href={mediaUrl}
      download
      onClick={(e) => e.stopPropagation()}
      className="rounded-xl bg-[var(--surface-soft)] p-2 text-[var(--ink-faint)] hover:text-[var(--ink)] focus-visible:text-[var(--ink)] transition"
@@ -313,14 +319,21 @@ export default function CanvasPreview(props: Props) {
       isVideo) &&
     Boolean(referenceImage);
 
+  // Bucket progress to the nearest tenth so the polite live region announces
+  // meaningful steps rather than every sub-percent update.
+  const announcedProgress = Math.round(cleanProgress / 10) * 10;
+  const generatingStageLabel = isVideo ? "Rendering video" : "Generating image";
+
   const GeneratingCard = () => (
     <div
-      role="status"
-      aria-live="polite"
-      aria-label="Generating asset in progress"
       style={{ aspectRatio: `${outputWidth} / ${outputHeight}` }}
       className="relative flex w-full flex-col justify-end overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-sunken)] select-none shadow-lg group"
     >
+      {/* Concise progress for assistive tech. The value is bucketed to tens so
+          the live region does not chatter on every percent tick. */}
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {`${generatingStageLabel} — ${announcedProgress} percent complete`}
+      </span>
       {/* Background (Conditional on Mode) */}
       {hasSourceImage ? (
         <>

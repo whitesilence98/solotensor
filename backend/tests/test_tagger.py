@@ -112,16 +112,55 @@ class TaggerApiTests(unittest.TestCase):
         self.settings = Settings(
             STORAGE_DIR=self.temp.name,
             FILES_PUBLIC_BASE="http://test",
+            JWT_SECRET="tagger-test-jwt-secret-32-chars!!",
         )
         self.storage = StorageService(self.settings)
 
+        from unittest.mock import MagicMock
+        from app.routers.auth import get_current_user
+        from app.schemas import UserResponse
+        from app.services.rbac_service import get_rbac_service
+
+        self.user = UserResponse(
+            id="tagger_owner_1",
+            username="tagger_owner",
+            email="tagger@test.com",
+            role="creator",
+            created_at="2026-01-01T00:00:00Z",
+        )
+        self.mock_rbac = MagicMock()
+        self._orig_get_current_user = app.dependency_overrides.get(get_current_user)
+        self._orig_get_rbac = app.dependency_overrides.get(get_rbac_service)
+        app.dependency_overrides[get_current_user] = lambda: self.user
+        app.dependency_overrides[get_rbac_service] = lambda: self.mock_rbac
+
     def tearDown(self) -> None:
+        from app.routers.auth import get_current_user
+        from app.services.rbac_service import get_rbac_service
+
+        for dependency, original in (
+            (get_current_user, self._orig_get_current_user),
+            (get_rbac_service, self._orig_get_rbac),
+        ):
+            if original is None:
+                app.dependency_overrides.pop(dependency, None)
+            else:
+                app.dependency_overrides[dependency] = original
         self.temp.cleanup()
 
+    def _write_owned_asset(self, name: str, metadata: dict | None = None) -> Path:
+        """Write an asset plus an owner sidecar so mutations are authorized."""
+        directory = Path(self.temp.name) / "sample"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_bytes(b"data")
+        sidecar = {"user_id": self.user.id, **(metadata or {})}
+        (directory / f"{name}.json").write_text(
+            json.dumps(sidecar), encoding="utf-8"
+        )
+        return directory / name
+
     def test_put_tags_endpoint(self) -> None:
-        p = Path(self.temp.name) / "sample"
-        p.mkdir(parents=True, exist_ok=True)
-        (p / "img.png").write_bytes(b"data")
+        self._write_owned_asset("img.png")
 
         with patch("app.main.storage", self.storage):
             client = TestClient(app)
@@ -148,10 +187,8 @@ class TaggerApiTests(unittest.TestCase):
         mock_tagger = mock_tagger_get.return_value
         mock_tagger.auto_tag_asset = AsyncMock(return_value=["cyberpunk", "city"])
 
-        p = Path(self.temp.name) / "sample"
-        p.mkdir(parents=True, exist_ok=True)
-        (p / "img.png").write_bytes(b"data")
-        self.storage.update_tags("sample/img.png", ["cyberpunk", "city"])
+        self._write_owned_asset("img.png")
+        self.storage.update_tags("sample/img.png", ["cyberpunk", "city"], viewer_id=self.user.id)
 
         with patch("app.main.storage", self.storage):
             client = TestClient(app)
@@ -164,9 +201,7 @@ class TaggerApiTests(unittest.TestCase):
         mock_tagger = mock_tagger_get.return_value
         mock_tagger.auto_tag_asset = AsyncMock(return_value=["vintage", "portrait"])
 
-        p = Path(self.temp.name) / "sample"
-        p.mkdir(parents=True, exist_ok=True)
-        (p / "img2.png").write_bytes(b"data")
+        self._write_owned_asset("img2.png")
 
         with patch("app.main.storage", self.storage):
             client = TestClient(app)
@@ -180,15 +215,34 @@ class TaggerApiTests(unittest.TestCase):
         mock_tagger = mock_tagger_get.return_value
         mock_tagger.auto_tag_asset = AsyncMock()
 
-        p = Path(self.temp.name) / "sample"
-        p.mkdir(parents=True, exist_ok=True)
-        (p / "img3.png").write_bytes(b"data")
+        self._write_owned_asset("img3.png")
 
         with patch("app.main.storage", self.storage):
             client = TestClient(app)
             resp = client.patch("/api/v1/assets/sample/img3.png?saved=false")
             self.assertEqual(resp.status_code, 200)
             mock_tagger.auto_tag_asset.assert_not_called()
+
+    def test_mutations_require_authentication(self) -> None:
+        """Anonymous tag/save mutations are 401, not silently allowed."""
+        self._write_owned_asset("anon.png")
+
+        from app.routers.auth import get_current_user
+
+        app.dependency_overrides.pop(get_current_user, None)
+        with patch("app.main.storage", self.storage):
+            client = TestClient(app)
+            self.assertEqual(
+                client.put(
+                    "/api/v1/assets/sample/anon.png/tags",
+                    json={"tags": ["x"]},
+                ).status_code,
+                401,
+            )
+            self.assertEqual(
+                client.patch("/api/v1/assets/sample/anon.png?saved=true").status_code,
+                401,
+            )
 
     @patch("app.main.get_tagger_service")
     def test_bg_auto_tag_helper_handles_exceptions_gracefully(self, mock_tagger_get) -> None:

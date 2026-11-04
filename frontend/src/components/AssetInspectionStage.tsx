@@ -47,6 +47,7 @@ import {
   resolveModelGalleryUrl,
 } from "@/lib/models";
 import { useAuth } from "@/lib/auth-context";
+import { useAssetMedia } from "@/lib/useAssetMedia";
 import { COMFY_SAMPLER_KEYS, COMFY_SCHEDULER_KEYS, sanitizeSampler, sanitizeScheduler } from "@/lib/sampling";
 
 /**
@@ -197,7 +198,11 @@ export default function AssetInspectionStage({
   const effectiveModelOptions = internalModelOptions.length > 0 ? internalModelOptions : modelOptions;
 
   const [isZoomed, setIsZoomed] = useState(false);
-  const detailerBeforeUrl = (asset as any)?.before_detailer_url || asset.metadata?.before_detailer_url || null;
+  // Owner-scoped media is a short-lived signed URL; renew before expiry, and
+  // refresh once (bounded) if the browser reports the media failed to load.
+  const media = useAssetMedia(asset);
+  const detailerBeforeUrl =
+    media.beforeDetailerUrl ?? asset.metadata?.before_detailer_url ?? null;
   const isDetailer = Boolean(
     detailerBeforeUrl ||
     (asset as any)?.has_detailer ||
@@ -340,7 +345,7 @@ export default function AssetInspectionStage({
 
 
   const meta = asset.metadata;
-  const mediaUrl = resolveMediaUrl(asset.url) || asset.url;
+  const mediaUrl = resolveMediaUrl(media.url) || media.url;
 
   // Resolve Author Profile & Publication Metadata
   const rawMeta = (meta || {}) as Record<string, any>;
@@ -600,7 +605,7 @@ export default function AssetInspectionStage({
           aria-hidden="true"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+          <img src={mediaUrl} alt="" decoding="async" className="h-full w-full object-cover" />
         </div>
 
 
@@ -671,7 +676,9 @@ export default function AssetInspectionStage({
             <img
               src={mediaUrl}
               alt={meta?.prompt ?? "Generated artwork"}
+              decoding="async"
               onClick={() => setIsZoomed((z) => !z)}
+              onError={() => media.handleMediaError()}
               className={`rounded-xl drop-shadow-2xl transition-[max-height,transform] duration-200 ${
                 isZoomed
                   ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
@@ -716,6 +723,7 @@ export default function AssetInspectionStage({
             <button
               type="button"
               onClick={() => setShowComparison((s) => !s)}
+              aria-pressed={showComparison}
               className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold backdrop-blur-md transition shadow-md ${
                 showComparison
                   ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
@@ -871,6 +879,8 @@ export default function AssetInspectionStage({
                   <button
                     type="button"
                     onClick={() => setModMenuOpen((v) => !v)}
+                    aria-label="Moderator actions"
+                    aria-expanded={modMenuOpen}
                     className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line-strong)] bg-[var(--surface-raised)] px-2.5 font-mono text-[11px] font-bold tracking-wider text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
                     title="Moderator Actions & Governance"
                   >
@@ -1161,6 +1171,7 @@ export default function AssetInspectionStage({
                     type="button"
                     onClick={() => handleRemoveTag(tag)}
                     title="Remove tag"
+                    aria-label={`Remove tag ${tag}`}
                     className="opacity-0 group-hover:opacity-100 text-[var(--ink-faint)] hover:text-[var(--danger)] transition px-0.5 leading-none"
                   >
                     ×
@@ -1343,6 +1354,7 @@ export default function AssetInspectionStage({
                       onClick={() => copyText(String(meta.seed), "seed")}
                       className="text-[var(--ink-faint)] hover:text-[var(--accent)] transition-colors ml-1"
                       title="Copy seed"
+                      aria-label="Copy seed"
                     >
                       {copiedKey === "seed" ? (
                         <Check className="h-3 w-3 text-[var(--accent)]" />
