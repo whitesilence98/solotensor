@@ -4,6 +4,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { Sparkles, Zap, Loader2, ImageUp, ChevronDown, ChevronUp, X, Check, UploadCloud, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import type { VideoSubMode } from "@/lib/api";
+import { generationBlockReason, useEngineStatus } from "@/lib/useEngineStatus";
 
 const DEFAULT_POSITIVE_PLACEHOLDER =
   "Describe your scene, subjects, atmosphere, style, camera angle, and lighting… (Ctrl+Enter to generate)";
@@ -72,6 +73,8 @@ export default function StudioPromptBar({
   videoSubMode = "text-to-video",
 }: StudioPromptBarProps) {
   const { isPro, isAdmin, isAuthenticated, openAuthModal } = useAuth();
+  const { health } = useEngineStatus();
+  const engineBlockReason = generationBlockReason(health);
   const isProUser = isPro || isAdmin;
 
   const isVideoMode = activeMode === "Video";
@@ -132,6 +135,7 @@ export default function StudioPromptBar({
   };
 
   const handleGenerateClick = () => {
+    if (engineBlockReason) return;
     if (!isAuthenticated) {
       openAuthModal("generation");
       return;
@@ -337,7 +341,8 @@ export default function StudioPromptBar({
             <button
               type="button"
               onClick={handleGenerateClick}
-              disabled={busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !referenceImage) || videoNeedsFrame}
+              title={engineBlockReason ?? undefined}
+              disabled={Boolean(engineBlockReason) || busy || (isAuthenticated && !canGenerate) || ((activeMode === "Img2Img" || activeMode === "Edit") && !referenceImage) || videoNeedsFrame}
               aria-label="Generate Artwork"
               className="workspace-action-primary flex h-7 sm:h-8 items-center justify-between gap-2.5 sm:gap-3 rounded-lg bg-[var(--accent)] px-3 sm:px-4 text-xs font-bold text-[var(--accent-ink)] shadow-[0_0_14px_rgba(213,240,111,0.22)] transition active:scale-[0.99] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40 select-none shrink-0"
             >

@@ -8,7 +8,9 @@ This document outlines the architecture, design system, and coding standards for
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript (strict mode).
 - **Styling**: Tailwind CSS + CSS custom property tokens in `globals.css`.
 - **Icons**: `lucide-react` only.
-- **Backend Link**: Next.js `:3000` → FastAPI `:8000` (`/api/v1`) → ComfyUI `:8188`.
+- **Backend Link**: Next.js `:3000` → FastAPI `:8000` (`/api/v1`) → external ComfyUI `:8188` for rendering. The studio route is `/generate`.
+- **Offline engine boundary**: Existing assets, model catalog and saved tools remain browsable with the API/DB/storage available and ComfyUI stopped. Rendering/tool execution requires ComfyUI and the appropriate weights/custom nodes. Taxonomy labels are catalog metadata, not proof of executable engine support; Video currently uses only the bundled LTX-Video 2.3 graph.
+- **Edit workflow**: `/generate` submits `mode: "edit"`, source and optional second reference to the dedicated edit graph. The backend reuses the source when the second reference is absent. Do not describe Edit as a no-op; do not promise arbitrary mask inpainting or live-render success without verifying those paths.
 - **Assets**: Plain `<img>` tags for images loaded from FastAPI `/files/*`.
 
 ---
@@ -52,6 +54,12 @@ This document outlines the architecture, design system, and coding standards for
   - *Guidance (`ControlNet`, `Poses`)*: Preprocessor modality selector.
   - *Embeddings / Inversions*: Target vector space info + invocation syntax.
   - *Wildcards*: Universal engine badge + dynamic syntax expansion preview.
+
+---
+
+## Security boundary
+
+`src/lib/api.ts` stores the bearer token in `localStorage` under `solotensor_token` and adds it as an `Authorization: Bearer` header. Any same-origin script, including an XSS payload, can read/exfiltrate that token. Local storage persistence and local-only intent do not make this production-safe for multi-tenant hosting. Treat this as a local development boundary; do not place secrets in browser code. Migration to a hardened session design (for example, HttpOnly cookies with CSRF protection and reviewed origin controls) is deferred; no authentication behavior changes are part of this documentation/startup slice.
 
 ---
 

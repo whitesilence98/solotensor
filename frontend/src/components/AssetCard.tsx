@@ -299,6 +299,10 @@ export interface AssetCardProps {
   aspectRatio?: string; // e.g. "3/4", "1/1", or "natural"
   showRemix?: boolean; // default: true
   remixModelId?: string; // optional override for model context
+  /** Selection mode is opt-in; galleries that omit it render exactly as before. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 export default function AssetCard({
@@ -310,6 +314,9 @@ export default function AssetCard({
   aspectRatio = "natural",
   showRemix = true,
   remixModelId,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: AssetCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [naturalAspect, setNaturalAspect] = useState<string | null>(null);
@@ -441,7 +448,11 @@ export default function AssetCard({
   }, [canRemix, effectiveModelId, asset.metadata?.prompt, asset.metadata?.seed]);
 
   return (
-    <article className="group relative overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-sunken)] hover:border-[var(--accent)]/50 transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+    <article
+      className={`group relative overflow-hidden rounded-2xl border bg-[var(--surface-sunken)] transition-all duration-300 shadow-sm hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${
+        selected ? "border-[var(--accent)]" : "border-[var(--line)] hover:border-[var(--accent)]/50"
+      }`}
+    >
       {/* Click target wrapper for stage modal */}
       <button
         type="button"
@@ -500,6 +511,24 @@ export default function AssetCard({
 
       {/* Top-left Specs / Type Badges (Always visible at rest, with high-contrast obsidian styling) */}
       <div className="absolute top-2.5 left-2.5 z-20 flex flex-wrap items-center gap-1 pointer-events-auto">
+        {selectable && (
+          <button
+            type="button"
+            aria-label={selected ? `Deselect ${asset.key}` : `Select ${asset.key}`}
+            aria-pressed={selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.();
+            }}
+            className={`flex h-6 w-6 items-center justify-center rounded-md border backdrop-blur-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+              selected
+                ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)]"
+                : "border-white/40 bg-black/70 text-transparent hover:border-white/70"
+            }`}
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          </button>
+        )}
         {asset.metadata?.source === "tool" && (
           <span
             className="inline-flex items-center gap-1 rounded-md bg-black/70 backdrop-blur-md border border-white/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-white/90 shadow-sm"

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check": "node scripts/check-asset-card-counts.mjs && node scripts/check-deep-link.mjs && node scripts/check-related-posts.mjs && node scripts/check-engine-status.mjs && node scripts/check-home-sections.mjs && node scripts/check-library.mjs && node scripts/check-auth-credits.mjs && node scripts/check-auth-api.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",

@@ -29,6 +29,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { id: "tools", icon: Wrench, label: "Tool studio", href: "/tools", primary: true },
   { id: "models", icon: Box, label: "Models", href: "/models", primary: true },
   { id: "assets", icon: Folder, label: "Library", href: "/assets", primary: true },
+  { id: "presets", icon: Sparkles, label: "Presets", href: "/presets", primary: true },
   { id: "flow", icon: Film, label: "Flow", href: "/flow", primary: true },
   { id: "assist", icon: MessageSquareCode, label: "Code Assist", href: "/assist", primary: false },
   { id: "settings", icon: Settings, label: "Settings", href: "/settings", primary: false },

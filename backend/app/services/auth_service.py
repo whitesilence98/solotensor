@@ -302,47 +302,13 @@ class LocalAuthProvider(AuthProvider):
 
     def verify_api_key(self, api_key: str) -> Optional[UserResponse]:
         clean_key = api_key.strip()
-        if not (clean_key.startswith("st_live_") or clean_key.startswith("st_agent_")):
+        if not clean_key.startswith("st_live_"):
             return None
 
         key_hash = hashlib.sha256(clean_key.encode("utf-8")).hexdigest()
         row = self.db.get_api_key_by_hash(key_hash)
         if row:
             return self._build_user_response(row)
-
-        # Scoped service account keys (st_agent_*)
-        if clean_key.startswith("st_agent_"):
-            if "dispatcher" in clean_key:
-                role = "agent:dispatcher"
-                perms = ["agent:dispatch_jobs", "generation:complete_any"]
-                username = "agent-dispatcher"
-            elif "safety" in clean_key:
-                role = "agent:safety_scanner"
-                perms = ["agent:audit_safety", "moderation:flag_content"]
-                username = "agent-safety-scanner"
-            elif "sync" in clean_key:
-                role = "agent:model_sync"
-                perms = ["agent:sync_models", "model:publish"]
-                username = "agent-model-sync"
-            else:
-                parts = clean_key.split("_")
-                scope = parts[2] if len(parts) >= 3 else "default"
-                role = f"agent:{scope}"
-                perms = [f"agent:{scope}"]
-                username = f"agent-{scope}"
-
-            return UserResponse(
-                id=f"sa_{username}",
-                email=f"{username}@agent.solotensor.internal",
-                username=username,
-                display_name=f"Service Account ({username})",
-                role=role,
-                roles=[role],
-                primary_role=role,
-                permissions=perms,
-                is_verified=True,
-                created_at=datetime.now(timezone.utc).isoformat(),
-            )
 
         return None
 

@@ -1,0 +1,45 @@
+# Local environments, credentials, and mutable runtime settings.
+**/.venv
+**/venv
+**/.env
+**/.env.*
+!**/.env.example
+**/app_settings.json
+**/*.pem
+**/*.key
+
+# User data and database files (including SQLite journal sidecars).
+models
+generated
+tool_data
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
+
+# Caches, build output, development tooling, and repository metadata.
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.cache
+**/.coverage
+**/.coverage.*
+**/htmlcov
+**/*.egg-info
+**/node_modules
+**/.next
+**/dist
+**/build
+**/*.log
+**/.git
+**/.github
+**/.claude
+**/.agents-draft
+**/.idea
+**/.vscode
+
+# Keep app/, config/, workflows/, requirements.txt, and runtime entrypoints.

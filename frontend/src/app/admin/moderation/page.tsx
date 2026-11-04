@@ -24,7 +24,6 @@ import {
   Search,
   Shield,
   ShieldAlert,
-  ShieldCheck,
   Terminal,
   Trash2,
   User,
@@ -40,7 +39,6 @@ import {
   type ModerationActionPayload,
   type ModerationQueueItem,
   type SecurityAuditLogEntry,
-  type UserRole,
 } from "@/lib/api";
 import RoleBadge from "@/components/RoleBadge";
 import UserAvatar from "@/components/UserAvatar";
@@ -62,7 +60,7 @@ export default function ModerationDashboardPage() {
     isMod,
     isAdmin,
     hasPermission,
-    switchRoleDemo,
+    openAuthModal,
     refreshPendingReviewCount,
   } = useAuth();
 
@@ -92,7 +90,6 @@ export default function ModerationDashboardPage() {
   const [requestChanges, setRequestChanges] = useState(false);
   const [rejectFeedback, setRejectFeedback] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
-  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
 
   // Load moderation queues & audit logs
   const loadData = useCallback(async () => {
@@ -371,7 +368,7 @@ export default function ModerationDashboardPage() {
     };
   }, [queueItems, auditLogs, pendingModels]);
 
-  // Authorization guard with local demo switcher
+  // Authorization guard
   if (!canAccess) {
     return (
       <div className="min-h-screen bg-[var(--ground)] text-[var(--ink)] flex flex-col items-center justify-center p-6">
@@ -400,49 +397,18 @@ export default function ModerationDashboardPage() {
             </div>
           </div>
 
-          {/* Local Studio Role Switcher for Pairing & Development */}
-          <div className="border-t border-[var(--line)] pt-4 space-y-2">
-            <span className="block font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-semibold">
-              Solo Studio • Local RBAC Role Switcher
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={isSwitchingRole}
-                onClick={async () => {
-                  setIsSwitchingRole(true);
-                  try {
-                    await switchRoleDemo("moderator");
-                    await loadData();
-                    void refreshPendingReviewCount();
-                  } finally {
-                    setIsSwitchingRole(false);
-                  }
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-950/40 py-2 font-mono text-xs font-bold text-sky-400 hover:bg-sky-950/60 transition disabled:opacity-50"
-              >
-                <Shield className="h-3.5 w-3.5" />
-                <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator"}</span>
-              </button>
-              <button
-                type="button"
-                disabled={isSwitchingRole}
-                onClick={async () => {
-                  setIsSwitchingRole(true);
-                  try {
-                    await switchRoleDemo("admin");
-                    await loadData();
-                    void refreshPendingReviewCount();
-                  } finally {
-                    setIsSwitchingRole(false);
-                  }
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-950/40 py-2 font-mono text-xs font-bold text-rose-400 hover:bg-rose-950/60 transition disabled:opacity-50"
-              >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span>{isSwitchingRole ? "Authenticating…" : "Switch to Admin"}</span>
-              </button>
-            </div>
+          <div className="border-t border-[var(--line)] pt-4">
+            <p className="font-mono text-[11px] text-[var(--ink-soft)] leading-relaxed">
+              Moderator clearance is granted by an administrator on your account. Sign in with an authorized account to continue.
+            </p>
+            <button
+              type="button"
+              onClick={() => openAuthModal("moderation")}
+              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              <span>Sign In</span>
+            </button>
           </div>
 
           <div className="pt-2">
@@ -494,7 +460,7 @@ export default function ModerationDashboardPage() {
             </div>
           </div>
 
-          {/* Quick Metrics Bar & Role Demo Controls */}
+          {/* Quick Metrics Bar */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3 py-1 font-mono text-xs">
               <span className="text-[var(--ink-faint)]">Pending:</span>
@@ -508,35 +474,6 @@ export default function ModerationDashboardPage() {
 
             <div className="flex items-center gap-1">
               <RoleBadge role={primaryRole} size="sm" />
-            </div>
-
-            {/* Role Demo Switcher pill */}
-            <div className="flex items-center gap-1 border border-[var(--line)] rounded-lg p-0.5 bg-[var(--surface-sunken)]">
-              {(["moderator", "admin", "creator", "pro_creator"] as UserRole[]).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  disabled={isSwitchingRole}
-                  onClick={async () => {
-                    setIsSwitchingRole(true);
-                    try {
-                      await switchRoleDemo(r);
-                      await loadData();
-                      void refreshPendingReviewCount();
-                    } finally {
-                      setIsSwitchingRole(false);
-                    }
-                  }}
-                  className={`px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider rounded transition disabled:opacity-50 ${
-                    primaryRole === r
-                      ? "bg-[var(--accent)] text-[var(--accent-ink)] font-bold"
-                      : "text-[var(--ink-faint)] hover:text-[var(--ink)]"
-                  }`}
-                  title={`Switch local session role to ${r}`}
-                >
-                  {r.replace("_creator", "")}
-                </button>
-              ))}
             </div>
 
             <button
@@ -797,21 +734,11 @@ export default function ModerationDashboardPage() {
                     </p>
                     <button
                       type="button"
-                      disabled={isSwitchingRole}
-                      onClick={async () => {
-                        setIsSwitchingRole(true);
-                        try {
-                          await switchRoleDemo("moderator");
-                          await loadData();
-                          void refreshPendingReviewCount();
-                        } finally {
-                          setIsSwitchingRole(false);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 font-mono text-xs font-bold text-white hover:bg-sky-500 transition shadow-md disabled:opacity-50"
+                      onClick={() => void loadData()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 font-mono text-xs font-bold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition"
                     >
-                      <Shield className="h-3.5 w-3.5" />
-                      <span>{isSwitchingRole ? "Authenticating…" : "Switch to Moderator (@sentinel_mod)"}</span>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      <span>Retry</span>
                     </button>
                   </div>
                 )}

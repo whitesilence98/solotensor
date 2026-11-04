@@ -2,10 +2,11 @@
 
 Tests cover:
 1. Database Schema & Baseline Seeding (roles, permissions, role_permissions, user_roles, audit logs, content flags).
-2. Default role assignment for new users ('creator') and special admin seeding for 'winnguyen282'.
+2. Default role assignment for new users ('creator'); no username/UUID based promotion
+   (the former 'winnguyen282' special case and synthetic st_agent service accounts are gone).
 3. RBACService methods, role hierarchy, permission resolution, 5-minute TTL caching & invalidation.
 4. Security Dependencies (RequirePermission, RequireOwnerOrPermission).
-5. Scoped Agent Service Account API keys (st_agent_* vs st_live_*).
+5. API keys: every st_agent_* key is rejected; only DB-backed st_live_* keys authenticate.
 6. Content Moderation Router Endpoints (flag, queue, resolve).
 7. Datetime serialization compatibility for PostgreSQL/SQLite across all schemas.
 """
@@ -130,26 +131,56 @@ class RBACDatabaseSchemaTests(unittest.TestCase):
         self.assertNotIn("generation:create_pro", perms)
         self.assertNotIn("moderation:review_queue", perms)
 
-    def test_winnguyen282_admin_and_verified_creator_assignment(self) -> None:
-        # Create winnguyen282 with designated UUID
-        win_id = "d08abc9c-53af-4576-8074-5da4de0d0723"
+    def test_former_special_username_is_not_promoted(self) -> None:
+        # The winnguyen282 special case was removed; username alone must not elevate.
         user = self.db.create_user(
-            user_id=win_id,
+            user_id="user_regular_win_username",
             email="winnguyen282@example.com",
             username="winnguyen282",
             hashed_password="pw_hash",
         )
-        self.assertEqual(user["role"], "admin")
+        self.assertEqual(user["role"], "creator")
+        roles = self.db.get_user_roles(user["id"])
+        self.assertEqual(roles, ["creator"])
+        perms = self.db.get_user_permissions(user["id"])
+        self.assertNotIn("credits:grant_manual", perms)
+        self.assertNotIn("moderation:review_queue", perms)
+        self.assertNotIn("agent:dispatch_jobs", perms)
 
-        roles = self.db.get_user_roles(win_id)
-        self.assertIn("admin", roles)
-        self.assertIn("verified_creator", roles)
+    def test_former_special_uuid_is_not_promoted(self) -> None:
+        # Same for the formerly hardcoded UUID.
+        win_id = "d08abc9c-53af-4576-8074-5da4de0d0723"
+        user = self.db.create_user(
+            user_id=win_id,
+            email="uuid-special@example.com",
+            username="some_other_name",
+            hashed_password="pw_hash",
+        )
+        self.assertEqual(user["role"], "creator")
+        self.assertEqual(self.db.get_user_roles(win_id), ["creator"])
+        self.assertNotIn("credits:grant_manual", self.db.get_user_permissions(win_id))
 
-        # Admin possesses all system permissions
+    def test_init_db_does_not_promote_former_special_identity(self) -> None:
+        # Promotion used to happen both in create_user and in init_db backfill.
+        # Seed the rows first, then re-run init_db(force=True) on an initialized DB.
+        win_id = "d08abc9c-53af-4576-8074-5da4de0d0723"
+        self.db.create_user(
+            user_id=win_id,
+            email="init-special@example.com",
+            username="winnguyen282",
+            hashed_password="pw_hash",
+        )
+        self.db.init_db(force=True)
+        self.db.invalidate_user_cache(win_id)
+        self.assertEqual(self.db.get_user_roles(win_id), ["creator"])
         perms = self.db.get_user_permissions(win_id)
-        self.assertIn("credits:grant_manual", perms)
-        self.assertIn("moderation:review_queue", perms)
-        self.assertIn("agent:dispatch_jobs", perms)
+        self.assertNotIn("credits:grant_manual", perms)
+        self.assertNotIn("agent:dispatch_jobs", perms)
+
+    def test_unknown_user_has_no_roles_or_permissions(self) -> None:
+        self.assertEqual(self.db.get_user_roles("ghost-user"), [])
+        self.assertEqual(self.db.get_user_permissions("ghost-user"), set())
+
 
 
 class RBACServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -340,8 +371,23 @@ class SecurityDependenciesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 403)
 
 
-class AgentServiceAccountApiKeysTests(unittest.TestCase):
-    """Test scoped service account agent keys (st_agent_*) vs standard user keys (st_live_*)."""
+class ApiKeyTrustBoundaryTests(unittest.TestCase):
+    """Synthetic st_agent_* service-account keys must never authenticate.
+
+    Only a DB-backed ``st_live_*`` key (created through ``create_api_key``)
+    resolves to a user. The agent roles still exist in the RBAC catalogue, but
+    nothing gets to impersonate them through a magic key prefix.
+    """
+
+    SYNTHETIC_AGENT_KEYS = (
+        "st_agent_dispatcher_secret_worker_token_123",
+        "st_agent_safety_scanner_token_xyz",
+        "st_agent_model_sync_token_456",
+        "st_agent_",
+        "st_agent_any",
+        "st_agent_dispatcher",
+        "ST_AGENT_DISPATCHER_SECRET",
+    )
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -354,30 +400,22 @@ class AgentServiceAccountApiKeysTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_dispatcher_service_account_key(self) -> None:
-        sa_user = self.auth.verify_api_key("st_agent_dispatcher_secret_worker_token_123")
-        self.assertIsNotNone(sa_user)
-        self.assertEqual(sa_user.role, "agent:dispatcher")
-        self.assertIn("agent:dispatcher", sa_user.roles)
-        self.assertIn("agent:dispatch_jobs", sa_user.permissions)
-        self.assertIn("generation:complete_any", sa_user.permissions)
+    def test_all_synthetic_agent_keys_rejected(self) -> None:
+        for key in self.SYNTHETIC_AGENT_KEYS:
+            with self.subTest(key=key):
+                self.assertIsNone(self.auth.verify_api_key(key))
 
-    def test_safety_scanner_service_account_key(self) -> None:
-        sa_user = self.auth.verify_api_key("st_agent_safety_scanner_token_xyz")
-        self.assertIsNotNone(sa_user)
-        self.assertEqual(sa_user.role, "agent:safety_scanner")
-        self.assertIn("agent:audit_safety", sa_user.permissions)
-        self.assertIn("moderation:flag_content", sa_user.permissions)
-
-    def test_model_sync_service_account_key(self) -> None:
-        sa_user = self.auth.verify_api_key("st_agent_model_sync_token_456")
-        self.assertIsNotNone(sa_user)
-        self.assertEqual(sa_user.role, "agent:model_sync")
-        self.assertIn("agent:sync_models", sa_user.permissions)
-        self.assertIn("model:publish", sa_user.permissions)
+    def test_agent_roles_still_seeded_but_unreachable_by_key(self) -> None:
+        # The RBAC catalogue keeps the service roles; no user row owns them here.
+        with self.db.get_connection() as conn:
+            names = {r["name"] for r in conn.execute("SELECT name FROM roles").fetchall()}
+        self.assertIn("agent:dispatcher", names)
+        self.assertIn("agent:safety_scanner", names)
+        self.assertIn("agent:model_sync", names)
+        self.assertIsNone(self.auth.verify_api_key("st_agent_dispatcher_catalog_probe"))
 
     def test_user_live_api_key(self) -> None:
-        user_record = self.db.create_user(
+        self.db.create_user(
             user_id="user_live_k",
             email="live@example.com",
             username="live_user",
@@ -391,9 +429,27 @@ class AgentServiceAccountApiKeysTests(unittest.TestCase):
         self.assertEqual(user.id, "user_live_k")
         self.assertEqual(user.role, "creator")
 
+    def test_live_key_for_unknown_user_rejected(self) -> None:
+        # A syntactically valid st_live_ key that is not stored must not resolve.
+        self.assertIsNone(self.auth.verify_api_key("st_live_nonexistent_key_hash_abc"))
+
+    def test_revoked_live_key_rejected(self) -> None:
+        self.db.create_user(
+            user_id="user_revoke_k",
+            email="revoke@example.com",
+            username="revoke_user",
+            hashed_password="pw",
+        )
+        record, raw_key = self.auth.create_api_key("user_revoke_k", "Temp Key")
+        self.assertIsNotNone(self.auth.verify_api_key(raw_key))
+        self.assertTrue(self.auth.delete_api_key("user_revoke_k", record.id))
+        self.assertIsNone(self.auth.verify_api_key(raw_key))
+
     def test_invalid_api_key_rejected(self) -> None:
         self.assertIsNone(self.auth.verify_api_key("invalid_key_prefix"))
-        self.assertIsNone(self.auth.verify_api_key("st_live_nonexistent_key_hash_abc"))
+        self.assertIsNone(self.auth.verify_api_key("sk_live_wrong_scheme"))
+        self.assertIsNone(self.auth.verify_api_key(""))
+
 
 
 class ModerationEndpointsIntegrationTests(unittest.TestCase):

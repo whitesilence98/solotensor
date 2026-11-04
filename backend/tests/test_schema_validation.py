@@ -590,5 +590,106 @@ class GeneratedAssetSchemaTests(unittest.TestCase):
         self.assertEqual(meta.before_detailer_url, "/static/before.png")
 
 
+class CollectionAndPresetSchemaTests(unittest.TestCase):
+    """Owner-scoped collection + preset payload contracts."""
+
+    def test_collection_name_is_trimmed_and_bounded(self) -> None:
+        from app.schemas import CollectionCreateRequest
+
+        self.assertEqual(CollectionCreateRequest(name="  My  Picks ").name, "My Picks")
+        for payload in (
+            {"name": "   "},
+            {"name": ""},
+            {"name": "x" * 81},
+            {"name": "ok", "description": "x" * 501},
+            {"name": "ok", "unknown": 1},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                CollectionCreateRequest(**payload)
+
+    def test_collection_update_allows_partial_fields(self) -> None:
+        from app.schemas import CollectionUpdateRequest
+
+        self.assertEqual(CollectionUpdateRequest(name="Renamed").name, "Renamed")
+        self.assertIsNone(CollectionUpdateRequest(description="note").name)
+        with self.assertRaises(ValidationError):
+            CollectionUpdateRequest(name="  ")
+
+    def test_collection_bulk_keys_reject_traversal_and_cap_batch(self) -> None:
+        from app.schemas import CollectionItemsAddRequest
+
+        req = CollectionItemsAddRequest(keys=["workspace/a.png", "workspace/a.png"])
+        self.assertEqual(req.keys, ["workspace/a.png"])  # de-duped
+
+        for keys in (
+            ["../etc/passwd"],
+            ["workspace/../../secret"],
+            ["/etc/passwd"],
+            [""],
+            ["a" * 1025],
+            ["k"] * 101,
+            [],
+        ):
+            with self.subTest(keys=keys), self.assertRaises(ValidationError):
+                CollectionItemsAddRequest(keys=keys)
+
+    def test_preset_payload_is_strict_deep_link_vocabulary(self) -> None:
+        from app.schemas import GenerationPresetPayload
+
+        payload = GenerationPresetPayload(
+            mode="video",
+            video_mode="text-to-video",
+            prompt="night drive",
+            negative_prompt="",
+            seed=2**32 - 1,
+            format="16:9",
+            duration=10,
+            fps=24,
+        )
+        self.assertEqual(payload.duration, 10)
+        self.assertEqual(payload.negative_prompt, "")
+
+        for bad in (
+            {"mode": "detailer", "steps": 30},
+            {"mode": "video", "duration": 7},
+            {"mode": "video", "fps": 25},
+            {"mode": "video", "video_mode": "audio-to-video"},
+            {"mode": "image-to-image", "format": "21:9"},
+            {"mode": "text-to-image", "seed": 2**32},
+            {"mode": "text-to-image", "seed": -1},
+            {"mode": "upscale", "prompt": "x" * 50_001},
+            {"mode": "not-a-mode"},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                GenerationPresetPayload(**bad)
+
+    def test_preset_response_marks_corrupt_payload_unusable(self) -> None:
+        from app.schemas import GenerationPresetResponse
+
+        corrupt = GenerationPresetResponse(
+            id="p1",
+            name="Broken",
+            payload=None,
+            warning="Stored preset payload is invalid; re-save to repair.",
+            created_at="2026-01-01T00:00:00Z",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        self.assertIsNone(corrupt.payload)
+        self.assertIsNotNone(corrupt.warning)
+
+    def test_preset_payload_rejects_unknown_fields(self) -> None:
+        from app.schemas import GenerationPresetCreateRequest
+
+        with self.assertRaises(ValidationError):
+            GenerationPresetCreateRequest(
+                name="P",
+                payload={"mode": "text-to-image", "cfg": 7.0},
+            )
+        req = GenerationPresetCreateRequest(
+            name="  P  ", payload={"mode": "text-to-image"}
+        )
+        self.assertEqual(req.name, "P")
+
+
 if __name__ == "__main__":
     unittest.main()

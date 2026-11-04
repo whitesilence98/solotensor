@@ -13,6 +13,7 @@ import ControlPanel, {
 } from "@/components/ControlPanel";
 import CanvasPreview from "@/components/CanvasPreview";
 import StudioPromptBar from "@/components/StudioPromptBar";
+import { generationBlockReason, useEngineStatus } from "@/lib/useEngineStatus";
 import { type UpscaleConfig, DEFAULT_UPSCALE_CONFIG } from "@/components/UpscalePanel";
 import { type DetailerConfig, DEFAULT_DETAILER_CONFIG } from "@/components/DetailerPanel";
 import {
@@ -498,6 +499,8 @@ function parseSavedTabState(raw: string, defaults: TabState): TabState {
 
 export default function StudioPage() {
   const { user } = useAuth();
+  const { health } = useEngineStatus();
+  const engineBlockReason = generationBlockReason(health);
   const [mode, setMode] = useState<GenerationMode>("text-to-image");
   const [activeTensorMode, setActiveTensorMode] = useState<TensorMode>("Text2Img");
 
@@ -1005,6 +1008,10 @@ export default function StudioPage() {
   ]);
 
   const handleGenerate = useCallback(async () => {
+    if (engineBlockReason) {
+      setError(engineBlockReason);
+      return;
+    }
     if (!activeTab.prompt.trim() || busy) return;
     if ((activeTensorMode === "Img2Img" || activeTensorMode === "Edit") && !activeTab.referenceImage) {
       setError(`Please upload a reference image for ${activeTensorMode} generation.`);
@@ -1292,6 +1299,7 @@ export default function StudioPage() {
     busy,
     refreshGallery,
     referenceImage,
+    engineBlockReason,
   ]);
 
   // Handle incoming query params (gallery "Install and use", asset remix, and

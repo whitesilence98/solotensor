@@ -961,6 +961,25 @@ class HealthResponse(BaseModel):
     database: Optional[str] = "sqlite"
     redis: Optional[str] = "disabled"
     s3: Optional[str] = "disabled"
+    database_status: Literal["up", "down"] | None = Field(
+        default=None, description="Database probe result; null means not checked."
+    )
+    details: dict[str, str] = Field(
+        default_factory=dict,
+        description="Safe subsystem messages only; no exceptions, paths, hosts, or credentials.",
+    )
+
+
+class ReadyResponse(BaseModel):
+    """Core storage/database readiness: HTTP 200 when ready, otherwise HTTP 503; no engine probe."""
+
+    status: Literal["ready", "not_ready"]
+    storage: Literal["up", "down"]
+    database: Literal["up", "down"]
+    details: dict[str, str] = Field(
+        default_factory=dict,
+        description="Safe subsystem messages only; no exceptions, paths, hosts, or credentials.",
+    )
 
 
 class ToolMode(str, Enum):
@@ -2587,5 +2606,185 @@ class NotificationReadResponse(BaseModel):
     success: bool
     id: Optional[str] = None
     updated_count: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# Collections (Library) — owner-scoped
+# ---------------------------------------------------------------------------
+
+
+class CollectionCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=80)
+    description: str | None = Field(None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Collection name cannot be blank")
+        return cleaned
+
+
+class CollectionUpdateRequest(BaseModel):
+    """Partial update. The route rejects an all-absent body with HTTP 400."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str | None = Field(None, min_length=1, max_length=80)
+    description: str | None = Field(None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Collection name cannot be blank")
+        return cleaned
+
+
+class CollectionResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    item_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class CollectionListResponse(BaseModel):
+    items: list[CollectionResponse] = Field(default_factory=list)
+
+
+class CollectionItemsResponse(BaseModel):
+    items: list[str] = Field(default_factory=list)
+
+
+class CollectionItemsAddRequest(BaseModel):
+    """Bulk add. Traversal is rejected here, then again by StorageService."""
+
+    model_config = {"extra": "forbid"}
+
+    keys: list[str] = Field(..., min_length=1, max_length=100)
+
+    @field_validator("keys")
+    @classmethod
+    def validate_keys(cls, values: list[str]) -> list[str]:
+        seen: list[str] = []
+        for value in values:
+            key = value.strip() if isinstance(value, str) else ""
+            if not key or len(key) > 1024:
+                raise ValueError("Asset keys must be 1-1024 characters")
+            if key.startswith("/") or ".." in key.split("/"):
+                raise ValueError("Asset key contains an illegal path segment")
+            if key not in seen:
+                seen.append(key)
+        return seen
+
+
+class CollectionItemsAddResponse(BaseModel):
+    added: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+
+
+class CollectionItemRemoveResponse(BaseModel):
+    removed: bool = False
+    key: str
+
+
+class CollectionDeleteResponse(BaseModel):
+    deleted: bool = True
+    id: str
+
+
+# ---------------------------------------------------------------------------
+# Generation presets — deep-link vocabulary only
+# ---------------------------------------------------------------------------
+
+
+class GenerationPresetPayload(BaseModel):
+    """Only what a `/generate` deep link can carry.
+
+    Deliberately excludes steps/cfg/loras/dimensions: a preset that claims to
+    store unsupported parameters would silently fail to apply them.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    mode: Literal["text-to-image", "image-to-image", "detailer", "upscale", "edit", "video"]
+    # Only meaningful with mode="video". `text-to-video` lets the deep link
+    # clear a stale image-to-video reference; an absent value keeps legacy.
+    video_mode: Literal["text-to-video", "image-to-video"] | None = None
+    prompt: str | None = Field(None, max_length=50_000)
+    negative_prompt: str | None = Field(None, max_length=50_000)
+    seed: int | None = Field(None, ge=0, le=2**32 - 1)
+    format: Literal["1:1", "16:9", "9:16", "4:3", "3:2"] | None = None
+    duration: Literal[3, 5, 10, 15] | None = None
+    fps: Literal[16, 24, 30, 49] | None = None
+    model_id: str | None = Field(None, max_length=128)
+    version_id: str | None = Field(None, max_length=128)
+    file_id: str | None = Field(None, max_length=128)
+    base_model_id: str | None = Field(None, max_length=128)
+    base_file_id: str | None = Field(None, max_length=128)
+
+
+class GenerationPresetCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., min_length=1, max_length=80)
+    payload: GenerationPresetPayload
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Preset name cannot be blank")
+        return cleaned
+
+
+class GenerationPresetUpdateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str | None = Field(None, min_length=1, max_length=80)
+    payload: GenerationPresetPayload | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Preset name cannot be blank")
+        return cleaned
+
+
+class GenerationPresetResponse(BaseModel):
+    """`payload=None` marks a stored payload that no longer validates.
+
+    The service sets `warning`; consumers must treat that preset as unusable
+    instead of silently applying an empty generation.
+    """
+
+    id: str
+    name: str
+    payload: GenerationPresetPayload | None = None
+    warning: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class GenerationPresetListResponse(BaseModel):
+    items: list[GenerationPresetResponse] = Field(default_factory=list)
+
+
+class DeletePresetResponse(BaseModel):
+    deleted: bool = True
+    id: str
 
 

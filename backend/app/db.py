@@ -122,12 +122,8 @@ class Database:
                                 except Exception:
                                     pass
                 return
-            except Exception as exc:
-                logger.warning(
-                    "PostgreSQL connection failed (%s). Falling back to local SQLite (%s).",
-                    exc,
-                    self.db_path,
-                )
+            except Exception:
+                logger.warning("PostgreSQL unavailable; falling back to local SQLite")
 
         conn = sqlite3.connect(
             str(self.db_path),
@@ -563,6 +559,48 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comments_model ON model_comments(model_id, created_at DESC);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comments_user ON model_comments(user_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_model_comment_likes_comment ON model_comment_likes(comment_id);")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collections (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL,
+                    UNIQUE(user_id, name),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS collection_items (
+                    collection_id TEXT NOT NULL,
+                    asset_key TEXT NOT NULL,
+                    added_at TIMESTAMP NOT NULL,
+                    PRIMARY KEY (collection_id, asset_key),
+                    FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS generation_presets (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL,
+                    UNIQUE(user_id, name),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_collections_user ON collections(user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON collection_items(collection_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_generation_presets_user ON generation_presets(user_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_likes_key ON asset_likes(asset_key);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_likes_user ON asset_likes(user_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_model_downloads_model ON model_downloads(model_id);")
@@ -764,25 +802,6 @@ class Database:
                             (role_key, perm_key),
                         )
 
-            # Assign user winnguyen282 both admin and verified_creator roles
-            u_win = conn.execute(
-                "SELECT id FROM users WHERE id = ? OR lower(username) = lower(?)",
-                ("d08abc9c-53af-4576-8074-5da4de0d0723", "winnguyen282"),
-            ).fetchone()
-            if u_win:
-                win_uid = u_win["id"]
-                now_str = datetime.now(timezone.utc).isoformat()
-                for r_win in ("admin", "verified_creator"):
-                    conn.execute(
-                        """
-                        INSERT INTO user_roles (user_id, role_name, granted_at)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(user_id, role_name) DO NOTHING
-                        """,
-                        (win_uid, r_win, now_str),
-                    )
-                conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (win_uid,))
-
             # Backfill any existing users without user_roles
             conn.execute(
                 """
@@ -834,20 +853,6 @@ class Database:
                 """,
                 (user_id, assigned_role, ts),
             )
-            # Check if this user is winnguyen282, assign admin + verified_creator
-            if user_id == "d08abc9c-53af-4576-8074-5da4de0d0723" or username.lower() == "winnguyen282":
-                for special_role in ("admin", "verified_creator"):
-                    conn.execute(
-                        """
-                        INSERT INTO user_roles (user_id, role_name, granted_at)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(user_id, role_name) DO NOTHING
-                        """,
-                        (user_id, special_role, ts),
-                    )
-                conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
-                assigned_role = "admin"
-
         return {
             "id": user_id,
             "email": email.lower(),
@@ -2394,7 +2399,7 @@ class Database:
                 if u_row and u_row["role"]:
                     roles = [u_row["role"]]
                 else:
-                    roles = ["creator"]
+                    roles = []
             self._user_roles_cache[user_id] = (now_ts + 60.0, list(roles))
             return roles
 
@@ -2916,6 +2921,324 @@ class Database:
             cursor = conn.execute(
                 "DELETE FROM notifications WHERE id = ? AND user_id = ?",
                 (notification_id, user_id),
+            )
+            return cursor.rowcount > 0
+
+    # --- Collections (Library) ---------------------------------------------
+
+    _UNSET: Any = object()
+
+    @staticmethod
+    def _collection_row(row: Any) -> dict[str, Any]:
+        data = dict(row)
+        for field in ("created_at", "updated_at"):
+            value = data.get(field)
+            if isinstance(value, datetime):
+                data[field] = value.isoformat()
+            elif value is not None:
+                data[field] = str(value)
+        data["item_count"] = int(data.get("item_count") or 0)
+        return data
+
+    def list_collections(self, user_id: str) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT c.id, c.user_id, c.name, c.description, c.created_at, c.updated_at,
+                       COUNT(ci.asset_key) AS item_count
+                FROM collections c
+                LEFT JOIN collection_items ci ON ci.collection_id = c.id
+                WHERE c.user_id = ?
+                GROUP BY c.id, c.user_id, c.name, c.description, c.created_at, c.updated_at
+                ORDER BY c.created_at DESC, c.id ASC
+                """,
+                (user_id,),
+            )
+            return [self._collection_row(r) for r in cursor.fetchall()]
+
+    def get_collection(self, user_id: str, collection_id: str) -> Optional[dict[str, Any]]:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT c.id, c.user_id, c.name, c.description, c.created_at, c.updated_at,
+                       COUNT(ci.asset_key) AS item_count
+                FROM collections c
+                LEFT JOIN collection_items ci ON ci.collection_id = c.id
+                WHERE c.id = ? AND c.user_id = ?
+                GROUP BY c.id, c.user_id, c.name, c.description, c.created_at, c.updated_at
+                """,
+                (collection_id, user_id),
+            ).fetchone()
+            return self._collection_row(row) if row else None
+
+    def create_collection(
+        self,
+        user_id: str,
+        name: str,
+        description: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Insert a collection. Returns None when (user_id, name) already exists."""
+        cid = str(uuid.uuid4())
+        now = created_at or datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO collections (id, user_id, name, description, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, name) DO NOTHING
+                """,
+                (cid, user_id, name, description, now, now),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.get_collection(user_id, cid)
+
+    def update_collection(
+        self,
+        user_id: str,
+        collection_id: str,
+        name: Any = _UNSET,
+        description: Any = _UNSET,
+        updated_at: Optional[str] = None,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
+        """Partial update. Returns (status, row) with status in ok|not_found|conflict."""
+        now = updated_at or datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            existing = conn.execute(
+                "SELECT id FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
+            if not existing:
+                conn.execute("COMMIT;")
+                return "not_found", None
+            updates: list[str] = []
+            params: list[Any] = []
+            if name is not self._UNSET:
+                updates.append("name = ?")
+                params.append(name)
+            if description is not self._UNSET:
+                updates.append("description = ?")
+                params.append(description)
+            if not updates:
+                conn.execute("COMMIT;")
+                return "ok", self.get_collection(user_id, collection_id)
+            updates.append("updated_at = ?")
+            params.extend([now, collection_id, user_id])
+            try:
+                conn.execute(
+                    f"UPDATE collections SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                    tuple(params),
+                )
+            except Exception:
+                conn.execute("ROLLBACK;")
+                return "conflict", None
+            conn.execute("COMMIT;")
+        return "ok", self.get_collection(user_id, collection_id)
+
+    def delete_collection(self, user_id: str, collection_id: str) -> bool:
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            owned = conn.execute(
+                "SELECT id FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
+            if not owned:
+                conn.execute("COMMIT;")
+                return False
+            conn.execute("DELETE FROM collection_items WHERE collection_id = ?", (collection_id,))
+            conn.execute("DELETE FROM collections WHERE id = ? AND user_id = ?", (collection_id, user_id))
+            conn.execute("COMMIT;")
+            return True
+
+    def list_collection_items(self, user_id: str, collection_id: str) -> Optional[list[str]]:
+        """Return member keys, or None when the collection is unknown/not owned."""
+        with self.get_connection() as conn:
+            owned = conn.execute(
+                "SELECT id FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
+            if not owned:
+                return None
+            cursor = conn.execute(
+                "SELECT asset_key FROM collection_items WHERE collection_id = ? ORDER BY added_at ASC, asset_key ASC",
+                (collection_id,),
+            )
+            return [str(r["asset_key"]) for r in cursor.fetchall()]
+
+    def add_collection_items(
+        self,
+        user_id: str,
+        collection_id: str,
+        keys: list[str],
+        added_at: Optional[str] = None,
+    ) -> tuple[bool, list[str]]:
+        """Atomically insert keys. Returns (owned, added_keys). Duplicates are skipped."""
+        now = added_at or datetime.now(timezone.utc).isoformat()
+        added: list[str] = []
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            owned = conn.execute(
+                "SELECT id FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
+            if not owned:
+                conn.execute("COMMIT;")
+                return False, []
+            for key in keys:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO collection_items (collection_id, asset_key, added_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(collection_id, asset_key) DO NOTHING
+                    """,
+                    (collection_id, key, now),
+                )
+                if cursor.rowcount > 0:
+                    added.append(key)
+            if added:
+                conn.execute(
+                    "UPDATE collections SET updated_at = ? WHERE id = ? AND user_id = ?",
+                    (now, collection_id, user_id),
+                )
+            conn.execute("COMMIT;")
+        return True, added
+
+    def remove_collection_item(self, user_id: str, collection_id: str, key: str) -> Optional[bool]:
+        """Remove one key. None = collection unknown/not owned; False = key absent."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            owned = conn.execute(
+                "SELECT id FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
+            if not owned:
+                conn.execute("COMMIT;")
+                return None
+            cursor = conn.execute(
+                "DELETE FROM collection_items WHERE collection_id = ? AND asset_key = ?",
+                (collection_id, key),
+            )
+            removed = cursor.rowcount > 0
+            if removed:
+                conn.execute(
+                    "UPDATE collections SET updated_at = ? WHERE id = ? AND user_id = ?",
+                    (now, collection_id, user_id),
+                )
+            conn.execute("COMMIT;")
+            return removed
+
+    # --- Generation presets ------------------------------------------------
+
+    @staticmethod
+    def _preset_row(row: Any) -> dict[str, Any]:
+        data = dict(row)
+        for field in ("created_at", "updated_at"):
+            value = data.get(field)
+            if isinstance(value, datetime):
+                data[field] = value.isoformat()
+            elif value is not None:
+                data[field] = str(value)
+        return data
+
+    def list_presets(self, user_id: str) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, user_id, name, payload_json, created_at, updated_at
+                FROM generation_presets
+                WHERE user_id = ?
+                ORDER BY created_at DESC, id ASC
+                """,
+                (user_id,),
+            )
+            return [self._preset_row(r) for r in cursor.fetchall()]
+
+    def get_preset(self, user_id: str, preset_id: str) -> Optional[dict[str, Any]]:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT id, user_id, name, payload_json, created_at, updated_at
+                FROM generation_presets
+                WHERE id = ? AND user_id = ?
+                """,
+                (preset_id, user_id),
+            ).fetchone()
+            return self._preset_row(row) if row else None
+
+    def create_preset(
+        self,
+        user_id: str,
+        name: str,
+        payload_json: str,
+        created_at: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Insert a preset. Returns None when (user_id, name) already exists."""
+        pid = str(uuid.uuid4())
+        now = created_at or datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO generation_presets (id, user_id, name, payload_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, name) DO NOTHING
+                """,
+                (pid, user_id, name, payload_json, now, now),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.get_preset(user_id, pid)
+
+    def update_preset(
+        self,
+        user_id: str,
+        preset_id: str,
+        name: Any = _UNSET,
+        payload_json: Any = _UNSET,
+        updated_at: Optional[str] = None,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
+        """Partial update. Returns (status, row) with status in ok|not_found|conflict."""
+        now = updated_at or datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE;")
+            existing = conn.execute(
+                "SELECT id FROM generation_presets WHERE id = ? AND user_id = ?",
+                (preset_id, user_id),
+            ).fetchone()
+            if not existing:
+                conn.execute("COMMIT;")
+                return "not_found", None
+            updates: list[str] = []
+            params: list[Any] = []
+            if name is not self._UNSET:
+                updates.append("name = ?")
+                params.append(name)
+            if payload_json is not self._UNSET:
+                updates.append("payload_json = ?")
+                params.append(payload_json)
+            if not updates:
+                conn.execute("COMMIT;")
+                return "ok", self.get_preset(user_id, preset_id)
+            updates.append("updated_at = ?")
+            params.extend([now, preset_id, user_id])
+            try:
+                conn.execute(
+                    f"UPDATE generation_presets SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                    tuple(params),
+                )
+            except Exception:
+                conn.execute("ROLLBACK;")
+                return "conflict", None
+            conn.execute("COMMIT;")
+        return "ok", self.get_preset(user_id, preset_id)
+
+    def delete_preset(self, user_id: str, preset_id: str) -> bool:
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM generation_presets WHERE id = ? AND user_id = ?",
+                (preset_id, user_id),
             )
             return cursor.rowcount > 0
 

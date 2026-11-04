@@ -11,6 +11,7 @@
 
 import assert from "node:assert/strict";
 import {
+  buildPresetHref,
   buildShotGenerateHref,
   parseGenerateDeepLink,
   snapVideoDuration,
@@ -285,6 +286,76 @@ check("a partial model identity cannot produce a link", () => {
   assert.equal(buildShotGenerateHref({ ...base, model_id: null }), null);
   assert.equal(buildShotGenerateHref({ ...base, version_id: null }), null);
   assert.equal(buildShotGenerateHref({ ...base, file_id: null }), null);
+});
+
+// --- presets -> deep link ------------------------------------------------
+
+check("image preset round-trips prompt/negative/seed/format/model", () => {
+  const href = buildPresetHref({
+    mode: "text-to-image",
+    prompt: "neon drive, rain & reflections",
+    negative_prompt: "",
+    seed: 42,
+    format: "16:9",
+    model_id: ID,
+    version_id: ID2,
+    file_id: ID3,
+  });
+  const plan = parseGenerateDeepLink(href);
+  assert.equal(plan.mode, "Text2Img");
+  assert.equal(plan.prompt, "neon drive, rain & reflections");
+  // Explicit empty negative survives as "", not null.
+  assert.equal(plan.negativePrompt, "");
+  assert.equal(plan.seed, "42");
+  assert.equal(plan.format, "16:9");
+  assert.equal(plan.modelId, ID);
+  assert.equal(plan.versionId, ID2);
+  assert.equal(plan.fileId, ID3);
+});
+check("absent optional preset fields are omitted, never emptied", () => {
+  const plan = parseGenerateDeepLink(buildPresetHref({ mode: "text-to-image" }));
+  assert.equal(plan.prompt, null);
+  assert.equal(plan.negativePrompt, null);
+  assert.equal(plan.seed, null);
+  assert.equal(plan.format, null);
+  assert.equal(plan.duration, null);
+  assert.equal(plan.fps, null);
+  assert.equal(plan.hasModelParam, false);
+});
+check("video preset carries sub-mode, duration and fps", () => {
+  const href = buildPresetHref({
+    mode: "video",
+    video_mode: "text-to-video",
+    prompt: "night drive",
+    format: "9:16",
+    duration: 10,
+    fps: 24,
+  });
+  const plan = parseGenerateDeepLink(href);
+  assert.equal(plan.mode, "Video");
+  assert.equal(plan.videoSubMode, "text-to-video");
+  assert.equal(plan.clearVideoReferences, true);
+  assert.equal(plan.duration, 10);
+  assert.equal(plan.fps, 24);
+});
+check("video sub-mode never leaks into an image preset", () => {
+  const plan = parseGenerateDeepLink(
+    buildPresetHref({ mode: "text-to-image", video_mode: null }),
+  );
+  assert.equal(plan.videoSubMode, null);
+});
+check("img2img/edit/detailer/upscale tokens map back to the same tab", () => {
+  assert.equal(parseGenerateDeepLink(buildPresetHref({ mode: "image-to-image" })).mode, "Img2Img");
+  assert.equal(parseGenerateDeepLink(buildPresetHref({ mode: "edit" })).mode, "Edit");
+  assert.equal(parseGenerateDeepLink(buildPresetHref({ mode: "detailer" })).img2imgSubTab, "detailer");
+  assert.equal(parseGenerateDeepLink(buildPresetHref({ mode: "upscale" })).img2imgSubTab, "upscaler");
+});
+check("preset duration/fps outside the pills snap back onto them", () => {
+  const plan = parseGenerateDeepLink(buildPresetHref({ mode: "video", duration: 7, fps: 28 }));
+  assert.ok(VIDEO_DURATION_OPTIONS.includes(plan.duration));
+  assert.ok(VIDEO_FPS_OPTIONS.includes(plan.fps));
+  assert.equal(plan.duration, 5);
+  assert.equal(plan.fps, 30);
 });
 
 console.log(`check-deep-link: ${checks} checks passed`);

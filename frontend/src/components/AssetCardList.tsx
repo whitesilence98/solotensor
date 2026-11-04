@@ -99,6 +99,10 @@ export interface AssetCardListProps {
   className?: string;
   /** Optional empty state node rendered when items is empty and not loading */
   emptyState?: React.ReactNode;
+  /** Opt-in selection mode for bulk actions. Other galleries omit all three. */
+  selectable?: boolean;
+  selectedKeys?: Set<string> | string[];
+  onToggleSelect?: (asset: AssetRecord | GalleryItem) => void;
 }
 
 function getMasonryColumns(width: number): number {
@@ -130,6 +134,9 @@ function AssetCardListComponent({
   className = "",
   emptyState,
   leadSlot,
+  selectable = false,
+  selectedKeys,
+  onToggleSelect,
 }: AssetCardListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(() => {
@@ -168,6 +175,11 @@ function AssetCardListComponent({
     if (!savedKeys) return null;
     return savedKeys instanceof Set ? savedKeys : new Set(savedKeys);
   }, [savedKeys]);
+
+  const selectedSet = useMemo(() => {
+    if (!selectedKeys) return null;
+    return selectedKeys instanceof Set ? selectedKeys : new Set(selectedKeys);
+  }, [selectedKeys]);
 
   // Distribute items round-robin across columns so Row 1 is [1, 2, 3], Row 2 is [4, 5, 6]
   const columnBuckets = useMemo(() => {
@@ -254,6 +266,9 @@ function AssetCardListComponent({
                 onDelete={onDelete ? () => onDelete(key) : undefined}
                 showRemix={showRemix}
                 remixModelId={remixModelId}
+                selectable={selectable}
+                selected={selectedSet ? selectedSet.has(key) : false}
+                onToggleSelect={onToggleSelect ? () => onToggleSelect(item) : undefined}
               />
             );
           })}

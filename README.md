@@ -1,160 +1,115 @@
 # SoloTensor (Comfy Studio)
 
-A local, privacy-first generative AI studio designed to replace fragile node graphs with a pro-grade creative workspace: Obsidian brutalist Next.js 15 UI → FastAPI wrapper → local headless ComfyUI → local disk asset storage.
+A local-first creative workspace: Next.js 15 UI, FastAPI API, local disk assets, and an external ComfyUI rendering engine.
 
 ```text
-Browser (Next.js :3000) ──► FastAPI (:8000) ──► ComfyUI (:8188, HTTP + WS)
-                                   │
-                                   └──► disk (STORAGE_DIR) — served at /files
+Browser (Next.js :3000) -> FastAPI (:8000) -> ComfyUI (:8188, HTTP + WS)
+                                |
+                                +-> database + disk (STORAGE_DIR, served at /files)
 ```
 
-No cloud dependencies, no MinIO — generated assets and models stay strictly on your local disk and are served directly by FastAPI.
+## Current capabilities and limits
 
----
+- **Studio (`/generate`)**: isolated Text2Img, Img2Img, Edit, Video and Prime tabs; shared `StudioPromptBar` for prompts and generation actions.
+- **Image workflows**: bundled text-to-image and image-to-image graphs; optional SeedVR2 upscaling and detailer stages. Rendering requires compatible models and the graph's ComfyUI custom nodes, not just a catalog entry.
+- **Edit**: the current client submits `mode: "edit"`, a source image and an optional second reference. The backend uploads both and patches a dedicated edit graph; without a second reference it reuses the source. This is implemented workflow plumbing, not a no-op. Arbitrary mask-based regional inpainting and successful live renders are not established by this documentation; do not infer them from the Edit label or mask-related UI state.
+- **Video**: the bundled **LTX-Video 2.3** graph supports text-to-video and image-to-video inputs. SVD, Wan and other video taxonomy labels do **not** mean live rendering support. The backend rejects non-LTX selections; the gallery selection labels/gates the bundled workflow rather than replacing its transformer, VAE or encoder weights.
+- **Models (`/models`)**: catalog, local scanning, metadata and compatibility records using the authoritative 16-type taxonomy, including `.safetensors` and `.sft`. Taxonomy coverage is not an execution compatibility matrix.
+- **Tools (`/tools`)**: browse saved tools and author parameter-bound workflow definitions. Tool execution needs the external engine, required nodes and weights.
+- **Assets (`/assets`)**: browse stored assets and inspect metadata without a running ComfyUI engine.
 
-## Key Features
+Browsing existing **assets, models and tools** needs the API, database and local storage, but not ComfyUI. Live engine model discovery and rendering do need ComfyUI; local filesystem discovery needs a configured accessible model root. No GPU or local LLM is started by this repository's launcher.
 
-- **Multi-Tab Generation Studio (`/`)**:
-  - **Text2Img**: Pure latent synthesis via decoupled base workflow (`workflow_generate_t2i.json`).
-  - **Img2Img**: Native image variation & style transfer via dedicated workflow (`workflow_generate_i2i.json`) with native `LoadImage`, `VAEEncode`, `KSampler`, UNET/CLIP/VAE loaders, and dynamic LoRA chaining.
-  - **Edit & Inpaint**: Regional mask conditioning and inpainting.
-  - **Video**: Stable Video Diffusion (SVD) and Wan video diffusion.
-  - **Prime Pro Pipeline**: Sequential chaining across Base generation → SeedVR2 DiT Upscale → Cascading YOLO Detailers.
-  - **Tab State Isolation**: Zero cross-contamination between modes (isolated prompts, denoise, steps, CFG, aspect ratios, and draft persistence).
-  - **Prompt Composer**: Shared prompt structuring and tag composition across Text2Img and Img2Img.
+## Local quickstart (Windows)
 
-- **Decoupled Multi-Stage Pipeline**:
-  - **Stage 1 (Base T2I/I2I)**: High-speed base synthesis saving immediately to terminal storage.
-  - **Stage 2 (SeedVR2 DiT Upscaler)**: Generative super-resolution (1.5x–4x) with LAB color correction and latent noise control.
-  - **Stage 3 (ADetailer Cascade)**: Sequential multi-target detection & repair (Face, Hands, Body) with automatic bypass pruning.
-  - **API Engine Resilience**: Automatic `extra_pnginfo` fallback injection in ComfyUI `/prompt` queue to prevent crashes from custom inspection nodes (`Show Text`, `Inspire-Pack`, `Easy-Use`).
-
-- **Model Management (`/models`)**:
-  - Authoritative 16-type taxonomy (`Checkpoint`, `LoRA`, `LoKr`, `VAE`, `ControlNet`, `Wildcards`, etc.).
-  - Dual `.safetensors` and `.sft` weight format support.
-  - Civitai metadata fetching, trigger word extraction, and sidecar caching.
-  - Persistent polymorphic Compatibility & Conditioning Stack.
-
-- **Parametric AI Tools Engine (`/tools`)**:
-  - Convert any ComfyUI `workflow_api.json` graph into a reusable, parameter-bound tool.
-  - Dynamic schema generation, input interpolation, and standalone tool execution.
-
-- **Asset Library & Interrogation (`/assets`)**:
-  - Searchable lightbox gallery with full prompt metadata and generation parameters.
-  - Automated deep tagging via WD14 / BLIP tagger interrogation.
-  - SQLite metadata attribution and user credit tracking.
-
----
-
-## Prerequisites
-
-- **ComfyUI** installed locally (Windows portable build or standard git clone).
-- **Node.js 18+** for the frontend.
-- **Python 3.11+** for the backend.
-- Model checkpoints in `ComfyUI/models/checkpoints/` (e.g. `sd_xl_base_1.0.safetensors`, `flux1-dev.safetensors`, or custom weights).
-
----
-
-## Quickstart
-
-### 1. Start ComfyUI in Headless Mode
+Prerequisites: Python 3.11+, a Node.js version compatible with Next.js 15, and npm. Run once from the repository root:
 
 ```powershell
-cd C:\path\to\ComfyUI
+python -m venv backend/.venv
+.\backend\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+# Only create .env if you do not already have one; preserve existing configuration.
+if (-not (Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+Push-Location frontend
+npm ci
+Pop-Location
+```
+
+Then run:
+
+```powershell
+.\run-local.bat
+```
+
+The launcher checks dependencies before opening service windows, uses **`backend/.venv`** (no global-Python fallback), and starts only:
+
+- FastAPI/Uvicorn at `http://127.0.0.1:8000`, bound to loopback.
+- Next.js dev at `http://127.0.0.1:3000`, explicitly bound to loopback on port 3000.
+
+It polls `GET /api/v1/ready` until HTTP 200 with `status: "ready"`, then polls the frontend HTTP root before opening **`http://127.0.0.1:3000/generate`**. API readiness means core database and storage are ready; it returns 503 otherwise and is independent of ComfyUI availability. Each service gets at most 60 attempts with a two-second request timeout and one-second retry intervals, not a fixed startup sleep.
+
+A dependency or readiness failure exits nonzero. Read the service window's error, check `.env`, DB/storage permissions and port conflicts; close any spawned service windows before retrying. The launcher does not silently install dependencies, kill existing processes, or automatically clean up windows after a failed startup. Close both windows to stop the successful run. API docs: `http://127.0.0.1:8000/docs`.
+
+### Enable generation separately
+
+Install ComfyUI, the custom nodes required by the selected bundled workflow, and its exact model weights. From your **separate ComfyUI installation**:
+
+```powershell
 python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch
 ```
 
-`--listen` exposes HTTP on `:8188` and WebSocket on `ws://127.0.0.1:8188/ws` without opening the browser GUI. Verify with:
-```powershell
-curl http://127.0.0.1:8188/system_stats
-```
+Set `COMFY_HOST` in `backend/.env` if that address differs. Merely starting ComfyUI does not install workflow dependencies or verify model compatibility. This setup guide does not certify GPU inference or live Edit/Video output.
 
-### 2. Start the FastAPI Backend
+## Configuration (`backend/.env`)
 
-```powershell
-cd backend
-pip install -r requirements.txt
-copy .env.example .env
-uvicorn app.main:app --reload --port 8000
-```
+See `backend/app/config.py` and `backend/.env.example` for the full configuration.
 
-- API Interactive Docs: `http://localhost:8000/docs`
-- Generated images land in `backend/generated/` and are served at `http://localhost:8000/files/...`
+| Variable | Default | Purpose |
+|---|---|---|
+| `APP_ENV` | `development` | Set explicitly to `production` outside local development |
+| `COMFY_HOST` | `127.0.0.1:8188` | External ComfyUI HTTP/WS host |
+| `STORAGE_DIR` | `generated` | Asset storage; under `backend` when launched by the batch file |
+| `FILES_PUBLIC_BASE` | `http://localhost:8000` | Base for generated `/files` links |
+| `COMFY_MODEL_ROOT` | unset | Optional same-host ComfyUI model directory for filesystem discovery/install |
+| `DB_PATH` | `solotensor.db` | Local SQLite fallback when `DATABASE_URL` is unset |
+| `COMFY_TIMEOUT` | `1800` | Generation timeout, seconds |
 
-### 3. Start the Next.js Frontend
+For production configuration, explicitly set `APP_ENV=production`, supply a unique random `JWT_SECRET` of at least 32 characters, set `ALLOWED_ORIGIN_REGEX` to empty, and list permitted origins explicitly in `ALLOWED_ORIGINS`. Production startup rejects a blank, short or publicly known default JWT secret. These configuration checks do **not** establish public-hosting readiness. The unregistered `st_agent_*` authentication bypass and hardcoded username promotion have been removed, and unknown user IDs now resolve to no roles, but the following remain open before any public deployment: the unauthenticated `/files` static mount and asset tag/save mutations, `?user_id=` gallery exposure, the unauthenticated progress WebSocket, credit refund/idempotency gaps, missing rate limiting, and browser bearer-token storage exposed to same-origin XSS.
 
-```powershell
-cd frontend
-npm install
-npm run dev
-```
+Removing the bypass does not demote accounts already granted elevated roles: existing `user_roles` and `users.role` rows survive the code change. Operators must audit any privileged or demo accounts created under the old behaviour and decide manually; nothing auto-clears production rows.
 
-Open **http://localhost:3000** in your browser.
+Local-first is a deployment choice, not a guarantee of zero outbound traffic. PostgreSQL (`DATABASE_URL`) and S3-compatible storage settings also exist; inspect your configuration rather than assuming every deployment is filesystem-only. Metadata/download integrations and configured AI providers can contact external services. Review enabled features and credentials before sending sensitive data. The current browser bearer-token storage is exposed to same-origin XSS; this development setup is **not a production-safe multi-tenant deployment**. See [frontend security notes](frontend/FRONTEND.md#security-boundary).
 
----
+## Architecture references
 
-## Architecture & Codebase Map
-
-For detailed architecture contracts, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/generate_studio_architecture.md`](docs/generate_studio_architecture.md), and [`DESIGN.md`](DESIGN.md).
+Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`PRODUCT.md`](PRODUCT.md), [`DESIGN.md`](DESIGN.md), and [`CLAUDE.md`](CLAUDE.md). Where older route descriptions differ, the current studio implementation is `frontend/src/app/generate/page.tsx`, not the root page.
 
 | Path | Role |
 |---|---|
-| `docs/ARCHITECTURE.md` | System taxonomy, 16 model types, conditioning stack contracts |
-| `docs/generate_studio_architecture.md` | Multi-tab studio state isolation and workflow routing specification |
-| `DESIGN.md` | Obsidian & acid-lime brutalist design tokens and UI component rules |
-| `PRODUCT.md` | Product boundaries, persona definitions, and feature scopes |
-| `backend/app/config.py` | Pydantic-settings configuration, environment variables |
-| `backend/app/schemas.py` | Typed request/response models (`GenerateRequest`, `UpscaleConfig`, `DetailerConfig`) |
-| `backend/app/services/workflow_router.py` | Dynamic workflow selection (`T2I`, `I2I`, `Detailer`, `Upscaler`) & graph patcher |
-| `backend/app/services/workflow_bypass.py` | Extensible `BypassEngine` & sequential cascade rewiring |
-| `backend/app/services/comfy_client.py` | Workflow builder, `/prompt` queue with `extra_pnginfo` safeguard, WS progress streaming |
-| `backend/app/services/models.py` | 16-type model catalog scanner, Civitai metadata, path containment |
-| `backend/app/services/ai_tools.py` | Parametric workflow tools builder and runner |
-| `backend/app/services/storage.py` | Local disk asset writes, public `/files` endpoints, gallery indexing |
-| `backend/app/main.py` | FastAPI route definitions and thin endpoint dispatchers |
-| `frontend/src/app/page.tsx` | Main Generation Studio page |
-| `frontend/src/components/ControlPanel.tsx` | Multi-tab generation controls (`Text2Img`, `Img2Img`, `Edit`, `Video`, `Prime`) |
-| `frontend/src/components/PromptComposer.tsx` | Shared prompt composition & tag component |
-| `frontend/src/components/UpscalePanel.tsx` | SeedVR2 DiT AI & model upscaler controls |
-| `frontend/src/components/DetailerPanel.tsx` | Cascading multi-target YOLO detailer controls |
-| `frontend/src/lib/api.ts` | Typed frontend API client & WebSocket progress listener |
+| `backend/app/schemas.py` | API contract authority |
+| `backend/app/main.py` | Routes and generation orchestration |
+| `backend/app/services/workflow_router.py` | Bundled workflow patching, including Edit and LTX |
+| `backend/app/services/comfy_client.py` | ComfyUI HTTP/WS and workflow templates |
+| `backend/app/services/models.py` | Catalog and model discovery |
+| `backend/app/services/ai_tools.py` | Parametric tool workflows |
+| `backend/app/services/storage.py` | Local asset storage |
+| `frontend/src/app/generate/page.tsx` | Studio state and request construction |
+| `frontend/src/components/StudioPromptBar.tsx` | Shared studio prompt surface |
+| `frontend/src/lib/api.ts` | Typed API client and bearer-token handling |
 
----
+## Verification
 
-## Verification & Testing
+Run backend checks from the repository root, using the project virtualenv:
 
-Both frontend and backend are covered by automated verification suites:
-
-### Backend Test Suite
-Run from `backend/`:
 ```powershell
-$env:PYTHONPATH='backend'; python -m unittest discover -s tests
+$env:PYTHONPATH='backend'
+.\backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests
 ```
-*Status:* **324 tests passing** (`OK`, 0 errors, 0 failures). Tests use mock isolation fixtures and do not require a live GPU.
 
-### Frontend Typecheck & Build
-Run from `frontend/`:
+Run frontend checks from `frontend/`:
+
 ```powershell
 npx tsc --noEmit
 npm run build
 ```
-*Status:* TypeScript compilation passes with **0 errors**.
 
----
-
-## Configuration (`backend/.env`)
-
-| Variable | Default | Note |
-|---|---|---|
-| `COMFY_HOST` | `127.0.0.1:8188` | ComfyUI HTTP + WebSocket host |
-| `STORAGE_DIR` | `generated` | Local directory where generated assets are stored |
-| `FILES_PUBLIC_BASE` | `http://localhost:8000` | Base URL used to construct asset links |
-| `ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | CORS permitted origins |
-| `ALLOWED_ORIGIN_REGEX` | local ports `3000`–`3999` | Localhost dynamic port regex |
-| `COMFY_TIMEOUT` | `300` | Generation timeout in seconds |
-
----
-
-## License & Privacy
-
-SoloTensor is built for **100% local, private operation**. Your prompts, generated images, weights, and workflow graphs never leave your local machine.
+Tests should mock engine/network boundaries. Passing unit tests or a build does not establish live ComfyUI inference. No fixed test count or previously observed build result is a guarantee for your checkout.

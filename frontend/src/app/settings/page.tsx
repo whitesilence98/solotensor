@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useTransition } from "react";
+import { useEffect, useState, useRef, useTransition, useCallback } from "react";
 import Link from "next/link";
 import {
   User,
@@ -29,6 +29,8 @@ import {
   Monitor,
   Maximize2,
   Minimize2,
+  Activity,
+  ServerOff,
 } from "lucide-react";
 import {
   DEFAULT_SETTINGS,
@@ -44,10 +46,12 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import {
   api,
+  ApiError,
   type ApiKeyListItem,
   type ApiKeyResponse,
   resolveMediaUrl,
 } from "@/lib/api";
+import { useEngineStatus } from "@/lib/useEngineStatus";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 import CreditPill from "@/components/CreditPill";
 import WorkspaceNavbar from "@/components/WorkspaceNavbar";
@@ -61,7 +65,8 @@ type SettingsTab =
   | "studio"
   | "keys"
   | "credits"
-  | "preferences";
+  | "preferences"
+  | "system";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "profile", label: "Profile & Identity", icon: User },
@@ -70,6 +75,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "keys", label: "Developer & API Keys", icon: Key },
   { id: "credits", label: "Credits & Quotas", icon: Zap },
   { id: "preferences", label: "Preferences", icon: Bell },
+  { id: "system", label: "System & Diagnostics", icon: Activity },
 ];
 
 const SAMPLER_OPTIONS = [
@@ -145,6 +151,211 @@ const DENSITY_OPTIONS: Array<{
 
 const fieldLabel = "text-[11px] font-bold text-[var(--ink-soft)] uppercase tracking-wider font-mono";
 const fieldHelp = "mt-1.5 block text-xs leading-5 text-[var(--ink-faint)]";
+
+type ReadyState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "ready" }
+  | { kind: "not_ready" }
+  | { kind: "unreachable" };
+
+/** Only fixed, sanitized strings — never an exception message, path or host. */
+const NOT_READY_MESSAGE = "The API reported it is not ready to serve requests.";
+const UNREACHABLE_MESSAGE = "The API did not respond. It may be starting or unreachable.";
+
+function StatusPill({ state, label }: { state: "up" | "down" | "unknown"; label: string }) {
+  const tone =
+    state === "up"
+      ? "border-[var(--success)] bg-[var(--success-surface)] text-[var(--success)]"
+      : state === "down"
+        ? "border-[var(--danger-line)] bg-[var(--danger-surface)] text-[var(--danger)]"
+        : "border-[var(--line)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]";
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${tone}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function SystemDiagnostics() {
+  const { health, unreachable, checking, retry } = useEngineStatus();
+  const [ready, setReady] = useState<ReadyState>({ kind: "idle" });
+  // Owns the probe lifetime: unmount aborts the in-flight request and makes any
+  // late settlement stale, so no state lands after the tab is gone.
+  const probe = useRef<{ token: number; controller: AbortController | null }>({
+    token: 0,
+    controller: null,
+  });
+
+  useEffect(
+    () => () => {
+      probe.current.token += 1;
+      probe.current.controller?.abort();
+    },
+    []
+  );
+
+  const checkReady = useCallback(async () => {
+    probe.current.controller?.abort();
+    const token = ++probe.current.token;
+    setReady({ kind: "checking" });
+    const controller = new AbortController();
+    probe.current.controller = controller;
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const result = await api.ready(controller.signal);
+      if (probe.current.token !== token) return;
+      setReady(result.status === "ready" ? { kind: "ready" } : { kind: "not_ready" });
+    } catch (err) {
+      if (probe.current.token !== token) return;
+      // 503 is a real "not ready" answer, not a successful check.
+      setReady(
+        err instanceof ApiError && err.status === 503
+          ? { kind: "not_ready" }
+          : { kind: "unreachable" }
+      );
+    } finally {
+      clearTimeout(timer);
+      if (probe.current.controller === controller) probe.current.controller = null;
+    }
+  }, []);
+
+  const apiState: "up" | "down" | "unknown" = unreachable
+    ? "down"
+    : health
+      ? "up"
+      : "unknown";
+  const apiLabel = checking && !health && !unreachable ? "Checking" : unreachable ? "Unreachable" : health ? "Reachable" : "Not checked";
+  const comfy = health ? (health.comfy === "down" ? "down" : "up") : "unknown";
+  const storage = health ? (health.storage === "down" ? "down" : "up") : "unknown";
+  const database = health
+    ? health.database_status === "down"
+      ? "down"
+      : health.database_status === "up"
+        ? "up"
+        : "unknown"
+    : "unknown";
+  const readyState = ready.kind === "ready" ? "up" : ready.kind === "not_ready" ? "down" : "unknown";
+  const details = Object.entries(health?.details ?? {});
+
+  return (
+    <div className="mt-6 space-y-6" aria-label="System and diagnostics">
+      <section className="workspace-bezel p-6 md:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--ink)]">Runtime Health</h2>
+            <p className="mt-1 text-xs text-[var(--ink-faint)]">
+              Live status from the studio API. Nothing here is checked until the probe answers; an
+              unknown state is never reported as healthy.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void checkReady()}
+            disabled={ready.kind === "checking"}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--line-strong)] bg-[var(--surface-raised)] px-3 py-1.5 font-mono text-xs font-semibold text-[var(--ink)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${ready.kind === "checking" ? "animate-spin" : ""}`} />
+            Check readiness
+          </button>
+        </div>
+
+        <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+          {[
+            { name: "API", state: apiState, label: apiLabel },
+            { name: "Studio engine (ComfyUI)", state: comfy, label: comfy === "up" ? "Up" : comfy === "down" ? "Down" : "Not checked" },
+            { name: "Asset storage", state: storage, label: storage === "up" ? "Up" : storage === "down" ? "Down" : "Not checked" },
+            {
+              name: "Database",
+              state: database,
+              label:
+                database === "down"
+                  ? "Down"
+                  : database === "up"
+                    ? `Up${health?.database ? ` · ${health.database}` : ""}`
+                    : "Not checked",
+            },
+            {
+              name: "Readiness probe",
+              state: readyState,
+              label:
+                ready.kind === "ready"
+                  ? "Ready"
+                  : ready.kind === "not_ready"
+                    ? "Not ready"
+                    : ready.kind === "checking"
+                      ? "Checking"
+                      : ready.kind === "unreachable"
+                        ? "Unreachable"
+                        : "Not checked",
+            },
+          ].map((row) => (
+            <div
+              key={row.name}
+              className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] px-3.5 py-2.5"
+            >
+              <dt className="text-xs text-[var(--ink-soft)]">{row.name}</dt>
+              <dd>
+                <StatusPill state={row.state as "up" | "down" | "unknown"} label={row.label} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <div className="mt-4 space-y-2">
+          {unreachable && (
+            <p className="flex items-center gap-2 rounded-md border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-2 text-xs text-[var(--danger)]" role="status">
+              <ServerOff className="h-3.5 w-3.5 shrink-0" />
+              {UNREACHABLE_MESSAGE}
+            </p>
+          )}
+          {ready.kind === "not_ready" && (
+            <p className="flex items-center gap-2 rounded-md border border-[var(--warning)]/40 bg-[var(--warning-surface)] px-3 py-2 text-xs text-[var(--warning)]" role="status">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              {NOT_READY_MESSAGE}
+            </p>
+          )}
+          {ready.kind === "ready" && (
+            <p className="flex items-center gap-2 rounded-md border border-[var(--success)]/40 bg-[var(--success-surface)] px-3 py-2 text-xs text-[var(--success)]" role="status">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              Core dependencies report ready.
+            </p>
+          )}
+          {ready.kind === "unreachable" && (
+            <p className="flex items-center gap-2 rounded-md border border-[var(--danger-line)] bg-[var(--danger-surface)] px-3 py-2 text-xs text-[var(--danger)]" role="status">
+              <ServerOff className="h-3.5 w-3.5 shrink-0" />
+              {UNREACHABLE_MESSAGE}
+            </p>
+          )}
+        </div>
+
+        {details.length > 0 && (
+          <div className="mt-5 border-t border-[var(--line)] pt-4">
+            <h3 className="font-mono text-[11px] font-bold uppercase tracking-wider text-[var(--ink-soft)]">
+              Backend messages
+            </h3>
+            <ul className="mt-2 space-y-1">
+              {details.map(([subsystem, message]) => (
+                <li key={subsystem} className="font-mono text-[11px] text-[var(--ink-faint)]">
+                  <span className="text-[var(--ink-soft)]">{subsystem}:</span> {message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <p className="mt-4 text-[11px] leading-5 text-[var(--ink-faint)]">
+          Redis and S3 appear only when the backend reports them. This view intentionally hides
+          URLs, filesystem paths, and credentials.
+        </p>
+        <button type="button" onClick={retry} className="mt-2 font-mono text-[11px] text-[var(--accent)] hover:underline">
+          Re-poll engine status
+        </button>
+      </section>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const {
@@ -1577,6 +1788,9 @@ export default function SettingsPage() {
             </section>
           </div>
         )}
+
+        {/* TAB 7: System & Diagnostics */}
+        {activeTab === "system" && <SystemDiagnostics />}
       </div>
 
       {/* API Key Creation Modal */}

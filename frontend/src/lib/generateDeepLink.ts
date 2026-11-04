@@ -276,3 +276,67 @@ export function buildShotGenerateHref(shot: GenerateShotLinkInput): string | nul
   }
   return `/generate?${params.toString()}`;
 }
+
+/** Canonical `mode` token for a preset's `mode` field. */
+const PRESET_MODE_TOKEN: Record<string, string> = {
+  "text-to-image": "text-to-image",
+  "image-to-image": "img2img",
+  detailer: "detailer",
+  upscale: "upscale",
+  edit: "edit",
+  video: "video",
+};
+
+export interface PresetHrefInput {
+  mode: string;
+  video_mode?: DeepLinkVideoSubMode | null;
+  prompt?: string | null;
+  negative_prompt?: string | null;
+  seed?: number | null;
+  format?: DeepLinkFormat | null;
+  duration?: number | null;
+  fps?: number | null;
+  model_id?: string | null;
+  version_id?: string | null;
+  file_id?: string | null;
+  base_model_id?: string | null;
+  base_file_id?: string | null;
+}
+
+/**
+ * Reverse of `parseGenerateDeepLink`: turns a saved preset payload into a
+ * `/generate` href. Null/undefined fields are omitted; an explicitly empty
+ * `negative_prompt` is emitted so it clears the previous one. Duration and fps
+ * are snapped to the tab's own option lists. The result always round-trips.
+ */
+export function buildPresetHref(preset: PresetHrefInput): string {
+  const params = new URLSearchParams();
+  const modeToken = PRESET_MODE_TOKEN[preset.mode] ?? preset.mode;
+  params.set("mode", modeToken);
+  if (preset.video_mode) params.set("video_mode", preset.video_mode);
+  if (preset.prompt !== null && preset.prompt !== undefined) {
+    params.set("prompt", preset.prompt);
+  }
+  if (preset.negative_prompt !== null && preset.negative_prompt !== undefined) {
+    params.set("negative_prompt", preset.negative_prompt);
+  }
+  if (preset.seed !== null && preset.seed !== undefined) {
+    params.set("seed", String(preset.seed));
+  }
+  if (preset.format) params.set("format", preset.format);
+  const duration = snapVideoDuration(preset.duration);
+  if (duration !== null) params.set("duration", String(duration));
+  const fps = snapVideoFps(preset.fps);
+  if (fps !== null) params.set("fps", String(fps));
+  for (const key of [
+    "model_id",
+    "version_id",
+    "file_id",
+    "base_model_id",
+    "base_file_id",
+  ] as const) {
+    const value = preset[key];
+    if (value) params.set(key, value);
+  }
+  return `/generate?${params.toString()}`;
+}

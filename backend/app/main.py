@@ -29,7 +29,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -39,8 +39,10 @@ from .dependencies.permissions import RequireOwnerOrPermission, RequirePermissio
 from .routers.admin_settings import router as admin_settings_router
 from .routers.auth import get_current_user, get_optional_user
 from .routers.auth import router as auth_router
+from .routers.collections import router as collections_router
 from .routers.moderation import router as moderation_router
 from .routers.notifications import router as notifications_router
+from .routers.presets import router as presets_router
 from .schemas import (
     is_architecture_compatible,
     ARCHITECTURE_FAMILIES,
@@ -68,6 +70,7 @@ from .schemas import (
     GenerationRecordResponse,
     GenerationResult,
     HealthResponse,
+    ReadyResponse,
     InstalledGalleryModel,
     InstalledGalleryModelList,
     LocalModelImportRequest,
@@ -148,6 +151,7 @@ from .services.social_service import (
     SocialValidationError,
     get_social_service,
 )
+from .services.runtime_health import RuntimeHealth, RequestIDMiddleware, configure_request_logging
 from .services.storage import StorageError, VIDEO_EXTENSIONS, get_storage
 from .services.tagger import TaggerError, get_tagger_service
 from .services.workflow_router import (
@@ -160,6 +164,7 @@ from .services.workflow_router import (
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
 )
+configure_request_logging()
 logger = logging.getLogger("comfy_studio")
 
 settings = get_settings()
@@ -174,6 +179,7 @@ director = get_director_service(settings, catalog_provider=model_storage.selecta
 redis_service = get_redis_service(settings)
 
 db = get_db()
+runtime_health = RuntimeHealth(storage, db)
 
 app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 
@@ -182,14 +188,17 @@ app = FastAPI(title=settings.APP_NAME, version="1.1.0")
 async def _on_startup_bootstrap() -> None:
     import threading
 
+    runtime_health.initialized = False
+
     def _bg_bootstrap() -> None:
         try:
             db.init_db()
+            runtime_health.initialized = True
             db.sync_filesystem_to_db(
                 models_dir=model_storage.definitions, storage_dir=storage.root
             )
-        except Exception as exc:
-            logger.warning("Could not sync filesystem to database: %s", exc)
+        except Exception:
+            logger.warning("Database bootstrap or filesystem sync unavailable")
 
     threading.Thread(target=_bg_bootstrap, daemon=True, name="bg-db-bootstrap").start()
 
@@ -200,7 +209,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+app.add_middleware(RequestIDMiddleware)
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(auth_router, prefix="/api/v1/auth")
@@ -209,6 +220,8 @@ app.include_router(moderation_router, prefix="/api/moderation")
 app.include_router(moderation_router, prefix="/api/admin/moderation")
 app.include_router(notifications_router, prefix="/api/v1/notifications")
 app.include_router(notifications_router, prefix="/api/notifications")
+app.include_router(collections_router, prefix="/api/v1/collections")
+app.include_router(presets_router, prefix="/api/v1/presets")
 app.include_router(admin_settings_router, prefix="/api/admin/settings")
 
 
@@ -520,29 +533,14 @@ def decode_reference_image(data_url: str, index: int) -> tuple[bytes, str]:
 
 @app.get("/api/v1/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    comfy_ok = await get_comfy_client().ping()
-    try:
-        storage.ensure_root()
-        storage_ok = True
-    except StorageError:
-        storage_ok = False
+    return HealthResponse(**await runtime_health.health(get_comfy_client(), redis_service))
 
-    db_driver = "postgresql" if db.is_postgres else "sqlite"
-    redis_status = (
-        "up"
-        if redis_service.ping()
-        else ("disabled" if not redis_service.is_enabled else "down")
-    )
-    s3_status = "enabled" if storage.is_s3_enabled else "disabled"
 
-    return HealthResponse(
-        status="ok" if (comfy_ok and storage_ok) else "degraded",
-        comfy="up" if comfy_ok else "down",
-        storage="up" if storage_ok else "down",
-        database=db_driver,
-        redis=redis_status,
-        s3=s3_status,
-    )
+@app.get("/api/v1/ready", response_model=ReadyResponse,
+         responses={503: {"model": ReadyResponse}})
+async def ready():
+    result = ReadyResponse(**await runtime_health.core())
+    return JSONResponse(result.model_dump(), status_code=200 if result.status == "ready" else 503)
 
 
 @app.post("/api/v1/assist", response_model=AssistantResponse)

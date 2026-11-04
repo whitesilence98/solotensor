@@ -6,12 +6,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   api,
   getAuthToken,
-  getSecondsUntilMidnight,
   setAuthToken,
   ApiError,
   AUTH_CREDITS_KEY,
@@ -20,12 +20,9 @@ import {
   type LoginPayload,
   type RegisterPayload,
   type UserProfile,
-  type UserRole,
   type UpdateProfilePayload,
   type ChangePasswordPayload,
   normalizeRoleName,
-  getDefaultPermissionsForRole,
-  setLocalUserRole,
 } from "./api";
 
 export interface AuthContextType {
@@ -44,9 +41,7 @@ export interface AuthContextType {
   isPro: boolean;
   isMod: boolean;
   isAdmin: boolean;
-  switchRoleDemo: (role: UserRole) => Promise<void> | void;
   login: (emailOrUsername: string, password?: string) => Promise<UserProfile>;
-  loginWithOAuth: (provider: "google" | "discord") => Promise<UserProfile>;
   register: (
     email: string,
     username: string,
@@ -82,38 +77,53 @@ export interface AuthContextType {
   refreshUnreadNotificationCount: () => Promise<void>;
 }
 
-const DEFAULT_CREDITS: CreditStatus = {
-  balance: 100,
-  dailyAllowance: 100,
-  nextResetInSeconds: getSecondsUntilMidnight(),
+/** Unknown until the server reports a real balance; never a fabricated allowance. */
+const EMPTY_CREDITS: CreditStatus = {
+  balance: 0,
+  dailyAllowance: 0,
+  nextResetInSeconds: 0,
   lastClaimedAt: null,
 };
+
+/** Drop every client-side credit trace: never show one account's balance to the next. */
+function clearStoredCredits() {
+  try {
+    localStorage.removeItem(AUTH_CREDITS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [token, setTokenState] = useState<string | null>(null);
-  const [credits, setCredits] = useState<CreditStatus>(DEFAULT_CREDITS);
+  const [credits, setCredits] = useState<CreditStatus>(EMPTY_CREDITS);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalReason, setAuthModalReason] = useState<string | null>(null);
+
+  // Bumped on login/register/logout/401. An in-flight /me response started under
+  // an older session must never repopulate identity or credits for the new one.
+  const sessionRef = useRef(0);
+  const sessionIsCurrent = (session: number) => sessionRef.current === session;
 
   // Initialize from storage or backend session
   useEffect(() => {
     let mounted = true;
 
     const initializeAuth = async () => {
+      const session = sessionRef.current;
       try {
         const storedToken = getAuthToken();
         const storedUser = localStorage.getItem(AUTH_USER_KEY);
         const storedCredits = localStorage.getItem(AUTH_CREDITS_KEY);
 
-        let parsedCredits: CreditStatus = DEFAULT_CREDITS;
+        let parsedCredits: CreditStatus = EMPTY_CREDITS;
         if (storedCredits) {
           try {
             parsedCredits = JSON.parse(storedCredits);
-            parsedCredits.nextResetInSeconds = getSecondsUntilMidnight();
           } catch {
             /* ignore JSON parse error */
           }
@@ -133,19 +143,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Attempt to verify with /api/auth/me
           try {
             const remoteSession = await api.getMe();
-            if (mounted && remoteSession?.user) {
+            if (mounted && sessionIsCurrent(session) && remoteSession?.user) {
               setUser(remoteSession.user);
               if (remoteSession.credits) {
                 setCredits(remoteSession.credits);
                 localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(remoteSession.credits));
+              } else {
+                setCredits(EMPTY_CREDITS);
+                clearStoredCredits();
               }
               localStorage.setItem(AUTH_USER_KEY, JSON.stringify(remoteSession.user));
             }
           } catch (err) {
             if (err instanceof ApiError && err.status === 401) {
+              if (!mounted || !sessionIsCurrent(session)) return;
+              sessionRef.current += 1;
               setAuthToken(null);
               setTokenState(null);
               setUser(null);
+              setCredits(EMPTY_CREDITS);
               try {
                 localStorage.removeItem(AUTH_USER_KEY);
                 localStorage.removeItem(AUTH_CREDITS_KEY);
@@ -156,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Keep local session if server is offline / transient network error
           }
         } else {
-          setCredits(parsedCredits);
+          setCredits(EMPTY_CREDITS);
         }
       } catch {
         /* storage access error */
@@ -172,30 +188,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Live countdown ticker for daily credit reset
+  // Cosmetic countdown toward the server-issued reset moment. The balance is
+  // never recomputed here: only the credit service can grant credits.
   useEffect(() => {
     const timer = setInterval(() => {
-      setCredits((prev) => {
-        if (prev.nextResetInSeconds <= 1) {
-          // Midnight reset triggered
-          const nextSeconds = getSecondsUntilMidnight();
-          const refreshed: CreditStatus = {
-            ...prev,
-            balance: prev.dailyAllowance,
-            nextResetInSeconds: nextSeconds,
-          };
-          try {
-            localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(refreshed));
-          } catch {
-            /* ignore */
-          }
-          return refreshed;
-        }
-        return {
-          ...prev,
-          nextResetInSeconds: prev.nextResetInSeconds - 1,
-        };
-      });
+      setCredits((prev) =>
+        prev.nextResetInSeconds > 0
+          ? { ...prev, nextResetInSeconds: prev.nextResetInSeconds - 1 }
+          : prev
+      );
     }, 1000);
 
     return () => clearInterval(timer);
@@ -217,38 +218,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
         provider: "credentials",
       };
+      sessionRef.current += 1;
+      const session = sessionRef.current;
       const response = await api.login(payload);
+      if (!sessionIsCurrent(session)) return response.user;
       setAuthToken(response.token);
       setTokenState(response.token);
       setUser(response.user);
-      setCredits(response.credits);
-      try {
-        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.user));
-        localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
-      } catch {
-        /* ignore */
+      if (response.credits) {
+        setCredits(response.credits);
+        try {
+          localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
+        } catch {
+          /* ignore */
+        }
+      } else {
+        setCredits(EMPTY_CREDITS);
+        clearStoredCredits();
       }
-      setIsAuthModalOpen(false);
-      return response.user;
-    },
-    []
-  );
-
-  const loginWithOAuth = useCallback(
-    async (provider: "google" | "discord"): Promise<UserProfile> => {
-      const mockName = provider === "google" ? "google_creator" : "discord_creator";
-      const payload: LoginPayload = {
-        emailOrUsername: `${mockName}@${provider}.com`,
-        provider,
-      };
-      const response = await api.login(payload);
-      setAuthToken(response.token);
-      setTokenState(response.token);
-      setUser(response.user);
-      setCredits(response.credits);
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.user));
-        localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
       } catch {
         /* ignore */
       }
@@ -271,14 +260,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
         displayName: displayName || username,
       };
+      sessionRef.current += 1;
+      const session = sessionRef.current;
       const response = await api.register(payload);
+      if (!sessionIsCurrent(session)) return response.user;
       setAuthToken(response.token);
       setTokenState(response.token);
       setUser(response.user);
-      setCredits(response.credits);
+      if (response.credits) {
+        setCredits(response.credits);
+        try {
+          localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
+        } catch {
+          /* ignore */
+        }
+      } else {
+        setCredits(EMPTY_CREDITS);
+        clearStoredCredits();
+      }
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.user));
-        localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
       } catch {
         /* ignore */
       }
@@ -289,9 +290,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    sessionRef.current += 1;
     setAuthToken(null);
     setTokenState(null);
     setUser(null);
+    setCredits(EMPTY_CREDITS);
+    clearStoredCredits();
     try {
       localStorage.removeItem(AUTH_USER_KEY);
     } catch {
@@ -300,11 +304,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshCredits = useCallback(async () => {
+    const session = sessionRef.current;
     try {
       const remote = await api.getMe();
+      if (!sessionIsCurrent(session)) return;
       if (remote?.credits) {
         setCredits(remote.credits);
         localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(remote.credits));
+      } else {
+        setCredits(EMPTY_CREDITS);
+        clearStoredCredits();
       }
     } catch {
       /* ignore */
@@ -423,8 +432,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshUser = useCallback(async (): Promise<void> => {
+    const session = sessionRef.current;
     try {
       const remote = await api.getMe();
+      if (!sessionIsCurrent(session)) return;
       if (remote?.user) {
         setUser(remote.user);
         try {
@@ -440,6 +451,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch {
           /* ignore */
         }
+      } else {
+        setCredits(EMPTY_CREDITS);
+        clearStoredCredits();
       }
     } catch {
       /* ignore */
@@ -460,12 +474,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, user, primaryRole]);
 
   const permissions = useMemo(() => {
-    if (!token || !user) return getDefaultPermissionsForRole("guest");
-    if (user?.permissions && user.permissions.length > 0) {
-      return user.permissions;
-    }
-    return getDefaultPermissionsForRole(primaryRole);
-  }, [token, user, primaryRole]);
+    if (!token || !user) return [];
+    return user.permissions ?? [];
+  }, [token, user]);
 
   const hasRole = useCallback(
     (checkRole: string) => {
@@ -508,63 +519,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!token || !user) return false;
     return hasRole("admin") || hasPermission("admin:full_access");
   }, [token, user, hasRole, hasPermission]);
-
-  const switchRoleDemo = useCallback(async (newRole: UserRole) => {
-    const norm = normalizeRoleName(newRole);
-    if (norm === "guest") {
-      logout();
-      setPendingReviewCount(0);
-      return;
-    }
-
-    const DEMO_PERSONAS: Record<string, { username: string; password?: string }> = {
-      creator: { username: "cyber_artisan", password: "Password123!" },
-      moderator: { username: "sentinel_mod", password: "Password123!" },
-      admin: { username: "winnguyen282", password: "Password123!" },
-      pro_creator: { username: "neon_architect", password: "Password123!" },
-      verified_creator: { username: "lora_mastermind", password: "Password123!" },
-    };
-
-    const persona = DEMO_PERSONAS[norm];
-    if (persona) {
-      try {
-        const payload: LoginPayload = {
-          emailOrUsername: persona.username,
-          password: persona.password,
-          provider: "credentials",
-        };
-        const response = await api.login(payload);
-        setAuthToken(response.token);
-        setTokenState(response.token);
-        setUser(response.user);
-        setCredits(response.credits);
-        try {
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(response.user));
-          localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(response.credits));
-        } catch {
-          /* ignore */
-        }
-        if (norm === "moderator" || norm === "admin") {
-          try {
-            const queue = await api.getPendingModelsReviewQueue();
-            setPendingReviewCount(queue?.total ?? queue?.items?.length ?? 0);
-          } catch {
-            /* ignore */
-          }
-        } else {
-          setPendingReviewCount(0);
-        }
-        return;
-      } catch (err) {
-        console.warn("Backend auth for demo persona failed, falling back to local simulation:", err);
-      }
-    }
-
-    const updated = setLocalUserRole(newRole);
-    if (updated) {
-      setUser({ ...updated });
-    }
-  }, []);
 
   const [pendingReviewCount, setPendingReviewCount] = useState<number>(0);
 
@@ -637,9 +591,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isPro,
       isMod,
       isAdmin,
-      switchRoleDemo,
       login,
-      loginWithOAuth,
       register,
       logout,
       claimDaily,
@@ -674,9 +626,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isPro,
       isMod,
       isAdmin,
-      switchRoleDemo,
       login,
-      loginWithOAuth,
       register,
       logout,
       claimDaily,

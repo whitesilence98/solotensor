@@ -23,7 +23,7 @@ export function ProGate({
   actionLabel = "Upgrade to Pro VIP",
   showInlineUpsell = true,
 }: ProGateProps) {
-  const { isPro, switchRoleDemo } = useAuth();
+  const { isPro, openAuthModal } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
 
   if (typeof children === "function") {
@@ -100,27 +100,8 @@ export function ProGate({
             </div>
 
             <p className="text-xs text-[var(--ink-soft)] leading-relaxed">
-              Unlock dedicated GPU nodes, 4K synthesis pipelines, multi-run batch queues, and confidential private outputs.
+              Pro access is tied to your account tier. Sign in with an account that already holds Pro clearance, or ask an administrator to review your tier.
             </p>
-
-            <div className="space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--accent)] font-bold">⚡</span>
-                <span className="font-mono text-[11px] text-[var(--ink)]">Priority Queue (~4s instant execution)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--accent)] font-bold">⚡</span>
-                <span className="font-mono text-[11px] text-[var(--ink)]">4K Canvas Synthesis (up to 4096px / 100 steps)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--accent)] font-bold">⚡</span>
-                <span className="font-mono text-[11px] text-[var(--ink)]">Confidential Private Output Enclave</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--accent)] font-bold">⚡</span>
-                <span className="font-mono text-[11px] text-[var(--ink)]">High-Speed Model Weight Downloads</span>
-              </div>
-            </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--line)]">
               <button
@@ -133,12 +114,12 @@ export function ProGate({
               <button
                 type="button"
                 onClick={() => {
-                  switchRoleDemo("pro_creator");
                   setModalOpen(false);
+                  openAuthModal("pro");
                 }}
                 className="rounded-lg bg-[var(--accent)] px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition active:scale-[0.98] shadow-sm"
               >
-                Activate Pro VIP Demo
+                Sign In
               </button>
             </div>
           </div>

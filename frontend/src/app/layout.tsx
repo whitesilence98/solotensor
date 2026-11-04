@@ -4,6 +4,8 @@ import "./globals.css";
 import SidebarNav from "@/components/SidebarNav";
 import { AuthProvider } from "@/lib/auth-context";
 import AuthModal from "@/components/AuthModal";
+import { EngineStatusProvider } from "@/lib/useEngineStatus";
+import EngineStatusBanner from "@/components/EngineStatusBanner";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
@@ -41,10 +43,15 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: densityInitScript }} />
         <a href="#main-content" className="skip-link">Skip to content</a>
         <AuthProvider>
-          <div className="app-shell">
-            <SidebarNav />
-            <div className="app-content">{children}</div>
-          </div>
+          <EngineStatusProvider>
+            <div className="app-shell">
+              <SidebarNav />
+              <div className="app-content">
+                <EngineStatusBanner />
+                {children}
+              </div>
+            </div>
+          </EngineStatusProvider>
           <AuthModal />
         </AuthProvider>
       </body>

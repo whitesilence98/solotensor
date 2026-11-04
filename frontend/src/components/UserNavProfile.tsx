@@ -31,13 +31,11 @@ export default function UserNavProfile() {
     isAdmin,
     pendingReviewCount,
     unreadNotificationCount,
-    switchRoleDemo,
   } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [claimFeedback, setClaimFeedback] = useState<string | null>(null);
   const [resendBusy, setResendBusy] = useState(false);
   const [resendFeedback, setResendFeedback] = useState<string | null>(null);
-  const [switchingRole, setSwitchingRole] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu on click outside or escape key
@@ -202,63 +200,6 @@ export default function UserNavProfile() {
                 </span>
               )}
               <RoleBadge role={primaryRole} size="xs" />
-            </div>
-          </div>
-
-          {/* Quick Persona Switcher for Pairing & Moderation Testing */}
-          <div className="my-2 rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-2 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-faint)]">
-                SWITCH PERSONA
-              </span>
-              <span className="font-mono text-[8px] font-bold text-[var(--accent)] tracking-wider">
-                {switchingRole ? "AUTH…" : "DEV RBAC"}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {[
-                { role: "creator" as const, label: "Creator", title: "Standard Creator (@cyber_artisan)" },
-                { role: "pro_creator" as const, label: "Pro VIP", title: "Pro Creator (@neon_architect)" },
-                { role: "verified_creator" as const, label: "Verified", title: "Verified Author (@lora_mastermind)" },
-                { role: "moderator" as const, label: "Mod", title: "Community Moderator (@sentinel_mod)" },
-                { role: "admin" as const, label: "Admin", title: "System Admin (@winnguyen282)" },
-                { role: "guest" as const, label: "Guest", title: "Anonymous Guest Session" },
-              ].map(({ role: r, label, title }) => {
-                const isActive = primaryRole === r;
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    disabled={switchingRole}
-                    onClick={async () => {
-                      setSwitchingRole(true);
-                      try {
-                        await switchRoleDemo(r);
-                      } finally {
-                        setSwitchingRole(false);
-                      }
-                    }}
-                    className={`rounded py-1 px-1 font-mono text-[9px] uppercase font-bold transition disabled:opacity-50 text-center truncate ${
-                      isActive
-                        ? r === "pro_creator"
-                          ? "border border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--accent)] shadow-[0_0_8px_color-mix(in_srgb,var(--accent)_20%,transparent)]"
-                          : r === "verified_creator"
-                          ? "border border-amber-500/40 bg-amber-950/40 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                          : r === "moderator"
-                          ? "border border-sky-500/40 bg-sky-950/40 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.2)]"
-                          : r === "admin"
-                          ? "border border-rose-500/40 bg-rose-950/40 text-rose-300 shadow-[0_0_8px_rgba(251,113,133,0.2)]"
-                          : r === "guest"
-                          ? "border border-[var(--line-strong)] bg-[var(--surface-sunken)] text-[var(--ink-faint)]"
-                          : "border border-[var(--line-strong)] bg-[var(--surface-raised)] text-[var(--accent)]"
-                        : "border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:border-[var(--line-strong)]"
-                    }`}
-                    title={title}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
             </div>
           </div>
 

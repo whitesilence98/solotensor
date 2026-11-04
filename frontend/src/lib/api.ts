@@ -839,7 +839,8 @@ export interface CreditStatus {
 export interface AuthResponse {
   token: string;
   user: UserProfile;
-  credits: CreditStatus;
+  /** Null when the backend did not include credits, never a guessed balance. */
+  credits: CreditStatus | null;
 }
 
 export interface LoginPayload {
@@ -1015,6 +1016,85 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
 }
+
+export interface HealthResponse {
+  status: string;
+  comfy: string;
+  storage: string;
+  /** Driver name, not availability. */
+  database: string | null;
+  redis: string | null;
+  s3: string | null;
+  /** Null means not checked; optional for older backends. */
+  database_status?: "up" | "down" | null;
+  /** Safe subsystem messages; no exceptions, paths, hosts, or credentials. */
+  details?: Record<string, string>;
+}
+
+export interface ReadyResponse {
+  status: "ready" | "not_ready";
+  storage: "up" | "down";
+  database: "up" | "down";
+  /** Safe subsystem messages; no exceptions, paths, hosts, or credentials. */
+  details: Record<string, string>;
+}
+
+export interface CollectionRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CollectionCreatePayload {
+  name: string;
+  description?: string | null;
+}
+
+export type CollectionUpdatePayload = Partial<CollectionCreatePayload>;
+
+export interface CollectionItemsAddResult {
+  added: string[];
+  skipped: string[];
+}
+
+/** Only the parameters a `/generate` deep link can carry. */
+export interface GenerationPresetPayload {
+  mode: GenerationMode;
+  /** Only meaningful with mode="video"; `text-to-video` clears stale I2V input. */
+  video_mode?: VideoSubMode | null;
+  prompt?: string | null;
+  negative_prompt?: string | null;
+  /** 0..2^32-1 */
+  seed?: number | null;
+  format?: "1:1" | "16:9" | "9:16" | "4:3" | "3:2" | null;
+  duration?: 3 | 5 | 10 | 15 | null;
+  fps?: 16 | 24 | 30 | 49 | null;
+  model_id?: string | null;
+  version_id?: string | null;
+  file_id?: string | null;
+  base_model_id?: string | null;
+  base_file_id?: string | null;
+}
+
+export interface GenerationPreset {
+  id: string;
+  name: string;
+  /** Null means the stored payload is unusable; `warning` says why. */
+  payload: GenerationPresetPayload | null;
+  warning?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GenerationPresetCreatePayload {
+  name: string;
+  payload: GenerationPresetPayload;
+}
+
+export type GenerationPresetUpdatePayload = Partial<GenerationPresetCreatePayload>;
 
 export type CreatorModelCategory = "Character" | "Style" | "Concept" | "Pose" | "Clothing" | "General";
 export type CreatorModelType =
@@ -2149,8 +2229,13 @@ export const api = {
     });
   },
 
-  async health(): Promise<{ status: string; comfy: string; storage: string }> {
-    return request("/api/v1/health");
+  async health(signal?: AbortSignal): Promise<HealthResponse> {
+    return request<HealthResponse>("/api/v1/health", { signal });
+  },
+
+  /** Core readiness only; HTTP 503 rejects with ApiError, independent of engine status. */
+  async ready(signal?: AbortSignal): Promise<ReadyResponse> {
+    return request<ReadyResponse>("/api/v1/ready", { signal });
   },
 
   /** Open a relay WebSocket to /api/v1/ws/progress/{clientId}. */
@@ -2181,81 +2266,47 @@ export const api = {
   },
 
   async login(payload: LoginPayload): Promise<AuthResponse> {
-    try {
-      const res = await request<any>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email_or_username: payload.emailOrUsername,
-          username: payload.emailOrUsername,
-          email: payload.emailOrUsername,
-          password: payload.password || "solotensor_guest",
-          provider: payload.provider || "credentials",
-        }),
-      });
-      const auth = normalizeAuthResponse(res);
-      if (auth.token) {
-        setAuthToken(auth.token);
-      }
-      return auth;
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        const fallback = createFallbackAuthResponse(payload);
-        setAuthToken(fallback.token);
-        return fallback;
-      }
-      throw err;
+    const usesCredentials = !payload.provider || payload.provider === "credentials";
+    if (usesCredentials && !payload.password) {
+      throw new ApiError(400, "Password is required.");
     }
+    const res = await request<any>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email_or_username: payload.emailOrUsername,
+        username: payload.emailOrUsername,
+        email: payload.emailOrUsername,
+        password: payload.password,
+        provider: payload.provider || "credentials",
+      }),
+    });
+    const auth = requireAuthEnvelope(res, "Login");
+    // Callers own the token commit so a stale response cannot restore a
+    // session after logout; see auth-context's revision guard.
+    return auth;
   },
 
   async register(payload: RegisterPayload): Promise<AuthResponse> {
-    try {
-      const res = await request<any>("/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          email: payload.email,
-          username: payload.username,
-          password: payload.password,
-          display_name: payload.displayName || payload.username,
-        }),
-      });
-      const auth = normalizeAuthResponse(res);
-      if (auth.token) {
-        setAuthToken(auth.token);
-      }
-      return auth;
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        const fallback = createFallbackRegisterResponse(payload);
-        setAuthToken(fallback.token);
-        return fallback;
-      }
-      throw err;
-    }
+    const res = await request<any>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: payload.email,
+        username: payload.username,
+        password: payload.password,
+        display_name: payload.displayName || payload.username,
+      }),
+    });
+    const auth = requireAuthEnvelope(res, "Registration");
+    return auth;
   },
 
-  async getMe(): Promise<{ user: UserProfile; credits: CreditStatus }> {
-    try {
-      const res = await request<any>("/api/auth/me");
-      const auth = normalizeAuthResponse(res);
-      return { user: auth.user, credits: auth.credits };
-    } catch (err) {
-      if (
-        (err instanceof ApiError && (err.status === 404 || err.status === 501)) ||
-        err instanceof TypeError ||
-        (err instanceof Error && err.message.includes("fetch"))
-      ) {
-        return getFallbackUserSession();
-      }
-      throw err;
+  async getMe(): Promise<{ user: UserProfile; credits: CreditStatus | null }> {
+    const res = await request<any>("/api/auth/me");
+    const auth = normalizeAuthResponse(res);
+    if (!auth.user.id) {
+      throw new ApiError(502, "The server returned an invalid session.");
     }
+    return { user: auth.user, credits: auth.credits };
   },
 
   async claimDailyEnergy(): Promise<CreditStatus> {
@@ -2590,19 +2641,123 @@ export const api = {
       method: "DELETE",
     });
   },
+
+  // --- Collections (owner-scoped) -----------------------------------------
+
+  async getCollections(): Promise<CollectionRecord[]> {
+    const res = await request<{ items: CollectionRecord[] }>("/api/v1/collections");
+    return res.items ?? [];
+  },
+
+  async getCollection(id: string): Promise<CollectionRecord> {
+    return request<CollectionRecord>(`/api/v1/collections/${encodeURIComponent(id)}`);
+  },
+
+  async createCollection(payload: CollectionCreatePayload): Promise<CollectionRecord> {
+    return request<CollectionRecord>("/api/v1/collections", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateCollection(
+    id: string,
+    payload: CollectionUpdatePayload,
+  ): Promise<CollectionRecord> {
+    return request<CollectionRecord>(`/api/v1/collections/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteCollection(id: string): Promise<boolean> {
+    const res = await request<{ deleted: boolean }>(
+      `/api/v1/collections/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    return res.deleted;
+  },
+
+  async getCollectionItems(id: string): Promise<string[]> {
+    const res = await request<{ items: string[] }>(
+      `/api/v1/collections/${encodeURIComponent(id)}/items`,
+    );
+    return res.items ?? [];
+  },
+
+  async addCollectionItems(id: string, keys: string[]): Promise<CollectionItemsAddResult> {
+    return request<CollectionItemsAddResult>(
+      `/api/v1/collections/${encodeURIComponent(id)}/items`,
+      { method: "POST", body: JSON.stringify({ keys }) },
+    );
+  },
+
+  async removeCollectionItem(id: string, key: string): Promise<boolean> {
+    const res = await request<{ removed: boolean }>(
+      `/api/v1/collections/${encodeURIComponent(id)}/items/${key.split("/").map(encodeURIComponent).join("/")}`,
+      { method: "DELETE" },
+    );
+    return res.removed;
+  },
+
+  // --- Generation presets (owner-scoped) ----------------------------------
+
+  async getPresets(): Promise<GenerationPreset[]> {
+    const res = await request<{ items: GenerationPreset[] }>("/api/v1/presets");
+    return res.items ?? [];
+  },
+
+  async getPreset(id: string): Promise<GenerationPreset> {
+    return request<GenerationPreset>(`/api/v1/presets/${encodeURIComponent(id)}`);
+  },
+
+  async createPreset(payload: GenerationPresetCreatePayload): Promise<GenerationPreset> {
+    return request<GenerationPreset>("/api/v1/presets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updatePreset(
+    id: string,
+    payload: GenerationPresetUpdatePayload,
+  ): Promise<GenerationPreset> {
+    return request<GenerationPreset>(`/api/v1/presets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deletePreset(id: string): Promise<boolean> {
+    const res = await request<{ deleted: boolean }>(
+      `/api/v1/presets/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+    return res.deleted;
+  },
 };
+
+/**
+ * Rejects a malformed 2xx auth body instead of storing a blank session.
+ * A token and a user id are both mandatory at this trust boundary.
+ */
+function requireAuthEnvelope(raw: any, action: string): AuthResponse {
+  const auth = normalizeAuthResponse(raw);
+  if (!auth.token || !auth.user.id) {
+    throw new ApiError(502, `${action} failed: the server returned an incomplete session.`);
+  }
+  return auth;
+}
 
 function normalizeAuthResponse(raw: any): AuthResponse {
   const token = raw?.access_token || raw?.token || "";
   const rawUser = raw?.user || raw || {};
-  const rawRole = rawUser.primary_role || rawUser.role || "creator";
-  const normRole = normalizeRoleName(rawRole);
+  // Role normalization is display-only. Authorization never infers permissions:
+  // an empty list means the backend granted none.
+  const normRole = normalizeRoleName(rawUser.primary_role || rawUser.role || "creator");
   const rawRoles = Array.isArray(rawUser.roles) && rawUser.roles.length > 0
     ? rawUser.roles.map(normalizeRoleName)
     : [normRole];
-  const permissions = Array.isArray(rawUser.permissions) && rawUser.permissions.length > 0
-    ? rawUser.permissions
-    : getDefaultPermissionsForRole(normRole);
 
   const user: UserProfile = {
     id: rawUser.id || "",
@@ -2612,190 +2767,26 @@ function normalizeAuthResponse(raw: any): AuthResponse {
     role: normRole,
     roles: rawRoles,
     primary_role: normRole,
-    permissions,
+    permissions: Array.isArray(rawUser.permissions) ? rawUser.permissions : [],
     avatarUrl: resolveMediaUrl(rawUser.avatar_url || rawUser.avatarUrl) || null,
     bio: rawUser.bio ?? null,
     social_links: rawUser.social_links ?? {},
-    createdAt: rawUser.created_at || rawUser.createdAt || new Date().toISOString(),
+    createdAt: rawUser.created_at || rawUser.createdAt || "",
     is_verified: rawUser.is_verified ?? rawUser.isVerified ?? false,
   };
-  const rawCredits = raw?.credits || {};
-  const credits: CreditStatus = {
-    balance: typeof rawCredits.balance === "number" ? rawCredits.balance : 100,
-    dailyAllowance: rawCredits.daily_allowance ?? rawCredits.dailyAllowance ?? 100,
-    nextResetInSeconds:
-      rawCredits.seconds_until_next_reset ??
-      rawCredits.nextResetInSeconds ??
-      getSecondsUntilMidnight(),
-    lastClaimedAt: rawCredits.last_claimed_at ?? rawCredits.lastClaimedAt ?? null,
-  };
+  // TokenResponse.credits is optional; never fabricate a balance.
+  const credits = raw?.credits ? normalizeCredits(raw.credits) : null;
   return { token, user, credits };
 }
 
 function normalizeCredits(raw: any): CreditStatus {
   return {
-    balance: typeof raw?.balance === "number" ? raw.balance : 100,
-    dailyAllowance: raw?.daily_allowance ?? raw?.dailyAllowance ?? 100,
+    balance: typeof raw?.balance === "number" ? raw.balance : 0,
+    dailyAllowance: raw?.daily_allowance ?? raw?.dailyAllowance ?? 0,
     nextResetInSeconds:
-      raw?.seconds_until_next_reset ??
-      raw?.nextResetInSeconds ??
-      getSecondsUntilMidnight(),
+      raw?.seconds_until_next_reset ?? raw?.nextResetInSeconds ?? 0,
     lastClaimedAt: raw?.last_claimed_at ?? raw?.lastClaimedAt ?? null,
   };
-}
-
-function createFallbackAuthResponse(payload: LoginPayload): AuthResponse {
-  const identifier = payload.emailOrUsername.trim();
-  const name = identifier.includes("@") ? identifier.split("@")[0] : identifier;
-  const token = `st_token_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-  const defaultRole: UserRole = "creator";
-  const user: UserProfile = {
-    id: `usr_${Math.random().toString(36).slice(2, 10)}`,
-    email: identifier.includes("@") ? identifier : `${identifier}@solotensor.local`,
-    username: name.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
-    displayName: name.charAt(0).toUpperCase() + name.slice(1),
-    role: defaultRole,
-    roles: [defaultRole],
-    primary_role: defaultRole,
-    permissions: getDefaultPermissionsForRole(defaultRole),
-    avatarUrl: null,
-    bio: null,
-    social_links: {},
-    createdAt: new Date().toISOString(),
-    is_verified: payload.provider === "google" || payload.provider === "discord",
-  };
-  const credits: CreditStatus = {
-    balance: 100,
-    dailyAllowance: 100,
-    nextResetInSeconds: getSecondsUntilMidnight(),
-    lastClaimedAt: new Date().toISOString(),
-  };
-  try {
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(credits));
-  } catch {
-    /* ignore */
-  }
-  return { token, user, credits };
-}
-
-function createFallbackRegisterResponse(payload: RegisterPayload): AuthResponse {
-  const token = `st_token_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-  const defaultRole: UserRole = "creator";
-  const user: UserProfile = {
-    id: `usr_${Math.random().toString(36).slice(2, 10)}`,
-    email: payload.email,
-    username: payload.username.toLowerCase().replace(/[^a-z0-9_]/g, "_"),
-    displayName: payload.displayName || payload.username,
-    role: defaultRole,
-    roles: [defaultRole],
-    primary_role: defaultRole,
-    permissions: getDefaultPermissionsForRole(defaultRole),
-    avatarUrl: null,
-    bio: null,
-    social_links: {},
-    createdAt: new Date().toISOString(),
-    is_verified: false,
-  };
-  const credits: CreditStatus = {
-    balance: 100,
-    dailyAllowance: 100,
-    nextResetInSeconds: getSecondsUntilMidnight(),
-    lastClaimedAt: new Date().toISOString(),
-  };
-  try {
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(credits));
-  } catch {
-    /* ignore */
-  }
-  return { token, user, credits };
-}
-
-function getFallbackUserSession(): { user: UserProfile; credits: CreditStatus } {
-  let user: UserProfile | null = null;
-  let credits: CreditStatus | null = null;
-  try {
-    const rawUser = localStorage.getItem(AUTH_USER_KEY);
-    if (rawUser) user = JSON.parse(rawUser);
-    const rawCredits = localStorage.getItem(AUTH_CREDITS_KEY);
-    if (rawCredits) credits = JSON.parse(rawCredits);
-  } catch {
-    /* ignore */
-  }
-  if (!user) {
-    const defaultRole: UserRole = "creator";
-    user = {
-      id: "usr_solo_local",
-      email: "creator@solotensor.local",
-      username: "solocreator",
-      displayName: "Solo Creator",
-      role: defaultRole,
-      roles: [defaultRole],
-      primary_role: defaultRole,
-      permissions: getDefaultPermissionsForRole(defaultRole),
-      avatarUrl: null,
-      createdAt: new Date().toISOString(),
-      is_verified: false,
-    };
-  } else {
-    const norm = normalizeRoleName(user.primary_role || user.role);
-    user.role = norm;
-    user.primary_role = norm;
-    if (!user.roles || user.roles.length === 0) user.roles = [norm];
-    if (!user.permissions || user.permissions.length === 0) user.permissions = getDefaultPermissionsForRole(norm);
-  }
-  if (!credits) {
-    credits = {
-      balance: 100,
-      dailyAllowance: 100,
-      nextResetInSeconds: getSecondsUntilMidnight(),
-      lastClaimedAt: null,
-    };
-  } else {
-    credits.nextResetInSeconds = getSecondsUntilMidnight();
-  }
-  return { user, credits };
-}
-
-export function setLocalUserRole(newRole: UserRole): UserProfile | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const rawUser = localStorage.getItem(AUTH_USER_KEY);
-    const user: UserProfile = rawUser ? JSON.parse(rawUser) : getFallbackUserSession().user;
-    const norm = normalizeRoleName(newRole);
-    user.role = norm;
-    user.primary_role = norm;
-    user.roles = [norm];
-    user.permissions = getDefaultPermissionsForRole(norm);
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-    return user;
-  } catch {
-    return null;
-  }
-}
-
-
-function claimFallbackDailyEnergy(): CreditStatus {
-  let credits: CreditStatus = {
-    balance: 100,
-    dailyAllowance: 100,
-    nextResetInSeconds: getSecondsUntilMidnight(),
-    lastClaimedAt: new Date().toISOString(),
-  };
-  try {
-    const rawCredits = localStorage.getItem(AUTH_CREDITS_KEY);
-    if (rawCredits) {
-      credits = JSON.parse(rawCredits);
-    }
-    credits.balance = Math.min(credits.dailyAllowance, credits.balance + 25);
-    credits.lastClaimedAt = new Date().toISOString();
-    credits.nextResetInSeconds = getSecondsUntilMidnight();
-    localStorage.setItem(AUTH_CREDITS_KEY, JSON.stringify(credits));
-  } catch {
-    /* ignore */
-  }
-  return credits;
 }
 
 /** crypto.randomUUID needs a secure context (HTTPS / localhost); fall back otherwise. */

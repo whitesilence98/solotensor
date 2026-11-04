@@ -428,8 +428,7 @@ export default function ControlPanel(props: Props) {
     }
   };
 
-  const { isPro, isAdmin, switchRoleDemo, isAuthenticated, openAuthModal } =
-    useAuth();
+  const { isPro, isAdmin, isAuthenticated, openAuthModal } = useAuth();
   const isProUser = isPro || isAdmin;
 
   const [internalPrivate, setInternalPrivate] = useState(false);
@@ -3969,39 +3968,31 @@ export default function ControlPanel(props: Props) {
               {/* Pro Capabilities Specs */}
               <div className="space-y-2">
                 <span className="font-mono text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase block">
-                  Solo Studio Pro Capabilities
+                  Pro Tier Envelope
                 </span>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
                     <span className="block font-bold text-[var(--ink)]">
-                      ⚡ Fast-Lane Priority
+                      Canvas Size
                     </span>
                     <span className="text-[11px] text-[var(--ink-faint)]">
-                      Instant fast-lane queue dispatch (~4s)
+                      Up to 4096×4096
                     </span>
                   </div>
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
                     <span className="block font-bold text-[var(--ink)]">
-                      🖼 4K Synthesis
+                      Sampling Steps
                     </span>
                     <span className="text-[11px] text-[var(--ink-faint)]">
-                      Up to 4096×4096 and 100 steps
+                      Up to 100 steps
                     </span>
                   </div>
                   <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
                     <span className="block font-bold text-[var(--ink)]">
-                      🔒 Private Output
+                      Private Output
                     </span>
                     <span className="text-[11px] text-[var(--ink-faint)]">
-                      Keep generations off public feeds
-                    </span>
-                  </div>
-                  <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-2.5">
-                    <span className="block font-bold text-[var(--ink)]">
-                      🎛 5x LoRA Enclaves
-                    </span>
-                    <span className="text-[11px] text-[var(--ink-faint)]">
-                      High-concurrency adapter chaining
+                      Excluded from public discovery feeds
                     </span>
                   </div>
                 </div>
@@ -4025,13 +4016,13 @@ export default function ControlPanel(props: Props) {
               <button
                 type="button"
                 onClick={() => {
-                  switchRoleDemo("pro_creator");
                   setHardwareModalOpen(false);
+                  openAuthModal("pro");
                 }}
                 className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
               >
                 <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Unlock Pro (Studio Preview)</span>
+                <span>Sign In for Pro</span>
               </button>
             </div>
           </div>
@@ -4070,12 +4061,12 @@ export default function ControlPanel(props: Props) {
                 By default, outputs are saved to your studio gallery and eligible
                 for community feeds.{" "}
                 <strong className="text-[var(--ink)]">Private Output</strong>{" "}
-                guarantees your generated artwork, workflow graph, and prompt
-                tokens remain strictly confidential.
+                keeps the asset marked private in local storage metadata so it is
+                excluded from public discovery feeds.
               </p>
               <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 text-xs text-[var(--ink-faint)]">
-                🔒 Omit prompts and seed metadata from public discovery feeds
-                and shared model showcase reels.
+                🔒 Marked private in local metadata: excluded from public discovery
+                feeds and shared model showcase reels.
               </div>
             </div>
 
@@ -4090,18 +4081,13 @@ export default function ControlPanel(props: Props) {
               <button
                 type="button"
                 onClick={() => {
-                  switchRoleDemo("pro_creator");
                   setPrivateUpsellOpen(false);
-                  if (onPrivateChange) {
-                    onPrivateChange(true);
-                  } else {
-                    setInternalPrivate(true);
-                  }
+                  openAuthModal("pro");
                 }}
                 className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--accent-hover)] transition shadow-[0_0_12px_rgba(213,240,111,0.25)]"
               >
                 <Zap className="h-3.5 w-3.5 fill-current" />
-                <span>Unlock Pro (Studio Preview)</span>
+                <span>Sign In for Pro</span>
               </button>
             </div>
           </div>

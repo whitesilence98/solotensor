@@ -9,10 +9,8 @@ import {
   KeyRound,
   Lock,
   LogIn,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { normalizeRoleName, type UserRole } from "@/lib/api";
@@ -55,7 +53,6 @@ export function ProtectedRoute({
     permissions,
     hasRole,
     hasPermission,
-    switchRoleDemo,
     openAuthModal,
   } = useAuth();
 
@@ -239,37 +236,6 @@ export function ProtectedRoute({
               </span>
             </div>
           )}
-        </div>
-
-        {/* Local RBAC Dev Switcher for seamless pairing & iteration */}
-        <div className="rounded-xl border border-[var(--line-strong)] bg-[var(--surface-raised)] p-3.5 text-left space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--accent)] font-bold">
-              STUDIO ROLE EMULATION
-            </span>
-            <span className="font-mono text-[9px] text-[var(--ink-faint)] uppercase">
-              LOCAL DEMO MODE
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => switchRoleDemo("pro_creator")}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] py-2 font-mono text-xs font-bold text-[var(--accent)] hover:bg-[var(--surface-soft)] transition active:scale-[0.98]"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>Switch to Pro VIP</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => switchRoleDemo("moderator")}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface)] py-2 font-mono text-xs font-bold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition active:scale-[0.98]"
-            >
-              <Shield className="h-3.5 w-3.5" />
-              <span>Switch to Moderator</span>
-            </button>
-          </div>
         </div>
 
         <div className="pt-2">

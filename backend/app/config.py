@@ -2,7 +2,9 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +16,7 @@ class Settings(BaseSettings):
         env_file=(str(_ENV_FILE), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     # --- ComfyUI engine -------------------------------------------------
@@ -68,15 +71,14 @@ class Settings(BaseSettings):
     PROXY_BYPASS_LOCAL: bool = True
 
     # --- App -------------------------------------------------------------
+    APP_ENV: Literal["development", "production"] = "development"
     APP_NAME: str = "Comfy Studio API"
     ALLOWED_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,"
         "http://localhost:3001,http://127.0.0.1:3001"
     )
-    # Development-only fallback for Next.js dev ports. Set empty in production.
-    ALLOWED_ORIGIN_REGEX: str = (
-        r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|\[::1\]):[0-9]{2,5}$"
-    )
+    # Explicit local-development opt-in only.
+    ALLOWED_ORIGIN_REGEX: str = ""
     UPLOAD_MAX_BYTES: int = 10 * 1024 * 1024
 
     # --- Database & Authentication ---------------------------------------
@@ -110,6 +112,15 @@ class Settings(BaseSettings):
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
     EMAIL_FROM: str = "Solo Studio <noreply@solotensor.ai>"
+
+    @model_validator(mode="after")
+    def validate_production_secret(self) -> "Settings":
+        if self.APP_ENV == "production" and (
+            len(self.JWT_SECRET.strip()) < 32
+            or self.JWT_SECRET.strip() == type(self).model_fields["JWT_SECRET"].default
+        ):
+            raise ValueError("Production requires a non-default JWT_SECRET of at least 32 characters")
+        return self
 
     @property
     def comfy_http(self) -> str:

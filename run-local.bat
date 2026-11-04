@@ -2,77 +2,76 @@
 setlocal
 title SoloTensor - Local Dev
 
-rem SoloTensor local dev launcher.
-rem Starts the two required services (backend :8000, frontend :3000) in
-rem separate windows. ComfyUI (:8188) and the local LLM (:8085) are optional
-rem and run from their own install directories, so they are not started here.
-
+rem Only the API and UI are started here. Start ComfyUI separately for rendering.
 cd /d "%~dp0"
 
-echo =======================================================================
-echo   SoloTensor - starting local dev stack
-echo =======================================================================
-echo.
-
-if not exist "backend\app\main.py" (
-    echo [ERROR] backend\app\main.py not found.
-    echo         Run this script from the repository root.
-    echo.
-    pause
-    exit /b 1
-)
-
-if not exist "frontend\package.json" (
-    echo [ERROR] frontend\package.json not found.
-    echo.
-    pause
-    exit /b 1
-)
-
-rem Pick the project virtualenv, falling back to python on PATH.
+if not exist "backend\app\main.py" goto missing_project
+if not exist "frontend\package.json" goto missing_project
 set "PY=%~dp0backend\.venv\Scripts\python.exe"
 if not exist "%PY%" (
-    echo [WARN] backend\.venv not found - falling back to python on PATH.
-    echo.
-    set "PY=python"
+    echo [ERROR] Missing backend\.venv. Create it and install backend\requirements.txt first.
+    exit /b 1
+)
+where node.exe >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Node.js is missing from PATH. Install Node.js and reopen this terminal.
+    exit /b 1
+)
+where npm.cmd >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] npm is missing from PATH. Install Node.js and reopen this terminal.
+    exit /b 1
+)
+where powershell.exe >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Windows PowerShell is required for readiness checks.
+    exit /b 1
+)
+rem Check both dependency sets before spawning either service. Never install silently.
+if not exist "frontend\node_modules\.bin\next.cmd" (
+    echo [ERROR] Frontend dependencies missing. Run npm ci from frontend, then retry.
+    exit /b 1
+)
+"%PY%" -c "import uvicorn" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Backend dependencies missing. Install backend\requirements.txt into backend\.venv, then retry.
+    exit /b 1
 )
 
-rem start inherits this environment, so the child process sees PYTHONPATH.
 set "PYTHONPATH=%~dp0backend"
+echo [1/2] Starting backend at http://127.0.0.1:8000
+start "SoloTensor - Backend (:8000)" /d "%~dp0backend" cmd /d /k ""%PY%" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
+set "READY_URL=http://127.0.0.1:8000/api/v1/ready"
+set "READY_KIND=backend"
+call :wait_ready
+if errorlevel 1 goto failed
 
-rem Install frontend deps once, before spawning the window.
-if not exist "frontend\node_modules" (
-    echo [INFO] frontend\node_modules missing - installing dependencies...
-    pushd "%~dp0frontend"
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] npm install failed.
-        popd
-        pause
-        exit /b 1
-    )
-    popd
-    echo.
-)
+echo [2/2] Starting frontend at http://127.0.0.1:3000
+start "SoloTensor - Frontend (:3000)" /d "%~dp0frontend" cmd /d /k "npm run dev -- --hostname 127.0.0.1 --port 3000"
+set "READY_URL=http://127.0.0.1:3000/"
+set "READY_KIND=frontend"
+call :wait_ready
+if errorlevel 1 goto failed
 
-echo [1/2] Backend API  -^> http://127.0.0.1:8000
-start "SoloTensor - Backend (:8000)" /d "%~dp0backend" cmd /k ""%PY%" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
+echo [READY] Studio: http://127.0.0.1:3000/generate
+echo         API docs: http://127.0.0.1:8000/docs
+echo         Close the two service windows to stop. ComfyUI is not started here.
+start "" "http://127.0.0.1:3000/generate"
+exit /b 0
 
-timeout /t 2 /nobreak >nul
+:wait_ready
+rem At most 60 attempts, each with a 2-second HTTP timeout and 1-second retry delay.
+rem Environment variables avoid interpolating URLs or JSON into nested cmd quotes.
+powershell.exe -NoProfile -NonInteractive -Command "$ProgressPreference='SilentlyContinue'; for ($i=0; $i -lt 60; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri $env:READY_URL -TimeoutSec 2; if ($r.StatusCode -eq 200) { if ($env:READY_KIND -ne 'backend' -or ($r.Content | ConvertFrom-Json).status -eq 'ready') { exit 0 } } } catch {}; if ($i -lt 59) { Start-Sleep -Seconds 1 } }; exit 1"
+exit /b %errorlevel%
 
-echo [2/2] Frontend UI  -^> http://localhost:3000
-start "SoloTensor - Frontend (:3000)" /d "%~dp0frontend" cmd /k "npm run dev"
+:missing_project
+echo [ERROR] Backend or frontend project files missing. Keep run-local.bat in the repository root.
+exit /b 1
 
-echo.
-echo =======================================================================
-echo   Launched. Allow ~10s for both services to become ready.
-echo.
-echo   Web UI:      http://localhost:3000
-echo   API docs:    http://127.0.0.1:8000/docs
-echo.
-echo   Close the two spawned windows to stop the services.
-echo =======================================================================
-echo.
-
-timeout /t 3 /nobreak >nul
-start http://localhost:3000
+:failed
+echo [ERROR] %READY_KIND% did not become ready at %READY_URL%.
+echo         Inspect its service window for errors. Check dependencies, backend .env, DB and storage access.
+echo         Check ports 8000 and 3000 for existing services. Close spawned windows before retrying.
+echo         ComfyUI is not required for API readiness. No browser was opened.
+exit /b 1

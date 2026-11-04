@@ -18,73 +18,53 @@ import HomePostsSection from "@/components/HomePostsSection";
 import AssetDetailOverlay from "@/components/AssetDetailOverlay";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 
-export default function HomePage() {
-  // Data states
-  const [assets, setAssets] = useState<AssetRecord[]>([]);
-  const [models, setModels] = useState<PublicModelSummary[]>([]);
-  const [tools, setTools] = useState<ToolSummary[]>([]);
-  const [modelOptions, setModelOptions] = useState<InstalledGalleryModel[]>([]);
+const loadAssets = async () => withTypes(await api.getAssets(60));
+const loadModels = async () => (await api.getPublicModels("")).items || [];
+const loadTools = () => api.getTools();
+const loadSelectable = () => api.listSelectableModels();
 
-  // Loading & error states
+function useHomeSection<T>(load: () => Promise<T[]>) {
+  const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  // Asset Inspection Stage Modal
-  const [inspectedAsset, setInspectedAsset] = useState<AssetRecord | null>(null);
-
-  // Fetch initial data
+  const [error, setError] = useState(false);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
+    setError(false);
+    void load().then((result) => {
+      if (!cancelled) setData(result);
+    }).catch(() => {
+      if (!cancelled) setError(true);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [load, reload]);
+  return { data, loading, error, retry: () => setReload((value) => value + 1) };
+}
 
-    Promise.allSettled([
-      api.getAssets(60),
-      api.getPublicModels(""),
-      api.getTools(),
-      api.listSelectableModels(),
-    ])
-      .then(([assetsRes, modelsRes, toolsRes, selectableRes]) => {
-        if (cancelled) return;
+function SectionNotice({ label, section }: { label: string; section: { loading: boolean; error: boolean; retry: () => void } }) {
+  if (!section.loading && !section.error) return null;
+  return (
+    <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 text-xs text-[var(--ink)]">
+      <p>{section.loading ? `Loading ${label}…` : `Could not load ${label}. Other sections remain available.`}</p>
+      {section.error && <button type="button" onClick={section.retry} className="workspace-action-secondary px-3 py-1.5 text-xs font-medium" aria-label={`Retry ${label}`}><RotateCcw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />Retry</button>}
+    </div>
+  );
+}
 
-        if (assetsRes.status === "fulfilled") {
-          setAssets(withTypes(assetsRes.value));
-        }
-        if (modelsRes.status === "fulfilled") {
-          setModels(modelsRes.value.items || []);
-        }
-        if (toolsRes.status === "fulfilled") {
-          setTools(toolsRes.value);
-        }
-        if (selectableRes.status === "fulfilled") {
-          setModelOptions(selectableRes.value);
-        }
+export default function HomePage() {
+  const assetsSection = useHomeSection<AssetRecord>(loadAssets);
+  const modelsSection = useHomeSection<PublicModelSummary>(loadModels);
+  const toolsSection = useHomeSection<ToolSummary>(loadTools);
+  const selectableSection = useHomeSection<InstalledGalleryModel>(loadSelectable);
+  const assets = assetsSection.data;
+  const models = modelsSection.data;
+  const tools = toolsSection.data;
+  const modelOptions = selectableSection.data;
 
-        // If all 3 main sources failed, report error
-        if (
-          assetsRes.status === "rejected" &&
-          modelsRes.status === "rejected" &&
-          toolsRes.status === "rejected"
-        ) {
-          setError("Failed to communicate with Solo Studio backend services.");
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load discovery stream."
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
+  const [inspectedAsset, setInspectedAsset] = useState<AssetRecord | null>(null);
 
   const openAssetInspection = useCallback((item: AssetRecord | GalleryItem) => {
     setInspectedAsset(item as AssetRecord);
@@ -143,22 +123,7 @@ export default function HomePage() {
       className="flex min-h-full w-full flex-1 flex-col bg-[var(--ground)]">
       <div className="mx-auto flex w-full max-w-[1720px] flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <div className="flex-1 space-y-10">
-        {/* Error Notice */}
-        {error && (
-          <div className="rounded-xl border border-[var(--danger-line)] bg-[var(--danger-surface)] p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-[var(--danger)] animate-ping" />
-              <p className="text-xs text-[var(--ink)]">{error}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setReloadKey((k) => k + 1)}
-              className="workspace-action-secondary px-3 py-1.5 text-xs font-medium"
-            >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Retry
-            </button>
-          </div>
-        )}
+        <SectionNotice label="selectable models" section={selectableSection} />
 
         {/* 1. Top Promo / Ad Banner Carousel */}
         <section aria-label="Featured announcements and models">
@@ -166,17 +131,20 @@ export default function HomePage() {
         </section>
 
         {/* 2. "Featured" = AI Tools (2x5 compact grid) */}
+        <SectionNotice label="tools" section={toolsSection} />
         <HomeFeaturedTools tools={tools} />
 
         {/* 3. "Models" Section */}
-        <HomeModelsSection models={models} loading={loading} />
+        <SectionNotice label="models" section={modelsSection} />
+        {(!modelsSection.error || models.length > 0) && <HomeModelsSection models={models} loading={modelsSection.loading} />}
 
         {/* 4. "Posts" = Assets (Latest User Creations Feed) */}
-        <HomePostsSection
+        <SectionNotice label="assets" section={assetsSection} />
+        {(!assetsSection.error || assets.length > 0) && <HomePostsSection
           assets={assets}
-          loading={loading}
+          loading={assetsSection.loading}
           onOpenAsset={openAssetInspection}
-        />
+        />}
 
         </div>
       </div>
