@@ -71,18 +71,9 @@ desktop.ini
 .idea/
 .vscode/
 
-# Claude Code — shared agent configuration (tracked, synced to the team)
-.claude/*
-!.claude/agents/
-!.claude/skills/
-!.claude/commands/
-!.claude/settings.json
-# Never share: personal overrides, agent scratch worktrees, local notes
+# Claude Code — everything is shared and tracked, except personal local settings
 .claude/settings.local.json
-.claude/worktrees/
-*.local.md
-# The impeccable engine binary is downloaded on first run; never commit it
-.claude/skills/impeccable/scripts/bin/
+.claude/worktrees-archive/
 
 # Google Antigravity — retired, kept ignored
 .agent/

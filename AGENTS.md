@@ -6,7 +6,7 @@ This project's agent configuration targets **Claude Code**, the supported harnes
 
 ## 1. Available Subagents & Specialists
 
-**Claude Code** is the supported harness. The 7 specialized agents below live in `.claude/agents/`. Claude Code additionally provides the skills `run-local`, `git-push`, `impeccable`, and `design-taste-frontend` under `.claude/skills/`.
+**Claude Code** is the supported harness. The 7 specialized agents below live in `.claude/agents/`. Claude Code additionally provides the skills `run-local`, `git-push`, and `design-taste-frontend` under `.claude/skills/`.
 
 | Agent Name | Primary Scope | Typical Responsibilities | Verification Command |
 | :--- | :--- | :--- | :--- |
@@ -26,7 +26,7 @@ This project's agent configuration targets **Claude Code**, the supported harnes
 - **Slash Commands**: Type `/agent <name>` or `/frontend`, `/backend`, etc.
 - **Agent Mentions**: Type `@frontend`, `@backend`, etc., in your prompt.
 - **Agent Discovery Location**: `.claude/agents/*.md`
-- **Skill Discovery Location**: `.claude/skills/<name>/SKILL.md` — `run-local`, `git-push`, `impeccable`, `design-taste-frontend`.
+- **Skill Discovery Location**: `.claude/skills/<name>/SKILL.md` — `run-local`, `git-push`, `design-taste-frontend`.
 
 > **Historical note:** Google Antigravity support was retired. Its workspace skills were migrated into `.claude/skills/`; the legacy `.agent/` directory is ignored and no longer used.
 
