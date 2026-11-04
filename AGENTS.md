@@ -1,12 +1,12 @@
 # SoloTensor Agent Orchestration & Subagent Guide
 
-This project is configured for dual-agent operation across both **Google Antigravity** and **Claude Code**.
+This project's agent configuration targets **Claude Code**, the supported harness. (Google Antigravity support is retired; see §2.)
 
 ---
 
 ## 1. Available Subagents & Specialists
 
-Both Antigravity and Claude Code have access to the exact same 7 specialized agents:
+**Claude Code** is the supported harness. The 7 specialized agents below live in `.claude/agents/`. Claude Code additionally provides the skills `run-local`, `git-push`, `impeccable`, and `design-taste-frontend` under `.claude/skills/`.
 
 | Agent Name | Primary Scope | Typical Responsibilities | Verification Command |
 | :--- | :--- | :--- | :--- |
@@ -25,23 +25,10 @@ Both Antigravity and Claude Code have access to the exact same 7 specialized age
 ### In Claude Code
 - **Slash Commands**: Type `/agent <name>` or `/frontend`, `/backend`, etc.
 - **Agent Mentions**: Type `@frontend`, `@backend`, etc., in your prompt.
-- **Discovery Location**: `.claude/agents/*.md` (mirrored at workspace root).
+- **Agent Discovery Location**: `.claude/agents/*.md`
+- **Skill Discovery Location**: `.claude/skills/<name>/SKILL.md` — `run-local`, `git-push`, `impeccable`, `design-taste-frontend`.
 
-### In Google Antigravity
-- **Direct Subagent Spawning (`invoke_subagent`)**:
-  Antigravity can spawn background subagents at any time:
-  ```json
-  {
-    "TypeName": "frontend",
-    "Role": "Frontend Specialist",
-    "Prompt": "Implement the requested UI component..."
-  }
-  ```
-  All 7 subagents (`frontend`, `backend`, `comfy-pipeline`, `api-contracts`, `model-manager`, `tool-engine`, `backend-qa`) are registered.
-- **Workspace Skills**:
-  Each subagent is also available as an on-demand skill under `.agent/skills/<name>/SKILL.md`. Type `/<name>` (e.g. `/frontend`, `/backend`) in the chat box or invoke the skill.
-- **Mentions**:
-  Type `@frontend`, `@backend`, etc., to reference the skill context in Antigravity chat.
+> **Historical note:** Google Antigravity support was retired. Its workspace skills were migrated into `.claude/skills/`; the legacy `.agent/` directory is ignored and no longer used.
 
 ---
 

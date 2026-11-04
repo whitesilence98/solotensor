@@ -71,11 +71,27 @@ desktop.ini
 .idea/
 .vscode/
 
-# Agent & Skill Metadata
-.claude/
+# Claude Code — shared agent configuration (tracked, synced to the team)
+.claude/*
+!.claude/agents/
+!.claude/skills/
+!.claude/commands/
+!.claude/settings.json
+# Never share: personal overrides, agent scratch worktrees, local notes
+.claude/settings.local.json
+.claude/worktrees/
+*.local.md
+# The impeccable engine binary is downloaded on first run; never commit it
+.claude/skills/impeccable/scripts/bin/
+
+# Google Antigravity — retired, kept ignored
 .agent/
 .gemini/
-.impeccable/
+
+# Impeccable — authored briefs tracked, runtime output ignored
+.impeccable/*
+!.impeccable/brief-assets.md
+!.impeccable/surfaces/
 
 # Logs & Temporary Files
 *.log
