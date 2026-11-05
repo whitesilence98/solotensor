@@ -398,10 +398,10 @@ export default function AssetInspectionStage({
 
     const checkOverflow = () => {
       if (promptTextRef.current) {
-        setIsPromptOverflowing(promptTextRef.current.scrollHeight > 132);
+        setIsPromptOverflowing(promptTextRef.current.scrollHeight > 104);
       }
       if (negTextRef.current) {
-        setIsNegOverflowing(negTextRef.current.scrollHeight > 132);
+        setIsNegOverflowing(negTextRef.current.scrollHeight > 66);
       }
       if (tagsContainerRef.current) {
         setIsTagsOverflowing(tagsContainerRef.current.scrollHeight > 64);
@@ -567,7 +567,7 @@ export default function AssetInspectionStage({
     mode === "modal"
       ? "relative grid max-h-[92vh] sm:max-h-[90vh] min-h-0 overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:grid-cols-[minmax(0,1fr)_28rem] shadow-2xl"
       : isOverlay
-      ? "relative grid min-h-[580px] shrink-0 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] shadow-2xl"
+      ? "relative grid min-h-full shrink-0 overflow-hidden rounded-[var(--radius-panel)] border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_450px] shadow-2xl"
       : "relative grid min-h-[500px] lg:min-h-[560px] overflow-hidden rounded-2xl border border-[var(--line-strong)] bg-[var(--surface-raised)] lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:grid-cols-[minmax(0,1fr)_28rem] shadow-2xl";
 
   return (
@@ -660,10 +660,10 @@ export default function AssetInspectionStage({
               after={mediaUrl}
               beforeLabel="Original Base"
               afterLabel="Detailed"
-              className={isOverlay ? "w-full max-h-[510px]" : "w-full max-h-[78vh]"}
+              className={isOverlay ? "w-full max-h-[86vh] 2xl:max-h-[88vh]" : "w-full max-h-[78vh]"}
             />
           ) : isVideo ? (
-            <div className={`flex h-full ${isOverlay ? "max-h-[510px]" : "max-h-[78vh]"} w-full flex-col`}>
+            <div className={`flex h-full ${isOverlay ? "max-h-[86vh] 2xl:max-h-[88vh]" : "max-h-[78vh]"} w-full flex-col`}>
               <VideoResultPreview
                 url={mediaUrl}
                 filename={asset.key.split("/").pop() || "video.mp4"}
@@ -683,7 +683,7 @@ export default function AssetInspectionStage({
                 isZoomed
                   ? "max-h-none max-w-none object-none shadow-2xl cursor-zoom-out"
                   : isOverlay
-                  ? "max-h-[510px] max-w-full object-contain cursor-zoom-in"
+                  ? "max-h-[86vh] 2xl:max-h-[88vh] max-w-full object-contain cursor-zoom-in"
                   : "max-h-[84vh] max-w-full object-contain cursor-zoom-in"
               }`}
             />
@@ -1264,7 +1264,7 @@ export default function AssetInspectionStage({
                 className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink)] select-text break-words transition-[max-height] duration-200 ${isPromptExpanded
                     ? "max-h-none"
                     : isPromptOverflowing
-                    ? "max-h-[130px] overflow-y-auto workspace-scroll"
+                    ? "max-h-[102px] overflow-y-auto workspace-scroll"
                     : ""
                   }`}
               >
@@ -1325,7 +1325,7 @@ export default function AssetInspectionStage({
                 className={`rounded-lg border border-[var(--line)] bg-[var(--surface-sunken)] p-3 font-mono text-xs leading-relaxed text-[var(--ink-soft)] select-text break-words transition-[max-height] duration-200 ${isNegExpanded
                     ? "max-h-none"
                     : isNegOverflowing
-                    ? "max-h-[130px] overflow-y-auto workspace-scroll"
+                    ? "max-h-[64px] overflow-y-auto workspace-scroll"
                     : ""
                   }`}
               >

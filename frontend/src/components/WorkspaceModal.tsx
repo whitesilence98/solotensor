@@ -65,7 +65,7 @@ export default function WorkspaceModal({
           : size === "media"
           ? "!max-w-[1600px] 2xl:!max-w-[1720px] !w-[95vw]"
           : size === "asset-detail"
-          ? "!w-[960px] !max-w-[calc(100%-2rem)] !h-[580px] !max-h-[calc(100%-2rem)]"
+          ? "!w-[94vw] sm:!w-[92vw] !max-w-[1600px] 2xl:!max-w-[1720px] !h-[94vh] sm:!h-[95vh] supports-[height:100svh]:!h-[95svh] !max-h-[calc(100vh-1rem)]"
           : ""
       } ${destructive ? "workspace-modal-danger" : ""} ${className || ""}`}
     >
